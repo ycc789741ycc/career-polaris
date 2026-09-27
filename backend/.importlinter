@@ -119,6 +119,7 @@ forbidden_modules =
     advisor.rolemap.service
     advisor.rolemap.domain
     advisor.rolemap.infra
+    advisor.assessment.infra
 allow_indirect_imports = True
 
 [importlinter:contract:assessment-public-surface]
@@ -429,6 +430,9 @@ source_modules =
     advisor.rolemap.domain
     advisor.rolemap.service
     advisor.rolemap.jobs
+    advisor.assessment.domain
+    advisor.assessment.service
+    advisor.assessment.jobs
 forbidden_modules =
     sqlalchemy
     pgvector
@@ -446,6 +450,7 @@ forbidden_modules =
     advisor.identity.infra.repositories
     advisor.identity.infra.unit_of_work
     advisor.rolemap.infra
+    advisor.assessment.infra
 # A component's __init__ re-exports its factory, which wires infra/ in. Using
 # another component through its public API must not count as reaching its ORM.
 ignore_imports =

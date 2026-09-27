@@ -16,15 +16,34 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from advisor.assessment.domain import (
     DEFAULT_MATCHES,
     MAX_DIMENSIONS,
     MIN_DIMENSIONS,
+    AssessedScore,
+    AssessedScoreFilter,
+    AssessmentCompleted,
+    AssessmentUnitOfWork,
     ClosingLifts,
+    DimensionChange,
     DimensionCountError,
+    DimensionsChanged,
+    FitResult,
+    FollowUpQuestion,
+    FollowUpQuestionFilter,
+    LineageKind,
     MatchCandidate,
+    OwnerAssessment,
+    QuestionAnswered,
+    QuestionsRaised,
+    RoleFit,
+    RoleFitFilter,
+    RoleFitsComputed,
+    SkillAssessment,
+    SkillAssessmentFilter,
+    SkillDimension,
+    SkillDimensionFilter,
     SkillGap,
     TargetScore,
     UncoveredRequirement,
@@ -40,25 +59,15 @@ from advisor.assessment.domain import (
 from advisor.assessment.domain import (
     DimensionScore as DimensionValue,
 )
-from advisor.assessment.infra.models import (
-    DimensionLineage,
-    DimensionScore,
-    FollowUpQuestion,
-    RoleFit,
-    SkillAssessment,
-    SkillDimension,
-)
 from advisor.market import MarketService, PostingView, SalaryRange, Visibility
 from advisor.profile import CitationError, ProfileService, assert_citations_exist
 from advisor.rolemap import RequirementView, RoleMapService, RoleView
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
-from kernel.db import Database
-from kernel.db.base import utcnow
+from kernel.clock import utcnow
 from kernel.errors import DimensionCountError as DimensionCountFailure
 from kernel.errors import EvidenceNotOwnedError, NotFoundError, ValidationError
 from kernel.logging import get_logger
-from kernel.outbox import EventName, emit
 
 __all__ = [
     "AssessmentService",
@@ -209,7 +218,7 @@ class MatchedPostingView:
 class AssessmentService:
     def __init__(
         self,
-        database: Database,
+        uow: AssessmentUnitOfWork,
         *,
         profile: ProfileService,
         rolemap: RoleMapService,
@@ -217,7 +226,7 @@ class AssessmentService:
         gateway: AiGateway,
         confidence_threshold: float,
     ) -> None:
-        self._db = database
+        self._uow = uow
         self._profile = profile
         self._rolemap = rolemap
         self._market = market
@@ -311,97 +320,62 @@ class AssessmentService:
         return await self.latest(owner_id) or _never()
 
     async def latest(self, owner_id: uuid.UUID) -> AssessmentView | None:
-        async with self._db.for_user(owner_id) as session:
-            rows = await session.execute(
-                select(SkillAssessment)
-                .where(SkillAssessment.owner_id == owner_id)
-                .order_by(SkillAssessment.created_at.desc())
-                .limit(1)
-            )
-            assessment = rows.scalar_one_or_none()
-            if assessment is None:
-                return None
-
-            score_rows = await session.execute(
-                select(DimensionScore).where(DimensionScore.assessment_id == assessment.id)
-            )
-            scores = list(score_rows.scalars())
-            dimension_rows = await session.execute(
-                select(SkillDimension).where(SkillDimension.owner_id == owner_id)
-            )
-            names = {d.key: (d.name, d.short_name) for d in dimension_rows.scalars()}
-
-            return AssessmentView(
-                id=assessment.id,
-                profile_version=assessment.profile_version,
-                model_id=assessment.model_id,
-                template_version=assessment.template_version,
-                created_at=assessment.created_at,
-                dimensions=tuple(
-                    DimensionView(
-                        key=score.dimension_key,
-                        name=names.get(score.dimension_key, (score.dimension_key, ""))[0],
-                        short_name=names.get(score.dimension_key, ("", ""))[1],
-                        score=score.score,
-                        confidence=score.confidence,
-                        read=score.read,
-                        evidence_ids=tuple(score.evidence_ids),
-                    )
-                    for score in sorted(scores, key=lambda s: s.dimension_key)
-                ),
-            )
+        async with self._uow.for_owner(owner_id) as mine:
+            newest = await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1)
+            return await _view(mine, newest[0]) if newest else None
 
     async def history(self, owner_id: uuid.UUID) -> list[AssessmentView]:
-        """Comparing assessments is how progress is shown; stable ids make it work."""
-        async with self._db.for_user(owner_id) as session:
-            rows = await session.execute(
-                select(SkillAssessment.id)
-                .where(SkillAssessment.owner_id == owner_id)
-                .order_by(SkillAssessment.created_at.desc())
-            )
-            ids = list(rows.scalars())
-        views = [await self._view_of(owner_id, assessment_id) for assessment_id in ids]
-        return [view for view in views if view is not None]
+        """Comparing assessments is how progress is shown; stable ids make it work.
+
+        Newest first. One user's assessments: one per analysis they paid for.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            return [
+                await _view(mine, assessment)
+                for assessment in await mine.assessments.get_list(SkillAssessmentFilter())
+            ]
 
     # -- follow-up questions ------------------------------------------------
 
     async def questions(
         self, owner_id: uuid.UUID, *, unanswered_only: bool = True
     ) -> list[QuestionView]:
-        async with self._db.for_user(owner_id) as session:
-            query = select(FollowUpQuestion).where(FollowUpQuestion.owner_id == owner_id)
-            if unanswered_only:
-                query = query.where(FollowUpQuestion.answered_at.is_(None))
-            rows = await session.execute(query.order_by(FollowUpQuestion.created_at))
-            return [
-                QuestionView(
-                    id=q.id,
-                    dimension_key=q.dimension_key,
-                    text=q.text,
-                    why=q.why,
-                    options=tuple(q.options),
-                    answer=q.answer,
-                )
-                for q in rows.scalars()
-            ]
+        """Oldest first, the order they were raised in."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.questions.get_list(
+                FollowUpQuestionFilter(is_answered=False if unanswered_only else None)
+            )
+        return [
+            QuestionView(
+                id=q.id,
+                dimension_key=q.dimension_key,
+                text=q.text,
+                why=q.why,
+                options=q.options,
+                answer=q.answer,
+            )
+            for q in reversed(found)
+        ]
 
     async def answer(self, owner_id: uuid.UUID, question_id: uuid.UUID, answer: str) -> None:
         """An answer becomes self-reported Evidence and bumps the profile."""
-        async with self._db.for_user(owner_id) as session:
-            question = await session.get(FollowUpQuestion, question_id)
-            if question is None or question.owner_id != owner_id:
+        async with self._uow.for_owner(owner_id) as mine:
+            question = await mine.questions.get(question_id)
+            if question is None:
                 raise NotFoundError("question not found", question_id=str(question_id))
-            question.answer = answer
-            question.answered_at = utcnow()
-            text, key = question.text, str(question.id)
-            await emit(
-                session,
-                EventName.QUESTION_ANSWERED,
-                {"question_id": key, "dimension": question.dimension_key},
-                owner_id=owner_id,
+            question.answered(answer, at=utcnow())
+            await mine.questions.update(question)
+            mine.record(
+                QuestionAnswered(
+                    owner_id=owner_id,
+                    question_id=question.id,
+                    dimension_key=question.dimension_key,
+                )
             )
 
-        await self._profile.record_answer(owner_id, question_id=key, question=text, answer=answer)
+        await self._profile.record_answer(
+            owner_id, question_id=str(question.id), question=question.text, answer=answer
+        )
 
     # -- fit ----------------------------------------------------------------
 
@@ -426,32 +400,26 @@ class AssessmentService:
                 role_id=role.id,
             )
 
-        async with self._db.for_user(owner_id) as session:
-            await emit(
-                session,
-                EventName.ROLE_FITS_COMPUTED,
-                {"roles": len(roles)},
-                owner_id=owner_id,
-            )
+        async with self._uow.for_owner(owner_id) as mine:
+            mine.record(RoleFitsComputed(owner_id=owner_id, roles=len(roles)))
         return await self.fits(owner_id)
 
     async def fits(self, owner_id: uuid.UUID) -> list[FitView]:
-        """The current fit per role — the bubble sizes."""
-        async with self._db.for_user(owner_id) as session:
-            rows = await session.execute(
-                select(RoleFit)
-                .where(RoleFit.owner_id == owner_id)
-                .order_by(RoleFit.created_at.desc())
-            )
-            seen: set[Any] = set()
-            latest: list[FitView] = []
-            for row in rows.scalars():
-                target = row.role_id or row.private_posting_id
-                if target in seen:
-                    continue
-                seen.add(target)
-                latest.append(_fit_view(row))
-            return latest
+        """The current fit per role — the bubble sizes.
+
+        Every fit ever taken is kept as a snapshot; the newest per role or
+        posting is the current one.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            snapshots = await mine.fits.get_list(RoleFitFilter())
+        seen: set[uuid.UUID] = set()
+        latest: list[FitView] = []
+        for fit in snapshots:
+            if fit.target in seen:
+                continue
+            seen.add(fit.target)
+            latest.append(_fit_view(fit))
+        return latest
 
     async def fit_for_private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> FitView:
         """Fit against a JD the user pasted, reading its requirements first.
@@ -651,13 +619,9 @@ class AssessmentService:
     # -- internals ----------------------------------------------------------
 
     async def _existing_dimensions(self, owner_id: uuid.UUID) -> dict[str, str]:
-        async with self._db.for_user(owner_id) as session:
-            rows = await session.execute(
-                select(SkillDimension.key, SkillDimension.name).where(
-                    SkillDimension.owner_id == owner_id
-                )
-            )
-            return {key: name for key, name in rows.all()}
+        async with self._uow.for_owner(owner_id) as mine:
+            known = await mine.dimensions.get_list(SkillDimensionFilter())
+        return {d.key: d.name for d in known}
 
     async def _store(
         self,
@@ -672,26 +636,24 @@ class AssessmentService:
         lineage = derive_lineage(existing, dimensions)
         dropped = dropped_ids(existing, dimensions)
 
-        async with self._db.for_user(owner_id) as session:
-            assessment = SkillAssessment(
-                owner_id=owner_id,
-                profile_version=snapshot_version,
-                model_id=model_id,
-                template_version=template_version,
+        async with self._uow.for_owner(owner_id) as mine:
+            assessment = await mine.assessments.create(
+                SkillAssessment(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    profile_version=snapshot_version,
+                    model_id=model_id,
+                    template_version=template_version,
+                )
             )
-            session.add(assessment)
-            await session.flush()
-
-            known = await session.execute(
-                select(SkillDimension).where(SkillDimension.owner_id == owner_id)
-            )
-            by_key = {row.key: row for row in known.scalars()}
+            by_key = {d.key: d for d in await mine.dimensions.get_list(SkillDimensionFilter())}
 
             for dimension in dimensions:
-                row = by_key.get(dimension.dimension_id)
-                if row is None:
-                    session.add(
+                known = by_key.get(dimension.dimension_id)
+                if known is None:
+                    await mine.dimensions.create(
                         SkillDimension(
+                            id=uuid.uuid4(),
                             owner_id=owner_id,
                             key=dimension.dimension_id,
                             name=dimension.name,
@@ -699,30 +661,31 @@ class AssessmentService:
                         )
                     )
                 else:
-                    row.name = dimension.name
-                    row.short_name = dimension.short_name
-                    row.retired_at = None
+                    known.rename(name=dimension.name, short_name=dimension.short_name)
+                    await mine.dimensions.update(known)
 
-                session.add(
-                    DimensionScore(
+                await mine.scores.create(
+                    AssessedScore(
+                        id=uuid.uuid4(),
                         owner_id=owner_id,
                         assessment_id=assessment.id,
                         dimension_key=dimension.dimension_id,
                         score=dimension.score,
                         confidence=dimension.confidence,
                         read=dimension.read,
-                        evidence_ids=list(dimension.evidence_ids),
+                        evidence_ids=tuple(dimension.evidence_ids),
                     )
                 )
 
             for entry in lineage:
-                session.add(
-                    DimensionLineage(
+                await mine.changes.create(
+                    DimensionChange(
+                        id=uuid.uuid4(),
                         owner_id=owner_id,
                         assessment_id=assessment.id,
-                        kind=str(entry.kind),
+                        kind=entry.kind,
                         dimension_key=entry.dimension_id,
-                        from_keys=list(entry.from_ids),
+                        from_keys=tuple(entry.from_ids),
                         previous_name=entry.previous_name,
                     )
                 )
@@ -730,36 +693,34 @@ class AssessmentService:
             # A dimension that stops appearing is retired with a record, never
             # silently orphaned — old radar points still resolve.
             for key in dropped:
-                row = by_key.get(key)
-                if row is not None:
-                    row.retired_at = utcnow()
-                session.add(
-                    DimensionLineage(
+                gone = by_key.get(key)
+                if gone is not None:
+                    gone.retire(utcnow())
+                    await mine.dimensions.update(gone)
+                await mine.changes.create(
+                    DimensionChange(
+                        id=uuid.uuid4(),
                         owner_id=owner_id,
                         assessment_id=assessment.id,
-                        kind="merged",
+                        kind=LineageKind.MERGED,
                         dimension_key=key,
-                        from_keys=[],
                         previous_name=existing.get(key),
                     )
                 )
 
-            await emit(
-                session,
-                EventName.ASSESSMENT_COMPLETED,
-                {
-                    "assessment_id": str(assessment.id),
-                    "dimensions": len(dimensions),
-                    "model_id": model_id,
-                },
-                owner_id=owner_id,
+            mine.record(
+                AssessmentCompleted(
+                    owner_id=owner_id,
+                    assessment_id=assessment.id,
+                    dimensions=len(dimensions),
+                    model_id=model_id,
+                )
             )
             if lineage or dropped:
-                await emit(
-                    session,
-                    EventName.DIMENSIONS_CHANGED,
-                    {"added_or_renamed": len(lineage), "retired": len(dropped)},
-                    owner_id=owner_id,
+                mine.record(
+                    DimensionsChanged(
+                        owner_id=owner_id, added_or_renamed=len(lineage), retired=len(dropped)
+                    )
                 )
             return assessment.id
 
@@ -786,28 +747,26 @@ class AssessmentService:
         )
 
         known = {d.dimension_id for d in thin}
-        async with self._db.for_user(owner_id) as session:
+        async with self._uow.for_owner(owner_id) as mine:
             stored = 0
             for question in result.value.questions:
                 if question.dimension_id not in known:
                     continue
-                session.add(
+                await mine.questions.create(
                     FollowUpQuestion(
+                        id=uuid.uuid4(),
                         owner_id=owner_id,
                         assessment_id=assessment_id,
                         dimension_key=question.dimension_id,
                         text=question.text,
                         why=question.why,
-                        options=list(question.options),
+                        options=tuple(question.options),
                     )
                 )
                 stored += 1
             if stored:
-                await emit(
-                    session,
-                    EventName.QUESTIONS_RAISED,
-                    {"count": stored, "assessment_id": str(assessment_id)},
-                    owner_id=owner_id,
+                mine.record(
+                    QuestionsRaised(owner_id=owner_id, assessment_id=assessment_id, count=stored)
                 )
 
     async def _store_fit(
@@ -817,7 +776,7 @@ class AssessmentService:
         assessment_id: uuid.UUID,
         role_id: uuid.UUID | None,
         private_posting_id: uuid.UUID | None,
-        fit: Any,
+        fit: FitResult,
         targets: list[TargetScore],
         requirements: tuple[RequirementView, ...],
         requirement_map: dict[str, str | None],
@@ -827,26 +786,27 @@ class AssessmentService:
     ) -> None:
         if (role_id is None) == (private_posting_id is None):
             raise ValidationError("a fit is for exactly one role or one posting")
-        async with self._db.for_user(owner_id) as session:
-            session.add(
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.fits.create(
                 RoleFit(
+                    id=uuid.uuid4(),
                     owner_id=owner_id,
                     assessment_id=assessment_id,
                     role_id=role_id,
                     private_posting_id=private_posting_id,
-                    requirements=[
+                    requirements=tuple(
                         {
                             "statement": r.statement,
                             "weight": r.weight,
                             "expected_level": r.expected_level,
                         }
                         for r in requirements
-                    ],
+                    ),
                     requirement_map=requirement_map,
                     score=fit.score,
                     reasoning=reasoning,
                     target_profile={t.dimension_id: t.target for t in targets},
-                    gaps=[
+                    gaps=tuple(
                         {
                             "dimension_key": gap.dimension_id,
                             "user_score": gap.user_score,
@@ -854,48 +814,44 @@ class AssessmentService:
                             "delta": gap.delta,
                         }
                         for gap in fit.gaps
-                    ],
-                    uncovered=[
+                    ),
+                    uncovered=tuple(
                         {"statement": u.statement, "weight": u.weight} for u in fit.uncovered
-                    ],
+                    ),
                     model_id=model_id,
                     template_version=template_version,
                 )
             )
 
-    async def _view_of(
-        self, owner_id: uuid.UUID, assessment_id: uuid.UUID
-    ) -> AssessmentView | None:
-        async with self._db.for_user(owner_id) as session:
-            assessment = await session.get(SkillAssessment, assessment_id)
-            if assessment is None:
-                return None
-            score_rows = await session.execute(
-                select(DimensionScore).where(DimensionScore.assessment_id == assessment_id)
+
+async def _view(mine: OwnerAssessment, assessment: SkillAssessment) -> AssessmentView:
+    """An assessment with its scores, named by the user's dimensions."""
+    scores = await mine.scores.get_list(AssessedScoreFilter(assessment_id=assessment.id))
+    names = {
+        d.key: (d.name, d.short_name)
+        for d in await mine.dimensions.get_list(SkillDimensionFilter())
+    }
+    # Set by the database when the assessment was stored.
+    assert assessment.created_at is not None, "a stored assessment has a creation time"
+    return AssessmentView(
+        id=assessment.id,
+        profile_version=assessment.profile_version,
+        model_id=assessment.model_id,
+        template_version=assessment.template_version,
+        created_at=assessment.created_at,
+        dimensions=tuple(
+            DimensionView(
+                key=s.dimension_key,
+                name=names.get(s.dimension_key, (s.dimension_key, ""))[0],
+                short_name=names.get(s.dimension_key, ("", ""))[1],
+                score=s.score,
+                confidence=s.confidence,
+                read=s.read,
+                evidence_ids=s.evidence_ids,
             )
-            dimension_rows = await session.execute(
-                select(SkillDimension).where(SkillDimension.owner_id == owner_id)
-            )
-            names = {d.key: (d.name, d.short_name) for d in dimension_rows.scalars()}
-            return AssessmentView(
-                id=assessment.id,
-                profile_version=assessment.profile_version,
-                model_id=assessment.model_id,
-                template_version=assessment.template_version,
-                created_at=assessment.created_at,
-                dimensions=tuple(
-                    DimensionView(
-                        key=s.dimension_key,
-                        name=names.get(s.dimension_key, (s.dimension_key, ""))[0],
-                        short_name=names.get(s.dimension_key, ("", ""))[1],
-                        score=s.score,
-                        confidence=s.confidence,
-                        read=s.read,
-                        evidence_ids=tuple(s.evidence_ids),
-                    )
-                    for s in sorted(score_rows.scalars(), key=lambda s: s.dimension_key)
-                ),
-            )
+            for s in sorted(scores, key=lambda s: s.dimension_key)
+        ),
+    )
 
 
 def _assessment_inputs(snapshot: Any, *, existing: tuple[tuple[str, str], ...]) -> dict[str, str]:
@@ -961,21 +917,23 @@ def _posting_inputs(posting: PostingView) -> dict[str, str]:
     }
 
 
-def _fit_view(row: RoleFit) -> FitView:
+def _fit_view(fit: RoleFit) -> FitView:
+    # Set by the database when the fit was stored.
+    assert fit.created_at is not None, "a stored fit has a creation time"
     return FitView(
-        role_id=row.role_id,
-        private_posting_id=row.private_posting_id,
-        score=row.score,
-        reasoning=row.reasoning,
-        gaps=tuple(row.gaps),
-        uncovered=tuple(row.uncovered),
-        model_id=row.model_id,
-        created_at=row.created_at,
-        assessment_id=row.assessment_id,
-        target_profile=dict(row.target_profile),
+        role_id=fit.role_id,
+        private_posting_id=fit.private_posting_id,
+        score=fit.score,
+        reasoning=fit.reasoning,
+        gaps=fit.gaps,
+        uncovered=fit.uncovered,
+        model_id=fit.model_id,
+        created_at=fit.created_at,
+        assessment_id=fit.assessment_id,
+        target_profile=dict(fit.target_profile),
         requirements=tuple(
             RequirementView(r["statement"], r["weight"], r["expected_level"])
-            for r in row.requirements or []
+            for r in fit.requirements
         ),
-        requirement_map=dict(row.requirement_map or {}),
+        requirement_map=dict(fit.requirement_map),
     )

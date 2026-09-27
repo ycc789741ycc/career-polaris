@@ -1,0 +1,138 @@
+"""Assessment's entities: this user's dimensions, the assessments and scores
+taken against them, follow-up questions, and fits against roles and postings.
+
+Assessments, scores and fits are immutable snapshots: each records the profile
+version, model and template it came from, so a stale one can be detected
+(domain section 2.4). ``advisor.assessment.infra`` maps these to and from the
+database.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+from advisor.assessment.domain.dimensions import LineageKind
+
+
+@dataclass(slots=True)
+class SkillDimension:
+    """One axis of *this user's* skills; there is no global taxonomy.
+
+    ``key`` is reused across re-assessments, which is what lets two
+    assessments be compared to show progress.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    key: str
+    name: str
+    short_name: str
+    retired_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    def rename(self, *, name: str, short_name: str) -> None:
+        """Seen again: take the latest name, and it is live again."""
+        self.name = name
+        self.short_name = short_name
+        self.retired_at = None
+
+    def retire(self, at: datetime) -> None:
+        self.retired_at = at
+
+
+@dataclass(slots=True)
+class SkillAssessment:
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    profile_version: int
+    model_id: str
+    template_version: str
+    created_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class AssessedScore:
+    """One dimension's score within one assessment."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    dimension_key: str
+    score: int
+    confidence: float
+    read: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class DimensionChange:
+    """A dimension added, renamed or merged away, so radar history lines up."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    kind: LineageKind
+    dimension_key: str
+    from_keys: tuple[str, ...] = ()
+    previous_name: str | None = None
+    recorded_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class FollowUpQuestion:
+    """Raised when a dimension's confidence is below the threshold."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    dimension_key: str
+    text: str
+    why: str
+    options: tuple[str, ...]
+    answer: str | None = None
+    answered_at: datetime | None = None
+    created_at: datetime | None = None
+
+    def answered(self, answer: str, *, at: datetime) -> None:
+        self.answer = answer
+        self.answered_at = at
+
+
+@dataclass(slots=True)
+class RoleFit:
+    """Fit between this user and one role or one pasted posting.
+
+    Fit lives on the User x Role pair, never on the role. Exactly one of
+    ``role_id`` and ``private_posting_id`` is set.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    role_id: uuid.UUID | None
+    private_posting_id: uuid.UUID | None
+    score: int
+    reasoning: str
+    target_profile: dict[str, int]
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    model_id: str
+    template_version: str
+    requirements: tuple[dict[str, Any], ...] = ()
+    requirement_map: dict[str, str | None] = field(default_factory=dict)
+    created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if (self.role_id is None) == (self.private_posting_id is None):
+            raise ValueError("a fit is for exactly one role or one posting")
+
+    @property
+    def target(self) -> uuid.UUID:
+        """What the fit is against: the role, or the pasted posting."""
+        target = self.role_id or self.private_posting_id
+        assert target is not None
+        return target

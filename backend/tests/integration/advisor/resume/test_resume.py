@@ -18,7 +18,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 
-from advisor.assessment import AssessmentService
+from advisor.assessment import create_assessment_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import create_profile_service
@@ -124,7 +124,7 @@ async def world(
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
     )
-    assessment = AssessmentService(
+    assessment = create_assessment_service(
         database,
         profile=profile,
         rolemap=rolemap,

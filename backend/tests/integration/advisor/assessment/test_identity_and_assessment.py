@@ -254,7 +254,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
     stub_provider: StubProvider,
 ) -> None:
     """The guard against invented claims, end to end."""
-    from advisor.assessment import AssessmentService
+    from advisor.assessment import create_assessment_service
     from advisor.market import create_market_service
     from kernel.errors import EvidenceNotOwnedError
 
@@ -274,7 +274,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
     )
-    assessment = AssessmentService(
+    assessment = create_assessment_service(
         database,
         profile=profile,
         rolemap=rolemap,

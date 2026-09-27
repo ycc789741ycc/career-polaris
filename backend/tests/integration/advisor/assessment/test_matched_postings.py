@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from advisor.assessment import AssessmentService, FitView
+from advisor.assessment import FitView, create_assessment_service
 from advisor.identity import create_identity_service
 from advisor.market import (
     NormalizedPosting,
@@ -163,7 +163,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             gateway=gateway,
             embedding_model=settings.embedding_model_name,
         )
-        assessment = AssessmentService(
+        assessment = create_assessment_service(
             database,
             profile=profile,
             rolemap=rolemap,
