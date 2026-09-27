@@ -5,7 +5,6 @@ import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
 import { AiSettings } from "./features/AiSettings";
-import { Clarify } from "./features/Clarify";
 import { Connect } from "./features/Connect";
 import { GapPlan } from "./features/GapPlan";
 import {
@@ -172,7 +171,6 @@ function Shell() {
               </p>
             )}
             {screen === "sources" && <Connect callback={callback} />}
-            {screen === "questions" && <Clarify />}
             {screen === "strengths" && <Strengths />}
             {screen === "roles" && <Roles />}
             {screen === "plan" && <GapPlan />}

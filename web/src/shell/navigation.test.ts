@@ -8,14 +8,13 @@ import {
 } from "./navigation";
 
 describe("screen navigation", () => {
-  it("numbers the journey 01 to 06 in the prototype's order", () => {
+  it("numbers the journey 01 to 05, with questions folded into Sources", () => {
     expect(JOURNEY.map((item) => `${item.num} ${item.label}`)).toEqual([
       "01 Sources",
-      "02 Questions",
-      "03 Strengths",
-      "04 Role map",
-      "05 Gap plan",
-      "06 Résumé",
+      "02 Strengths",
+      "03 Role map",
+      "04 Gap plan",
+      "05 Résumé",
     ]);
   });
 
@@ -28,6 +27,10 @@ describe("screen navigation", () => {
   it("lands on the first screen for an empty or unknown hash", () => {
     expect(screenFromHash("")).toBe(DEFAULT_SCREEN);
     expect(screenFromHash("#/nowhere")).toBe(DEFAULT_SCREEN);
+  });
+
+  it("sends an old link to the Questions screen to Sources, where they live now", () => {
+    expect(screenFromHash("#/questions")).toBe("sources");
   });
 
   it("gives settings its own title outside the numbered journey", () => {

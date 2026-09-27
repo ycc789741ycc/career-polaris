@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment, Question, QuestionStatus } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
-import { Clarify } from "./Clarify";
+import { FollowUpQuestions } from "./FollowUpQuestions";
 
 const assessment: Assessment = {
   id: "a1",
@@ -65,7 +65,7 @@ function serve(route: Route) {
   );
 }
 
-function renderClarify() {
+function renderQuestions(onAnswered: () => void = () => {}) {
   const shell: Shell = {
     status: {
       me: null,
@@ -88,13 +88,13 @@ function renderClarify() {
   };
   render(
     <ShellContext.Provider value={shell}>
-      <Clarify />
+      <FollowUpQuestions onAnswered={onAnswered} />
     </ShellContext.Provider>,
   );
   return shell;
 }
 
-describe("clarify screen", () => {
+describe("follow-up questions", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
   });
@@ -102,7 +102,7 @@ describe("clarify screen", () => {
 
   it("says the questions are there to raise the report's confidence", async () => {
     serve(() => null);
-    renderClarify();
+    renderQuestions();
 
     const guide = screen.getByRole("region", { name: "What this is for" });
     expect(guide).toHaveTextContent(/carries a confidence/);
@@ -126,7 +126,7 @@ describe("clarify screen", () => {
       if (url === "/assessments/latest") return assessment;
       return null;
     });
-    renderClarify();
+    renderQuestions();
 
     const bar = await screen.findByRole("progressbar", {
       name: "Generating follow-up questions",
@@ -157,7 +157,7 @@ describe("clarify screen", () => {
       return null;
     });
     const user = userEvent.setup();
-    const shell = renderClarify();
+    const shell = renderQuestions();
 
     expect(
       await screen.findByText("New questions could not be written"),
@@ -167,5 +167,29 @@ describe("clarify screen", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open AI & model" }));
     expect(shell.navigate).toHaveBeenCalledWith("model");
+  });
+
+  it("tells the Sources screen when an answer adds evidence", async () => {
+    let answer: string | null = null;
+    serve((method, url) => {
+      if (url === "/questions/status") return round("ready");
+      if (url === "/questions") return [{ ...question, answer }];
+      if (url === "/assessments/latest") return assessment;
+      if (method === "POST" && url === "/questions/q1/answer") {
+        answer = "Designed it";
+        return {};
+      }
+      return null;
+    });
+    const user = userEvent.setup();
+    const onAnswered = vi.fn();
+    renderQuestions(onAnswered);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Designed it" }),
+    );
+
+    await vi.waitFor(() => expect(onAnswered).toHaveBeenCalled());
+    expect(screen.queryByText(question.text)).not.toBeInTheDocument();
   });
 });

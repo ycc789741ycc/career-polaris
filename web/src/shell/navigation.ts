@@ -1,14 +1,14 @@
 /**
  * Which screen is showing, kept in the URL hash.
  *
- * The prototype's sidebar numbers the journey 01–06 and keeps the model
+ * The sidebar numbers the journey 01–05 (the prototype's six, with Questions
+ * folded into Sources as one more evidence source) and keeps the model
  * settings apart as "system configuration". The hash (`#/plan`) lets a reload
  * or a shared link land on the same screen, without a router dependency.
  */
 
 export type Screen =
   | "sources"
-  | "questions"
   | "strengths"
   | "roles"
   | "plan"
@@ -32,39 +32,32 @@ export const JOURNEY: readonly ScreenMeta[] = [
     num: "01",
     label: "Sources",
     title: "Bring in your real work",
-    kicker: "Profile · Step 1",
-  },
-  {
-    id: "questions",
-    num: "02",
-    label: "Questions",
-    title: "Things I need you to settle",
-    kicker: "Profile · Step 2",
+    kicker: "Profile",
   },
   {
     id: "strengths",
-    num: "03",
+    num: "02",
     label: "Strengths",
     title: "Where you actually stand",
     kicker: "Report",
   },
   {
     id: "roles",
-    num: "04",
+    num: "03",
     label: "Role map",
     title: "The roles worth your next six months",
     kicker: "Report",
   },
   {
     id: "plan",
-    num: "05",
+    num: "04",
     label: "Gap plan",
     title: "Closing the distance",
     kicker: "Plan",
   },
   {
     id: "resume",
-    num: "06",
+    num: "05",
     label: "Résumé",
     title: "Written for one target at a time",
     kicker: "Output",

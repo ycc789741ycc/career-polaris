@@ -21,6 +21,7 @@ import {
   Loading,
 } from "../components/ui";
 import { useShell } from "../shell/ShellContext";
+import { FollowUpQuestions } from "./FollowUpQuestions";
 import { messageOf, useAsync } from "./useAsync";
 
 const LABELS: Record<string, { name: string; kind: string; note: string }> = {
@@ -36,7 +37,10 @@ const LABELS: Record<string, { name: string; kind: string; note: string }> = {
   },
 };
 
-/** Where evidence comes from: authorised sources and an uploaded resume. */
+/**
+ * Where evidence comes from: authorised sources, an uploaded resume, and the
+ * user's answers to follow-up questions.
+ */
 export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const { navigate } = useShell();
   // Refetched when a callback finishes, so a fresh connection shows as
@@ -340,6 +344,16 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                 </Button>
               </div>
             </div>
+
+            <FollowUpQuestions
+              onAnswered={() =>
+                void Promise.all([
+                  evidence.reload(),
+                  assessment.reload(),
+                  profile.reload(),
+                ])
+              }
+            />
           </div>
         )}
       </div>
