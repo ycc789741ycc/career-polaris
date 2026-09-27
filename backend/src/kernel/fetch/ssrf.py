@@ -3,7 +3,7 @@
 Applies to personal-site fetches, ATS board endpoints and — the one people
 forget — the user-supplied LLM base URL. A "Local" model therefore means an
 endpoint at a public URL the user controls, not one on our network
-(docs/technical_boundaries.md section 4).
+(docs/architecture.md section 4).
 
 The classifier is pure so it can be unit-tested without a network.
 """

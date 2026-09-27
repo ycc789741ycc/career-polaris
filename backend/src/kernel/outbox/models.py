@@ -3,7 +3,7 @@
 A domain event row is written in the same transaction as the change that caused
 it, so an event can never be published for a change that rolled back, and a
 committed change can never lose its event. A dispatcher in ``worker`` turns
-rows into queued jobs (docs/technical_boundaries.md section 2).
+rows into queued jobs (docs/architecture.md section 2).
 """
 
 from __future__ import annotations

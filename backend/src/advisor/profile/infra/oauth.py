@@ -2,7 +2,7 @@
 
 Separate from login OAuth in every way: different provider, different tokens,
 different scopes, different storage. The two never share a code path
-(docs/technical_boundaries.md section 4).
+(docs/architecture.md section 4).
 
 State is an HMAC over the user, the connector and a timestamp, so the callback
 can be verified without a server-side session table.

@@ -65,7 +65,7 @@ Design choices that are deliberate:
 Postgres. Procrastinate for jobs (no Redis). sentence-transformers and HDBSCAN
 for local embedding and clustering. WeasyPrint for PDFs. React and Vite with an
 `openapi-typescript` client generated from the API. Details are in
-[`docs/technical_boundaries.md`](docs/technical_boundaries.md).
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Getting started
 
@@ -145,7 +145,7 @@ backend/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
 infra/        infra compose project, DB role bootstrap, health wait
 prototype/    the original clickable prototype
-docs/         intent, domain model, technical boundaries, plan, decisions
+docs/         intent, domain model, architecture, plan, decisions
 ```
 
 Sixteen `import-linter` contracts in `backend/.importlinter` enforce the module
@@ -157,6 +157,6 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 |---|---|
 | [`docs/intent.md`](docs/intent.md) | What the product is for |
 | [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
-| [`docs/technical_boundaries.md`](docs/technical_boundaries.md) | Deployables, module boundaries, data and trust boundaries, and the AI gateway |
+| [`docs/architecture.md`](docs/architecture.md) | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
 | [`docs/plan.md`](docs/plan.md) | Scope for phases 1, 2 and 3 |
 | [`docs/decisions/`](docs/decisions/README.md) | Decision records for choices that are costly to reverse |

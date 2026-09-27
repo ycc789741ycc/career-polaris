@@ -1,4 +1,4 @@
-# Package boundaries from docs/technical_boundaries.md section 2 and
+# Package boundaries from docs/architecture.md section 2 and
 # docs/decisions/0009, enforced in CI by `make lint`. It lives here so it ships
 # inside the tools image and the gate mounts nothing from the host.
 # A violation here is a design defect, not a style nit.
@@ -344,7 +344,7 @@ forbidden_modules =
 allow_indirect_imports = True
 
 # Rule 7: the crawler process never loads a secret-holding piece, not even
-# indirectly. It holds no secrets by design (technical_boundaries section 4),
+# indirectly. It holds no secrets by design (architecture.md section 4),
 # which is why its wiring lives apart from wiring.container.
 [importlinter:contract:crawler-holds-no-secrets]
 name = crawler never reaches crypto, the AI gateway, auth or object storage

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the least-privilege database roles from docs/technical_boundaries.md
+# Creates the least-privilege database roles from docs/architecture.md
 # section 3, and the extensions the schema needs. Idempotent.
 #
 # Roles only — the GRANTs and row-level-security policies belong with the

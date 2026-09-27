@@ -53,7 +53,7 @@ class OwnedMixin:
     Every table with this mixin carries ``owner_id`` and is covered by a
     row-level-security policy keyed on the ``app.user_id`` transaction setting.
     Privacy comes from where a row is stored, not from a flag the application
-    remembers to check (docs/technical_boundaries.md section 3).
+    remembers to check (docs/architecture.md section 3).
     """
 
     owner_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)

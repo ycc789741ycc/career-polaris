@@ -7,7 +7,7 @@ Google exchange (``advisor.identity.google``) proves who someone is, and
 (ADR 0008).
 
 Two things it deliberately does not do, because both need email delivery and
-that is still an open question in docs/technical_boundaries.md section 8:
+that is still an open question in docs/architecture.md section 8:
 
 * **Address verification.** Anyone can register with an address they do not
   own. Nothing is sent to it yet, so the exposure is limited — but it must be

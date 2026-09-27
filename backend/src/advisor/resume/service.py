@@ -526,7 +526,7 @@ class ResumeService:
     async def apply_revision(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, revision_id: uuid.UUID
     ) -> VersionView:
-        """An accepted chat edit becomes a version (technical boundaries §6)."""
+        """An accepted chat edit becomes a version (architecture §6)."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             revision = await mine.revisions.get(revision_id)

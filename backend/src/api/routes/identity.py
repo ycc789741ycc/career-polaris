@@ -6,7 +6,7 @@ the body and a rotating refresh token in an httpOnly cookie (ADRs 0001, 0008).
 
 The credential endpoints are write-only: they set, test, replace and delete,
 and a read returns provider, model and the last four characters — never the
-key (docs/technical_boundaries.md section 4).
+key (docs/architecture.md section 4).
 """
 
 from __future__ import annotations

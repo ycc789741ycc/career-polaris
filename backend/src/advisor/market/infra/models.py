@@ -6,7 +6,7 @@ crawler role can reach it. ``market_user`` is the owner zone: every row has an
 
 That split is what makes privacy a property of where a row lives rather than a
 flag the application has to remember to check
-(docs/technical_boundaries.md section 3).
+(docs/architecture.md section 3).
 """
 
 from __future__ import annotations

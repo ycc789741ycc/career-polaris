@@ -2,7 +2,7 @@
 
 Keys are shaped ``users/{owner_id}/...`` and the bucket is private: a file is
 only ever reachable through a short-lived signed URL
-(docs/technical_boundaries.md section 3).
+(docs/architecture.md section 3).
 """
 
 from __future__ import annotations

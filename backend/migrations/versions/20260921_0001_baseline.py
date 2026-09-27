@@ -1,6 +1,6 @@
 """Baseline: schemas, tables, least-privilege grants and row-level security.
 
-Implements docs/technical_boundaries.md section 3. Three things matter here
+Implements docs/architecture.md section 3. Three things matter here
 beyond the tables themselves:
 
 * ``crawler_rw`` gets the shared market zone and the outbox, and **no grant at

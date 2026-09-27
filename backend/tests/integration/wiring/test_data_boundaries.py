@@ -1,4 +1,4 @@
-"""The boundaries from docs/technical_boundaries.md section 3, proven live.
+"""The boundaries from docs/architecture.md section 3, proven live.
 
 These are the tests worth having: a privacy rule that is only enforced in
 application code is one refactor away from being gone.
