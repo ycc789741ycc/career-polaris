@@ -28,7 +28,7 @@ from advisor.profile import (
     ProfileService,
     create_profile_service,
 )
-from advisor.resume import ResumeService
+from advisor.resume import ResumeService, create_resume_service
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetService
 from kernel.ai_gateway import AiGateway
@@ -185,7 +185,7 @@ def build(settings: Settings | None = None) -> Container:
         rolemap=rolemap,
         gateway=gateway,
     )
-    resume = ResumeService(
+    resume = create_resume_service(
         database,
         target=target,
         profile=profile,

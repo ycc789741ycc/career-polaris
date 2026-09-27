@@ -9,6 +9,7 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.resume import jobs
+from advisor.resume.factory import create_resume_service
 from advisor.resume.service import (
     CoverageView,
     ExportView,
@@ -37,5 +38,6 @@ __all__ = [
     "RevisionView",
     "Template",
     "VersionView",
+    "create_resume_service",
     "jobs",
 ]

@@ -121,6 +121,10 @@ forbidden_modules =
     advisor.rolemap.infra
     advisor.assessment.infra
     advisor.gapplan.infra
+    advisor.resume.infra.models
+    advisor.resume.infra.mappers
+    advisor.resume.infra.repositories
+    advisor.resume.infra.unit_of_work
 allow_indirect_imports = True
 
 [importlinter:contract:assessment-public-surface]
@@ -145,6 +149,10 @@ forbidden_modules =
     advisor.assessment.domain
     advisor.assessment.infra
     advisor.gapplan.infra
+    advisor.resume.infra.models
+    advisor.resume.infra.mappers
+    advisor.resume.infra.repositories
+    advisor.resume.infra.unit_of_work
 allow_indirect_imports = True
 
 [importlinter:contract:target-public-surface]
@@ -190,6 +198,10 @@ forbidden_modules =
     advisor.gapplan.service
     advisor.gapplan.domain
     advisor.gapplan.infra
+    advisor.resume.infra.models
+    advisor.resume.infra.mappers
+    advisor.resume.infra.repositories
+    advisor.resume.infra.unit_of_work
 allow_indirect_imports = True
 
 [importlinter:contract:resume-public-surface]
@@ -407,39 +419,22 @@ source_modules =
 forbidden_modules =
     kernel.ai_gateway
 
-# Rule 12: only persistence code touches the ORM (ADR 0011). A component's
-# domain, use cases and crawling reach stored data through the repository
+# Rule 12: only persistence code touches the ORM (ADR 0011). Every component's
+# domain, use cases and worker jobs reach stored data through the repository
 # interfaces its domain defines; its infra/ implements them and is the only
 # code that imports the ORM, the vector type or the driver. The factory that
-# wires infra/ in is exempt, as the composition root is. Components join this
-# list as they move over.
+# wires infra/ in is exempt, as the composition root is.
 [importlinter:contract:orm-only-in-persistence]
 name = Only a component's infra imports the ORM or the database package
 type = forbidden
 source_modules =
-    advisor.market.domain
-    advisor.market.service
-    advisor.market.jobs
+    advisor.*.domain
+    advisor.*.service
+    advisor.*.jobs
     advisor.market.crawling
     advisor.market.baseline
-    advisor.profile.domain
-    advisor.profile.service
-    advisor.profile.jobs
-    advisor.identity.domain
-    advisor.identity.service
     advisor.identity.auth
     advisor.identity.google
-    advisor.rolemap.domain
-    advisor.rolemap.service
-    advisor.rolemap.jobs
-    advisor.assessment.domain
-    advisor.assessment.service
-    advisor.assessment.jobs
-    advisor.gapplan.domain
-    advisor.gapplan.service
-    advisor.gapplan.jobs
-    advisor.target.domain
-    advisor.target.service
 forbidden_modules =
     sqlalchemy
     pgvector
@@ -447,18 +442,10 @@ forbidden_modules =
     kernel.db
     kernel.outbox.models
     kernel.outbox.writer
-    advisor.market.infra
-    advisor.profile.infra.models
-    advisor.profile.infra.mappers
-    advisor.profile.infra.repositories
-    advisor.profile.infra.unit_of_work
-    advisor.identity.infra.models
-    advisor.identity.infra.mappers
-    advisor.identity.infra.repositories
-    advisor.identity.infra.unit_of_work
-    advisor.rolemap.infra
-    advisor.assessment.infra
-    advisor.gapplan.infra
+    advisor.*.infra.models
+    advisor.*.infra.mappers
+    advisor.*.infra.repositories
+    advisor.*.infra.unit_of_work
 # A component's __init__ re-exports its factory, which wires infra/ in. Using
 # another component through its public API must not count as reaching its ORM.
 ignore_imports =

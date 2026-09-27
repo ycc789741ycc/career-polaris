@@ -29,6 +29,7 @@ from advisor.resume import (
     RevisionFailed,
     RevisionText,
     Template,
+    create_resume_service,
 )
 from advisor.rolemap import create_rolemap_service
 from advisor.target import TargetKind, TargetRef, TargetService
@@ -133,7 +134,7 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
     )
     target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
-    resume = ResumeService(
+    resume = create_resume_service(
         database,
         target=target,
         profile=profile,

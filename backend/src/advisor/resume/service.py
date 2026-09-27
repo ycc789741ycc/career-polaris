@@ -27,7 +27,6 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 
 from advisor.assessment import AssessmentService
 from advisor.profile import CitationError, ProfileService, assert_citations_exist
@@ -36,10 +35,23 @@ from advisor.resume.domain import (
     MAX_ROLES,
     MAX_SKILLS,
     Coverage,
+    Export,
+    ExportStatus,
     Options,
     Origin,
+    OwnerResumes,
     ResumeContent,
     ResumeError,
+    ResumeStatus,
+    ResumeTailored,
+    ResumeUnitOfWork,
+    ResumeVersion,
+    ResumeVersionFilter,
+    ResumeVersionSaved,
+    Revision,
+    RevisionFilter,
+    TailoredResume,
+    TailoredResumeFilter,
     Template,
     VersionSource,
     assert_well_formed,
@@ -48,7 +60,6 @@ from advisor.resume.domain import (
     mark_edits,
     settle_revision,
 )
-from advisor.resume.infra.models import Export, Resume, ResumeVersion, Revision
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.target import (
     TargetKind,
@@ -59,8 +70,7 @@ from advisor.target import (
 )
 from kernel.ai_gateway import AiGateway, StreamResult, StreamText
 from kernel.ai_gateway import load as load_template
-from kernel.db import Database
-from kernel.db.base import utcnow
+from kernel.clock import utcnow
 from kernel.errors import (
     DomainError,
     EvidenceNotOwnedError,
@@ -69,7 +79,6 @@ from kernel.errors import (
     ValidationError,
 )
 from kernel.logging import get_logger
-from kernel.outbox import EventName, emit
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
@@ -234,7 +243,7 @@ RevisionEvent = RevisionText | RevisionDone | RevisionFailed
 class ResumeService:
     def __init__(
         self,
-        database: Database,
+        uow: ResumeUnitOfWork,
         *,
         target: TargetService,
         profile: ProfileService,
@@ -242,7 +251,7 @@ class ResumeService:
         gateway: AiGateway,
         object_store: ObjectStore,
     ) -> None:
-        self._db = database
+        self._uow = uow
         self._target = target
         self._profile = profile
         self._assessment = assessment
@@ -281,34 +290,29 @@ class ResumeService:
     ) -> ResumeSummaryView:
         """Record the résumé as drafting; the caller queues ``generate``."""
         preview = await self._target.preview(owner_id, ref)
-        now = utcnow()
-        async with self._db.for_user(owner_id) as session:
-            resume = Resume(
-                owner_id=owner_id,
-                target_kind=str(ref.kind),
-                target_label=preview.label[:400],
-                template=str(template),
-                options=_options_dict(options),
-                status="drafting",
-                created_at=now,
-                updated_at=now,
-                **_target_columns(ref),
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await mine.resumes.create(
+                TailoredResume.requested(
+                    owner_id=owner_id,
+                    target_kind=str(ref.kind),
+                    target_id=uuid.UUID(ref.id),
+                    label=preview.label,
+                    template=template,
+                    options=options,
+                    at=utcnow(),
+                )
             )
-            session.add(resume)
-            await session.flush()
-            return _summary(resume, latest_version=None)
+        return _summary(resume, latest_version=None)
 
     async def generate(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
         """The worker job. An expected failure is recorded on the résumé, with
         its stable code, and not retried on the user's key."""
-        async with self._db.for_user(owner_id) as session:
-            resume = await session.get(Resume, resume_id)
-            if resume is None or resume.owner_id != owner_id:
-                raise NotFoundError("résumé not found", resume_id=str(resume_id))
-            if resume.status != "drafting":
-                return
-            ref = _ref_of(resume)
-            options = _options_of(resume.options)
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+        if resume.status is not ResumeStatus.DRAFTING:
+            return
+        ref = _ref_of(resume)
+        options = resume.options
 
         try:
             await self._generate(owner_id, resume_id, ref, options)
@@ -327,42 +331,29 @@ class ResumeService:
     # -- reading ------------------------------------------------------------
 
     async def saved(self, owner_id: uuid.UUID) -> list[ResumeSummaryView]:
-        """Saved résumés, most recently changed first."""
-        async with self._db.for_user(owner_id) as session:
-            rows = await session.execute(
-                select(Resume).where(Resume.owner_id == owner_id).order_by(Resume.updated_at.desc())
-            )
-            resumes = list(rows.scalars())
-            latest = await session.execute(
-                select(ResumeVersion.resume_id, func.max(ResumeVersion.number))
-                .where(ResumeVersion.owner_id == owner_id)
-                .group_by(ResumeVersion.resume_id)
-            )
-            numbers = dict(latest.tuples().all())
-        return [_summary(r, latest_version=numbers.get(r.id)) for r in resumes]
+        """Saved résumés, most recently changed first. One user's résumés, read
+        whole, so the change order is applied here rather than by the store."""
+        async with self._uow.for_owner(owner_id) as mine:
+            resumes = await mine.resumes.get_list(TailoredResumeFilter())
+            numbers = await mine.versions.latest_numbers()
+        return [
+            _summary(r, latest_version=numbers.get(r.id))
+            for r in sorted(resumes, key=lambda r: (r.updated_at, r.id), reverse=True)
+        ]
 
     async def get(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int | None = None
     ) -> ResumeView:
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            versions = list(
-                (
-                    await session.execute(
-                        select(ResumeVersion)
-                        .where(ResumeVersion.resume_id == resume_id)
-                        .order_by(ResumeVersion.number.desc())
-                    )
-                ).scalars()
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            versions = sorted(
+                await mine.versions.get_list(ResumeVersionFilter(resume_id=resume_id)),
+                key=lambda v: v.number,
+                reverse=True,
             )
+            # The chat reads oldest first.
             revisions = list(
-                (
-                    await session.execute(
-                        select(Revision)
-                        .where(Revision.resume_id == resume_id)
-                        .order_by(Revision.created_at)
-                    )
-                ).scalars()
+                reversed(await mine.revisions.get_list(RevisionFilter(resume_id=resume_id)))
             )
 
         chosen = (
@@ -378,8 +369,8 @@ class ResumeService:
             summary=_summary(resume, latest_version=versions[0].number if versions else None),
             snapshot=TargetSnapshot.from_dict(resume.snapshot) if resume.snapshot else None,
             coverage=tuple(_coverage_view(c) for c in resume.coverage),
-            template=Template(resume.template),
-            options=_options_of(resume.options),
+            template=resume.template,
+            options=resume.options,
             version=_version_view(chosen) if chosen else None,
             content=content,
             evidence=notes,
@@ -397,11 +388,10 @@ class ResumeService:
         template: Template,
         options: Options,
     ) -> None:
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            resume.template = str(template)
-            resume.options = _options_dict(options)
-            resume.updated_at = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            resume.restyle(template=template, options=options, at=utcnow())
+            await mine.resumes.update(resume)
 
     async def save_version(
         self,
@@ -420,9 +410,9 @@ class ResumeService:
             edited = ResumeContent.from_dict(content)
         except (ValueError, TypeError, AttributeError) as exc:
             raise ValidationError(f"that résumé could not be read: {exc}") from exc
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            latest = await _latest_version(session, resume_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            latest = await _latest_version(mine, resume_id)
             previous = ResumeContent.from_dict(latest.content) if latest else None
         settled = mark_edits(previous, edited)
         try:
@@ -457,21 +447,14 @@ class ResumeService:
         try:
             current = ResumeContent.from_dict(content)
             assert_well_formed(current)
-            async with self._db.for_user(owner_id) as session:
-                resume = await _owned(session, owner_id, resume_id)
+            async with self._uow.for_owner(owner_id) as mine:
+                resume = await _owned(mine, resume_id)
                 if resume.snapshot is None:
                     raise ValidationError("this résumé has not been written yet")
                 snapshot = TargetSnapshot.from_dict(resume.snapshot)
                 coverage_rows = [_coverage_view(c) for c in resume.coverage]
-                earlier = list(
-                    (
-                        await session.execute(
-                            select(Revision)
-                            .where(Revision.resume_id == resume_id)
-                            .order_by(Revision.created_at.desc())
-                            .limit(_CONVERSATION_TURNS)
-                        )
-                    ).scalars()
+                earlier = await mine.revisions.get_list(
+                    RevisionFilter(resume_id=resume_id), page_size=_CONVERSATION_TURNS
                 )
             profile = await self._profile.snapshot(owner_id)
             inputs = {
@@ -519,21 +502,21 @@ class ResumeService:
                 )
 
             reply = "".join(reply_parts).strip()
-            async with self._db.for_user(owner_id) as session:
-                revision = Revision(
-                    owner_id=owner_id,
-                    resume_id=resume_id,
-                    request=request,
-                    reply=reply,
-                    proposal=proposal.to_dict() if proposal else None,
-                    model_id=result.model_id,
-                    template_version=result.template_version,
-                    created_at=utcnow(),
+            async with self._uow.for_owner(owner_id) as mine:
+                revision = await mine.revisions.create(
+                    Revision(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        resume_id=resume_id,
+                        request=request,
+                        reply=reply,
+                        proposal=proposal.to_dict() if proposal else None,
+                        model_id=result.model_id,
+                        template_version=result.template_version,
+                        created_at=utcnow(),
+                    )
                 )
-                session.add(revision)
-                await session.flush()
-                revision_id = revision.id
-            yield RevisionDone(revision_id=revision_id, reply=reply, proposal=proposal)
+            yield RevisionDone(revision_id=revision.id, reply=reply, proposal=proposal)
         except DomainError as exc:
             # The response is already streaming, so the failure travels as the
             # last event, in the same {code, message} terms as any error.
@@ -544,9 +527,9 @@ class ResumeService:
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, revision_id: uuid.UUID
     ) -> VersionView:
         """An accepted chat edit becomes a version (technical boundaries §6)."""
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            revision = await session.get(Revision, revision_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            revision = await mine.revisions.get(revision_id)
             if revision is None or revision.resume_id != resume_id:
                 raise NotFoundError("revision not found", revision_id=str(revision_id))
             if revision.proposal is None:
@@ -565,10 +548,11 @@ class ResumeService:
             model_id=model_id,
             template_version=template_version,
         )
-        async with self._db.for_user(owner_id) as session:
-            stored = await session.get(Revision, revision_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await mine.revisions.get(revision_id)
             if stored is not None:
                 stored.applied_version_id = version.id
+                await mine.revisions.update(stored)
         return version
 
     # -- export -------------------------------------------------------------
@@ -576,44 +560,42 @@ class ResumeService:
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
     ) -> ExportView:
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            version = await session.execute(
-                select(ResumeVersion).where(
-                    ResumeVersion.resume_id == resume_id, ResumeVersion.number == number
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            found = await mine.versions.get_list(
+                ResumeVersionFilter(resume_id=resume_id, number=number), page_size=1
+            )
+            if not found:
+                raise NotFoundError("version not found", number=number)
+            export = await mine.exports.create(
+                Export(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    version_id=found[0].id,
+                    template=resume.template,
+                    status=ExportStatus.RENDERING,
+                    created_at=utcnow(),
                 )
             )
-            chosen = version.scalar_one_or_none()
-            if chosen is None:
-                raise NotFoundError("version not found", number=number)
-            export = Export(
-                owner_id=owner_id,
-                version_id=chosen.id,
-                template=resume.template,
-                status="rendering",
-                created_at=utcnow(),
-            )
-            session.add(export)
-            await session.flush()
-            return _export_view(export, download_url=None)
+        return _export_view(export, download_url=None)
 
     async def export(self, owner_id: uuid.UUID, export_id: uuid.UUID) -> None:
         """The worker ``docs`` job: render, store, done. Failures are recorded."""
-        async with self._db.for_user(owner_id) as session:
-            export = await session.get(Export, export_id)
-            if export is None or export.owner_id != owner_id:
+        async with self._uow.for_owner(owner_id) as mine:
+            export = await mine.exports.get(export_id)
+            if export is None:
                 raise NotFoundError("export not found", export_id=str(export_id))
-            if export.status != "rendering":
+            if export.status is not ExportStatus.RENDERING:
                 return
-            version = await session.get(ResumeVersion, export.version_id)
+            version = await mine.versions.get(export.version_id)
             if version is None:
                 raise NotFoundError("version not found", version_id=str(export.version_id))
-            resume = await session.get(Resume, version.resume_id)
+            resume = await mine.resumes.get(version.resume_id)
             if resume is None:
                 raise NotFoundError("résumé not found", resume_id=str(version.resume_id))
             content = ResumeContent.from_dict(version.content)
-            template = Template(export.template)
-            options = _options_of(resume.options)
+            template = export.template
+            options = resume.options
 
         try:
             pdf = render_pdf(render_html(content, template=template, options=options))
@@ -634,18 +616,17 @@ class ResumeService:
 
         key = object_key(owner_id, "exports", f"{export_id}.pdf")
         self._store.put(key, pdf, "application/pdf")
-        async with self._db.for_user(owner_id) as session:
-            stored = await session.get(Export, export_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await mine.exports.get(export_id)
             if stored is not None:
-                stored.status = "ready"
-                stored.storage_key = key
-                stored.finished_at = utcnow()
+                stored.rendered(key, at=utcnow())
+                await mine.exports.update(stored)
 
     async def get_export(self, owner_id: uuid.UUID, export_id: uuid.UUID) -> ExportView:
-        async with self._db.for_user(owner_id) as session:
-            export = await session.get(Export, export_id)
-            if export is None or export.owner_id != owner_id:
-                raise NotFoundError("export not found", export_id=str(export_id))
+        async with self._uow.for_owner(owner_id) as mine:
+            export = await mine.exports.get(export_id)
+        if export is None:
+            raise NotFoundError("export not found", export_id=str(export_id))
         url = self._store.signed_url(export.storage_key) if export.storage_key else None
         return _export_view(export, download_url=url)
 
@@ -680,13 +661,15 @@ class ResumeService:
             raise OutputInvalidError(f"the written résumé was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, "the résumé cited evidence that is not yours")
 
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            resume.snapshot = snapshot.to_dict()
-            resume.target_label = snapshot.label[:400]
-            resume.coverage = [_coverage_dict(c) for c in coverage_rows]
-            resume.status = "ready"
-            resume.updated_at = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            resume.written(
+                snapshot=snapshot.to_dict(),
+                label=snapshot.label,
+                coverage=tuple(_coverage_dict(c) for c in coverage_rows),
+                at=utcnow(),
+            )
+            await mine.resumes.update(resume)
             label = resume.target_label
         await self._add_version(
             owner_id,
@@ -697,12 +680,9 @@ class ResumeService:
             model_id=result.model_id,
             template_version=result.template_version,
         )
-        async with self._db.for_user(owner_id) as session:
-            await emit(
-                session,
-                EventName.RESUME_TAILORED,
-                {"resume_id": str(resume_id), "target_kind": str(ref.kind)},
-                owner_id=owner_id,
+        async with self._uow.for_owner(owner_id) as mine:
+            mine.record(
+                ResumeTailored(owner_id=owner_id, resume_id=resume_id, target_kind=str(ref.kind))
             )
 
     async def _coverage(
@@ -786,72 +766,65 @@ class ResumeService:
         template_version: str | None,
     ) -> VersionView:
         now = utcnow()
-        async with self._db.for_user(owner_id) as session:
-            resume = await _owned(session, owner_id, resume_id)
-            latest = await _latest_version(session, resume_id)
-            version = ResumeVersion(
-                owner_id=owner_id,
-                resume_id=resume_id,
-                number=(latest.number if latest else 0) + 1,
-                label=label[:200],
-                content=content.to_dict(),
-                source=str(source),
-                model_id=model_id,
-                template_version=template_version,
-                created_at=now,
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            latest = await _latest_version(mine, resume_id)
+            version = await mine.versions.create(
+                ResumeVersion(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    resume_id=resume_id,
+                    number=(latest.number if latest else 0) + 1,
+                    label=label[:200],
+                    content=content.to_dict(),
+                    source=source,
+                    model_id=model_id,
+                    template_version=template_version,
+                    created_at=now,
+                )
             )
-            session.add(version)
-            resume.updated_at = now
-            await session.flush()
-            await emit(
-                session,
-                EventName.RESUME_VERSION_SAVED,
-                {"resume_id": str(resume_id), "number": version.number, "source": str(source)},
-                owner_id=owner_id,
+            resume.touched(now)
+            await mine.resumes.update(resume)
+            mine.record(
+                ResumeVersionSaved(
+                    owner_id=owner_id, resume_id=resume_id, number=version.number, source=source
+                )
             )
             return _version_view(version)
 
     async def _fail_export(
         self, owner_id: uuid.UUID, export_id: uuid.UUID, *, code: str, message: str
     ) -> None:
-        async with self._db.for_user(owner_id) as session:
-            stored = await session.get(Export, export_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await mine.exports.get(export_id)
             if stored is not None:
-                stored.status = "failed"
-                stored.error_code = code
-                stored.error_message = message
-                stored.finished_at = utcnow()
+                stored.failed(code=code, message=message, at=utcnow())
+                await mine.exports.update(stored)
 
     async def _fail(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, code: str, message: str
     ) -> None:
-        async with self._db.for_user(owner_id) as session:
-            resume = await session.get(Resume, resume_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await mine.resumes.get(resume_id)
             if resume is not None:
-                resume.status = "failed"
-                resume.error_code = code
-                resume.error_message = message
-                resume.updated_at = utcnow()
+                resume.failed(code=code, message=message, at=utcnow())
+                await mine.resumes.update(resume)
 
 
 # --- helpers ---------------------------------------------------------------
 
 
-async def _owned(session: Any, owner_id: uuid.UUID, resume_id: uuid.UUID) -> Resume:
-    resume = await session.get(Resume, resume_id)
-    if resume is None or resume.owner_id != owner_id:
+async def _owned(mine: OwnerResumes, resume_id: uuid.UUID) -> TailoredResume:
+    resume = await mine.resumes.get(resume_id)
+    if resume is None:
         raise NotFoundError("résumé not found", resume_id=str(resume_id))
-    return resume  # type: ignore[no-any-return]
+    return resume
 
 
-async def _latest_version(session: Any, resume_id: uuid.UUID) -> ResumeVersion | None:
-    rows = await session.execute(
-        select(ResumeVersion)
-        .where(ResumeVersion.resume_id == resume_id)
-        .order_by(ResumeVersion.number.desc())
-        .limit(1)
-    )
-    return rows.scalar_one_or_none()  # type: ignore[no-any-return]
+async def _latest_version(mine: OwnerResumes, resume_id: uuid.UUID) -> ResumeVersion | None:
+    """Versions are added one at a time, so the newest is the highest number."""
+    found = await mine.versions.get_list(ResumeVersionFilter(resume_id=resume_id), page_size=1)
+    return found[0] if found else None
 
 
 def _content_of(model: _Resume) -> ResumeContent:
@@ -884,30 +857,8 @@ def _content_of(model: _Resume) -> ResumeContent:
     )
 
 
-def _target_columns(ref: TargetRef) -> dict[str, uuid.UUID]:
-    column = {
-        TargetKind.MATCHED_POSTING: "job_posting_id",
-        TargetKind.SUBSCRIPTION: "subscription_id",
-        TargetKind.PRIVATE_POSTING: "private_posting_id",
-    }[ref.kind]
-    return {column: uuid.UUID(ref.id)}
-
-
-def _ref_of(resume: Resume) -> TargetRef:
-    reference = resume.job_posting_id or resume.subscription_id or resume.private_posting_id
-    return TargetRef(TargetKind(resume.target_kind), str(reference))
-
-
-def _options_dict(options: Options) -> dict[str, bool]:
-    return {"metrics": options.metrics, "reorder": options.reorder, "trim": options.trim}
-
-
-def _options_of(data: dict[str, Any]) -> Options:
-    return Options(
-        metrics=bool(data.get("metrics", True)),
-        reorder=bool(data.get("reorder", True)),
-        trim=bool(data.get("trim", False)),
-    )
+def _ref_of(resume: TailoredResume) -> TargetRef:
+    return TargetRef(TargetKind(resume.target_kind), str(resume.target_id))
 
 
 def _evidence_block(evidence: Any) -> str:
@@ -948,12 +899,12 @@ def _coverage_block(rows: tuple[CoverageView, ...] | list[CoverageView]) -> str:
     return "\n".join(f"- {row.verdict}: {row.requirement}" for row in rows)
 
 
-def _summary(resume: Resume, *, latest_version: int | None) -> ResumeSummaryView:
+def _summary(resume: TailoredResume, *, latest_version: int | None) -> ResumeSummaryView:
     return ResumeSummaryView(
         id=resume.id,
         target=_ref_of(resume),
         label=resume.target_label,
-        status=resume.status,
+        status=str(resume.status),
         error_code=resume.error_code,
         error_message=resume.error_message,
         latest_version=latest_version,
@@ -967,7 +918,7 @@ def _version_view(version: ResumeVersion) -> VersionView:
         id=version.id,
         number=version.number,
         label=version.label,
-        source=VersionSource(version.source),
+        source=version.source,
         model_id=version.model_id,
         created_at=version.created_at,
     )
@@ -988,8 +939,8 @@ def _export_view(export: Export, *, download_url: str | None) -> ExportView:
     return ExportView(
         id=export.id,
         version_id=export.version_id,
-        template=Template(export.template),
-        status=export.status,
+        template=export.template,
+        status=str(export.status),
         error_code=export.error_code,
         error_message=export.error_message,
         download_url=download_url,
