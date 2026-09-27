@@ -7,11 +7,21 @@ those into one posting (domain section 2.5).
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+
+# The longest text a posting keeps. A board can list every office an opening is
+# open in as its "location"; the posting keeps the start of it rather than
+# failing to store at all.
+MAX_COMPANY_NAME = 255
+MAX_TITLE = 512
+MAX_LOCATION = 255
+MAX_CANONICAL_KEY = 768
+_KEY_DIGEST_CHARS = 16
 
 _WHITESPACE = re.compile(r"\s+")
 _NOISE = re.compile(r"[^a-z0-9 ]+")
@@ -76,11 +86,27 @@ def normalize_title(title: str) -> str:
     return normalize(_TITLE_NOISE_RE.sub(" ", title))
 
 
+def clip(text: str, limit: int) -> str:
+    """Text cut to at most ``limit`` characters, marked with an ellipsis when cut."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def canonical_key(*, company: str, title: str, location: str | None) -> str:
-    """company + normalized title + location, as the domain doc specifies."""
-    return "|".join(
+    """company + normalized title + location, as the domain doc specifies.
+
+    A key longer than storage allows keeps its readable start and ends in a
+    digest of the whole, so two long keys that share a start stay distinct and
+    the same posting always gets the same key.
+    """
+    key = "|".join(
         (normalize(company), normalize_title(title), normalize(location or "unspecified"))
     )
+    if len(key) <= MAX_CANONICAL_KEY:
+        return key
+    digest = hashlib.sha256(key.encode()).hexdigest()[:_KEY_DIGEST_CHARS]
+    return f"{key[: MAX_CANONICAL_KEY - _KEY_DIGEST_CHARS - 1]}#{digest}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +133,13 @@ class NormalizedPosting:
     source_kind: SourceKind
     posted_on: date | None
     salary: SalaryRange | None
+
+    def __post_init__(self) -> None:
+        # Whatever a board sends, a posting holds only what storage keeps.
+        object.__setattr__(self, "company_name", clip(self.company_name, MAX_COMPANY_NAME))
+        object.__setattr__(self, "title", clip(self.title, MAX_TITLE))
+        if self.location is not None:
+            object.__setattr__(self, "location", clip(self.location, MAX_LOCATION))
 
     @property
     def canonical_key(self) -> str:

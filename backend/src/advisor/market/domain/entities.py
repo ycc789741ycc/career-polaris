@@ -12,12 +12,16 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from advisor.market.domain.posting import (
+    MAX_COMPANY_NAME,
+    MAX_LOCATION,
+    MAX_TITLE,
     Coverage,
     NormalizedPosting,
     PostingStatus,
     SalaryRange,
     SourceOrigin,
     canonical_key,
+    clip,
     normalize,
 )
 
@@ -266,9 +270,9 @@ class PrivateJobPosting:
             id=uuid.uuid4(),
             owner_id=owner_id,
             canonical_key=canonical_key(company=company_name, title=title, location=location),
-            company_name=company_name.strip(),
-            title=title.strip(),
-            location=location,
+            company_name=clip(company_name.strip(), MAX_COMPANY_NAME),
+            title=clip(title.strip(), MAX_TITLE),
+            location=clip(location, MAX_LOCATION) if location is not None else None,
             description=description,
             url=url,
             shared_posting_id=shared_posting_id,
