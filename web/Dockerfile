@@ -61,7 +61,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --chmod=755 docker-entrypoint.d/10-write-config.sh /docker-entrypoint.d/10-write-config.sh
 
 USER root
-RUN chown 101:101 /usr/share/nginx/html
+# libexpat 2.8.4, as the base ships it, carries CVE-2026-93990 (HIGH). The fix is
+# pinned here until an nginx-unprivileged tag ships libexpat 2.8.5 or later;
+# then this line goes, and `make scan` shows it is safe to drop.
+RUN apk add --no-cache libexpat=2.8.5-r0 \
+ && chown 101:101 /usr/share/nginx/html
 USER 101
 
 EXPOSE 8080
