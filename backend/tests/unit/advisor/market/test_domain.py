@@ -16,6 +16,7 @@ from advisor.market.domain import (
     canonical_key,
     clip,
     expired_keys,
+    in_market,
     normalize_title,
 )
 
@@ -171,3 +172,37 @@ def test_an_overlong_key_is_bounded_stable_and_still_distinct() -> None:
     assert canonical_key(company="Acme", title="Engineer", location="Berlin") == (
         "acme|engineer|berlin"
     )
+
+
+# -- markets -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("location", "market"),
+    [
+        ("Berlin, Germany", "Berlin"),
+        ("berlin", "Berlin"),
+        ("Remote, United States", "Remote"),
+        ("New York, NY", "New York"),
+        ("Remote - EU", "Remote EU"),
+    ],
+)
+def test_a_location_is_in_a_market_when_it_names_every_word_of_it(
+    location: str, market: str
+) -> None:
+    assert in_market(location, market)
+
+
+@pytest.mark.parametrize(
+    ("location", "market"),
+    [
+        ("Berlin, Germany", "Munich"),
+        ("York, UK", "New York"),
+        (None, "Berlin"),
+        ("Berlin", ""),
+    ],
+)
+def test_a_location_missing_any_word_of_the_market_is_outside_it(
+    location: str | None, market: str
+) -> None:
+    assert not in_market(location, market)

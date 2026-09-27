@@ -55,8 +55,10 @@ from advisor.market.domain import (
     Visibility,
     band_from,
     canonical_key,
+    in_market,
     normalize,
     refresh_allowed,
+    salary_in_text,
 )
 from kernel.clock import utcnow
 from kernel.errors import NotFoundError, RateLimitedError, ValidationError
@@ -79,6 +81,8 @@ __all__ = [
     "Visibility",
     "band_from",
     "canonical_key",
+    "in_market",
+    "salary_in_text",
 ]
 
 

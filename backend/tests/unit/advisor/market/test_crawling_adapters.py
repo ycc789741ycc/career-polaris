@@ -59,6 +59,43 @@ def test_a_posting_without_pay_has_no_invented_salary() -> None:
     assert platform.location is None
 
 
+def test_greenhouse_reads_pay_stated_in_the_description_when_the_fields_are_empty() -> None:
+    # Greenhouse's list endpoint sends content as escaped HTML and no pay fields.
+    payload = {
+        "jobs": [
+            {
+                "id": 7001,
+                "title": "Backend Engineer",
+                "location": {"name": "Remote, United States"},
+                "content": "&lt;p&gt;United States Salary Range $139,200 &amp;mdash; "
+                "$235,200 USD&lt;/p&gt;",
+            }
+        ]
+    }
+    [posting] = GreenhouseAdapter().parse(payload, company_name="GitLab")
+    assert posting.salary is not None
+    assert (posting.salary.min_amount, posting.salary.max_amount) == (139_200, 235_200)
+    assert posting.salary.currency == "USD"
+
+
+def test_published_pay_fields_win_over_pay_in_the_description() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 7002,
+                "title": "Backend Engineer",
+                "content": "<p>Range: $1,000,000 - $2,000,000 USD</p>",
+                "pay_input_ranges": [
+                    {"min_cents": 8000000, "max_cents": 10500000, "currency_type": "EUR"}
+                ],
+            }
+        ]
+    }
+    [posting] = GreenhouseAdapter().parse(payload, company_name="Northwind Pay")
+    assert posting.salary is not None
+    assert (posting.salary.min_amount, posting.salary.currency) == (80_000, "EUR")
+
+
 def test_gender_decoration_does_not_split_the_dedup_key() -> None:
     postings = GreenhouseAdapter().parse(load("greenhouse.json"), company_name="Northwind Pay")
     assert postings[0].canonical_key == "northwind pay|senior backend engineer|berlin"

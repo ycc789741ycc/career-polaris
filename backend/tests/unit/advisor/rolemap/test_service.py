@@ -4,11 +4,12 @@ with no database, no model and no clustering."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
 import pytest
 
-from advisor.market import PostingView, Visibility
+from advisor.market import PostingView, SalaryRange, Visibility
 from advisor.rolemap import RoleMapService
 from advisor.rolemap.domain import (
     DEFAULT_ROLE_COUNT,
@@ -31,11 +32,14 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 class FakeMarket:
-    def __init__(self, postings: list[PostingView] | None = None) -> None:
+    def __init__(
+        self, postings: list[PostingView] | None = None, markets: list[str] | None = None
+    ) -> None:
         self.postings = postings or []
+        self.chosen = markets or []
 
     async def markets(self, owner_id: uuid.UUID) -> list[str]:
-        return []
+        return self.chosen
 
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         return self.postings
@@ -150,6 +154,30 @@ async def test_keeping_a_role_refreshes_only_what_needs_no_model() -> None:
 
     [role] = await rolemap.roles(OWNER)
     assert role.opening_count == 2 and role.name == "Backend Engineer"
+
+
+async def test_a_market_band_takes_in_postings_whose_location_names_the_market() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    paid = [
+        replace(
+            _posting("Backend"),
+            location="Berlin, Germany",
+            salary=SalaryRange(80_000, 100_000, "EUR"),
+        ),
+        replace(
+            _posting("Platform"),
+            location="Munich, Germany",
+            salary=SalaryRange(90_000, 110_000, "EUR"),
+        ),
+    ]
+    rolemap = _service(uow, FakeMarket(paid, markets=["Berlin"]))
+    role_id = uuid.uuid4()
+    await _store(rolemap, role_id, paid, "Backend Engineer")
+
+    [role] = await rolemap.roles(OWNER)
+    assert set(role.salary_bands) == {"Berlin"}
+    assert role.salary_bands["Berlin"]["mid"] == 90_000
+    assert role.salary_bands["Berlin"]["sample_size"] == 1
 
 
 async def test_lineage_retires_what_is_gone_and_announces_splits() -> None:

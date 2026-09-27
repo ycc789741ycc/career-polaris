@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from advisor.market.crawling.adapters.base import parse_date, salary_from, strip_html
-from advisor.market.service import NormalizedPosting, SourceKind
+from advisor.market.service import NormalizedPosting, SourceKind, salary_in_text
 
 BASE = "https://api.lever.co/v0/postings"
 
@@ -41,7 +41,8 @@ class LeverAdapter:
                         salary_range.get("min"),
                         salary_range.get("max"),
                         salary_range.get("currency"),
-                    ),
+                    )
+                    or salary_in_text(description),
                 )
             )
         return postings
