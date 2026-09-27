@@ -1,4 +1,4 @@
-# Domain Model Review: Job Searching Advisor
+# Domain Model: Job Searching Advisor
 
 A review of the domain concepts in `job_searching_advisor_domain_concepts_v2.excalidraw`, checked against the system intent (`intent.md`) and the prototype (`../prototype/Career Advisor.dc.html`).
 

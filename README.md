@@ -156,7 +156,7 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 | Document | What it covers |
 |---|---|
 | [`docs/intent.md`](docs/intent.md) | What the product is for |
-| [`docs/domain_model_review.md`](docs/domain_model_review.md) | The domain model, bounded contexts and the decisions behind them |
+| [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
 | [`docs/technical_boundaries.md`](docs/technical_boundaries.md) | Deployables, module boundaries, data and trust boundaries, and the AI gateway |
 | [`docs/plan.md`](docs/plan.md) | Scope for phases 1, 2 and 3 |
 | [`docs/decisions/`](docs/decisions/README.md) | Decision records for choices that are costly to reverse |
