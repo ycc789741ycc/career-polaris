@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -77,6 +78,8 @@ class Evidence(Base, OwnedMixin, TimestampMixin):
         # Re-syncing a connector must update a fact, not duplicate it.
         UniqueConstraint("owner_id", "source", "external_ref", name="uq_evidence_owner_id"),
         Index("ix_evidence_owner_source", "owner_id", "source"),
+        CheckConstraint("granularity IN ('item', 'summary')", name="granularity"),
+        CheckConstraint("tally IS NULL OR (granularity = 'summary' AND tally >= 0)", name="tally"),
         {"schema": "profile"},
     )
 
@@ -87,6 +90,9 @@ class Evidence(Base, OwnedMixin, TimestampMixin):
     fact: Mapped[str] = mapped_column(Text, nullable=False)
     observed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    granularity: Mapped[str] = mapped_column(String(16), nullable=False, server_default="item")
+    tally: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_connection_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("profile.source_connection.id", ondelete="SET NULL"), nullable=True
     )

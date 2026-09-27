@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from advisor.profile.domain import EvidenceGranularity
 from advisor.profile.infra.connectors.base import EvidenceDraft
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
@@ -59,6 +60,9 @@ class GitHubConnector:
                     fact=f"{count} merged pull requests authored in {repo}.",
                     observed_on=_latest_date(item for item in merged if _repo_of(item) == repo),
                     confidence=0.9,
+                    granularity=EvidenceGranularity.SUMMARY,
+                    tally=count,
+                    subject=repo,
                 )
             )
 
@@ -73,6 +77,8 @@ class GitHubConnector:
                     ),
                     observed_on=_latest_date(reviewed),
                     confidence=0.85,
+                    granularity=EvidenceGranularity.SUMMARY,
+                    tally=len(reviewed),
                 )
             )
 
@@ -88,6 +94,7 @@ class GitHubConnector:
                     fact=title,
                     observed_on=_date_of(item),
                     confidence=0.8,
+                    subject=repo,
                 )
             )
         return drafts

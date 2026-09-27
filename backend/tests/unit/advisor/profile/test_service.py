@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
@@ -12,6 +13,7 @@ from advisor.profile import EvidenceSource, ProfileService
 from advisor.profile.domain import (
     CareerPosition,
     ConnectionStatus,
+    EvidenceGranularity,
     ProfileUpdated,
     ResumeStatus,
     SourceSynced,
@@ -154,6 +156,35 @@ async def test_a_resync_restates_facts_rather_than_duplicating_them() -> None:
     snapshot = await profile.snapshot(OWNER)
     assert [e.fact for e in snapshot.evidence] == ["Shipped the thing, twice"]
     assert snapshot.version == 2
+
+
+async def test_a_resync_restates_whether_a_fact_is_one_item_or_a_tally() -> None:
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector([_draft("merged/acme")])
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+    (before,) = (await profile.snapshot(OWNER)).evidence
+    assert before.granularity == EvidenceGranularity.ITEM
+
+    connector.drafts = [
+        replace(
+            _draft("merged/acme"),
+            granularity=EvidenceGranularity.SUMMARY,
+            tally=12,
+            subject="acme/ledger",
+        )
+    ]
+    await profile.sync_connection(OWNER, "github")
+
+    (after,) = (await profile.snapshot(OWNER)).evidence
+    assert (after.granularity, after.tally, after.subject) == (
+        EvidenceGranularity.SUMMARY,
+        12,
+        "acme/ledger",
+    )
 
 
 async def test_a_failed_sync_marks_the_connection_and_writes_nothing() -> None:

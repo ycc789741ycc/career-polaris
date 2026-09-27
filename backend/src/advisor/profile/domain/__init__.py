@@ -10,6 +10,7 @@ from advisor.profile.domain.events import ProfileEvent, ProfileUpdated, SourceSy
 from advisor.profile.domain.evidence import (
     CitationError,
     Evidence,
+    EvidenceGranularity,
     EvidenceSource,
     assert_citations_exist,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "ConnectionStatus",
     "Evidence",
     "EvidenceFilter",
+    "EvidenceGranularity",
     "EvidenceRepository",
     "EvidenceSource",
     "OwnerProfile",

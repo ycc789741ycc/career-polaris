@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from advisor.profile.domain import EvidenceGranularity
 from kernel.fetch import GuardedClient
 
 
@@ -23,6 +24,9 @@ class EvidenceDraft:
     fact: str
     observed_on: date | None
     confidence: float
+    granularity: EvidenceGranularity = EvidenceGranularity.ITEM
+    tally: int | None = None
+    subject: str | None = None
 
 
 class Connector(Protocol):

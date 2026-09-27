@@ -31,6 +31,18 @@
   --series-1-fill: color-mix(in srgb, #c67139 24%, transparent);
   --series-2: var(--color-accent-2-600);
 
+  /* A neutral wash behind a hovered or picked row. */
+  --wash: color-mix(in srgb, #201e1d 8%, transparent);
+
+  /* One colour per evidence source, the same on every chart that splits by
+     source. Each clears 3:1 on the panel surface, and they alternate light
+     and dark in the order a stacked bar draws them, so neighbours differ in
+     lightness as well as hue. Every chart names each source in text too. */
+  --source-github: var(--color-accent-600);
+  --source-jira: var(--color-accent-2-800);
+  --source-resume: var(--color-neutral-600);
+  --source-self-reported: var(--color-neutral-900);
+
   /* Status — reserved, never reused as a series. Organic has no red, so
      critical is the one colour defined here; it clears 5:1 on the surface. */
   --status-good: var(--color-accent-2-700);

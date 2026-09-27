@@ -205,6 +205,9 @@ async def list_evidence(user: CurrentUser, deps: Deps) -> list[dict[str, object]
             "fact": e.fact,
             "observed_on": e.observed_on.isoformat() if e.observed_on else None,
             "confidence": e.confidence,
+            "granularity": str(e.granularity),
+            "tally": e.tally,
+            "subject": e.subject,
         }
         for e in snapshot.evidence
     ]

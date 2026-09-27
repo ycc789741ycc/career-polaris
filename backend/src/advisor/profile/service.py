@@ -15,6 +15,7 @@ from advisor.profile.domain import (
     CitationError,
     Evidence,
     EvidenceFilter,
+    EvidenceGranularity,
     EvidenceSource,
     OwnerProfile,
     ProfileUnitOfWork,
@@ -74,6 +75,9 @@ class EvidenceView:
     fact: str
     observed_on: date | None
     confidence: float
+    granularity: EvidenceGranularity
+    tally: int | None
+    subject: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,6 +438,9 @@ class ProfileService:
                             fact=draft.fact,
                             observed_on=draft.observed_on,
                             confidence=draft.confidence,
+                            granularity=draft.granularity,
+                            tally=draft.tally,
+                            subject=draft.subject,
                             source_connection_id=source_connection_id,
                             resume_file_id=resume_file_id,
                         )
@@ -444,6 +451,9 @@ class ProfileService:
                         fact=draft.fact,
                         observed_on=draft.observed_on,
                         confidence=draft.confidence,
+                        granularity=draft.granularity,
+                        tally=draft.tally,
+                        subject=draft.subject,
                     )
                     await mine.evidence.update(known)
 
@@ -488,6 +498,9 @@ def _evidence_view(evidence: Evidence) -> EvidenceView:
         fact=evidence.fact,
         observed_on=evidence.observed_on,
         confidence=evidence.confidence,
+        granularity=evidence.granularity,
+        tally=evidence.tally,
+        subject=evidence.subject,
     )
 
 

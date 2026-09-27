@@ -1,7 +1,17 @@
 import { useRef, useState } from "react";
 import type { CallbackOutcome } from "./oauthCallback";
 import { api } from "../api/client";
-import type { Connection, Evidence, ResumeFile } from "../api/types";
+import type {
+  Assessment,
+  Connection,
+  Dimension,
+  Evidence,
+  ProfileSummary,
+  ResumeFile,
+} from "../api/types";
+import type { FactSelection } from "../charts/selection";
+import { SourceMix } from "../charts/SourceMix";
+import { WorkPlaces } from "../charts/WorkPlaces";
 import {
   AutoGrid,
   Button,
@@ -37,11 +47,19 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   );
   const resumes = useAsync<ResumeFile[]>(() => api.get("/resumes"), []);
   const evidence = useAsync<Evidence[]>(() => api.get("/evidence"), []);
+  // Which facts the latest analysis cites, and whether it predates them.
+  const assessment = useAsync<Assessment | null>(
+    () => api.get("/assessments/latest"),
+    [],
+  );
+  const profile = useAsync<ProfileSummary>(() => api.get("/profile"), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The connector whose card is asking "are you sure?", if any.
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Facts picked on a chart or filter; the table lists only these while set.
+  const [selection, setSelection] = useState<FactSelection | null>(null);
 
   async function connect(kind: string) {
     setBusy(kind);
@@ -76,6 +94,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
     try {
       await api.del(`/connections/${kind}`);
       setConfirming(null);
+      setSelection(null);
       await Promise.all([connections.reload(), evidence.reload()]);
     } catch (caught) {
       setError(messageOf(caught));
@@ -99,6 +118,16 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
 
   const facts = evidence.data ?? [];
   const bySource = countBy(facts, (item) => item.source);
+  const citedBy = citations(assessment.data);
+  const uncited = facts.filter((item) => !citedBy.has(item.id));
+  const isAnalysisBehind =
+    assessment.data !== null &&
+    profile.data !== null &&
+    profile.data.version > assessment.data.profile_version;
+  const picked = selection ? new Set(selection.ids) : null;
+  const listed = picked
+    ? facts.filter((item) => picked.has(item.id))
+    : facts.slice(0, 50);
   const latestResume = (resumes.data ?? [])[0];
 
   return (
@@ -330,58 +359,84 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
             </p>
           ) : (
             <>
-              <div className="divided">
-                {Object.entries(bySource).map(([source, count]) => (
-                  <div
-                    key={source}
-                    style={{ display: "flex", gap: 14, alignItems: "baseline" }}
-                  >
-                    <div
-                      className="stat-value"
-                      style={{ fontSize: 22, minWidth: 58 }}
-                    >
-                      {count}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>
-                        {count === 1 ? "fact" : "facts"}
-                      </div>
-                      <div className="subcopy" style={{ fontSize: 12.5 }}>
-                        from {sourceName(source)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SourceMix facts={facts} />
               <p
                 className="callout-note"
                 style={{ fontSize: 13.5, lineHeight: 1.55, margin: "14px 0 0" }}
               >
-                {facts.length} facts, each traceable to where it came from.
+                {factCount(facts.length)}, each traceable to where it came from.
+                The bar shares out facts, not effort: one fact can be a single
+                pull request or a total of many.
               </p>
             </>
           )}
         </div>
 
+        <WorkPlaces
+          facts={facts}
+          selectedKey={selection?.key ?? null}
+          onSelect={setSelection}
+        />
+
         {facts.length > 0 && (
           <div className="panel">
             <h3>Evidence gathered</h3>
-            <p className="subcopy">The first 50, grouped by source.</p>
+            {selection ? (
+              <div
+                className="row-between"
+                style={{ alignItems: "baseline", gap: 12 }}
+              >
+                <p className="subcopy">
+                  Showing {factCount(listed.length)}: {selection.label}.
+                </p>
+                <button
+                  type="button"
+                  className="link-button"
+                  style={{ fontSize: 13 }}
+                  onClick={() => setSelection(null)}
+                >
+                  Show all
+                </button>
+              </div>
+            ) : (
+              <p className="subcopy">The first 50, grouped by source.</p>
+            )}
+            <CitationNote
+              assessment={assessment.data}
+              isLoading={assessment.loading}
+              isBehind={isAnalysisBehind}
+              total={facts.length}
+              uncited={uncited.length}
+              isShowingUncited={selection?.key === UNCITED}
+              onShowUncited={() =>
+                setSelection({
+                  key: UNCITED,
+                  label: "not cited by any score",
+                  ids: uncited.map((item) => item.id),
+                })
+              }
+            />
             <div className="table-scroll">
-              <table className="data-table">
+              <table className="data-table" aria-label="Evidence gathered">
                 <thead>
                   <tr>
                     <th>Source</th>
                     <th>Fact</th>
+                    {assessment.data && <th>Cited by</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {facts.slice(0, 50).map((item) => (
+                  {listed.map((item) => (
                     <tr key={item.id}>
                       <td className="muted" style={{ minWidth: 120 }}>
                         {item.reference}
                       </td>
                       <td>{item.fact}</td>
+                      {assessment.data && (
+                        <td style={{ minWidth: 110 }}>
+                          <CitedBy dimensions={citedBy.get(item.id) ?? []} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -419,13 +474,86 @@ function SourceGlyph({ name, on }: { name: string; on: boolean }) {
   );
 }
 
-const SOURCE_NAMES: Record<string, string> = {
-  resume: "your résumé",
-  self_reported: "your answers",
-};
+/** The table's selection key for facts no score cites. */
+const UNCITED = "uncited";
 
-function sourceName(source: string): string {
-  return LABELS[source]?.name ?? SOURCE_NAMES[source] ?? source;
+/** Each fact's id, mapped to the dimensions whose score cites it. */
+function citations(assessment: Assessment | null): Map<string, Dimension[]> {
+  const cited = new Map<string, Dimension[]>();
+  for (const dimension of assessment?.dimensions ?? []) {
+    for (const id of dimension.evidence_ids) {
+      cited.set(id, [...(cited.get(id) ?? []), dimension]);
+    }
+  }
+  return cited;
+}
+
+function CitedBy({ dimensions }: { dimensions: Dimension[] }) {
+  if (dimensions.length === 0) {
+    return <span className="muted">—</span>;
+  }
+  return (
+    <span className="cited-by">
+      {dimensions.map((dimension) => (
+        <span
+          key={dimension.key}
+          className="tag tag-accent-2"
+          title={dimension.name}
+        >
+          {dimension.short_name || dimension.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * How much of the evidence the latest analysis actually leans on.
+ *
+ * A fact nothing cites is not wrong, but it is not helping a score either,
+ * which is worth knowing before adding more of the same.
+ */
+function CitationNote({
+  assessment,
+  isLoading,
+  isBehind,
+  total,
+  uncited,
+  isShowingUncited,
+  onShowUncited,
+}: {
+  assessment: Assessment | null;
+  isLoading: boolean;
+  isBehind: boolean;
+  total: number;
+  uncited: number;
+  isShowingUncited: boolean;
+  onShowUncited: () => void;
+}) {
+  if (isLoading) return null;
+  if (assessment === null) {
+    return (
+      <p className="subcopy" style={{ fontSize: 13 }}>
+        Run an analysis to see which facts back your scores.
+      </p>
+    );
+  }
+  return (
+    <p className="subcopy" style={{ fontSize: 13 }}>
+      {total - uncited} of {factCount(total)} back a score in your latest
+      analysis ({new Date(assessment.created_at).toLocaleDateString()}).
+      {isBehind &&
+        " Your sources have changed since, so newer facts are not scored yet."}
+      {uncited > 0 && !isShowingUncited && (
+        <>
+          {" "}
+          <button type="button" className="link-button" onClick={onShowUncited}>
+            Show the {uncited} not cited
+          </button>
+        </>
+      )}
+    </p>
+  );
 }
 
 function factCount(count: number): string {

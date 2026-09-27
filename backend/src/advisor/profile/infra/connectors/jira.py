@@ -7,11 +7,15 @@ no way to show how big the thing was.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
+from datetime import date
 from typing import Any
 
+from advisor.profile.domain import EvidenceGranularity
 from advisor.profile.infra.connectors.base import EvidenceDraft
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
+from kernel.parsing import parse_date
 
 SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
 SCOPE_DESCRIPTIONS = (
@@ -80,20 +84,25 @@ class JiraConnector:
                     external_ref=f"jira:{cloud_id}:throughput",
                     reference=f"Jira · {site_name}",
                     fact=f"{len(issues)} assigned issues, {done} of them closed.",
-                    observed_on=None,
+                    observed_on=_latest_date(issues),
                     confidence=0.85,
+                    granularity=EvidenceGranularity.SUMMARY,
+                    tally=len(issues),
                 )
             )
 
-            projects = Counter(str(k).split("-", 1)[0] for k in (i.get("key") for i in issues) if k)
+            projects = Counter(p for p in (_project_of(i) for i in issues) if p)
             for project, count in projects.most_common(5):
                 drafts.append(
                     EvidenceDraft(
                         external_ref=f"jira:{cloud_id}:project:{project}",
                         reference=f"Jira · {site_name} · {project}",
                         fact=f"{count} issues worked in the {project} project.",
-                        observed_on=None,
+                        observed_on=_latest_date(i for i in issues if _project_of(i) == project),
                         confidence=0.8,
+                        granularity=EvidenceGranularity.SUMMARY,
+                        tally=count,
+                        subject=project,
                     )
                 )
 
@@ -107,8 +116,9 @@ class JiraConnector:
                         external_ref=f"jira:issue:{issue.get('id')}",
                         reference=f"Jira · {issue.get('key')}",
                         fact=summary,
-                        observed_on=None,
+                        observed_on=_date_of(issue),
                         confidence=0.75,
+                        subject=_project_of(issue),
                     )
                 )
         return drafts
@@ -122,7 +132,7 @@ class JiraConnector:
             params={
                 "jql": "assignee = currentUser() ORDER BY updated DESC",
                 "maxResults": _MAX_ISSUES,
-                "fields": "summary,status,resolutiondate,created",
+                "fields": "summary,status,resolutiondate,updated",
             },
         )
         issues = payload.get("issues") if isinstance(payload, dict) else None
@@ -131,3 +141,20 @@ class JiraConnector:
 
 def _headers(token: str) -> dict[str, str]:
     return {"authorization": f"Bearer {token}", "accept": "application/json"}
+
+
+def _project_of(issue: dict[str, Any]) -> str | None:
+    """The project key, "PAY" for "PAY-12"; None for an issue without a key."""
+    key = issue.get("key")
+    return str(key).split("-", 1)[0] if key else None
+
+
+def _date_of(issue: dict[str, Any]) -> date | None:
+    """When the work happened: resolved, or last touched while still open."""
+    fields = issue.get("fields") or {}
+    return parse_date(fields.get("resolutiondate") or fields.get("updated"))
+
+
+def _latest_date(issues: Iterable[dict[str, Any]]) -> date | None:
+    dates = [d for d in (_date_of(i) for i in issues) if d is not None]
+    return max(dates) if dates else None
