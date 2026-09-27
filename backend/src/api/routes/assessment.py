@@ -58,11 +58,33 @@ async def questions(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
     ]
 
 
+@router.get("/questions/status")
+async def question_status(user: CurrentUser, deps: Deps) -> dict[str, object] | None:
+    """The newest question round, which the page polls while it is
+    ``generating`` (ADR 0006, ADR 0012). ``null`` before the first one."""
+    found = await deps.assessment.latest_round(user)
+    if found is None:
+        return None
+    return {
+        "id": str(found.id),
+        "status": found.status,
+        # `evidence` after a sync or upload, `assessment` after an analysis.
+        "trigger": found.trigger,
+        "question_count": found.question_count,
+        "created_at": found.created_at.isoformat(),
+        "finished_at": found.finished_at.isoformat() if found.finished_at else None,
+        "error": (
+            {"code": found.error_code, "message": found.error_message} if found.error_code else None
+        ),
+    }
+
+
 @router.post("/questions/{question_id}/answer", status_code=202)
 async def answer(
     question_id: uuid.UUID, body: AnswerRequest, user: CurrentUser, deps: Deps
 ) -> dict[str, str]:
-    """An answer becomes self-reported Evidence, then the analysis re-runs."""
+    """An answer becomes self-reported Evidence, then the analysis re-runs and
+    opens a new question round."""
     await deps.assessment.answer(user, question_id, body.answer)
     await enqueue("assessment.run", owner_id=str(user))
     return {"status": "queued"}

@@ -584,6 +584,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/questions/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Question Status
+         * @description The newest question round, which the page polls while it is
+         *     ``generating`` (ADR 0006, ADR 0012). ``null`` before the first one.
+         */
+        get: operations["question_status_api_v1_questions_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/questions/{question_id}/answer": {
         parameters: {
             query?: never;
@@ -595,7 +616,8 @@ export interface paths {
         put?: never;
         /**
          * Answer
-         * @description An answer becomes self-reported Evidence, then the analysis re-runs.
+         * @description An answer becomes self-reported Evidence, then the analysis re-runs and
+         *     opens a new question round.
          */
         post: operations["answer_api_v1_questions__question_id__answer_post"];
         delete?: never;
@@ -2445,6 +2467,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_status_api_v1_questions_status_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    } | null;
                 };
             };
             /** @description Validation Error */

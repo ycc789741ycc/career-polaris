@@ -170,7 +170,7 @@ The model should include:
 - **Show cost before spending:** the first analysis, the first role map and any increase of k estimate their cost and ask for confirmation. Later incremental runs happen automatically within the budget.
 
 ### 2.11 Smaller diagram issues
-- **"1. create once data connected"** still makes every sync start an analysis. Keep a `ProfileUpdated` event and an explicit "Analyze" request (the prototype's button), with cost confirmation.
+- **"1. create once data connected"** still makes every sync start an analysis. Keep a `ProfileUpdated` event and an explicit "Analyze" request (the prototype's button), with cost confirmation. `ProfileUpdated` does refresh the follow-up questions against the latest analysis, without re-scoring it ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)).
 - **Task → Milestone** points from task to milestone. A Milestone contains Tasks; draw Milestone → Task, and link Task to the SkillGaps it closes.
 - **The Gap Planner and Resume Advisor don't read the Target** (6 and 9 come from the user, but no box holds what was picked). Add Target between the relative roles and both of them.
 - **Missing:** LLM arrows from the Gap Planner (plans are drafted by AI) and the Resume Advisor (writing and chat), ProviderCredential and budget (every LLM arrow depends on them), MarketPreference, RoleSubscription, LinkedIn and the personal site as sources.
@@ -283,6 +283,7 @@ flowchart LR
   SourceSynced --> ProfileUpdated
   ProfileUpdated -. explicit Analyze .-> AnalysisCostEstimated --> AnalysisCostConfirmed --> AssessmentRequested
   AssessmentRequested --> QuestionsRaised --> QuestionAnswered --> ProfileUpdated
+  ProfileUpdated -. ADR 0012 .-> QuestionsRaised
   AssessmentRequested --> AssessmentCompleted --> DimensionsChanged --> RoleFitsComputed
   SubscriptionAdded --> CrawlCompleted
   MarketSelected --> CrawlCompleted

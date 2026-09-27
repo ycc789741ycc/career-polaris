@@ -191,7 +191,7 @@ flowchart TB
 
 | Event | Emitted by | Handled by |
 |---|---|---|
-| `ProfileUpdated` | profile | assessment.run |
+| `ProfileUpdated` | profile | assessment.generate_questions: a question round against the latest analysis, if any dimension is below the threshold. Not for an answer, whose route re-runs the analysis instead ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)) |
 | `AssessmentCompleted` / `DimensionsChanged` | assessment | assessment.compute_fits |
 | `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → rolemap.recluster per user. A baseline-only change reaches every user whose scope includes that market. |
 | `RoleCountChanged(k)` | rolemap | rolemap.recluster for that user, after the cost estimate is confirmed |
@@ -318,9 +318,9 @@ flowchart LR
 | Weekly cron, after crawl | worker (`notify`) | send `MatchDigest`; send interview-report prompts about 2 weeks after tailoring |
 | Weekly cron | worker | re-check `manual` subscriptions for a supported board; refresh `crawl_source` from `market_user` |
 | User subscribes / clicks refresh | api → crawler | single-company crawl, rate-limited per user per day |
-| User clicks "Analyze" | api → worker (`ai`) | cost estimate → user confirms → assessment → follow-up questions or fits; the SPA re-reads the result |
-| Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated` |
-| Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé |
+| User clicks "Analyze" | api → worker (`ai`) | cost estimate → user confirms → assessment → fits, and a question round `generating` → `ready` or `failed`; the SPA polls the round (ADR 0006, ADR 0012) |
+| Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated` → question round on `ai` (ADR 0012) |
+| Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé → `ProfileUpdated` → question round on `ai` (ADR 0012) |
 | User picks a Target and generates a plan | api → worker (`ai`) | cost estimate → user confirms → plan row `drafting` → worker snapshots the Target (a pasted JD is read and scored first) → gaps ranked by fit points → draft → validate → `ready` or `failed` with a code; the SPA polls the row (ADR 0006) |
 | User reopens a plan | api | read the GapPlan version; no AI |
 | User picks a résumé Target | api → worker (`ai`) | cost estimate → user confirms → résumé row `drafting` → Target snapshot → RequirementCoverage from scores against the snapshot's bar → first ResumeVersion, every written line citing the user's Evidence, over the uploaded résumé when there is one |

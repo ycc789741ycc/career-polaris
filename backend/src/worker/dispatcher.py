@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from advisor.assessment import QuestionRoundTrigger
 from kernel.db.base import utcnow
 from kernel.logging import get_logger
 from kernel.outbox import EventName, OutboxEvent
@@ -63,6 +64,21 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
     if name == EventName.SOURCE_SYNCED:
         # Deliberately does not start an analysis: the user asks for that
         # explicitly, and every sync would otherwise spend their money.
+        return
+
+    if name == EventName.PROFILE_UPDATED and owner_id:
+        # New evidence gets fresh follow-up questions, but not a re-analysis
+        # (ADR 0012). An answer is skipped: its route already re-runs the
+        # analysis, which opens its own round.
+        if event.payload.get("source") == "self_reported":
+            return
+        round_id = await deps.assessment.request_questions(
+            owner_id, trigger=QuestionRoundTrigger.EVIDENCE
+        )
+        if round_id is not None:
+            await enqueue(
+                "assessment.generate_questions", owner_id=str(owner_id), round_id=str(round_id)
+            )
         return
 
     if name in (EventName.ASSESSMENT_COMPLETED, EventName.DIMENSIONS_CHANGED) and owner_id:

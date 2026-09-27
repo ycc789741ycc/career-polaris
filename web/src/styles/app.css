@@ -678,6 +678,22 @@ select.input { appearance: auto; }
   border-radius: 999px;
   background: var(--color-accent);
 }
+/* Work of unknown length: a short fill sweeping across. */
+.progress-indeterminate .progress-fill {
+  width: 35%;
+  animation: progressSweep 1.4s ease-in-out infinite;
+}
+@keyframes progressSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-indeterminate .progress-fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+  }
+}
 
 .fit-badge {
   display: inline-block;

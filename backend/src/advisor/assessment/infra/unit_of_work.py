@@ -26,6 +26,7 @@ from advisor.assessment.infra.repositories import (
     SqlAlchemyAssessedScoreRepository,
     SqlAlchemyDimensionChangeRepository,
     SqlAlchemyFollowUpQuestionRepository,
+    SqlAlchemyQuestionRoundRepository,
     SqlAlchemyRoleFitRepository,
     SqlAlchemySkillAssessmentRepository,
     SqlAlchemySkillDimensionRepository,
@@ -41,6 +42,7 @@ class SqlAlchemyOwnerAssessment:
         self.scores = SqlAlchemyAssessedScoreRepository(session, owner_id=owner_id)
         self.changes = SqlAlchemyDimensionChangeRepository(session, owner_id=owner_id)
         self.questions = SqlAlchemyFollowUpQuestionRepository(session, owner_id=owner_id)
+        self.rounds = SqlAlchemyQuestionRoundRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 

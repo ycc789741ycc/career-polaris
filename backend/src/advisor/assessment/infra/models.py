@@ -122,9 +122,39 @@ class FollowUpQuestion(Base, OwnedMixin):
     options: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Replaced by a newer round before it was answered; no longer shown.
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class QuestionRound(Base, OwnedMixin):
+    """One background generation of follow-up questions (ADR 0006, ADR 0012).
+
+    The row exists before the job runs, so the page can show that questions are
+    being generated, and why they could not be when the job fails.
+    """
+
+    __tablename__ = "question_round"
+    __table_args__ = (
+        Index("ix_question_round_owner_created", "owner_id", "created_at"),
+        {"schema": "assessment"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assessment.skill_assessment.id", ondelete="CASCADE"), nullable=False
+    )
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RoleFit(Base, OwnedMixin):

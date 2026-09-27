@@ -71,7 +71,13 @@ def _register(app: App) -> None:
 
     @app.task(name="assessment.run", queue=str(Queue.AI))
     async def run_assessment(owner_id: str) -> None:
-        await assessment_jobs.run(deps(), owner_id=owner_id)
+        round_id = await assessment_jobs.run(deps(), owner_id=owner_id)
+        if round_id:
+            await enqueue("assessment.generate_questions", owner_id=owner_id, round_id=round_id)
+
+    @app.task(name="assessment.generate_questions", queue=str(Queue.AI))
+    async def generate_questions(owner_id: str, round_id: str) -> None:
+        await assessment_jobs.generate_questions(deps(), owner_id=owner_id, round_id=round_id)
 
     @app.task(name="assessment.compute_fits", queue=str(Queue.AI))
     async def compute_fits(owner_id: str) -> None:

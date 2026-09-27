@@ -13,6 +13,7 @@ from advisor.assessment.domain import (
     DEFAULT_MATCHES,
     MAX_MATCHES,
     MIN_MATCHES,
+    QuestionRoundTrigger,
 )
 from advisor.assessment.factory import create_assessment_service
 from advisor.assessment.service import (
@@ -21,6 +22,7 @@ from advisor.assessment.service import (
     DimensionView,
     FitView,
     MatchedPostingView,
+    QuestionRoundView,
     QuestionView,
 )
 
@@ -33,6 +35,8 @@ __all__ = [
     "DimensionView",
     "FitView",
     "MatchedPostingView",
+    "QuestionRoundTrigger",
+    "QuestionRoundView",
     "QuestionView",
     "create_assessment_service",
     "jobs",

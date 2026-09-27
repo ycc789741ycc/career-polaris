@@ -15,6 +15,8 @@ from advisor.assessment.domain import (
     DimensionChangeFilter,
     FollowUpQuestion,
     FollowUpQuestionFilter,
+    QuestionRound,
+    QuestionRoundFilter,
     RoleFit,
     RoleFitFilter,
     SkillAssessment,
@@ -32,6 +34,7 @@ class Store:
     scores: dict[uuid.UUID, AssessedScore] = field(default_factory=dict)
     changes: dict[uuid.UUID, DimensionChange] = field(default_factory=dict)
     questions: dict[uuid.UUID, FollowUpQuestion] = field(default_factory=dict)
+    rounds: dict[uuid.UUID, QuestionRound] = field(default_factory=dict)
     fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
     events: list[AssessmentEvent] = field(default_factory=list)
 
@@ -79,7 +82,18 @@ class FakeQuestions(FakeRepository[FollowUpQuestion, FollowUpQuestionFilter]):
     noun = "question"
 
     def matches(self, entity: FollowUpQuestion, filter: FollowUpQuestionFilter) -> bool:
-        return filter.is_answered is None or (entity.answered_at is not None) == filter.is_answered
+        return (
+            filter.is_answered is None or (entity.answered_at is not None) == filter.is_answered
+        ) and (filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired)
+
+
+class FakeRounds(FakeRepository[QuestionRound, QuestionRoundFilter]):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "question round"
+
+    def matches(self, entity: QuestionRound, filter: QuestionRoundFilter) -> bool:
+        return filter.status is None or entity.status is filter.status
 
 
 class FakeFits(FakeRepository[RoleFit, RoleFitFilter]):
@@ -105,6 +119,7 @@ class FakeOwner:
         self.scores = FakeScores(store.scores, owner_id=owner_id)
         self.changes = FakeChanges(store.changes, owner_id=owner_id)
         self.questions = FakeQuestions(store.questions, owner_id=owner_id)
+        self.rounds = FakeRounds(store.rounds, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 

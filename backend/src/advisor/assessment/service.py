@@ -36,6 +36,10 @@ from advisor.assessment.domain import (
     MatchCandidate,
     OwnerAssessment,
     QuestionAnswered,
+    QuestionRound,
+    QuestionRoundFilter,
+    QuestionRoundStatus,
+    QuestionRoundTrigger,
     QuestionsRaised,
     RoleFit,
     RoleFitFilter,
@@ -66,7 +70,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.errors import DimensionCountError as DimensionCountFailure
-from kernel.errors import EvidenceNotOwnedError, NotFoundError, ValidationError
+from kernel.errors import DomainError, EvidenceNotOwnedError, NotFoundError, ValidationError
 from kernel.logging import get_logger
 
 __all__ = [
@@ -75,6 +79,7 @@ __all__ = [
     "DimensionView",
     "FitView",
     "MatchedPostingView",
+    "QuestionRoundView",
     "QuestionView",
 ]
 
@@ -167,6 +172,20 @@ class QuestionView:
     why: str
     options: tuple[str, ...]
     answer: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionRoundView:
+    """Whether questions are being generated, and why they could not be."""
+
+    id: uuid.UUID
+    trigger: str
+    status: str
+    question_count: int
+    created_at: datetime
+    finished_at: datetime | None
+    error_code: str | None
+    error_message: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,7 +323,9 @@ class AssessmentService:
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
 
-        assessment_id = await self._store(
+        # Follow-up questions are a separate round the job requests next
+        # (ADR 0012), so the page can show them being generated.
+        await self._store(
             owner_id,
             snapshot_version=snapshot.version,
             dimensions=dimensions,
@@ -312,10 +333,6 @@ class AssessmentService:
             model_id=result.model_id,
             template_version=result.template_version,
         )
-
-        thin = needs_follow_up(dimensions, threshold=self._threshold)
-        if thin:
-            await self._raise_questions(owner_id, assessment_id, thin, snapshot)
 
         return await self.latest(owner_id) or _never()
 
@@ -343,7 +360,9 @@ class AssessmentService:
         """Oldest first, the order they were raised in."""
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.questions.get_list(
-                FollowUpQuestionFilter(is_answered=False if unanswered_only else None)
+                FollowUpQuestionFilter(
+                    is_answered=False if unanswered_only else None, is_retired=False
+                )
             )
         return [
             QuestionView(
@@ -375,6 +394,79 @@ class AssessmentService:
 
         await self._profile.record_answer(
             owner_id, question_id=str(question.id), question=question.text, answer=answer
+        )
+
+    async def request_questions(
+        self, owner_id: uuid.UUID, *, trigger: QuestionRoundTrigger
+    ) -> uuid.UUID | None:
+        """Open a round for the latest assessment's thin dimensions (ADR 0012).
+
+        Returns the round for the caller to queue, or ``None`` when there is
+        nothing to ask: no assessment yet, or every dimension is confident
+        enough. A round still generating is superseded, so the newest evidence
+        wins and only one set of questions is written.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            newest = await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1)
+            if not newest:
+                return None
+            scores = await mine.scores.get_list(AssessedScoreFilter(assessment_id=newest[0].id))
+            if not needs_follow_up(scores, threshold=self._threshold):
+                return None
+
+            now = utcnow()
+            for running in await mine.rounds.get_list(
+                QuestionRoundFilter(status=QuestionRoundStatus.GENERATING)
+            ):
+                running.superseded(now)
+                await mine.rounds.update(running)
+            requested = await mine.rounds.create(
+                QuestionRound.requested(
+                    owner_id=owner_id, assessment_id=newest[0].id, trigger=trigger, at=now
+                )
+            )
+        log.info("assessment.questions_requested", round_id=str(requested.id), trigger=trigger)
+        return requested.id
+
+    async def generate_questions(self, owner_id: uuid.UUID, round_id: uuid.UUID) -> None:
+        """The worker job. An expected failure is recorded on the round with
+        its stable code and not retried: a retry would spend the key again."""
+        async with self._uow.for_owner(owner_id) as mine:
+            requested = await mine.rounds.get(round_id)
+        if requested is None:
+            raise NotFoundError("question round not found", round_id=str(round_id))
+        if not requested.is_generating:
+            return
+
+        try:
+            await self._generate_questions(owner_id, requested)
+        except DomainError as exc:
+            log.warning("assessment.questions_failed", round_id=str(round_id), code=str(exc.code))
+            await self._fail_round(owner_id, round_id, code=str(exc.code), message=exc.message)
+        except Exception:
+            await self._fail_round(
+                owner_id,
+                round_id,
+                code="internal",
+                message="Generating questions stopped unexpectedly. Try again in a moment.",
+            )
+            raise
+
+    async def latest_round(self, owner_id: uuid.UUID) -> QuestionRoundView | None:
+        async with self._uow.for_owner(owner_id) as mine:
+            newest = await mine.rounds.get_list(QuestionRoundFilter(), page_size=1)
+        if not newest:
+            return None
+        found = newest[0]
+        return QuestionRoundView(
+            id=found.id,
+            trigger=str(found.trigger),
+            status=str(found.status),
+            question_count=found.question_count,
+            created_at=found.created_at,
+            finished_at=found.finished_at,
+            error_code=found.error_code,
+            error_message=found.error_message,
         )
 
     # -- fit ----------------------------------------------------------------
@@ -724,50 +816,81 @@ class AssessmentService:
                 )
             return assessment.id
 
-    async def _raise_questions(
-        self,
-        owner_id: uuid.UUID,
-        assessment_id: uuid.UUID,
-        thin: list[DimensionValue],
-        snapshot: Any,
-    ) -> None:
-        block = "\n".join(
-            f"- {d.dimension_id} ({d.name}): scored {d.score}, confidence "
-            f"{d.confidence:.2f}. {d.read}"
-            for d in thin
-        )
-        evidence_block = _evidence_block(snapshot)
-        result = await self._gateway.run(
-            owner_id,
-            task="assessment.questions",
-            template=load_template("follow_up_questions", "v1"),
-            inputs={"low_confidence_dimensions": block, "evidence": evidence_block},
-            output_schema=_Questions,
-            untrusted=frozenset({"evidence"}),
+    async def _generate_questions(self, owner_id: uuid.UUID, requested: QuestionRound) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            scores = await mine.scores.get_list(
+                AssessedScoreFilter(assessment_id=requested.assessment_id)
+            )
+            names = {d.key: d.name for d in await mine.dimensions.get_list(SkillDimensionFilter())}
+        thin = sorted(
+            needs_follow_up(scores, threshold=self._threshold), key=lambda s: s.dimension_key
         )
 
-        known = {d.dimension_id for d in thin}
+        written: list[_Question] = []
+        if thin:
+            block = "\n".join(
+                f"- {s.dimension_key} ({names.get(s.dimension_key, s.dimension_key)}): "
+                f"scored {s.score}, confidence {s.confidence:.2f}. {s.read}"
+                for s in thin
+            )
+            snapshot = await self._profile.snapshot(owner_id)
+            result = await self._gateway.run(
+                owner_id,
+                task="assessment.questions",
+                template=load_template("follow_up_questions", "v1"),
+                inputs={
+                    "low_confidence_dimensions": block,
+                    "evidence": _evidence_block(snapshot),
+                },
+                output_schema=_Questions,
+                untrusted=frozenset({"evidence"}),
+            )
+            known = {s.dimension_key for s in thin}
+            written = [q for q in result.value.questions if q.dimension_id in known]
+
         async with self._uow.for_owner(owner_id) as mine:
-            stored = 0
-            for question in result.value.questions:
-                if question.dimension_id not in known:
-                    continue
+            current = await mine.rounds.get(requested.id)
+            if current is None or not current.is_generating:
+                # A newer round took over while the model ran; it writes the
+                # questions, so these are dropped rather than doubled.
+                return
+            now = utcnow()
+            for stale in await mine.questions.get_list(
+                FollowUpQuestionFilter(is_answered=False, is_retired=False)
+            ):
+                stale.retire(now)
+                await mine.questions.update(stale)
+            for question in written:
                 await mine.questions.create(
                     FollowUpQuestion(
                         id=uuid.uuid4(),
                         owner_id=owner_id,
-                        assessment_id=assessment_id,
+                        assessment_id=current.assessment_id,
                         dimension_key=question.dimension_id,
                         text=question.text,
                         why=question.why,
                         options=tuple(question.options),
                     )
                 )
-                stored += 1
-            if stored:
+            current.ready(count=len(written), at=now)
+            await mine.rounds.update(current)
+            if written:
                 mine.record(
-                    QuestionsRaised(owner_id=owner_id, assessment_id=assessment_id, count=stored)
+                    QuestionsRaised(
+                        owner_id=owner_id,
+                        assessment_id=current.assessment_id,
+                        count=len(written),
+                    )
                 )
+
+    async def _fail_round(
+        self, owner_id: uuid.UUID, round_id: uuid.UUID, *, code: str, message: str
+    ) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            failed = await mine.rounds.get(round_id)
+            if failed is not None:
+                failed.failed(code=code, message=message, at=utcnow())
+                await mine.rounds.update(failed)
 
     async def _store_fit(
         self,

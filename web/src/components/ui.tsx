@@ -325,13 +325,30 @@ export function YouVsBar({
   );
 }
 
+/**
+ * A bar for a known share, or — with `indeterminate` — for work whose length
+ * is unknown, which leaves out `aria-valuenow` as the ARIA pattern asks.
+ */
 export function ProgressBar({
-  percent,
+  percent = 0,
   label,
+  indeterminate = false,
 }: {
-  percent: number;
+  percent?: number;
   label: string;
+  indeterminate?: boolean;
 }) {
+  if (indeterminate) {
+    return (
+      <div
+        className="progress progress-indeterminate"
+        role="progressbar"
+        aria-label={label}
+      >
+        <div className="progress-fill" />
+      </div>
+    );
+  }
   const value = Math.max(0, Math.min(100, Math.round(percent)));
   return (
     <div

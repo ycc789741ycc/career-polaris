@@ -20,6 +20,8 @@ from advisor.assessment.domain import (
     DimensionChangeFilter,
     FollowUpQuestion,
     FollowUpQuestionFilter,
+    QuestionRound,
+    QuestionRoundFilter,
     RoleFit,
     RoleFitFilter,
     SkillAssessment,
@@ -165,12 +167,44 @@ class SqlAlchemyFollowUpQuestionRepository(
         return entity.id
 
     def conditions(self, filter: FollowUpQuestionFilter) -> list[ColumnElement[bool]]:
-        answered_at = models.FollowUpQuestion.answered_at
+        question = models.FollowUpQuestion
+        found: list[ColumnElement[bool]] = []
         if filter.is_answered is True:
-            return [answered_at.is_not(None)]
+            found.append(question.answered_at.is_not(None))
         if filter.is_answered is False:
-            return [answered_at.is_(None)]
-        return []
+            found.append(question.answered_at.is_(None))
+        if filter.is_retired is True:
+            found.append(question.retired_at.is_not(None))
+        if filter.is_retired is False:
+            found.append(question.retired_at.is_(None))
+        return found
+
+
+class SqlAlchemyQuestionRoundRepository(
+    SqlAlchemyRepository[QuestionRound, models.QuestionRound, QuestionRoundFilter]
+):
+    model = models.QuestionRound
+    id_column = models.QuestionRound.id
+    created_column = models.QuestionRound.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.QuestionRound.owner_id
+    noun = "question round"
+
+    def to_entity(self, row: models.QuestionRound) -> QuestionRound:
+        return mappers.question_round(row)
+
+    def to_row(self, entity: QuestionRound) -> models.QuestionRound:
+        return mappers.question_round_row(entity)
+
+    def apply(self, row: models.QuestionRound, entity: QuestionRound) -> None:
+        mappers.apply_question_round(row, entity)
+
+    def id_of(self, entity: QuestionRound) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: QuestionRoundFilter) -> list[ColumnElement[bool]]:
+        if filter.status is None:
+            return []
+        return [models.QuestionRound.status == str(filter.status)]
 
 
 class SqlAlchemyRoleFitRepository(SqlAlchemyRepository[RoleFit, models.RoleFit, RoleFitFilter]):

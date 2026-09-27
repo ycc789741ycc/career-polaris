@@ -76,6 +76,24 @@ export interface Question {
   answer: string | null;
 }
 
+/** A round of follow-up questions, generated in the background (ADR 0012). */
+export type QuestionRoundStatus =
+  | "generating"
+  | "ready"
+  | "failed"
+  | "superseded";
+
+export interface QuestionStatus {
+  id: string;
+  status: QuestionRoundStatus;
+  /** `evidence` after a sync or upload, `assessment` after an analysis. */
+  trigger: "evidence" | "assessment";
+  question_count: number;
+  created_at: string;
+  finished_at: string | null;
+  error: { code: string; message: string } | null;
+}
+
 export interface SalaryBand {
   low: number;
   mid: number;

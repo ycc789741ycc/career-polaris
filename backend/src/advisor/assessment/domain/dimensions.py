@@ -11,8 +11,10 @@ Two rules carry the whole feature:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Protocol
 
 MIN_DIMENSIONS = 5
 MAX_DIMENSIONS = 10
@@ -106,7 +108,14 @@ def dropped_ids(previous: dict[str, str], current: list[DimensionScore]) -> set[
     return set(previous) - {d.dimension_id for d in current}
 
 
-def needs_follow_up(dimensions: list[DimensionScore], *, threshold: float) -> list[DimensionScore]:
+class Scored(Protocol):
+    """Anything with a confidence: a fresh dimension, or a stored score."""
+
+    @property
+    def confidence(self) -> float: ...
+
+
+def needs_follow_up[T: Scored](dimensions: Sequence[T], *, threshold: float) -> list[T]:
     """The domain rule for "the context is not enough".
 
     A dimension below the confidence threshold is what triggers follow-up

@@ -20,8 +20,9 @@ class SourceSynced:
 
 @dataclass(frozen=True, slots=True)
 class ProfileUpdated:
-    """Evidence changed. Per domain section 2.9 this does not start an
-    analysis — the user asks for that explicitly."""
+    """Evidence changed. This does not start an analysis — the user asks for
+    that explicitly — but it does open a round of follow-up questions against
+    the latest one (ADR 0012)."""
 
     owner_id: uuid.UUID
     source: EvidenceSource
