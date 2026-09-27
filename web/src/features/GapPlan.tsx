@@ -15,7 +15,6 @@ import {
   ErrorNote,
   Eyebrow,
   Loading,
-  PillToggle,
   ProgressBar,
   RoundCheck,
   YouVsBar,
@@ -24,39 +23,45 @@ import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { ago } from "./time";
-import { messageOf, useAsync } from "./useAsync";
+import { messageOf } from "./useAsync";
 
-type Mode = "matched" | "custom";
 type Ref = { kind: TargetKind; id: string };
 
 /** How often a drafting plan is re-read. */
 const POLL_MS = 2000;
 
-const SAMPLE_JD = {
-  title: "Staff Platform Engineer",
-  company: "Meridian Labs",
-  text: "Staff Platform Engineer at Meridian Labs — set technical direction across three product teams, own the reliability roadmap and its SLOs, mentor senior engineers. Requires demonstrated org-level influence.",
-};
-
 /**
- * The gap plan: plan a route to one Target, then work through it.
+ * The Advisor's plan tab: a route to the one Target the Advisor is aimed at.
  *
- * A plan is drafted by a background job on the user's key, so the page asks
+ * A plan is drafted by a background job on the user's key, so the tab asks
  * for a price first, then polls the plan until it is ready or says why it
- * failed (ADR 0006). Plans are kept per Target; the history reopens them.
+ * failed (ADR 0006). Plans are kept per Target; the history reopens them, and
+ * reopening one for another Target moves the Advisor there.
  */
-export function GapPlan() {
-  const { status, handoff, setTarget, navigate } = useShell();
+export function GapPlan({
+  target,
+  history,
+  onChanged,
+  onRevisit,
+}: {
+  target: TargetOption;
+  /** Every plan, newest first — loaded by the Advisor. */
+  history: PlanSummary[];
+  /** A plan was drafted or ticked: the history and fits are out of date. */
+  onChanged: () => void;
+  /** Reopen a plan kept for another Target. */
+  onRevisit: (entry: PlanSummary) => void;
+}) {
+  const { status, navigate } = useShell();
   const flash = useToast();
   const model = modelName(status.credential);
-  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
-  const history = useAsync<PlanSummary[]>(() => api.get("/gap-plans"), []);
+  const ref: Ref = { kind: target.kind, id: target.id };
 
-  const [mode, setMode] = useState<Mode>("matched");
-  const [selected, setSelected] = useState<Ref | null>(null);
-  const [planId, setPlanId] = useState<string | null>(null);
+  // Opens with this Target's latest plan, if it has one.
+  const [planId, setPlanId] = useState<string | null>(
+    () => history.find((p) => sameTarget(p.target, ref))?.id ?? null,
+  );
   const [plan, setPlan] = useState<Plan | null>(null);
-  const [jd, setJd] = useState({ text: "", title: "", company: "" });
   const [estimate, setEstimate] = useState<{
     ref: Ref;
     label: string;
@@ -65,37 +70,6 @@ export function GapPlan() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasDrafting = useRef(false);
-  // The first plan is opened for the user once; after that they choose.
-  const opened = useRef(false);
-
-  const options = targets.data ?? [];
-  const matched = options.filter((o) => o.kind !== "privatePosting");
-  const pasted = options.filter((o) => o.kind === "privatePosting");
-
-  // Open the latest plan, unless the role map handed over a role to plan for.
-  useEffect(() => {
-    if (opened.current || !history.data || !targets.data) return;
-    opened.current = true;
-    const wanted = handoff?.roleId
-      ? targets.data.find((o) => o.role_id === handoff.roleId)
-      : undefined;
-    if (wanted) {
-      setSelected({ kind: wanted.kind, id: wanted.id });
-      const existing = history.data.find(
-        (p) => p.target.kind === wanted.kind && p.target.id === wanted.id,
-      );
-      if (existing) setPlanId(existing.id);
-      return;
-    }
-    const latest = history.data[0];
-    if (latest) {
-      setPlanId(latest.id);
-      setSelected(latest.target);
-      setMode(latest.target.kind === "privatePosting" ? "custom" : "matched");
-    } else if (targets.data[0]) {
-      setSelected({ kind: targets.data[0].kind, id: targets.data[0].id });
-    }
-  }, [history.data, targets.data, handoff]);
 
   // Read the open plan, and keep re-reading it while it is being drafted.
   useEffect(() => {
@@ -112,8 +86,7 @@ export function GapPlan() {
           timer = setTimeout(load, POLL_MS);
         } else if (wasDrafting.current) {
           wasDrafting.current = false;
-          void history.reload();
-          void targets.reload();
+          onChanged();
           flash(
             next.status === "ready"
               ? `${next.model_id ?? model} drafted a plan for ${next.label}.`
@@ -129,89 +102,29 @@ export function GapPlan() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-    // history/targets reloads are stable enough; re-running on them would
-    // restart polling for no reason.
+    // onChanged is re-created by the Advisor; re-running on it would restart
+    // polling for no reason.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId]);
 
-  // The header's target chip names what this plan aims at.
-  useEffect(() => {
-    const fit = plan?.snapshot?.fit;
-    setTarget(plan ? `${plan.label}${fit != null ? ` · ${fit}%` : ""}` : null);
-    return () => setTarget(null);
-  }, [plan, setTarget]);
-
-  /** Picking a Target shows its latest plan, or none yet. */
-  function selectTarget(ref: Ref) {
-    opened.current = true;
-    setSelected(ref);
-    const existing = (history.data ?? []).find(
-      (p) => p.target.kind === ref.kind && p.target.id === ref.id,
-    );
-    if (existing?.id !== planId) {
-      setPlan(null);
-      setPlanId(existing?.id ?? null);
-    }
-  }
-
-  async function price(ref: Ref, label: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const cost = await api.get<PlanEstimate>(
-        `/gap-plans/cost-estimate?kind=${ref.kind}&id=${ref.id}`,
-      );
-      setEstimate({ ref, label, cost });
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generate() {
+  async function price(priced: Ref, label: string) {
     if (!status.credential) {
       flash("Plan drafting runs on your model — add a key.");
       navigate("model");
       return;
     }
-    if (mode === "custom" && jd.text.trim()) {
-      if (!jd.title.trim() || !jd.company.trim()) {
-        setError("Give the posting a title and a company first.");
-        return;
-      }
-      setBusy(true);
-      setError(null);
-      try {
-        const posting = await api.post<{ id: string }>("/job-descriptions", {
-          company_name: jd.company.trim(),
-          title: jd.title.trim(),
-          location: null,
-          description: jd.text,
-        });
-        setJd({ text: "", title: "", company: "" });
-        await targets.reload();
-        const ref: Ref = { kind: "privatePosting", id: posting.id };
-        selectTarget(ref);
-        await price(ref, `${jd.title.trim()} · ${jd.company.trim()}`);
-      } catch (caught) {
-        setError(messageOf(caught));
-        setBusy(false);
-      }
-      return;
-    }
-    const option = options.find(
-      (o) => o.kind === selected?.kind && o.id === selected?.id,
-    );
-    if (!option) {
-      setError(
-        mode === "custom"
-          ? "Paste the job description first."
-          : "Pick a role to plan a route to.",
+    setBusy(true);
+    setError(null);
+    try {
+      const cost = await api.get<PlanEstimate>(
+        `/gap-plans/cost-estimate?kind=${priced.kind}&id=${priced.id}`,
       );
-      return;
+      setEstimate({ ref: priced, label, cost });
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
     }
-    await price({ kind: option.kind, id: option.id }, option.label);
   }
 
   async function confirm() {
@@ -223,7 +136,7 @@ export function GapPlan() {
       setEstimate(null);
       setPlan(null);
       setPlanId(created.id);
-      void history.reload();
+      onChanged();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -244,7 +157,7 @@ export function GapPlan() {
     try {
       await api.put(`/gap-plan-tasks/${taskId}`, { done });
       setPlan(await api.get<Plan>(`/gap-plans/${plan.id}`));
-      void history.reload();
+      onChanged();
     } catch (caught) {
       setError(messageOf(caught));
       setPlan(await api.get<Plan>(`/gap-plans/${plan.id}`));
@@ -252,9 +165,10 @@ export function GapPlan() {
   }
 
   function revisit(entry: PlanSummary) {
-    opened.current = true;
-    setSelected(entry.target);
-    setMode(entry.target.kind === "privatePosting" ? "custom" : "matched");
+    if (!sameTarget(entry.target, ref)) {
+      onRevisit(entry);
+      return;
+    }
     setPlan(null);
     setPlanId(entry.id);
     flash(`Revisiting the ${entry.label.split(" · ").pop()} plan.`);
@@ -271,122 +185,14 @@ export function GapPlan() {
       <div className="panel panel-tight" style={{ marginBottom: 20 }}>
         <AutoGrid col={300} gap={22}>
           <div>
-            <div className="row">
-              <Eyebrow>Plan a route to</Eyebrow>
-              <PillToggle
-                small
-                pressed={mode === "matched"}
-                onClick={() => setMode("matched")}
-              >
-                Matched &amp; subscribed
-              </PillToggle>
-              <PillToggle
-                small
-                pressed={mode === "custom"}
-                onClick={() => setMode("custom")}
-              >
-                My own JD
-              </PillToggle>
-            </div>
+            <Eyebrow>Plan a route to {target.label}</Eyebrow>
             <p className="subcopy" style={{ margin: "6px 0 12px" }}>
-              {mode === "matched"
-                ? "Pick one of your top matched roles, or a role you subscribed to — the plan closes the distance to that role at that company."
-                : "Paste a posting and the gaps, milestones and tasks below are planned against its own requirements."}
+              {target.kind === "privatePosting"
+                ? "The gaps, milestones and tasks below are planned against the posting's own requirements."
+                : "The plan closes the distance to this role at this company, drafted on your model from your own evidence."}
             </p>
-
-            {targets.loading ? (
-              <Loading what="your targets" />
-            ) : mode === "matched" ? (
-              matched.length === 0 ? (
-                <p className="subcopy">
-                  No matched roles yet.{" "}
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => navigate("roles")}
-                  >
-                    Build your role map
-                  </button>{" "}
-                  or paste a JD instead.
-                </p>
-              ) : (
-                <TargetChips
-                  options={matched}
-                  selected={selected}
-                  onSelect={selectTarget}
-                />
-              )
-            ) : (
-              <>
-                {pasted.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <TargetChips
-                      options={pasted}
-                      selected={selected}
-                      onSelect={(ref) => {
-                        selectTarget(ref);
-                        setJd({ text: "", title: "", company: "" });
-                      }}
-                    />
-                  </div>
-                )}
-                <textarea
-                  className="input"
-                  rows={6}
-                  aria-label="Job description"
-                  value={jd.text}
-                  placeholder={`Paste the job description — ${model} reads its requirements and plans the milestones against them.`}
-                  onChange={(event) =>
-                    setJd({ ...jd, text: event.target.value })
-                  }
-                />
-                <div
-                  className="row"
-                  style={{ marginTop: 10, flexWrap: "wrap" }}
-                >
-                  <input
-                    className="input"
-                    aria-label="Job title"
-                    placeholder="Job title"
-                    style={{ flex: "1 1 150px", width: "auto" }}
-                    value={jd.title}
-                    onChange={(event) =>
-                      setJd({ ...jd, title: event.target.value })
-                    }
-                  />
-                  <input
-                    className="input"
-                    aria-label="Company"
-                    placeholder="Company"
-                    style={{ flex: "1 1 150px", width: "auto" }}
-                    value={jd.company}
-                    onChange={(event) =>
-                      setJd({ ...jd, company: event.target.value })
-                    }
-                  />
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      setJd({
-                        text: SAMPLE_JD.text,
-                        title: SAMPLE_JD.title,
-                        company: SAMPLE_JD.company,
-                      })
-                    }
-                  >
-                    Use a sample
-                  </Button>
-                </div>
-                <p className="subcopy" style={{ fontSize: 12.5, marginTop: 8 }}>
-                  {jd.text.trim()
-                    ? "Its requirements are read on your model when you generate, and it stays private to you."
-                    : "Nothing read yet — paste the posting text."}
-                </p>
-              </>
-            )}
-
             <div className="row" style={{ marginTop: 16 }}>
-              <Button onClick={() => void generate()} busy={busy}>
+              <Button onClick={() => void price(ref, target.label)} busy={busy}>
                 Generate gap plan
               </Button>
               {plan && (
@@ -403,23 +209,17 @@ export function GapPlan() {
 
           <div className="inset" style={{ padding: 18 }}>
             <Eyebrow style={{ marginBottom: 4 }}>Plan history</Eyebrow>
-            {history.loading ? (
-              <Loading what="your plans" />
-            ) : (history.data ?? []).length === 0 ? (
+            {history.length === 0 ? (
               <p className="subcopy" style={{ margin: "8px 0 0" }}>
                 No plans yet. The first one you generate is kept here.
               </p>
             ) : (
-              (history.data ?? []).map((entry) => (
+              history.map((entry) => (
                 <div
                   key={entry.id}
                   className="history-row"
                   aria-current={
-                    plan &&
-                    plan.target.kind === entry.target.kind &&
-                    plan.target.id === entry.target.id
-                      ? "true"
-                      : undefined
+                    sameTarget(entry.target, ref) ? "true" : undefined
                   }
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -467,8 +267,8 @@ export function GapPlan() {
           <Loading what="the plan" />
         ) : (
           <EmptyState title="No plan yet">
-            Pick a role above, or paste a job description, and generate a plan.
-            It is drafted on your model from your own evidence.
+            Generate one for {target.label}. It is drafted on your model from
+            your own evidence.
           </EmptyState>
         )
       ) : plan.status === "drafting" ? (
@@ -659,41 +459,6 @@ export function GapPlan() {
   );
 }
 
-function TargetChips({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: TargetOption[];
-  selected: Ref | null;
-  onSelect: (ref: Ref) => void;
-}) {
-  return (
-    <div className="row" style={{ gap: 8 }}>
-      {options.map((option) => (
-        <button
-          key={`${option.kind}:${option.id}`}
-          type="button"
-          className="target-chip"
-          aria-pressed={
-            selected?.kind === option.kind && selected.id === option.id
-          }
-          onClick={() => onSelect({ kind: option.kind, id: option.id })}
-        >
-          <b>{option.role_name ?? option.title}</b>
-          <span className="target-chip-company">{option.company_name}</span>
-          {option.fit !== null && (
-            <span className="target-chip-fit">{option.fit}%</span>
-          )}
-          {option.kind === "subscription" && (
-            <span className="target-chip-tag">subscribed</span>
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function GapCard({ gap, rank }: { gap: PlanGap; rank: number }) {
   return (
     <div className="gap-card">
@@ -758,6 +523,10 @@ function FailureHint({
       version.
     </p>
   );
+}
+
+function sameTarget(a: Ref, b: Ref): boolean {
+  return a.kind === b.kind && a.id === b.id;
 }
 
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six"];

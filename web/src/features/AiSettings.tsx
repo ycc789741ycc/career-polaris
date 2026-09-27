@@ -29,8 +29,8 @@ const USES = [
     note: "Names the roles grouped from real postings and reads out what they require.",
   },
   {
-    title: "Gap plan and résumé",
-    note: "Drafts milestones for a role you pick, and writes a résumé from cited work.",
+    title: "Advisor",
+    note: "Drafts a gap plan for the role you select on the map, and writes a résumé for it from cited work.",
   },
 ];
 

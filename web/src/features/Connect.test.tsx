@@ -88,7 +88,8 @@ function renderConnect() {
   const shell = {
     status: { me: null, credential: null, openQuestions: 0, confidence: 0 },
     navigate: vi.fn(),
-    handoff: null,
+    focus: null,
+    setFocus: vi.fn(),
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),

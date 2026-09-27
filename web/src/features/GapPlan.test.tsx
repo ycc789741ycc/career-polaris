@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Plan, PlanSummary, TargetOption } from "../api/types";
@@ -21,6 +21,19 @@ const option: TargetOption = {
   source_kind: "atsBoard",
   url: null,
   subscription_id: null,
+};
+
+const pasted: TargetOption = {
+  ...option,
+  kind: "privatePosting",
+  id: "jd-1",
+  title: "Staff Platform Engineer",
+  role_name: null,
+  role_id: null,
+  company_name: "Meridian Labs",
+  label: "Staff Platform Engineer · Meridian Labs",
+  fit: null,
+  source_kind: "pasted",
 };
 
 const summary: PlanSummary = {
@@ -129,7 +142,13 @@ function serve(route: Route) {
   return calls;
 }
 
-function renderPlan(overrides: Partial<Shell> = {}) {
+function renderPlan(
+  history: PlanSummary[],
+  overrides: Partial<Shell> = {},
+  target: TargetOption = option,
+) {
+  const onChanged = vi.fn();
+  const onRevisit = vi.fn();
   const shell: Shell = {
     status: {
       me: null,
@@ -145,7 +164,8 @@ function renderPlan(overrides: Partial<Shell> = {}) {
       confidence: 80,
     },
     navigate: vi.fn(),
-    handoff: null,
+    focus: null,
+    setFocus: vi.fn(),
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
@@ -154,11 +174,16 @@ function renderPlan(overrides: Partial<Shell> = {}) {
   render(
     <ShellContext.Provider value={shell}>
       <ToastProvider>
-        <GapPlan />
+        <GapPlan
+          target={target}
+          history={history}
+          onChanged={onChanged}
+          onRevisit={onRevisit}
+        />
       </ToastProvider>
     </ShellContext.Provider>,
   );
-  return shell;
+  return { shell, onChanged, onRevisit };
 }
 
 describe("gap plan screen", () => {
@@ -169,8 +194,6 @@ describe("gap plan screen", () => {
 
   it("prices a plan before anything is spent, then shows it drafting", async () => {
     const calls = serve((method, url) => {
-      if (url === "/targets") return [option];
-      if (url === "/gap-plans" && method === "GET") return [];
       if (url.startsWith("/gap-plans/cost-estimate"))
         return { cost_usd: "0.04", model_id: "claude-opus-5" };
       if (url === "/gap-plans" && method === "POST")
@@ -180,7 +203,7 @@ describe("gap plan screen", () => {
       return null;
     });
     const user = userEvent.setup();
-    renderPlan();
+    const { onChanged } = renderPlan([]);
 
     expect(await screen.findByText("No plan yet")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Generate gap plan" }));
@@ -200,16 +223,15 @@ describe("gap plan screen", () => {
       url: "/gap-plans",
       body: { kind: "matchedPosting", id: "p1" },
     });
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it("opens the latest plan with its gaps ranked and cited", async () => {
     serve((_method, url) => {
-      if (url === "/targets") return [option];
-      if (url === "/gap-plans") return [summary];
       if (url === "/gap-plans/plan-1") return readyPlan;
       return null;
     });
-    const shell = renderPlan();
+    renderPlan([summary]);
 
     expect(
       await screen.findByText("01 · Demonstrated org-level influence"),
@@ -225,25 +247,16 @@ describe("gap plan screen", () => {
       screen.getByText("GitHub · payments-svc — 38 merged PRs"),
     ).toBeInTheDocument();
     expect(screen.getByText("Platform Engineer")).toBeInTheDocument();
-    // The top bar's target is set by an effect after the page renders, so the
-    // page being on screen does not mean it has been set yet.
-    await waitFor(() =>
-      expect(shell.setTarget).toHaveBeenCalledWith(
-        "Senior Backend Engineer · Northwind Pay · 71%",
-      ),
-    );
   });
 
   it("ticks a task and counts one finished in another plan", async () => {
     const calls = serve((_method, url) => {
-      if (url === "/targets") return [option];
-      if (url === "/gap-plans") return [summary];
       if (url === "/gap-plans/plan-1") return readyPlan;
       if (url.startsWith("/gap-plan-tasks/")) return undefined;
       return null;
     });
     const user = userEvent.setup();
-    renderPlan();
+    renderPlan([summary]);
 
     const elsewhere = await screen.findByRole("checkbox", {
       name: /Present at all-hands/,
@@ -263,48 +276,52 @@ describe("gap plan screen", () => {
     });
   });
 
-  it("pastes a JD as a private target before pricing a plan for it", async () => {
-    const calls = serve((method, url) => {
-      if (url === "/targets") return [option];
-      if (url === "/gap-plans" && method === "GET") return [];
-      if (url === "/job-descriptions") return { id: "jd-1" };
+  it("prices a pasted JD with the one-off cost of reading it", async () => {
+    const calls = serve((_method, url) => {
       if (url.startsWith("/gap-plans/cost-estimate"))
         return { cost_usd: "0.09", includes_scoring: true };
       return null;
     });
     const user = userEvent.setup();
-    renderPlan();
+    renderPlan([], {}, pasted);
 
-    await user.click(await screen.findByRole("button", { name: "My own JD" }));
-    await user.click(screen.getByRole("button", { name: "Use a sample" }));
-    await user.click(screen.getByRole("button", { name: "Generate gap plan" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Generate gap plan" }),
+    );
 
     expect(
       await screen.findByRole("region", { name: "Cost estimate" }),
     ).toHaveTextContent("reading and scoring the pasted job description");
-    expect(calls).toContainEqual(
-      expect.objectContaining({
-        method: "POST",
-        url: "/job-descriptions",
-        body: expect.objectContaining({
-          title: "Staff Platform Engineer",
-          company_name: "Meridian Labs",
-        }),
-      }),
-    );
     expect(calls.map((c) => c.url)).toContain(
       "/gap-plans/cost-estimate?kind=privatePosting&id=jd-1",
     );
   });
 
-  it("sends a user without a model to set one up instead of pricing", async () => {
+  it("hands a plan kept for another target to the Advisor", async () => {
     serve((_method, url) => {
-      if (url === "/targets") return [option];
-      if (url === "/gap-plans") return [];
+      if (url === "/gap-plans/plan-1") return readyPlan;
       return null;
     });
+    const other: PlanSummary = {
+      ...summary,
+      id: "plan-2",
+      target: { kind: "matchedPosting", id: "p9" },
+      label: "Platform Engineer · Contoso",
+    };
     const user = userEvent.setup();
-    const shell = renderPlan({
+    const { onRevisit } = renderPlan([other, summary]);
+
+    const row = (
+      await screen.findByText("Platform Engineer · Contoso")
+    ).closest(".history-row") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Revisit" }));
+    expect(onRevisit).toHaveBeenCalledWith(other);
+  });
+
+  it("sends a user without a model to set one up instead of pricing", async () => {
+    serve(() => null);
+    const user = userEvent.setup();
+    const { shell } = renderPlan([], {
       status: {
         me: null,
         credential: null,

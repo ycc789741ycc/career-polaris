@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { Credential, Me } from "../api/types";
-import type { Screen } from "./navigation";
+import type { AdvisorTab, Focus, Screen } from "./navigation";
 
 /** What the sidebar and header show about the account, loaded once. */
 export interface ShellStatus {
@@ -12,16 +12,19 @@ export interface ShellStatus {
   confidence: number | null;
 }
 
-/** What one screen hands the next: Role map → Gap plan or Résumé. */
-export interface Handoff {
-  roleId?: string;
+/** Where a navigate() lands beyond the screen. Leaving focus out keeps it. */
+export interface NavigateTo {
+  tab?: AdvisorTab;
+  focus?: Focus | null;
 }
 
 export interface Shell {
   status: ShellStatus;
-  navigate: (screen: Screen, handoff?: Handoff) => void;
-  /** Set by the last navigate(); read once by the screen it opened. */
-  handoff: Handoff | null;
+  navigate: (screen: Screen, to?: NavigateTo) => void;
+  /** What the role map has selected, and the Advisor aims at. In the hash. */
+  focus: Focus | null;
+  /** Changes the selection without adding a history entry. */
+  setFocus: (focus: Focus | null) => void;
   /** Re-reads the status, after something a screen did changed it. */
   refresh: () => Promise<void>;
   /** The header's target chip: what the plan or résumé is aimed at. */
@@ -39,7 +42,8 @@ const EMPTY: ShellStatus = {
 export const ShellContext = createContext<Shell>({
   status: EMPTY,
   navigate: () => {},
-  handoff: null,
+  focus: null,
+  setFocus: () => {},
   refresh: async () => {},
   target: null,
   setTarget: () => {},

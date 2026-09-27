@@ -227,6 +227,12 @@ whose proposals apply only on request; and PDF export on the worker's `docs`
 queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
+Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
+aimed at what the role map has selected: a role, whose openings and watched
+companies it offers as Targets, or a JD pasted on the role map. That selection
+is carried in the hash (`?role=` / `?jd=`), so neither tab picks a Target of
+its own.
+
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé
 is tailored. The hiring bar is `estimated` only — `InterviewReport`

@@ -58,6 +58,7 @@ The prototype no longer has a goal. Its gap plan screen says "Plan a route to" a
 - **Removed with CareerGoal:** goal status and priority, and the check on combined plan load across goals. With no "active goal", one plan is simply the one the user is looking at.
 - **The core loop is unchanged, and it is still the point of the product.** Tasks produce real work → the next connector sync brings new Evidence → re-assessment → the plan shows progress.
 - **Role drift** (decision 10 amended by decision 20): when a Role splits or merges, a plan whose Target came from that Role keeps its snapshot. The app suggests the successor Role with the most requirement overlap, and the user decides.
+- **Where a Target is chosen (UI, 2026-09-27):** the gap plan and the résumé share one **Advisor** screen, with a tab for each. What it aims at is the role map's selection: a Role, whose matched postings and subscriptions are then offered as Targets, or a pasted JD, which the role map now also holds. The model is unchanged. This only moves the choice out of the two screens that used to make it separately.
 
 ### 2.2 The role map shows the top k roles, and the user picks k
 v2 step 5, "Get top k relative roles", and the intent (*"Select the top k similar role… User can decide the number of k"*) match what was built. ADR 0002 already limits the analysis to the ten roles closest to the profile.

@@ -8,7 +8,6 @@ import type {
   ResumeSummary,
   ResumeTemplate,
   ResumeVersion,
-  Subscription,
   TailoredResume,
   TargetKind,
   TargetOption,
@@ -19,7 +18,6 @@ import {
   EmptyState,
   ErrorNote,
   Eyebrow,
-  FitBadge,
   Loading,
   PillToggle,
   RoundCheck,
@@ -29,29 +27,11 @@ import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { ago } from "./time";
-import { messageOf, useAsync } from "./useAsync";
+import { messageOf } from "./useAsync";
 
-type Mode = "matched" | "custom";
 type Ref = { kind: TargetKind; id: string };
 
 const POLL_MS = 2000;
-
-/** Crawl source kinds as the filter pills name them (domain decision 6). */
-const SOURCE_LABELS: Record<string, string> = {
-  atsBoard: "ATS board",
-  jsonLd: "Careers page",
-  publicApi: "Public job API",
-  watchlist: "Watchlist",
-  pasted: "Your JD",
-};
-const FILTERS = [
-  "all",
-  "atsBoard",
-  "jsonLd",
-  "publicApi",
-  "watchlist",
-] as const;
-type Filter = (typeof FILTERS)[number];
 
 const TEMPLATES: {
   id: ResumeTemplate;
@@ -99,12 +79,6 @@ const SUGGESTIONS = [
   "Answer their top requirement first",
 ];
 
-const SAMPLE_JD = {
-  title: "Staff Platform Engineer",
-  company: "Meridian Labs",
-  text: "Staff Platform Engineer — you will set technical direction across three product teams, own the reliability roadmap, and mentor senior engineers. Requires demonstrated org-level influence and SLO ownership.",
-};
-
 interface Exchange {
   request: string;
   reply: string;
@@ -116,30 +90,39 @@ interface Exchange {
 }
 
 /**
- * The Resume Advisor: written for one Target at a time.
+ * The Advisor's résumé tab: written for the one Target the Advisor is aimed at.
  *
  * The first version is written on the user's key from their cited evidence;
- * the page polls it while it is being written (ADR 0006). The page is then
+ * the tab polls it while it is being written (ADR 0006). The page is then
  * edited in place, saved as versions, revised through a streamed chat whose
- * proposals apply only on request, and exported as a PDF.
+ * proposals apply only on request, and exported as a PDF. Opening a résumé
+ * kept for another Target moves the Advisor there.
  */
-export function Resume() {
-  const { status, handoff, setTarget, navigate } = useShell();
+export function Resume({
+  target,
+  saved,
+  onChanged,
+  onRevisit,
+}: {
+  target: TargetOption;
+  /** Every tailored résumé, newest first — loaded by the Advisor. */
+  saved: ResumeSummary[];
+  /** A résumé was written or saved: the list is out of date. */
+  onChanged: () => void;
+  /** Open a résumé kept for another Target. */
+  onRevisit: (entry: ResumeSummary) => void;
+}) {
+  const { status, navigate } = useShell();
   const flash = useToast();
   const model = modelName(status.credential);
-  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
-  const saved = useAsync<ResumeSummary[]>(
-    () => api.get("/tailored-resumes"),
-    [],
-  );
+  const ref: Ref = { kind: target.kind, id: target.id };
 
-  const [mode, setMode] = useState<Mode>("matched");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<Ref | null>(null);
-  const [resumeId, setResumeId] = useState<string | null>(null);
+  // Opens with this Target's résumé, if it has one.
+  const [resumeId, setResumeId] = useState<string | null>(
+    () => saved.find((r) => sameTarget(r.target, ref))?.id ?? null,
+  );
   const [resume, setResume] = useState<TailoredResume | null>(null);
   const [draft, setDraft] = useState<ResumeContent | null>(null);
-  const [jd, setJd] = useState({ text: "", title: "", company: "" });
   const [estimate, setEstimate] = useState<{
     ref: Ref;
     label: string;
@@ -155,44 +138,12 @@ export function Resume() {
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const opened = useRef(false);
   const wasDrafting = useRef(false);
 
-  const targetOptions = targets.data ?? [];
-  const optionOf = (ref: Ref | null) =>
-    targetOptions.find((o) => o.kind === ref?.kind && o.id === ref?.id);
-  const ranked = targetOptions.filter(
-    (o) =>
-      o.kind !== "privatePosting" &&
-      (filter === "all" || o.source_kind === filter),
-  );
-  const pasted = targetOptions.filter((o) => o.kind === "privatePosting");
   const dirty =
     !!draft &&
     !!resume?.content &&
     JSON.stringify(draft) !== JSON.stringify(resume.content);
-
-  // Open the most recent résumé, unless the role map handed over a role.
-  useEffect(() => {
-    if (opened.current || !saved.data || !targets.data) return;
-    opened.current = true;
-    const wanted = handoff?.roleId
-      ? targets.data.find((o) => o.role_id === handoff.roleId)
-      : undefined;
-    if (wanted) {
-      pick({ kind: wanted.kind, id: wanted.id }, saved.data);
-      return;
-    }
-    const latest = saved.data[0];
-    if (latest) {
-      setSelected(latest.target);
-      setMode(latest.target.kind === "privatePosting" ? "custom" : "matched");
-      setResumeId(latest.id);
-    } else if (targets.data[0]) {
-      setSelected({ kind: targets.data[0].kind, id: targets.data[0].id });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saved.data, targets.data, handoff]);
 
   // Read the open résumé, and keep re-reading it while it is being written.
   useEffect(() => {
@@ -211,8 +162,7 @@ export function Resume() {
           timer = setTimeout(load, POLL_MS);
         } else if (wasDrafting.current) {
           wasDrafting.current = false;
-          void saved.reload();
-          void targets.reload();
+          onChanged();
           flash(
             next.status === "ready"
               ? `Written for ${next.label}.`
@@ -230,14 +180,6 @@ export function Resume() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId]);
-
-  useEffect(() => {
-    const fit = resume?.snapshot?.fit;
-    setTarget(
-      resume ? `${resume.label}${fit != null ? ` · ${fit}%` : ""}` : null,
-    );
-    return () => setTarget(null);
-  }, [resume, setTarget]);
 
   function show(next: TailoredResume) {
     setResume(next);
@@ -257,22 +199,7 @@ export function Resume() {
     );
   }
 
-  /** Picking a Target opens its latest résumé, or none yet. */
-  function pick(ref: Ref, list = saved.data ?? []) {
-    opened.current = true;
-    setSelected(ref);
-    const existing = list.find(
-      (r) => r.target.kind === ref.kind && r.target.id === ref.id,
-    );
-    if (existing?.id !== resumeId) {
-      setResume(null);
-      setDraft(null);
-      setExchanges([]);
-      setResumeId(existing?.id ?? null);
-    }
-  }
-
-  async function price(ref: Ref, label: string) {
+  async function price(priced: Ref, label: string) {
     if (!status.credential) {
       flash("Writing runs on your model — add a key.");
       navigate("model");
@@ -282,42 +209,12 @@ export function Resume() {
     setError(null);
     try {
       const cost = await api.get<PlanEstimate>(
-        `/tailored-resumes/cost-estimate?kind=${ref.kind}&id=${ref.id}`,
+        `/tailored-resumes/cost-estimate?kind=${priced.kind}&id=${priced.id}`,
       );
-      setEstimate({ ref, label, cost });
+      setEstimate({ ref: priced, label, cost });
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function scoreAndWrite() {
-    if (!jd.text.trim()) {
-      setError("Paste the job description first.");
-      return;
-    }
-    if (!jd.title.trim() || !jd.company.trim()) {
-      setError("Give the posting a title and a company first.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const posting = await api.post<{ id: string }>("/job-descriptions", {
-        company_name: jd.company.trim(),
-        title: jd.title.trim(),
-        location: null,
-        description: jd.text,
-      });
-      const label = `${jd.title.trim()} · ${jd.company.trim()}`;
-      setJd({ text: "", title: "", company: "" });
-      await targets.reload();
-      const ref: Ref = { kind: "privatePosting", id: posting.id };
-      pick(ref);
-      await price(ref, label);
-    } catch (caught) {
-      setError(messageOf(caught));
       setBusy(false);
     }
   }
@@ -337,7 +234,7 @@ export function Resume() {
       setDraft(null);
       setExchanges([]);
       setResumeId(created.id);
-      void saved.reload();
+      onChanged();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -355,7 +252,7 @@ export function Resume() {
         { content: draft },
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
-      void saved.reload();
+      onChanged();
       flash(`Saved version ${version.number} of “${resume.label}”.`);
     } catch (caught) {
       setError(messageOf(caught));
@@ -460,205 +357,46 @@ export function Resume() {
         `/tailored-resumes/${resume.id}/revisions/${revisionId}/apply`,
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
-      void saved.reload();
+      onChanged();
       flash(`Applied as version ${version.number}.`);
     } catch (caught) {
       setError(messageOf(caught));
     }
   }
 
-  const current = optionOf(selected);
-  const targetLine = resume
-    ? `${resume.label}${resume.snapshot?.fit != null ? ` · ${resume.snapshot.fit}% fit` : ""}`
-    : current
-      ? `${current.label}${current.fit !== null ? ` · ${current.fit}% fit` : ""}`
-      : mode === "custom"
-        ? "Paste a job description to begin"
-        : "Pick a role to write for";
-  const watchCount = targetOptions.filter(
-    (o) => o.kind === "subscription",
-  ).length;
+  function open(entry: ResumeSummary) {
+    if (!sameTarget(entry.target, ref)) {
+      onRevisit(entry);
+      return;
+    }
+    if (entry.id !== resumeId) {
+      setResume(null);
+      setDraft(null);
+      setExchanges([]);
+      setResumeId(entry.id);
+    }
+    flash(`Opened “${entry.label}”.`);
+  }
 
   return (
     <section>
       <div className="panel panel-tight" style={{ marginBottom: 20 }}>
+        <Eyebrow>Write for</Eyebrow>
         <div
-          className="row-between"
-          style={{ alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}
+          style={{
+            fontFamily: "var(--font-heading)",
+            fontSize: 20,
+            marginTop: 4,
+          }}
         >
-          <div>
-            <Eyebrow>Write for</Eyebrow>
-            <div
-              style={{
-                fontFamily: "var(--font-heading)",
-                fontSize: 20,
-                marginTop: 4,
-              }}
-            >
-              {targetLine}
-            </div>
-          </div>
-          <div className="row">
-            <PillToggle
-              pressed={mode === "matched"}
-              onClick={() => setMode("matched")}
-            >
-              Top matched roles
-            </PillToggle>
-            <PillToggle
-              pressed={mode === "custom"}
-              onClick={() => setMode("custom")}
-            >
-              My own JD
-            </PillToggle>
-          </div>
+          {resume
+            ? `${resume.label}${resume.snapshot?.fit != null ? ` · ${resume.snapshot.fit}% fit` : ""}`
+            : `${target.label}${target.fit !== null ? ` · ${target.fit}% fit` : ""}`}
         </div>
-
-        {mode === "matched" ? (
-          <>
-            <div className="row" style={{ gap: 7, marginBottom: 12 }}>
-              {FILTERS.map((f) => (
-                <PillToggle
-                  key={f}
-                  small
-                  pressed={filter === f}
-                  onClick={() => setFilter(f)}
-                >
-                  {f === "all" ? "All" : SOURCE_LABELS[f]}
-                </PillToggle>
-              ))}
-              <span className="subcopy" style={{ fontSize: 12.5 }}>
-                Ranked by your fit to each role · {watchCount} subscribed from
-                your watchlist
-              </span>
-            </div>
-            {targets.loading ? (
-              <Loading what="your targets" />
-            ) : ranked.length === 0 ? (
-              <p className="subcopy">
-                Nothing here yet.{" "}
-                <Button variant="ghost" onClick={() => navigate("roles")}>
-                  Build your role map
-                </Button>{" "}
-                or paste a JD instead.
-              </p>
-            ) : (
-              <div
-                className="stack"
-                style={{
-                  gap: 8,
-                  maxHeight: 318,
-                  overflowY: "auto",
-                  paddingRight: 4,
-                }}
-              >
-                {ranked.map((option, index) => (
-                  <WriteRow
-                    key={`${option.kind}:${option.id}`}
-                    option={option}
-                    rank={index + 1}
-                    current={
-                      selected?.kind === option.kind &&
-                      selected.id === option.id
-                    }
-                    onPick={() => pick({ kind: option.kind, id: option.id })}
-                    onChanged={() => void targets.reload()}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <AutoGrid col={300} gap={18}>
-            <div>
-              <textarea
-                className="input"
-                rows={7}
-                aria-label="Job description"
-                value={jd.text}
-                placeholder={`Paste the full job description — ${model} scores it against your profile and writes the résumé to its requirements.`}
-                onChange={(event) => setJd({ ...jd, text: event.target.value })}
-              />
-              <div className="row" style={{ marginTop: 12 }}>
-                <input
-                  className="input"
-                  aria-label="Job title"
-                  placeholder="Job title"
-                  style={{ flex: "1 1 140px", width: "auto" }}
-                  value={jd.title}
-                  onChange={(event) =>
-                    setJd({ ...jd, title: event.target.value })
-                  }
-                />
-                <input
-                  className="input"
-                  aria-label="Company"
-                  placeholder="Company"
-                  style={{ flex: "1 1 140px", width: "auto" }}
-                  value={jd.company}
-                  onChange={(event) =>
-                    setJd({ ...jd, company: event.target.value })
-                  }
-                />
-              </div>
-              <div className="row" style={{ marginTop: 12 }}>
-                <Button busy={busy} onClick={() => void scoreAndWrite()}>
-                  Score &amp; write
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    setJd({
-                      text: SAMPLE_JD.text,
-                      title: SAMPLE_JD.title,
-                      company: SAMPLE_JD.company,
-                    })
-                  }
-                >
-                  Use a sample
-                </Button>
-              </div>
-            </div>
-            <div className="inset" style={{ padding: 18 }}>
-              <Eyebrow style={{ marginBottom: 8 }}>Your pasted JDs</Eyebrow>
-              {pasted.length === 0 ? (
-                <p className="subcopy" style={{ margin: 0 }}>
-                  A JD you paste stays private to you. Its requirements are read
-                  on your model when you write for it.
-                </p>
-              ) : (
-                <div className="stack" style={{ gap: 8 }}>
-                  {pasted.map((option) => (
-                    <WriteRow
-                      key={option.id}
-                      option={option}
-                      rank={null}
-                      current={
-                        selected?.kind === option.kind &&
-                        selected.id === option.id
-                      }
-                      onPick={() => pick({ kind: option.kind, id: option.id })}
-                      onChanged={() => void targets.reload()}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </AutoGrid>
-        )}
-
-        {current && !resumeId && (
+        {!resumeId && (
           <div className="row" style={{ marginTop: 14 }}>
-            <Button
-              busy={busy}
-              onClick={() =>
-                void price(
-                  { kind: current.kind, id: current.id },
-                  current.label,
-                )
-              }
-            >
-              Write résumé for {current.role_name ?? current.title}
+            <Button busy={busy} onClick={() => void price(ref, target.label)}>
+              Write résumé for {target.role_name ?? target.title}
             </Button>
             <span className="subcopy">
               Written on your model from your own evidence; every line cites its
@@ -689,12 +427,12 @@ export function Resume() {
         <div className="stack" style={{ gap: 18 }}>
           <div className="panel panel-tight">
             <Eyebrow style={{ marginBottom: 12 }}>Saved résumés</Eyebrow>
-            {(saved.data ?? []).length === 0 ? (
+            {saved.length === 0 ? (
               <p className="subcopy" style={{ marginTop: 0 }}>
                 None yet. Each one you write is kept here, with every version.
               </p>
             ) : (
-              (saved.data ?? []).map((entry) => (
+              saved.map((entry) => (
                 <div
                   key={entry.id}
                   className="history-row inset"
@@ -711,18 +449,7 @@ export function Resume() {
                           : `Saved ${ago(entry.updated_at)} · v${entry.latest_version ?? 1}`}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      pick(entry.target);
-                      setMode(
-                        entry.target.kind === "privatePosting"
-                          ? "custom"
-                          : "matched",
-                      );
-                      flash(`Opened “${entry.label}”.`);
-                    }}
-                  >
+                  <Button variant="ghost" onClick={() => open(entry)}>
                     Open
                   </Button>
                 </div>
@@ -823,8 +550,6 @@ export function Resume() {
                   : "The export is a white, printable page in the template you pick."}
             </p>
           </div>
-
-          <WatchlistPanel onChanged={() => void targets.reload()} />
         </div>
 
         <div>
@@ -833,8 +558,8 @@ export function Resume() {
               <Loading what="the résumé" />
             ) : (
               <EmptyState title="No résumé for this target yet">
-                Pick a role above, or paste a job description, and write one.
-                The first version is customised to that role.
+                Write one above. The first version is customised to{" "}
+                {target.label}.
               </EmptyState>
             )
           ) : resume.status === "drafting" ? (
@@ -936,88 +661,6 @@ export function Resume() {
         </div>
       </AutoGrid>
     </section>
-  );
-}
-
-function WriteRow({
-  option,
-  rank,
-  current,
-  onPick,
-  onChanged,
-}: {
-  option: TargetOption;
-  rank: number | null;
-  current: boolean;
-  onPick: () => void;
-  onChanged: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const pay = option.salary
-    ? `${option.salary.currency} ${Math.round(option.salary.min / 1000)}–${Math.round(option.salary.max / 1000)}k`
-    : null;
-  const detail = [
-    pay,
-    SOURCE_LABELS[option.source_kind ?? ""] ?? option.source_kind,
-    option.kind === "matchedPosting" ? option.title : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const subscribed =
-    option.kind === "subscription" || option.subscription_id !== null;
-
-  async function toggleWatch() {
-    setBusy(true);
-    try {
-      if (option.subscription_id) {
-        await api.del(`/role-subscriptions/${option.subscription_id}`);
-      } else {
-        await api.post("/role-subscriptions", {
-          company_name: option.company_name,
-          role_title: option.role_name ?? option.title,
-          role_id: option.role_id,
-          url: option.url,
-        });
-      }
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="write-row" aria-current={current ? "true" : undefined}>
-      <button type="button" className="write-row-pick" onClick={onPick}>
-        {rank !== null && (
-          <span className="write-rank">{String(rank).padStart(2, "0")}</span>
-        )}
-        <FitBadge fit={option.fit} />
-        <span style={{ minWidth: 0 }}>
-          <span
-            className="ellipsis"
-            style={{ display: "block", fontSize: 14, fontWeight: 700 }}
-          >
-            {option.role_name ?? option.title} · {option.company_name}
-          </span>
-          <span
-            className="ellipsis subcopy"
-            style={{ display: "block", fontSize: 12.5 }}
-          >
-            {detail}
-          </span>
-        </span>
-      </button>
-      {option.kind === "matchedPosting" && (
-        <PillToggle
-          small
-          pressed={subscribed}
-          disabled={busy}
-          onClick={() => void toggleWatch()}
-        >
-          {subscribed ? "Subscribed" : "Subscribe"}
-        </PillToggle>
-      )}
-    </div>
   );
 }
 
@@ -1322,111 +965,6 @@ function ChatPanel({
   );
 }
 
-function WatchlistPanel({ onChanged }: { onChanged: () => void }) {
-  const subscriptions = useAsync<Subscription[]>(
-    () => api.get("/role-subscriptions"),
-    [],
-  );
-  const [form, setForm] = useState({ role: "", company: "", url: "" });
-  const [error, setError] = useState<string | null>(null);
-
-  async function subscribe() {
-    setError(null);
-    try {
-      await api.post("/role-subscriptions", {
-        company_name: form.company.trim(),
-        role_title: form.role.trim(),
-        role_id: null,
-        url: form.url.trim() || null,
-      });
-      setForm({ role: "", company: "", url: "" });
-      await subscriptions.reload();
-      onChanged();
-    } catch (caught) {
-      setError(messageOf(caught));
-    }
-  }
-
-  async function remove(id: string) {
-    setError(null);
-    try {
-      await api.del(`/role-subscriptions/${id}`);
-      await subscriptions.reload();
-      onChanged();
-    } catch (caught) {
-      setError(messageOf(caught));
-    }
-  }
-
-  return (
-    <div className="panel panel-tight">
-      <Eyebrow style={{ marginBottom: 12 }}>Watchlist</Eyebrow>
-      {(subscriptions.data ?? []).map((s) => (
-        <div
-          key={s.id}
-          className="inset"
-          style={{ padding: "9px 10px", marginBottom: 7 }}
-        >
-          <div className="row-between">
-            <span
-              className="ellipsis"
-              style={{ fontSize: 13.5, fontWeight: 700 }}
-            >
-              {s.role_title || "Any role"} · {s.company_name}
-            </span>
-            <Button variant="ghost" onClick={() => void remove(s.id)}>
-              Remove
-            </Button>
-          </div>
-          <div className="ellipsis muted" style={{ fontSize: 12 }}>
-            {s.url ? s.url.replace(/^https?:\/\//, "") : "No link saved"}
-            {s.coverage === "manual"
-              ? " · manual: paste its JD"
-              : " · checked weekly"}
-          </div>
-        </div>
-      ))}
-      <div className="stack" style={{ gap: 8, marginTop: 8 }}>
-        <input
-          className="input"
-          aria-label="Role to watch"
-          placeholder="Role"
-          value={form.role}
-          onChange={(event) => setForm({ ...form, role: event.target.value })}
-        />
-        <input
-          className="input"
-          aria-label="Company to watch"
-          placeholder="Company"
-          value={form.company}
-          onChange={(event) =>
-            setForm({ ...form, company: event.target.value })
-          }
-        />
-        <input
-          className="input"
-          aria-label="Careers or JD URL"
-          placeholder="Careers or JD URL"
-          value={form.url}
-          onChange={(event) => setForm({ ...form, url: event.target.value })}
-        />
-        <div>
-          <Button
-            variant="secondary"
-            disabled={!form.role.trim() || !form.company.trim()}
-            onClick={() => void subscribe()}
-          >
-            Subscribe to this role
-          </Button>
-        </div>
-      </div>
-      <ErrorNote error={error} />
-      <p className="subcopy" style={{ fontSize: 12.5, marginTop: 10 }}>
-        Watched roles are checked weekly against the company&apos;s job board —
-        found from the link you give — or, where there is no board we can read,
-        rely on JDs you paste. They appear alongside your top matches in the gap
-        plan and here.
-      </p>
-    </div>
-  );
+function sameTarget(a: Ref, b: Ref): boolean {
+  return a.kind === b.kind && a.id === b.id;
 }

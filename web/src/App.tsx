@@ -5,25 +5,26 @@ import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
 import { AiSettings } from "./features/AiSettings";
+import { Advisor } from "./features/Advisor";
 import { Connect } from "./features/Connect";
-import { GapPlan } from "./features/GapPlan";
 import {
   completeCallback,
   type CallbackOutcome,
 } from "./features/oauthCallback";
-import { Resume } from "./features/Resume";
 import { Roles } from "./features/Roles";
 import { Strengths } from "./features/Strengths";
 import {
   hashFor,
   metaOf,
-  screenFromHash,
+  placeFromHash,
+  type Focus,
+  type Place,
   type Screen,
 } from "./shell/navigation";
 import { PageHeader } from "./shell/PageHeader";
 import {
   ShellContext,
-  type Handoff,
+  type NavigateTo,
   type ShellStatus,
 } from "./shell/ShellContext";
 import { Sidebar } from "./shell/Sidebar";
@@ -79,9 +80,15 @@ export async function loadStatus(): Promise<ShellStatus> {
 
 function Shell() {
   const { email, signOut } = useAuth();
-  const [screen, setScreen] = useState<Screen>(() =>
-    screenFromHash(window.location.hash),
+  const [place, setPlace] = useState<Place>(() =>
+    placeFromHash(window.location.hash),
   );
+  // navigate() builds on the latest place without re-creating itself.
+  const current = useRef(place);
+  useEffect(() => {
+    current.current = place;
+  }, [place]);
+  const { screen, tab, focus } = place;
   const [status, setStatus] = useState<ShellStatus>({
     me: null,
     credential: null,
@@ -89,21 +96,35 @@ function Shell() {
     confidence: null,
   });
   const [target, setTarget] = useState<string | null>(null);
-  const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [callback, setCallback] = useState<CallbackOutcome | null>(null);
   const handled = useRef(false);
 
-  const navigate = useCallback((next: Screen, carried?: Handoff) => {
-    setHandoff(carried ?? null);
-    setScreen(next);
-    if (window.location.hash !== hashFor(next)) {
-      window.history.pushState(null, "", hashFor(next));
+  const navigate = useCallback((next: Screen, to: NavigateTo = {}) => {
+    const from = current.current;
+    const place: Place = {
+      screen: next,
+      tab: to.tab ?? from.tab,
+      focus: to.focus === undefined ? from.focus : to.focus,
+    };
+    current.current = place;
+    setPlace(place);
+    if (window.location.hash !== hashFor(place)) {
+      window.history.pushState(null, "", hashFor(place));
     }
+  }, []);
+
+  // A new selection on the same screen replaces the entry rather than adding
+  // one, so clicking through bubbles does not fill the back button.
+  const setFocus = useCallback((next: Focus | null) => {
+    const place: Place = { ...current.current, focus: next };
+    current.current = place;
+    setPlace(place);
+    window.history.replaceState(null, "", hashFor(place));
   }, []);
 
   // Back and forward move between screens like any other page.
   useEffect(() => {
-    const onHash = () => setScreen(screenFromHash(window.location.hash));
+    const onHash = () => setPlace(placeFromHash(window.location.hash));
     window.addEventListener("popstate", onHash);
     window.addEventListener("hashchange", onHash);
     return () => {
@@ -136,8 +157,8 @@ function Shell() {
   }, [refresh]);
 
   const shell = useMemo(
-    () => ({ status, navigate, handoff, refresh, target, setTarget }),
-    [status, navigate, handoff, refresh, target],
+    () => ({ status, navigate, focus, setFocus, refresh, target, setTarget }),
+    [status, navigate, focus, setFocus, refresh, target],
   );
   const me = status.me;
 
@@ -173,8 +194,7 @@ function Shell() {
             {screen === "sources" && <Connect callback={callback} />}
             {screen === "strengths" && <Strengths />}
             {screen === "roles" && <Roles />}
-            {screen === "plan" && <GapPlan />}
-            {screen === "resume" && <Resume />}
+            {screen === "advisor" && <Advisor tab={tab} />}
             {screen === "model" && <AiSettings />}
           </div>
         </main>

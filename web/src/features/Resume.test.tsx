@@ -1,11 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResumeSummary, TailoredResume, TargetOption } from "../api/types";
@@ -26,20 +20,6 @@ const matched: TargetOption = {
   source_kind: "atsBoard",
   url: null,
   subscription_id: null,
-};
-
-const watched: TargetOption = {
-  ...matched,
-  kind: "subscription",
-  id: "s1",
-  title: "Staff Engineer",
-  role_name: "Staff Engineer",
-  company_name: "Kestrel Financial",
-  label: "Staff Engineer · Kestrel Financial",
-  fit: 64,
-  salary: null,
-  source_kind: "watchlist",
-  subscription_id: "s1",
 };
 
 const summary: ResumeSummary = {
@@ -159,15 +139,12 @@ function serve(route: (call: Call) => Response | unknown) {
 }
 
 function defaults(call: Call): unknown {
-  if (call.url === "/targets") return [matched, watched];
-  if (call.url === "/tailored-resumes" && call.method === "GET")
-    return [summary];
   if (call.url === "/tailored-resumes/res-1") return resume;
-  if (call.url === "/role-subscriptions") return [];
   return null;
 }
 
-function renderResume() {
+function renderResume(saved: ResumeSummary[] = [summary]) {
+  const onChanged = vi.fn();
   const shell: Shell = {
     status: {
       me: null,
@@ -183,7 +160,8 @@ function renderResume() {
       confidence: 80,
     },
     navigate: vi.fn(),
-    handoff: null,
+    focus: null,
+    setFocus: vi.fn(),
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
@@ -191,11 +169,16 @@ function renderResume() {
   render(
     <ShellContext.Provider value={shell}>
       <ToastProvider>
-        <Resume />
+        <Resume
+          target={matched}
+          saved={saved}
+          onChanged={onChanged}
+          onRevisit={vi.fn()}
+        />
       </ToastProvider>
     </ShellContext.Provider>,
   );
-  return shell;
+  return { shell, onChanged };
 }
 
 describe("résumé screen", () => {
@@ -206,7 +189,7 @@ describe("résumé screen", () => {
 
   it("opens the latest résumé with cited lines and coverage", async () => {
     serve(defaults);
-    const shell = renderResume();
+    renderResume();
 
     const page = await screen.findByRole("article", { name: "Résumé" });
     expect(within(page).getByText("Maya Lin Chen")).toBeInTheDocument();
@@ -220,13 +203,6 @@ describe("résumé screen", () => {
     expect(
       screen.getByRole("button", { name: "Save this version" }),
     ).toBeDisabled();
-    // The top bar's target is set by an effect after the page renders, so the
-    // page being on screen does not mean it has been set yet.
-    await waitFor(() =>
-      expect(shell.setTarget).toHaveBeenCalledWith(
-        "Senior Backend Engineer · Northwind Pay · 88%",
-      ),
-    );
   });
 
   it("saves an edited line as a new version", async () => {
@@ -263,26 +239,43 @@ describe("résumé screen", () => {
     });
   });
 
-  it("filters targets by where they came from", async () => {
-    serve(defaults);
-    const user = userEvent.setup();
-    renderResume();
-
-    await screen.findByText("Senior Backend Engineer · Northwind Pay", {
-      selector: "span",
+  it("writes for the target it is aimed at once the price is confirmed", async () => {
+    const calls = serve((call) => {
+      if (call.url.startsWith("/tailored-resumes/cost-estimate"))
+        return { cost_usd: "0.05", model_id: "claude-opus-5" };
+      if (call.url === "/tailored-resumes" && call.method === "POST")
+        return { ...summary, status: "drafting" };
+      if (call.url === "/tailored-resumes/res-1")
+        return { ...resume, status: "drafting", content: null };
+      return null;
     });
-    await user.click(screen.getByRole("button", { name: "Watchlist" }));
+    const user = userEvent.setup();
+    const { onChanged } = renderResume([]);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Write résumé for Senior Backend Engineer",
+      }),
+    );
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(calls.map((c) => c.url)).toContain(
+      "/tailored-resumes/cost-estimate?kind=matchedPosting&id=p1",
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
 
     expect(
-      screen.queryByText("Senior Backend Engineer · Northwind Pay", {
-        selector: "span",
-      }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Staff Engineer · Kestrel Financial", {
-        selector: "span",
-      }),
+      await screen.findByText(/Writing on claude-opus-5/),
     ).toBeInTheDocument();
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        url: "/tailored-resumes",
+        body: expect.objectContaining({ kind: "matchedPosting", id: "p1" }),
+      }),
+    );
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it("streams a chat reply and applies its proposal only on request", async () => {

@@ -38,10 +38,8 @@ describe("sidebar", () => {
       within(nav).getByRole("button", { name: /Role map/ }),
     ).toHaveAttribute("aria-current", "page");
 
-    await userEvent.click(
-      within(nav).getByRole("button", { name: /Gap plan/ }),
-    );
-    expect(onNavigate).toHaveBeenCalledWith("plan");
+    await userEvent.click(within(nav).getByRole("button", { name: /Advisor/ }));
+    expect(onNavigate).toHaveBeenCalledWith("advisor");
   });
 
   it("flags on Sources how many questions are still unanswered", () => {
