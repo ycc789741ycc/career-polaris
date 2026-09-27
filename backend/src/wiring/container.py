@@ -11,7 +11,7 @@ from decimal import Decimal
 from functools import lru_cache
 
 from advisor.assessment import AssessmentService, create_assessment_service
-from advisor.gapplan import GapPlanService
+from advisor.gapplan import GapPlanService, create_gapplan_service
 from advisor.identity import (
     AuthService,
     GoogleEndpoints,
@@ -177,7 +177,7 @@ def build(settings: Settings | None = None) -> Container:
         confidence_threshold=settings.assessment_confidence_threshold,
     )
     target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
-    gapplan = GapPlanService(
+    gapplan = create_gapplan_service(
         database,
         target=target,
         profile=profile,

@@ -28,7 +28,7 @@ from advisor.target.domain import (
     TargetSnapshot,
     UncoveredGap,
 )
-from kernel.db.base import utcnow
+from kernel.clock import utcnow
 from kernel.errors import NotFoundError, TargetUnusableError
 
 __all__ = [

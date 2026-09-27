@@ -19,7 +19,7 @@ import pytest
 import pytest_asyncio
 
 from advisor.assessment import create_assessment_service
-from advisor.gapplan import GapPlanService, PlanStatus
+from advisor.gapplan import GapPlanService, PlanStatus, create_gapplan_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import create_profile_service
@@ -119,7 +119,7 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
     )
     target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
-    gapplan = GapPlanService(
+    gapplan = create_gapplan_service(
         database,
         target=target,
         profile=profile,
