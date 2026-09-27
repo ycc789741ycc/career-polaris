@@ -21,3 +21,6 @@ new record that supersedes the old one.
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
 sections 7 and 8.
+
+Records accepted before 2026-09-27 cite `docs/technical_boundaries.md`. That is
+now `docs/architecture.md`, with the same section numbers.
