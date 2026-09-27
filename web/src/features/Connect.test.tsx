@@ -3,7 +3,6 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment, Connection, Evidence } from "../api/types";
-import { formatDate, todayUtc } from "../charts/timeline";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { Connect } from "./Connect";
 
@@ -168,21 +167,25 @@ describe("Connect", () => {
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
   });
 
-  it("lists only the work picked on the timeline, until asked for all", async () => {
-    const today = todayUtc();
-    const pr = { ...prFact, observed_on: today } satisfies Evidence;
+  it("lists only the work in a picked repository, until asked for all", async () => {
+    const ledger = {
+      ...prFact,
+      id: "e3",
+      reference: "GitHub · acme/ledger",
+      fact: "12 merged pull requests authored in acme/ledger.",
+      granularity: "summary",
+      tally: 12,
+    } satisfies Evidence;
     serve((call) => {
       if (call.url === "/connections") return [connection({})];
-      if (call.url === "/evidence") return [jiraFact, pr];
+      if (call.url === "/evidence") return [jiraFact, prFact, ledger];
       return undefined;
     });
     renderConnect();
     const user = userEvent.setup();
 
     await user.click(
-      await screen.findByRole("button", {
-        name: `${formatDate(today)}: acme/ledger#214 · Split the ledger writer`,
-      }),
+      await screen.findByRole("button", { name: "acme/ledger: 12" }),
     );
 
     const table = screen.getByRole("table", { name: "Evidence gathered" });
@@ -191,7 +194,7 @@ describe("Connect", () => {
       1,
     );
     expect(
-      screen.getByText("Showing 1 fact: GitHub · acme/ledger#214."),
+      screen.getByText("Showing 2 facts: acme/ledger."),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show all" }));

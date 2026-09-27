@@ -9,7 +9,6 @@ import type {
   ProfileSummary,
   ResumeFile,
 } from "../api/types";
-import { EvidenceTimeline } from "../charts/EvidenceTimeline";
 import type { FactSelection } from "../charts/selection";
 import { SourceMix } from "../charts/SourceMix";
 import { WorkPlaces } from "../charts/WorkPlaces";
@@ -59,7 +58,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const [error, setError] = useState<string | null>(null);
   // The connector whose card is asking "are you sure?", if any.
   const [confirming, setConfirming] = useState<string | null>(null);
-  // Facts picked on the timeline; the table lists only these while set.
+  // Facts picked on a chart or filter; the table lists only these while set.
   const [selection, setSelection] = useState<FactSelection | null>(null);
 
   async function connect(kind: string) {
@@ -372,14 +371,6 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
             </>
           )}
         </div>
-
-        {facts.length > 0 && (
-          <EvidenceTimeline
-            facts={facts}
-            selectedKey={selection?.key ?? null}
-            onSelect={setSelection}
-          />
-        )}
 
         <WorkPlaces
           facts={facts}

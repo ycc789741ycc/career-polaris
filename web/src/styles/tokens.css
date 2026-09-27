@@ -31,12 +31,8 @@
   --series-1-fill: color-mix(in srgb, #c67139 24%, transparent);
   --series-2: var(--color-accent-2-600);
 
-  /* Activity heat, one hue from none to most. An empty week is a neutral
-     wash, never a warning colour: a quiet stretch is not a failing. */
-  --heat-0: color-mix(in srgb, #201e1d 8%, transparent);
-  --heat-1: var(--color-accent-300);
-  --heat-2: var(--color-accent-500);
-  --heat-3: var(--color-accent-700);
+  /* A neutral wash behind a hovered or picked row. */
+  --wash: color-mix(in srgb, #201e1d 8%, transparent);
 
   /* One colour per evidence source, the same on every chart that splits by
      source. Each clears 3:1 on the panel surface, and they alternate light

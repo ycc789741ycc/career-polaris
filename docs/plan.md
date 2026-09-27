@@ -86,14 +86,12 @@ later phase — never a market data source.
 
 # Phase 4
 ## Evidence insight
-* **Timeline — done.** On Sources, "When the work happened": one row per
-  source, one cell per week over 12 months or everything, and clicking a week
-  lists its facts in the table below. It counts single pull requests and Jira
-  issues only; a tally ("12 merged pull requests in x") is marked `summary` and
-  left out so nothing counts twice. Jira issues now carry the date they were
-  resolved, or last updated while open. Résumé lines and answers have no work
-  date and are counted in a note, not plotted. A quiet week is a pale cell,
-  never a warning.
+* **Evidence shape — done.** Every fact says whether it is one piece of work
+  (`item`) or a tally over many (`summary`), so nothing that counts work counts
+  a tally as one more. Jira issues carry the date they were resolved, or last
+  updated while open.
+* A timeline of when the work happened was built and then dropped: it is not
+  on the Sources page.
 * **Source mix — done.** "What it found so far" is one stacked bar of facts by
   source, with counts and whole percents that add up to 100. The note under it
   says the bar shares out facts, not effort.
