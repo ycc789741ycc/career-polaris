@@ -88,7 +88,8 @@ function renderConnect() {
   const shell = {
     status: { me: null, credential: null, openQuestions: 0, confidence: 0 },
     navigate: vi.fn(),
-    handoff: null,
+    focus: null,
+    setFocus: vi.fn(),
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
@@ -342,7 +343,10 @@ describe("Connect", () => {
     const before = calls.filter((c) => c.url === "/evidence").length;
     await user.click(within(card).getByRole("button", { name: "Designed it" }));
 
-    expect(calls).toContainEqual({ method: "POST", url: "/questions/q1/answer" });
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: "/questions/q1/answer",
+    });
     // The answer is evidence now, so the table and source mix read again.
     await vi.waitFor(() =>
       expect(calls.filter((c) => c.url === "/evidence").length).toBeGreaterThan(

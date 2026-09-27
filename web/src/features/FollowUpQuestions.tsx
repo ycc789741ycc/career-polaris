@@ -244,8 +244,7 @@ export function FollowUpQuestions({
             {rerunning
               ? "Scoring your skills again with your answer, then checking what is still unclear."
               : "Looking for what your evidence doesn't settle yet."}{" "}
-            New questions appear here when it finishes; the page updates
-            itself.
+            New questions appear here when it finishes; the page updates itself.
           </p>
         </div>
       )}
@@ -323,7 +322,9 @@ export function FollowUpQuestions({
 
       {moved.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <Eyebrow style={{ marginBottom: 4 }}>What your answers sharpen</Eyebrow>
+          <Eyebrow style={{ marginBottom: 4 }}>
+            What your answers sharpen
+          </Eyebrow>
           <div className="divided">
             {moved.map((dimension) => (
               <div key={dimension.key}>

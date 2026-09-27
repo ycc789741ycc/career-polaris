@@ -9,6 +9,7 @@ import type {
   RoleMapSettings,
   SalaryBand,
   Subscription,
+  TargetOption,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
@@ -23,9 +24,11 @@ import {
   PillToggle,
   StatTile,
 } from "../components/ui";
+import type { Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
+import { OwnJdPanel } from "./OwnJd";
 import { messageOf, useAsync } from "./useAsync";
 
 // The bound the api enforces on k (ADR 0003). The api is the authority; these
@@ -33,10 +36,16 @@ import { messageOf, useAsync } from "./useAsync";
 const MIN_ROLE_COUNT = 3;
 const MAX_ROLE_COUNT = 20;
 
-/** The role map: which roles exist in this user's market, and how they fit. */
+/**
+ * The role map: which roles exist in this user's market, and how they fit.
+ *
+ * What is selected here — a role, or a JD the user pasted — is what the
+ * Advisor aims at. The selection lives in the hash, so it survives a reload
+ * and the trip to the Advisor and back.
+ */
 export function Roles() {
   const flash = useToast();
-  const { navigate } = useShell();
+  const { navigate, focus, setFocus } = useShell();
   const roles = useAsync<Role[]>(() => api.get("/roles"), []);
   const settings = useAsync<RoleMapSettings>(
     () => api.get("/roles/settings"),
@@ -52,6 +61,8 @@ export function Roles() {
     [],
   );
   const markets = useAsync<string[]>(() => api.get("/market-preferences"), []);
+  // For the pasted JDs: the only Targets that are not a role on the map.
+  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
   const matched = useAsync<MatchedPosting[]>(
     () => api.get("/matched-postings?limit=10"),
     [],
@@ -70,7 +81,6 @@ export function Roles() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | undefined>(undefined);
 
   const fitByRole = useMemo(
     () => new Map((fits.data ?? []).map((fit) => [fit.role_id, fit])),
@@ -98,10 +108,16 @@ export function Roles() {
     };
   });
 
-  // With nothing picked, the role that fits best is the one worth reading.
+  // With nothing picked, the role that fits best is the one worth reading. A
+  // picked role no longer on the map falls back to it too; a picked JD means
+  // no role is selected.
   const bestId = [...bubbles].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1))[0]
     ?.id;
-  const activeId = selected ?? bestId;
+  const pickedId =
+    focus?.kind === "role" && bubbles.some((b) => b.id === focus.id)
+      ? focus.id
+      : undefined;
+  const activeId = pickedId ?? (focus?.kind === "jd" ? undefined : bestId);
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
   const activeBand = activeRole
@@ -111,6 +127,27 @@ export function Roles() {
     (sum, role) => sum + role.opening_count,
     0,
   );
+
+  const pastedJds = (targets.data ?? []).filter(
+    (o) => o.kind === "privatePosting",
+  );
+  const pickedJd =
+    focus?.kind === "jd" ? pastedJds.find((o) => o.id === focus.id) : undefined;
+  // The one thing the Advisor will be aimed at: the picked JD, or the role
+  // shown as selected — which is the best fit until the user picks one.
+  const aim: { focus: Focus; label: string; what: string } | null = pickedJd
+    ? {
+        focus: { kind: "jd", id: pickedJd.id },
+        label: pickedJd.label,
+        what: "JD",
+      }
+    : activeRole
+      ? {
+          focus: { kind: "role", id: activeRole.id },
+          label: activeRole.name,
+          what: "role",
+        }
+      : null;
 
   async function act(label: string, run: () => Promise<unknown>) {
     setBusy(true);
@@ -230,7 +267,7 @@ export function Roles() {
             <RoleMap
               roles={bubbles}
               selectedId={activeId}
-              onSelect={setSelected}
+              onSelect={(id) => setFocus({ kind: "role", id })}
             />
           </div>
 
@@ -320,20 +357,6 @@ export function Roles() {
                   </ul>
                 </>
               )}
-
-              <div className="panel-actions">
-                <Button
-                  onClick={() => navigate("plan", { roleId: activeRole.id })}
-                >
-                  Draft the plan with AI
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => navigate("resume", { roleId: activeRole.id })}
-                >
-                  Tailor résumé
-                </Button>
-              </div>
 
               <details style={{ marginTop: 16 }}>
                 <summary
@@ -466,6 +489,17 @@ export function Roles() {
         </div>
       )}
 
+      <OwnJdPanel
+        pasted={pastedJds}
+        selectedId={focus?.kind === "jd" ? focus.id : null}
+        error={targets.error}
+        onSelect={(id) => setFocus({ kind: "jd", id })}
+        onAdded={async (id) => {
+          await targets.reload();
+          setFocus({ kind: "jd", id });
+        }}
+      />
+
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
           <h3>Markets you are looking in</h3>
@@ -504,8 +538,8 @@ export function Roles() {
           <h3>Roles to watch</h3>
           <p className="subcopy">
             A role at a company, with its careers or JD link if you have one.
-            Watched roles are checked weekly and appear in your gap plan and
-            résumé targets.
+            Watched roles are checked weekly, and the Advisor offers them as a
+            company to aim at when you select their role.
           </p>
           <div className="stack" style={{ gap: 8, marginTop: 10 }}>
             <input
@@ -658,6 +692,22 @@ export function Roles() {
           </div>
         </div>
       </AutoGrid>
+
+      {aim && (
+        <div
+          className="panel panel-tight target-bar"
+          role="region"
+          aria-label="Advisor target"
+        >
+          <div style={{ minWidth: 0 }}>
+            <Eyebrow>Advisor target</Eyebrow>
+            <div className="ellipsis target-bar-label">{aim.label}</div>
+          </div>
+          <Button onClick={() => navigate("advisor", { focus: aim.focus })}>
+            Target this {aim.what}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
