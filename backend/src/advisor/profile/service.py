@@ -13,6 +13,7 @@ from datetime import date, datetime
 from advisor.profile.domain import (
     CareerPositionFilter,
     CitationError,
+    CitationHandles,
     Evidence,
     EvidenceFilter,
     EvidenceGranularity,
@@ -46,6 +47,7 @@ from kernel.storage import ObjectStore, object_key
 __all__ = [
     "ACCEPTED_TYPES",
     "CitationError",
+    "CitationHandles",
     "ConnectionView",
     "EvidenceSource",
     "EvidenceView",

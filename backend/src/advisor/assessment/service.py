@@ -64,7 +64,12 @@ from advisor.assessment.domain import (
     DimensionScore as DimensionValue,
 )
 from advisor.market import MarketService, PostingView, SalaryRange, Visibility
-from advisor.profile import CitationError, ProfileService, assert_citations_exist
+from advisor.profile import (
+    CitationError,
+    CitationHandles,
+    ProfileService,
+    assert_citations_exist,
+)
 from advisor.rolemap import RequirementView, RoleMapService, RoleView
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
@@ -265,7 +270,9 @@ class AssessmentService:
             owner_id,
             task="assessment.run",
             template=load_template("skill_assessment", "v1"),
-            inputs=_assessment_inputs(snapshot, existing=()),
+            inputs=_assessment_inputs(
+                snapshot, CitationHandles(e.id for e in snapshot.evidence), existing=()
+            ),
             untrusted=frozenset({"evidence", "timeline"}),
         )
         return {
@@ -283,11 +290,12 @@ class AssessmentService:
             raise ValidationError("there is no evidence to analyse yet", evidence=0)
 
         existing = await self._existing_dimensions(owner_id)
+        handles = CitationHandles(e.id for e in snapshot.evidence)
         result = await self._gateway.run(
             owner_id,
             task="assessment.run",
             template=load_template("skill_assessment", "v1"),
-            inputs=_assessment_inputs(snapshot, existing=tuple(existing.items())),
+            inputs=_assessment_inputs(snapshot, handles, existing=tuple(existing.items())),
             output_schema=_Assessment,
             untrusted=frozenset({"evidence", "timeline"}),
         )
@@ -296,7 +304,8 @@ class AssessmentService:
         dimensions: list[DimensionValue] = []
         for item in result.value.dimensions:
             try:
-                assert_citations_exist(set(item.evidence_ids), owned_evidence)
+                evidence_ids = handles.resolve(item.evidence_ids)
+                assert_citations_exist(set(evidence_ids), owned_evidence)
             except CitationError as exc:
                 # An invented citation is how a fabricated claim gets in.
                 raise EvidenceNotOwnedError(
@@ -311,7 +320,7 @@ class AssessmentService:
                     score=item.score,
                     confidence=item.confidence,
                     read=item.read,
-                    evidence_ids=tuple(item.evidence_ids),
+                    evidence_ids=evidence_ids,
                 )
             )
 
@@ -840,7 +849,9 @@ class AssessmentService:
                 template=load_template("follow_up_questions", "v1"),
                 inputs={
                     "low_confidence_dimensions": block,
-                    "evidence": _evidence_block(snapshot),
+                    "evidence": _evidence_block(
+                        snapshot, CitationHandles(e.id for e in snapshot.evidence)
+                    ),
                 },
                 output_schema=_Questions,
                 untrusted=frozenset({"evidence"}),
@@ -977,10 +988,12 @@ async def _view(mine: OwnerAssessment, assessment: SkillAssessment) -> Assessmen
     )
 
 
-def _assessment_inputs(snapshot: Any, *, existing: tuple[tuple[str, str], ...]) -> dict[str, str]:
+def _assessment_inputs(
+    snapshot: Any, handles: CitationHandles, *, existing: tuple[tuple[str, str], ...]
+) -> dict[str, str]:
     return {
         "timeline": _timeline_block(snapshot),
-        "evidence": _evidence_block(snapshot),
+        "evidence": _evidence_block(snapshot, handles),
         "existing_dimensions": (
             "\n".join(f"- {key}: {name}" for key, name in existing) or "(none yet)"
         ),
@@ -1000,8 +1013,10 @@ def _timeline_block(snapshot: Any) -> str:
     return "\n".join(lines)
 
 
-def _evidence_block(snapshot: Any) -> str:
-    return "\n".join(f"[{e.id}] ({e.source}) {e.reference}: {e.fact}" for e in snapshot.evidence)
+def _evidence_block(snapshot: Any, handles: CitationHandles) -> str:
+    return "\n".join(
+        f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}" for e in snapshot.evidence
+    )
 
 
 def _uncovered_from(

@@ -29,7 +29,13 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from advisor.assessment import AssessmentService
-from advisor.profile import CitationError, ProfileService, assert_citations_exist
+from advisor.profile import (
+    CitationError,
+    CitationHandles,
+    ProfileService,
+    ProfileSnapshot,
+    assert_citations_exist,
+)
 from advisor.resume.domain import (
     MAX_BULLETS_PER_ROLE,
     MAX_ROLES,
@@ -263,12 +269,14 @@ class ResumeService:
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
         """Priced before anything is spent. A pasted JD not yet scored adds that."""
         preview = await self._target.preview(owner_id, ref)
+        profile = await self._profile.snapshot(owner_id)
         estimate = await self._gateway.estimate(
             owner_id,
             task="resume.generate",
             template=load_template(*_WRITE),
-            inputs=await self._write_inputs(
-                owner_id,
+            inputs=_write_inputs(
+                profile,
+                CitationHandles(e.id for e in profile.evidence),
                 label=preview.label,
                 requirements=preview.requirements_text,
                 coverage_rows=(),
@@ -457,17 +465,19 @@ class ResumeService:
                     RevisionFilter(resume_id=resume_id), page_size=_CONVERSATION_TURNS
                 )
             profile = await self._profile.snapshot(owner_id)
+            handles = CitationHandles(e.id for e in profile.evidence)
+            shown = current.with_citations(lambda ids: tuple(handles.handle(i) for i in ids))
             inputs = {
                 "target": snapshot.label,
                 "requirements": requirements_block(snapshot),
                 "coverage": _coverage_block(coverage_rows),
-                "resume": json.dumps(current.to_dict(), ensure_ascii=False),
+                "resume": json.dumps(shown.to_dict(), ensure_ascii=False),
                 "conversation": "\n".join(
                     f"Person: {r.request}\nYou: {r.reply}" for r in reversed(earlier)
                 )
                 or "(this is the first message)",
                 "request": request,
-                "evidence": _evidence_block(profile.evidence),
+                "evidence": _evidence_block(profile.evidence, handles),
             }
 
             reply_parts: list[str] = []
@@ -491,15 +501,19 @@ class ResumeService:
 
             proposal: ResumeContent | None = None
             if result.value.changed and result.value.resume is not None:
-                proposal = settle_revision(current, _content_of(result.value.resume))
+                message = "the proposed revision cited evidence that is not yours"
+                try:
+                    proposal = settle_revision(
+                        current, _content_of(result.value.resume), handles.resolve
+                    )
+                except CitationError as exc:
+                    raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
                 except ResumeError as exc:
                     raise OutputInvalidError(f"the proposed revision was rejected: {exc}") from exc
-                await self._assert_owned(
-                    owner_id, proposal, "the proposed revision cited evidence that is not yours"
-                )
+                await self._assert_owned(owner_id, proposal, message)
 
             reply = "".join(reply_parts).strip()
             async with self._uow.for_owner(owner_id) as mine:
@@ -638,12 +652,15 @@ class ResumeService:
         snapshot = await self._target.snapshot(owner_id, ref)
         coverage_rows = await self._coverage(owner_id, snapshot)
         base = await self._profile.base_resume_text(owner_id)
+        profile = await self._profile.snapshot(owner_id)
+        handles = CitationHandles(e.id for e in profile.evidence)
         result = await self._gateway.run(
             owner_id,
             task="resume.generate",
             template=load_template(*_WRITE),
-            inputs=await self._write_inputs(
-                owner_id,
+            inputs=_write_inputs(
+                profile,
+                handles,
                 label=snapshot.label,
                 requirements=requirements_block(snapshot),
                 coverage_rows=coverage_rows,
@@ -653,13 +670,17 @@ class ResumeService:
             output_schema=_Resume,
             untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
         )
-        content = _content_of(result.value)
+        message = "the résumé cited evidence that is not yours"
+        try:
+            content = _content_of(result.value).with_citations(handles.resolve)
+        except CitationError as exc:
+            raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
         except ResumeError as exc:
             raise OutputInvalidError(f"the written résumé was rejected: {exc}") from exc
-        await self._assert_owned(owner_id, content, "the résumé cited evidence that is not yours")
+        await self._assert_owned(owner_id, content, message)
 
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
@@ -699,40 +720,6 @@ class ResumeService:
         )
         notes = await self._notes(owner_id, {i for row in rows for i in row.evidence_ids})
         return tuple(_coverage_row(row, notes) for row in rows)
-
-    async def _write_inputs(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        label: str,
-        requirements: str,
-        coverage_rows: tuple[CoverageView, ...] | list[CoverageView],
-        options: Options,
-        base_resume: str,
-    ) -> dict[str, str]:
-        profile = await self._profile.snapshot(owner_id)
-        timeline = "\n".join(
-            f"- {p.title} at {p.company}, {p.started_on} to {p.ended_on or 'present'}"
-            for p in profile.positions
-        )
-        return {
-            "target": label,
-            "requirements": requirements,
-            "coverage": _coverage_block(coverage_rows) or "(worked out when writing)",
-            "options": "\n".join(
-                line
-                for line, wanted in (
-                    ("- Quantify bullets with numbers the evidence gives.", options.metrics),
-                    ("- Order skills by what this job screens for.", options.reorder),
-                    ("- Keep it to one page: at most 3 bullets a role.", options.trim),
-                )
-                if wanted
-            )
-            or "- No special instructions.",
-            "timeline": timeline or "(no positions recorded)",
-            "base_resume": base_resume,
-            "evidence": _evidence_block(profile.evidence),
-        }
 
     async def _assert_owned(
         self, owner_id: uuid.UUID, content: ResumeContent, message: str
@@ -861,9 +848,45 @@ def _ref_of(resume: TailoredResume) -> TargetRef:
     return TargetRef(TargetKind(resume.target_kind), str(resume.target_id))
 
 
-def _evidence_block(evidence: Any) -> str:
+def _write_inputs(
+    profile: ProfileSnapshot,
+    handles: CitationHandles,
+    *,
+    label: str,
+    requirements: str,
+    coverage_rows: tuple[CoverageView, ...] | list[CoverageView],
+    options: Options,
+    base_resume: str,
+) -> dict[str, str]:
+    timeline = "\n".join(
+        f"- {p.title} at {p.company}, {p.started_on} to {p.ended_on or 'present'}"
+        for p in profile.positions
+    )
+    return {
+        "target": label,
+        "requirements": requirements,
+        "coverage": _coverage_block(coverage_rows) or "(worked out when writing)",
+        "options": "\n".join(
+            line
+            for line, wanted in (
+                ("- Quantify bullets with numbers the evidence gives.", options.metrics),
+                ("- Order skills by what this job screens for.", options.reorder),
+                ("- Keep it to one page: at most 3 bullets a role.", options.trim),
+            )
+            if wanted
+        )
+        or "- No special instructions.",
+        "timeline": timeline or "(no positions recorded)",
+        "base_resume": base_resume,
+        "evidence": _evidence_block(profile.evidence, handles),
+    }
+
+
+def _evidence_block(evidence: Any, handles: CitationHandles) -> str:
     return (
-        "\n".join(f"[{e.id}] ({e.source}) {e.reference}: {e.fact}" for e in evidence)
+        "\n".join(
+            f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}" for e in evidence
+        )
         or "(no evidence)"
     )
 

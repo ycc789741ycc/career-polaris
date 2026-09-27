@@ -79,11 +79,32 @@ def test_a_proposal_cannot_relabel_the_users_own_line() -> None:
         Bullet("Answered their top requirement first", ("e1",), Origin.YOURS),
     )
 
-    settled = settle_revision(content(mine), proposed)
+    settled = settle_revision(content(mine), proposed, lambda cited: cited)
 
     kept, new = settled.experience[0].bullets
     assert kept == mine, "an unchanged line is the line it was"
     assert new.origin is Origin.WRITTEN, "new text is the model's, whatever it claims"
+
+
+def test_only_a_proposals_new_lines_have_their_citations_resolved() -> None:
+    """An unchanged line keeps its stored ids; a new one cites what the prompt showed."""
+    proposed = content(
+        Bullet(CITED.text, ("E1",)),
+        Bullet("Answered their top requirement first", ("E1", "E2")),
+    )
+    ids = {"E1": "e1", "E2": "e2"}
+
+    settled = settle_revision(content(CITED), proposed, lambda cited: tuple(ids[c] for c in cited))
+
+    kept, new = settled.experience[0].bullets
+    assert kept == CITED
+    assert new.evidence_ids == ("e1", "e2")
+
+
+def test_citations_can_be_renamed_throughout() -> None:
+    renamed = content(CITED).with_citations(lambda ids: tuple(i.upper() for i in ids))
+    assert renamed.cited() == {"E1"}
+    assert renamed.experience[0].bullets[0].text == CITED.text
 
 
 # -- coverage -------------------------------------------------------------

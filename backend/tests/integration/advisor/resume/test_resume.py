@@ -45,6 +45,8 @@ pytestmark = pytest.mark.integration
 LEADS = "Lead technical direction across several teams"
 RELIABILITY = "Own reliability: SLOs and incident reviews"
 ORG = "Demonstrated org-level influence"
+# The profile holds one piece of evidence, so the prompt shows it as E1.
+CITED = "E1"
 
 
 class StubProvider:
@@ -154,7 +156,7 @@ async def world(
                         "score": 70,
                         "confidence": 0.9,
                         "read": f"{name}, read from the evidence.",
-                        "evidence_ids": [str(evidence.id)],
+                        "evidence_ids": [CITED],
                     }
                     for key, name in [
                         ("leadership", "Technical leadership"),
@@ -201,7 +203,7 @@ def _score_the_jd(stub: StubProvider) -> None:
     )
 
 
-def _resume_reply(evidence_id: str) -> str:
+def _resume_reply(cited: str) -> str:
     return json.dumps(
         {
             "name": "Maya Lin Chen",
@@ -216,7 +218,7 @@ def _resume_reply(evidence_id: str) -> str:
                     "bullets": [
                         {
                             "text": "Led the checkout migration across two teams",
-                            "evidence_ids": [evidence_id],
+                            "evidence_ids": [cited],
                             "answers": LEADS,
                         }
                     ],
@@ -236,7 +238,7 @@ async def _written(world: World, account: uuid.UUID) -> uuid.UUID:
         description="Set technical direction across three product teams...",
     )
     _score_the_jd(world.stub)
-    world.stub.replies.append(_resume_reply(world.evidence_id))
+    world.stub.replies.append(_resume_reply(CITED))
     requested = await world.resume.request(
         account,
         TargetRef(TargetKind.PRIVATE_POSTING, str(posting.id)),
@@ -278,7 +280,7 @@ async def test_a_resume_citing_evidence_the_user_lacks_is_recorded_as_failed(
         account, company_name="Acme", title="Engineer", location=None, description="..."
     )
     _score_the_jd(world.stub)
-    world.stub.replies.append(_resume_reply("00000000-0000-0000-0000-000000000000"))
+    world.stub.replies.append(_resume_reply("E9"))
     requested = await world.resume.request(
         account,
         TargetRef(TargetKind.PRIVATE_POSTING, str(posting.id)),
@@ -330,7 +332,7 @@ async def test_a_chat_proposal_streams_and_becomes_a_version_only_when_applied(
     view = await world.resume.get(account, resume_id)
     assert view.content is not None
     current = view.content.to_dict()
-    proposed = json.loads(_resume_reply(world.evidence_id))
+    proposed = json.loads(_resume_reply(CITED))
     proposed["summary"] = "Short."
     world.stub.streams.append(
         [
@@ -368,7 +370,7 @@ async def test_a_proposal_with_an_uncited_new_line_is_rejected_in_the_stream(
     resume_id = await _written(world, account)
     view = await world.resume.get(account, resume_id)
     assert view.content is not None
-    proposed = json.loads(_resume_reply(world.evidence_id))
+    proposed = json.loads(_resume_reply(CITED))
     proposed["experience"][0]["bullets"].append(
         {"text": "Promoted to Staff in 2024", "evidence_ids": []}
     )

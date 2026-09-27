@@ -37,6 +37,8 @@ pytestmark = pytest.mark.integration
 LEADS = "Lead technical direction across several teams"
 RELIABILITY = "Own reliability: SLOs and incident reviews"
 ORG = "Demonstrated org-level influence"
+# The profile holds one piece of evidence, so the prompt shows it as E1.
+CITED = "E1"
 
 
 class StubProvider:
@@ -139,7 +141,7 @@ async def world(
                         "score": 70,
                         "confidence": 0.9,
                         "read": f"{name}, read from the evidence.",
-                        "evidence_ids": [str(evidence.id)],
+                        "evidence_ids": [CITED],
                     }
                     for key, name in [
                         ("leadership", "Technical leadership"),
@@ -190,7 +192,7 @@ ORG_KEY = "req:demonstrated-org-level-influence"
 LEAD_KEY = "dim:leadership"
 
 
-def _plan_reply(evidence_id: str, *, first_task: str = "Lead the checkout migration epic") -> str:
+def _plan_reply(cited: str, *, first_task: str = "Lead the checkout migration epic") -> str:
     return json.dumps(
         {
             "gaps": [
@@ -198,7 +200,7 @@ def _plan_reply(evidence_id: str, *, first_task: str = "Lead the checkout migrat
                 {
                     "key": LEAD_KEY,
                     "why": "They expect 90; your leadership reads at 70.",
-                    "evidence_ids": [evidence_id],
+                    "evidence_ids": [cited],
                 },
             ],
             "milestones": [
@@ -244,7 +246,7 @@ async def test_a_pasted_jd_is_read_scored_and_planned_with_gaps_ranked_by_worth(
 ) -> None:
     ref = await _pasted(world, account)
     _score_the_jd(world.stub)
-    world.stub.replies.append(_plan_reply(world.evidence_id))
+    world.stub.replies.append(_plan_reply(CITED))
     calls_before = len(world.stub.calls)
 
     requested = await world.gapplan.request(account, ref)
@@ -283,7 +285,7 @@ async def test_regenerating_keeps_the_history_and_carries_finished_work(
 ) -> None:
     ref = await _pasted(world, account)
     _score_the_jd(world.stub)
-    world.stub.replies.append(_plan_reply(world.evidence_id))
+    world.stub.replies.append(_plan_reply(CITED))
     first = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, first.id)
     drafted = await world.gapplan.get(account, first.id)
@@ -292,7 +294,7 @@ async def test_regenerating_keeps_the_history_and_carries_finished_work(
     # The JD is already scored against this analysis: only the plan is drafted.
     calls_before = len(world.stub.calls)
     world.stub.replies.append(
-        _plan_reply(world.evidence_id, first_task="Lead the checkout migration epic end to end")
+        _plan_reply(CITED, first_task="Lead the checkout migration epic end to end")
     )
     second = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, second.id)
@@ -315,7 +317,7 @@ async def test_a_plan_citing_evidence_the_user_lacks_is_recorded_as_failed(
 ) -> None:
     ref = await _pasted(world, account)
     _score_the_jd(world.stub)
-    world.stub.replies.append(_plan_reply("00000000-0000-0000-0000-000000000000"))
+    world.stub.replies.append(_plan_reply("E9"))
 
     requested = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, requested.id)
@@ -331,7 +333,7 @@ async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
 ) -> None:
     ref = await _pasted(world, account)
     _score_the_jd(world.stub)
-    reply = json.loads(_plan_reply(world.evidence_id))
+    reply = json.loads(_plan_reply(CITED))
     reply["gaps"] = reply["gaps"][1:]
     world.stub.replies.append(json.dumps(reply))
 
@@ -359,7 +361,7 @@ async def test_another_user_cannot_read_the_plan(
 ) -> None:
     ref = await _pasted(world, account)
     _score_the_jd(world.stub)
-    world.stub.replies.append(_plan_reply(world.evidence_id))
+    world.stub.replies.append(_plan_reply(CITED))
     requested = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, requested.id)
 

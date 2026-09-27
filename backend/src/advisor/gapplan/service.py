@@ -46,7 +46,13 @@ from advisor.gapplan.domain import (
     progress,
     stepping_stones,
 )
-from advisor.profile import CitationError, ProfileService, assert_citations_exist
+from advisor.profile import (
+    CitationError,
+    CitationHandles,
+    ProfileService,
+    ProfileSnapshot,
+    assert_citations_exist,
+)
 from advisor.rolemap import RoleMapService
 from advisor.target import (
     DimensionGap,
@@ -224,11 +230,14 @@ class GapPlanService:
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
         """Priced before anything is spent. A pasted JD not yet scored adds that."""
         preview = await self._target.preview(owner_id, ref)
+        profile = await self._profile.snapshot(owner_id)
         inputs = await self._inputs(
             owner_id,
             label=preview.label,
             requirements=preview.requirements_text,
             snapshot=preview.snapshot,
+            profile=profile,
+            handles=CitationHandles(e.id for e in profile.evidence),
         )
         estimate = await self._gateway.estimate(
             owner_id,
@@ -379,6 +388,8 @@ class GapPlanService:
                 f"you already clear everything {snapshot.label} asks for; there is nothing to plan",
             )
 
+        profile = await self._profile.snapshot(owner_id)
+        handles = CitationHandles(e.id for e in profile.evidence)
         result = await self._gateway.run(
             owner_id,
             task="gapplan.draft",
@@ -388,6 +399,8 @@ class GapPlanService:
                 label=snapshot.label,
                 requirements=requirements_block(snapshot),
                 snapshot=snapshot,
+                profile=profile,
+                handles=handles,
             ),
             output_schema=_Plan,
             untrusted=_UNTRUSTED,
@@ -416,10 +429,12 @@ class GapPlanService:
         except PlanError as exc:
             raise PlanInvalidError(f"the drafted plan was rejected: {exc}") from exc
 
-        profile = await self._profile.snapshot(owner_id)
-        evidence = {str(e.id): e for e in profile.evidence}
-        cited = {i for reading in readings for i in reading.evidence_ids}
+        # Evidence can go while the model runs: a source disconnected meanwhile.
+        current = await self._profile.snapshot(owner_id)
+        evidence = {str(e.id): e for e in current.evidence}
         try:
+            readings = [GapReading(r.key, r.why, handles.resolve(r.evidence_ids)) for r in readings]
+            cited = {i for reading in readings for i in reading.evidence_ids}
             assert_citations_exist(cited, set(evidence))
         except CitationError as exc:
             # An invented citation is how a fabricated claim gets in.
@@ -530,8 +545,9 @@ class GapPlanService:
         label: str,
         requirements: str,
         snapshot: TargetSnapshot | None,
+        profile: ProfileSnapshot,
+        handles: CitationHandles,
     ) -> dict[str, str]:
-        profile = await self._profile.snapshot(owner_id)
         assessment = await self._assessment.latest(owner_id)
         if snapshot is None:
             gaps = "(worked out once the job description has been scored)"
@@ -559,7 +575,8 @@ class GapPlanService:
             )
             or "(no analysis yet)",
             "evidence": "\n".join(
-                f"[{e.id}] ({e.source}) {e.reference}: {e.fact}" for e in profile.evidence
+                f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}"
+                for e in profile.evidence
             )
             or "(no evidence)",
         }

@@ -9,6 +9,7 @@ import pytest
 
 from advisor.profile.domain import (
     CitationError,
+    CitationHandles,
     Evidence,
     EvidenceGranularity,
     EvidenceSource,
@@ -128,3 +129,31 @@ def test_a_gap_between_positions_is_not_counted() -> None:
 
 def test_no_positions_is_no_experience() -> None:
     assert total_experience_months([], as_of=date(2026, 1, 1)) == 0
+
+
+def test_evidence_is_cited_by_a_short_handle_that_resolves_to_its_id() -> None:
+    """A model copying a 36-character id back slips a character; E2 it does not."""
+    first, second = uuid.uuid4(), uuid.uuid4()
+    handles = CitationHandles([first, second])
+
+    assert (handles.handle(first), handles.handle(second)) == ("E1", "E2")
+    assert handles.resolve(["E2", "E1"]) == (str(second), str(first))
+
+
+def test_a_handle_that_was_never_handed_out_is_an_invented_citation() -> None:
+    handles = CitationHandles([uuid.uuid4()])
+    with pytest.raises(CitationError) as caught:
+        handles.resolve(["E1", "E7"])
+    assert caught.value.invented == frozenset({"E7"})
+
+
+def test_a_raw_id_is_not_a_handle_even_when_the_evidence_is_real() -> None:
+    """Resolving is strict: only the names the prompt showed are accepted."""
+    real = uuid.uuid4()
+    with pytest.raises(CitationError):
+        CitationHandles([real]).resolve([str(real)])
+
+
+def test_an_id_given_no_handle_is_shown_as_itself() -> None:
+    gone = uuid.uuid4()
+    assert CitationHandles([uuid.uuid4()]).handle(gone) == str(gone)

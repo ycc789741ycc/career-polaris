@@ -14,7 +14,7 @@ scores").
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
@@ -104,6 +104,21 @@ class ResumeContent:
 
     def cited(self) -> set[str]:
         return {i for bullet in self.bullets() for i in bullet.evidence_ids}
+
+    def with_citations(self, cite: Callable[[tuple[str, ...]], tuple[str, ...]]) -> ResumeContent:
+        """The same résumé with every line's citations passed through ``cite``."""
+        return replace(
+            self,
+            experience=tuple(
+                replace(
+                    position,
+                    bullets=tuple(
+                        replace(b, evidence_ids=cite(b.evidence_ids)) for b in position.bullets
+                    ),
+                )
+                for position in self.experience
+            ),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -209,12 +224,17 @@ def mark_edits(previous: ResumeContent | None, edited: ResumeContent) -> ResumeC
     )
 
 
-def settle_revision(current: ResumeContent, proposed: ResumeContent) -> ResumeContent:
+def settle_revision(
+    current: ResumeContent,
+    proposed: ResumeContent,
+    resolve: Callable[[tuple[str, ...]], tuple[str, ...]],
+) -> ResumeContent:
     """What a chat proposal really changes.
 
     A line whose text is unchanged is the line it was — origin and citations
     included — whatever the model says about it. Any other line is the model's
-    writing, and must cite evidence like any written line.
+    writing, and must cite evidence like any written line; ``resolve`` turns
+    what it cited into evidence ids.
     """
     before = {b.text: b for b in current.bullets()}
     return replace(
@@ -223,7 +243,9 @@ def settle_revision(current: ResumeContent, proposed: ResumeContent) -> ResumeCo
             replace(
                 position,
                 bullets=tuple(
-                    before[b.text] if b.text in before else replace(b, origin=Origin.WRITTEN)
+                    before[b.text]
+                    if b.text in before
+                    else replace(b, origin=Origin.WRITTEN, evidence_ids=resolve(b.evidence_ids))
                     for b in position.bullets
                 ),
             )
