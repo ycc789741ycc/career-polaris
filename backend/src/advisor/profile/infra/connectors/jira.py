@@ -10,6 +10,7 @@ from collections import Counter
 from typing import Any
 
 from advisor.profile.infra.connectors.base import EvidenceDraft
+from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
 
 SCOPES = ("read:jira-work", "read:jira-user", "offline_access")
@@ -34,9 +35,27 @@ class JiraConnector:
         )
         return list(payload or [])
 
-    async def account_name(self, client: GuardedClient, access_token: str) -> str | None:
+    async def account_name(self, client: GuardedClient, access_token: str) -> str:
+        """The Atlassian user and the site they granted, e.g. "Ada (ada@x.io) · acme".
+
+        The person comes from the first site's ``/myself``, which the
+        ``read:jira-user`` scope already covers. The email is left out when the
+        user's Atlassian privacy settings hide it.
+        """
         sites = await self.sites(client, access_token)
-        return str(sites[0].get("name")) if sites else None
+        site = next((s for s in sites if s.get("id")), None)
+        if site is None:
+            raise UpstreamFailedError("Jira did not grant access to any site")
+        me = await client.get_json(
+            f"{self._base}/ex/jira/{site['id']}/rest/api/3/myself",
+            headers=_headers(access_token),
+        )
+        name = me.get("displayName") if isinstance(me, dict) else None
+        if not name:
+            raise UpstreamFailedError("Jira did not return an account")
+        email = me.get("emailAddress") if isinstance(me, dict) else None
+        person = f"{name} ({email})" if email else str(name)
+        return f"{person} · {site.get('name') or 'jira'}"
 
     async def fetch(self, client: GuardedClient, access_token: str) -> list[EvidenceDraft]:
         sites = await self.sites(client, access_token)

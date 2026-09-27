@@ -117,6 +117,12 @@ class ProfileService:
 
     # -- connections --------------------------------------------------------
 
+    def _connector(self, kind: str) -> Connector:
+        connector = self._connectors.get(kind)
+        if connector is None:
+            raise ValidationError(f"unknown connector {kind!r}", kind=kind)
+        return connector
+
     async def connections(self, owner_id: uuid.UUID) -> list[ConnectionView]:
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.connections.get_list(SourceConnectionFilter())
@@ -131,10 +137,17 @@ class ProfileService:
         refresh_token: str | None,
         scopes: tuple[str, ...],
         expires_at: datetime | None,
-        account: str | None = None,
     ) -> ConnectionView:
-        if kind not in self._connectors:
-            raise ValidationError(f"unknown connector {kind!r}", kind=kind)
+        """Store fresh tokens, and record which account they belong to.
+
+        The account is looked up before anything is written, so a token the
+        provider will not identify never becomes a connection.
+        """
+        connector = self._connector(kind)
+        async with GuardedClient(
+            timeout_seconds=self._http_timeout, user_agent=self._user_agent
+        ) as client:
+            account = await connector.account_name(client, access_token)
 
         async with self._uow.for_owner(owner_id) as mine:
             existing = await _connection(mine, kind)
@@ -155,10 +168,34 @@ class ProfileService:
             return _connection_view(stored)
 
     async def disconnect(self, owner_id: uuid.UUID, kind: str) -> None:
+        """Drop the tokens and every fact gathered from that source.
+
+        Removing the evidence is what makes switching accounts safe: facts from
+        the old account never mix with the new one's. Matching on ``source``
+        rather than the connection id also sweeps facts orphaned by a
+        disconnect made before this rule existed.
+        """
+        self._connector(kind)
         async with self._uow.for_owner(owner_id) as mine:
             connection = await _connection(mine, kind)
-            if connection is not None:
-                await mine.connections.delete(connection.id)
+            if connection is None:
+                return
+            await mine.connections.delete(connection.id)
+
+            source = EvidenceSource(kind)
+            removed = 0
+            while stale := await mine.evidence.get_list(EvidenceFilter(source=source)):
+                for evidence in stale:
+                    await mine.evidence.delete(evidence.id)
+                removed += len(stale)
+
+            version = await _bump_version(mine, owner_id, utcnow())
+            mine.record(
+                ProfileUpdated(
+                    owner_id=owner_id, source=source, version=version.version, count=removed
+                )
+            )
+            log.info("connection.disconnected", kind=kind, evidence_removed=removed)
 
     async def sync_connection(self, owner_id: uuid.UUID, kind: str) -> int:
         """Fetch a source and turn it into Evidence. Worker `sync` queue only.
@@ -166,9 +203,7 @@ class ProfileService:
         This is the one place besides the AI gateway where a stored secret is
         opened, and the token never leaves this call.
         """
-        connector = self._connectors.get(kind)
-        if connector is None:
-            raise ValidationError(f"unknown connector {kind!r}", kind=kind)
+        connector = self._connector(kind)
 
         async with self._uow.for_owner(owner_id) as mine:
             connection = await _connection(mine, kind)
@@ -181,6 +216,7 @@ class ProfileService:
             async with GuardedClient(
                 timeout_seconds=self._http_timeout, user_agent=self._user_agent
             ) as client:
+                account = await connector.account_name(client, token)
                 drafts = await connector.fetch(client, token)
         except UpstreamFailedError as exc:
             async with self._uow.for_owner(owner_id) as mine:
@@ -200,7 +236,7 @@ class ProfileService:
         async with self._uow.for_owner(owner_id) as mine:
             synced = await mine.connections.get(connection_id)
             if synced is not None:
-                synced.synced(utcnow())
+                synced.synced(utcnow(), account=account)
                 await mine.connections.update(synced)
             mine.record(SourceSynced(owner_id=owner_id, kind=kind, evidence=written))
         return written
@@ -411,23 +447,22 @@ class ProfileService:
                     )
                     await mine.evidence.update(known)
 
-            now = utcnow()
-            versions = await mine.versions.get_list(ProfileVersionFilter(), page_size=1)
-            if versions:
-                version = versions[0]
-                version.bump(now)
-                version = await mine.versions.update(version)
-            else:
-                version = await mine.versions.create(
-                    ProfileVersion.first(owner_id=owner_id, at=now)
-                )
-
+            version = await _bump_version(mine, owner_id, utcnow())
             mine.record(
                 ProfileUpdated(
                     owner_id=owner_id, source=source, version=version.version, count=len(drafts)
                 )
             )
             return len(drafts)
+
+
+async def _bump_version(mine: OwnerProfile, owner_id: uuid.UUID, now: datetime) -> ProfileVersion:
+    versions = await mine.versions.get_list(ProfileVersionFilter(), page_size=1)
+    if versions:
+        version = versions[0]
+        version.bump(now)
+        return await mine.versions.update(version)
+    return await mine.versions.create(ProfileVersion.first(owner_id=owner_id, at=now))
 
 
 async def _connection(mine: OwnerProfile, kind: str) -> SourceConnection | None:

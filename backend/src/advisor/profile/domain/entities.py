@@ -76,8 +76,10 @@ class SourceConnection:
         self.status = ConnectionStatus.FAILED
         self.last_error = error
 
-    def synced(self, at: datetime) -> None:
+    def synced(self, at: datetime, *, account: str) -> None:
+        """A sync also refreshes whose account this is, in case it was renamed."""
         self.last_synced_at = at
+        self.external_account = account
         self.status = ConnectionStatus.CONNECTED
         self.last_error = None
 

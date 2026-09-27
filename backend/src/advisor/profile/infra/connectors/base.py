@@ -28,4 +28,8 @@ class EvidenceDraft:
 class Connector(Protocol):
     kind: str
 
+    async def account_name(self, client: GuardedClient, access_token: str) -> str:
+        """Who the token belongs to, as the user would recognise it."""
+        ...
+
     async def fetch(self, client: GuardedClient, access_token: str) -> list[EvidenceDraft]: ...
