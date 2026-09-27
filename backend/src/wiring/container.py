@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
 
-from advisor.assessment import AssessmentService
+from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.gapplan import GapPlanService
 from advisor.identity import (
     AuthService,
@@ -168,7 +168,7 @@ def build(settings: Settings | None = None) -> Container:
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
     )
-    assessment = AssessmentService(
+    assessment = create_assessment_service(
         database,
         profile=profile,
         rolemap=rolemap,

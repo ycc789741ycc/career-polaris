@@ -14,6 +14,7 @@ from advisor.assessment.domain import (
     MAX_MATCHES,
     MIN_MATCHES,
 )
+from advisor.assessment.factory import create_assessment_service
 from advisor.assessment.service import (
     AssessmentService,
     AssessmentView,
@@ -33,5 +34,6 @@ __all__ = [
     "FitView",
     "MatchedPostingView",
     "QuestionView",
+    "create_assessment_service",
     "jobs",
 ]

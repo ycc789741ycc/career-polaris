@@ -1,0 +1,146 @@
+"""The SQLAlchemy side of assessment's repositories, against a real database.
+
+Worth proving here: snapshots survive their mappers (JSON included), the
+answered filter and newest-first order hold, an owner sees nobody else's rows,
+and each event lands in the outbox as the dispatcher reads it.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+
+import pytest
+from sqlalchemy import text
+
+from advisor.assessment.domain import (
+    AssessedScore,
+    AssessedScoreFilter,
+    AssessmentCompleted,
+    FollowUpQuestion,
+    FollowUpQuestionFilter,
+    QuestionAnswered,
+    RoleFit,
+    RoleFitFilter,
+    SkillAssessment,
+    SkillAssessmentFilter,
+)
+from advisor.assessment.infra.unit_of_work import SqlAlchemyAssessmentUnitOfWork
+from kernel.db import Database
+
+pytestmark = pytest.mark.integration
+
+
+async def test_assessment_snapshots_round_trip(
+    database: Database, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyAssessmentUnitOfWork(database)
+    async with uow.for_owner(account) as mine:
+        assessment = await mine.assessments.create(
+            SkillAssessment(
+                id=uuid.uuid4(),
+                owner_id=account,
+                profile_version=3,
+                model_id="m",
+                template_version="v1",
+            )
+        )
+        score = await mine.scores.create(
+            AssessedScore(
+                id=uuid.uuid4(),
+                owner_id=account,
+                assessment_id=assessment.id,
+                dimension_key="api",
+                score=72,
+                confidence=0.8,
+                read="Strong",
+                evidence_ids=("e1", "e2"),
+            )
+        )
+        fit = await mine.fits.create(
+            RoleFit(
+                id=uuid.uuid4(),
+                owner_id=account,
+                assessment_id=assessment.id,
+                role_id=uuid.uuid4(),
+                private_posting_id=None,
+                score=64,
+                reasoning="close",
+                target_profile={"api": 80},
+                gaps=({"dimension_key": "api", "user_score": 72, "target_score": 80, "delta": -8},),
+                uncovered=({"statement": "Kafka", "weight": 0.5},),
+                model_id="m",
+                template_version="v1",
+                requirements=({"statement": "APIs", "weight": 0.9, "expected_level": "expert"},),
+                requirement_map={"APIs": "api"},
+            )
+        )
+    assert assessment.created_at is not None and fit.created_at is not None
+
+    async with uow.for_owner(account) as mine:
+        assert await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1) == [assessment]
+        assert await mine.scores.get_list(AssessedScoreFilter(assessment_id=assessment.id)) == [
+            score
+        ]
+        assert await mine.fits.get_list(RoleFitFilter(role_id=fit.role_id)) == [fit]
+
+    async with uow.for_owner(other_account) as theirs:
+        assert await theirs.fits.get(fit.id) is None
+        assert await theirs.assessments.get_count(SkillAssessmentFilter()) == 0
+
+
+async def test_answered_questions_filter_and_events_reach_the_outbox(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyAssessmentUnitOfWork(database)
+    async with uow.for_owner(account) as mine:
+        assessment = await mine.assessments.create(
+            SkillAssessment(
+                id=uuid.uuid4(),
+                owner_id=account,
+                profile_version=1,
+                model_id="m",
+                template_version="v1",
+            )
+        )
+        question = await mine.questions.create(
+            FollowUpQuestion(
+                id=uuid.uuid4(),
+                owner_id=account,
+                assessment_id=assessment.id,
+                dimension_key="api",
+                text="Led a team?",
+                why="thin",
+                options=("yes", "no"),
+            )
+        )
+
+    async with uow.for_owner(account) as mine:
+        assert await mine.questions.get_count(FollowUpQuestionFilter(is_answered=False)) == 1
+        question.answered("yes", at=datetime(2026, 9, 27, tzinfo=UTC))
+        await mine.questions.update(question)
+        mine.record(
+            QuestionAnswered(owner_id=account, question_id=question.id, dimension_key="api")
+        )
+        mine.record(
+            AssessmentCompleted(
+                owner_id=account, assessment_id=assessment.id, dimensions=1, model_id="m"
+            )
+        )
+
+    async with uow.for_owner(account) as mine:
+        [answered] = await mine.questions.get_list(FollowUpQuestionFilter(is_answered=True))
+        assert answered.answer == "yes" and answered.options == ("yes", "no")
+
+    async with database.shared() as session:
+        rows = await session.execute(
+            text("SELECT name, payload FROM outbox.event WHERE owner_id = :owner"),
+            {"owner": account},
+        )
+        assert sorted(rows.all()) == [
+            (
+                "AssessmentCompleted",
+                {"assessment_id": str(assessment.id), "dimensions": 1, "model_id": "m"},
+            ),
+            ("QuestionAnswered", {"question_id": str(question.id), "dimension": "api"}),
+        ]
