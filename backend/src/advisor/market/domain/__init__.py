@@ -19,6 +19,7 @@ from advisor.market.domain.events import (
 )
 from advisor.market.domain.pay_text import salary_in_text
 from advisor.market.domain.posting import (
+    ACCENT_FOLDS,
     MAX_CANONICAL_KEY,
     MAX_COMPANY_NAME,
     MAX_LOCATION,
@@ -34,6 +35,7 @@ from advisor.market.domain.posting import (
     clip,
     expired_keys,
     in_market,
+    market_words,
     normalize,
     normalize_title,
 )
@@ -63,6 +65,7 @@ from advisor.market.domain.repositories import (
 from advisor.market.domain.salary import CONFIDENT_SAMPLE_SIZE, SalaryBand, band_from
 
 __all__ = [
+    "ACCENT_FOLDS",
     "CONFIDENT_SAMPLE_SIZE",
     "MAX_CANONICAL_KEY",
     "MAX_COMPANY_NAME",
@@ -116,6 +119,7 @@ __all__ = [
     "clip",
     "expired_keys",
     "in_market",
+    "market_words",
     "normalize",
     "normalize_title",
     "refresh_allowed",

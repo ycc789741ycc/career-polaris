@@ -10,11 +10,12 @@ from __future__ import annotations
 import uuid
 from typing import ClassVar
 
-from sqlalchemy import exists, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.market.domain import (
+    ACCENT_FOLDS,
     Company,
     CompanyFilter,
     CompanySubscription,
@@ -34,6 +35,7 @@ from advisor.market.domain import (
     PrivateJobPostingFilter,
     SourceOrigin,
     SubscriptionFilter,
+    market_words,
 )
 from advisor.market.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
@@ -164,8 +166,9 @@ class SqlAlchemyJobPostingRepository(
         either: list[ColumnElement[bool]] = []
         if scope.company_ids:
             either.append(posting.company_id.in_(scope.company_ids))
-        if scope.markets:
-            either.append(posting.location.in_(scope.markets))
+        for market in scope.markets:
+            if words := market_words(market):
+                either.append(_location_in_market(words))
         if scope.includes_baseline:
             either.append(
                 posting.crawl_source_id.in_(
@@ -174,12 +177,22 @@ class SqlAlchemyJobPostingRepository(
                     )
                 )
             )
+        if not either:
+            return []  # markets with no words in them, and nothing else chosen
         rows = await self._session.execute(
             select(posting)
             .where(posting.status == str(PostingStatus.OPEN), or_(*either))
             .order_by(posting.created_at.desc(), posting.id.desc())
         )
         return [mappers.job_posting(row) for row in rows.scalars()]
+
+
+def _location_in_market(words: tuple[str, ...]) -> ColumnElement[bool]:
+    """``in_market`` in SQL: the location, lowercased and folded to ASCII the
+    way ``normalize`` folds it, contains each of the market's words whole.
+    The words are ASCII letters and digits, so they are safe in the pattern."""
+    folded = func.translate(func.lower(models.JobPosting.location), *ACCENT_FOLDS)
+    return and_(*(folded.regexp_match(rf"\m{word}\M") for word in words))
 
 
 class SqlAlchemyPostingEmbeddingRepository(

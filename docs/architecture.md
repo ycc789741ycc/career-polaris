@@ -384,6 +384,7 @@ flowchart LR
 |---|---|
 | Alembic's bookkeeping and Procrastinate's tables each get their own schema | `public` has its default grants revoked, so nothing may create objects there. |
 | `make migrate` applies the job schema too, idempotently | The worker's tables must exist before `start-app` brings a worker up — never created lazily by the first worker to connect. |
+| A posting is in a market when its location contains every word of the market, accents folded (`in_market`; the same rule in SQL for the role-map scope) | Boards never write a location the way a user names a market — "Berlin, Germany", "Remote, United States" — so an exact match left a market almost empty. The cost: a word-level match cannot tell "Remote EU" from "Remote, Europe", and a one-word market like "Remote" is broad. |
 | A posting deduped across sources is owned by the source that saw it last | Expiry is scoped per source, so otherwise a deduped posting would have no crawl responsible for expiring it. |
 | The single-company refresh job takes a crawler-role connection | `app_rw` is read-only on the shared market zone; only the crawler writes postings. |
 | Everything runs in a container, driven by `make` over `docker`; a contributor installs only Docker and `make` | The guideline's containers-by-default rule. It also removes the class of bug where CI and a laptop run different tool versions. |

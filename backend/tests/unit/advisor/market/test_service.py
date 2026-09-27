@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
@@ -263,6 +264,25 @@ async def test_without_markets_the_scope_falls_back_to_baseline_postings() -> No
     # With a market chosen, only postings in it count, baseline or not.
     await market.add_market(OWNER, "Lisbon")
     assert await market.postings_in_scope(OWNER) == []
+
+
+async def test_a_market_takes_in_postings_whose_location_names_it() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest, market = CrawlIngest(uow), _service(uow)
+    baseline = _source(uow, origin=SourceOrigin.BASELINE)
+    await ingest.record_crawl(
+        baseline.id,
+        [
+            replace(_posting("Backend"), location="Berlin, Germany"),
+            replace(_posting("Platform"), location="München, Germany"),
+            replace(_posting("Data"), location="Remote, United States"),
+        ],
+    )
+
+    await market.add_market(OWNER, "berlin")
+    await market.add_market(OWNER, "Munchen")
+    in_scope = await market.postings_in_scope(OWNER)
+    assert sorted(p.title for p in in_scope) == ["Backend", "Platform"]
 
 
 async def test_a_pasted_jd_is_private_and_links_to_its_crawled_twin() -> None:
