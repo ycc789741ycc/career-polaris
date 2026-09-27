@@ -83,3 +83,26 @@ later phase — never a market data source.
 * Optional per deployment: blank `GOOGLE_OAUTH_CLIENT_ID` and the sign-in
   screen offers email and password only.
 * Not yet: unlinking Google, or linking it from Settings.
+
+# Phase 4
+## Evidence insight
+* **Timeline — done.** On Sources, "When the work happened": one row per
+  source, one cell per week over 12 months or everything, and clicking a week
+  lists its facts in the table below. It counts single pull requests and Jira
+  issues only; a tally ("12 merged pull requests in x") is marked `summary` and
+  left out so nothing counts twice. Jira issues now carry the date they were
+  resolved, or last updated while open. Résumé lines and answers have no work
+  date and are counted in a note, not plotted. A quiet week is a pale cell,
+  never a warning.
+* **Source mix — done.** "What it found so far" is one stacked bar of facts by
+  source, with counts and whole percents that add up to 100. The note under it
+  says the bar shares out facts, not effort.
+* **Where the work lives — done.** One bar per GitHub repository (merged pull
+  requests) and per Jira project (issues), each source on its own scale. Bars
+  come from the connectors' own tallies, now stored as numbers (`tally`), not
+  from the few items a sync keeps. Every fact names its repository or project
+  (`subject`), so clicking a bar lists the tally and its items.
+* **What backs a score — done.** The evidence table has a "Cited by" column
+  from the latest analysis, a count of how many facts back a score, a filter
+  for the ones none cite, and a note when sources changed after the analysis.
+  The strength report already lists the facts behind each score.

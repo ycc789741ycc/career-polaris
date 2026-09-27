@@ -24,12 +24,29 @@ class EvidenceSource(StrEnum):
     SELF_REPORTED = "self_reported"
 
 
+class EvidenceGranularity(StrEnum):
+    """Whether a fact is one piece of work or a tally over many.
+
+    An ``item`` is one pull request, one issue or one résumé line; its
+    ``observed_on`` is when that work happened. A ``summary`` counts many items
+    ("12 merged pull requests in x") and its date is only the latest of them,
+    so anything that counts work over time must count items alone.
+    """
+
+    ITEM = "item"
+    SUMMARY = "summary"
+
+
 @dataclass(slots=True)
 class Evidence:
     """One cited fact. ``reference`` is where a human can go and check it.
 
     ``external_ref`` identifies the fact at its source, so re-syncing a source
     restates a fact rather than duplicating it.
+
+    ``subject`` is the repository or project the work belongs to, when the
+    source has one. ``tally`` is how many items a summary counts, so it can be
+    compared without reading a number back out of the sentence.
     """
 
     id: uuid.UUID
@@ -40,6 +57,9 @@ class Evidence:
     fact: str
     observed_on: date | None
     confidence: float
+    granularity: EvidenceGranularity = EvidenceGranularity.ITEM
+    tally: int | None = None
+    subject: str | None = None
     source_connection_id: uuid.UUID | None = None
     resume_file_id: uuid.UUID | None = None
     created_at: datetime | None = None
@@ -47,6 +67,7 @@ class Evidence:
 
     def __post_init__(self) -> None:
         _check_confidence(self.confidence)
+        _check_tally(self.granularity, self.tally)
 
     @classmethod
     def cited(
@@ -59,6 +80,9 @@ class Evidence:
         fact: str,
         observed_on: date | None,
         confidence: float,
+        granularity: EvidenceGranularity = EvidenceGranularity.ITEM,
+        tally: int | None = None,
+        subject: str | None = None,
         source_connection_id: uuid.UUID | None = None,
         resume_file_id: uuid.UUID | None = None,
     ) -> Evidence:
@@ -71,24 +95,48 @@ class Evidence:
             fact=fact,
             observed_on=observed_on,
             confidence=confidence,
+            granularity=granularity,
+            tally=tally,
+            subject=subject,
             source_connection_id=source_connection_id,
             resume_file_id=resume_file_id,
         )
 
     def restate(
-        self, *, reference: str, fact: str, observed_on: date | None, confidence: float
+        self,
+        *,
+        reference: str,
+        fact: str,
+        observed_on: date | None,
+        confidence: float,
+        granularity: EvidenceGranularity,
+        tally: int | None,
+        subject: str | None,
     ) -> None:
         """A re-sync brings the fact up to date; where it came from stays."""
         _check_confidence(confidence)
+        _check_tally(granularity, tally)
         self.reference = reference
         self.fact = fact
         self.observed_on = observed_on
         self.confidence = confidence
+        self.granularity = granularity
+        self.tally = tally
+        self.subject = subject
 
 
 def _check_confidence(confidence: float) -> None:
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("evidence confidence must be between 0 and 1")
+
+
+def _check_tally(granularity: EvidenceGranularity, tally: int | None) -> None:
+    if tally is None:
+        return
+    if granularity is not EvidenceGranularity.SUMMARY:
+        raise ValueError("only a summary tallies items")
+    if tally < 0:
+        raise ValueError("a tally cannot be negative")
 
 
 class CitationError(Exception):

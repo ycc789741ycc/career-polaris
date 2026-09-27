@@ -10,6 +10,7 @@ import pytest
 from advisor.profile.domain import (
     CitationError,
     Evidence,
+    EvidenceGranularity,
     EvidenceSource,
     Position,
     assert_citations_exist,
@@ -27,6 +28,50 @@ def test_evidence_confidence_must_be_a_probability() -> None:
             fact="fact",
             observed_on=date(2026, 1, 1),
             confidence=1.4,
+        )
+
+
+def _fact(**overrides: object) -> Evidence:
+    fields: dict[str, object] = {
+        "owner_id": uuid.uuid4(),
+        "source": EvidenceSource.GITHUB,
+        "external_ref": "github:merged:acme/ledger",
+        "reference": "GitHub · acme/ledger",
+        "fact": "12 merged pull requests authored in acme/ledger.",
+        "observed_on": date(2026, 1, 1),
+        "confidence": 0.9,
+        **overrides,
+    }
+    return Evidence.cited(**fields)  # type: ignore[arg-type]
+
+
+def test_a_summary_carries_how_many_items_it_counts() -> None:
+    fact = _fact(granularity=EvidenceGranularity.SUMMARY, tally=12, subject="acme/ledger")
+    assert (fact.tally, fact.subject) == (12, "acme/ledger")
+
+
+def test_a_single_item_cannot_claim_a_tally() -> None:
+    """A tally on an item would count it as many pieces of work."""
+    with pytest.raises(ValueError, match="only a summary"):
+        _fact(tally=3)
+
+
+def test_a_tally_cannot_be_negative() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        _fact(granularity=EvidenceGranularity.SUMMARY, tally=-1)
+
+
+def test_a_restated_fact_is_checked_like_a_new_one() -> None:
+    fact = _fact()
+    with pytest.raises(ValueError, match="only a summary"):
+        fact.restate(
+            reference=fact.reference,
+            fact=fact.fact,
+            observed_on=fact.observed_on,
+            confidence=fact.confidence,
+            granularity=EvidenceGranularity.ITEM,
+            tally=12,
+            subject=None,
         )
 
 

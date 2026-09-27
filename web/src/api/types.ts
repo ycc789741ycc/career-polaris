@@ -181,6 +181,18 @@ export interface Evidence {
   fact: string;
   observed_on: string | null;
   confidence: number;
+  /** One piece of work, or a tally over many ("12 merged pull requests"). */
+  granularity: "item" | "summary";
+  /** How many items a summary counts; null on an item. */
+  tally: number | null;
+  /** The repository or project the work belongs to, when there is one. */
+  subject: string | null;
+}
+
+/** The profile's headline numbers (`GET /profile`). */
+export interface ProfileSummary {
+  version: number;
+  evidence_count: number;
 }
 
 export type TargetKind = "matchedPosting" | "subscription" | "privatePosting";

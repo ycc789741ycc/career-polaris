@@ -6,6 +6,7 @@ from advisor.profile.domain import (
     CareerPosition,
     ConnectionStatus,
     Evidence,
+    EvidenceGranularity,
     EvidenceSource,
     ProfileVersion,
     ResumeFile,
@@ -103,6 +104,9 @@ def evidence(row: models.Evidence) -> Evidence:
         fact=row.fact,
         observed_on=row.observed_on,
         confidence=row.confidence,
+        granularity=EvidenceGranularity(row.granularity),
+        tally=row.tally,
+        subject=row.subject,
         source_connection_id=row.source_connection_id,
         resume_file_id=row.resume_file_id,
         created_at=row.created_at,
@@ -128,6 +132,9 @@ def apply_evidence(row: models.Evidence, entity: Evidence) -> None:
     row.fact = entity.fact
     row.observed_on = entity.observed_on
     row.confidence = entity.confidence
+    row.granularity = str(entity.granularity)
+    row.tally = entity.tally
+    row.subject = entity.subject
 
 
 # --- career timeline and version -------------------------------------------
