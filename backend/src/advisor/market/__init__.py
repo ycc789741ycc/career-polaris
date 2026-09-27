@@ -35,6 +35,7 @@ from advisor.market.service import (
     Visibility,
     band_from,
     canonical_key,
+    in_market,
 )
 
 __all__ = [
@@ -58,5 +59,6 @@ __all__ = [
     "crawl_all",
     "create_crawl_ingest",
     "create_market_service",
+    "in_market",
     "jobs",
 ]

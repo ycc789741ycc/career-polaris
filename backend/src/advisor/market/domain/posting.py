@@ -86,6 +86,18 @@ def normalize_title(title: str) -> str:
     return normalize(_TITLE_NOISE_RE.sub(" ", title))
 
 
+def in_market(location: str | None, market: str) -> bool:
+    """Whether a posting's location falls in a market the user chose.
+
+    Every word of the market must appear in the location, so "Berlin" takes in
+    "Berlin, Germany" and "Remote" takes in "Remote, United States". Boards
+    never write a location the way a user names a market, so equal strings
+    almost never happen.
+    """
+    wanted = set(normalize(market).split())
+    return bool(wanted) and wanted <= set(normalize(location or "").split())
+
+
 def clip(text: str, limit: int) -> str:
     """Text cut to at most ``limit`` characters, marked with an ellipsis when cut."""
     if len(text) <= limit:

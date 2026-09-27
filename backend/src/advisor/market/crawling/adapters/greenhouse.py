@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from advisor.market.crawling.adapters.base import parse_date, salary_from, strip_html
-from advisor.market.service import NormalizedPosting, SourceKind
+from advisor.market.service import NormalizedPosting, SourceKind, salary_in_text
 
 BASE = "https://boards-api.greenhouse.io/v1/boards"
 
@@ -30,21 +30,25 @@ class GreenhouseAdapter:
                 continue
             pay = job.get("pay_input_ranges") or []
             first = pay[0] if pay else {}
+            description = strip_html(job.get("content") or "")
             postings.append(
                 NormalizedPosting(
                     external_id=str(job.get("id")),
                     company_name=company_name,
                     title=title,
                     location=(job.get("location") or {}).get("name"),
-                    description=strip_html(job.get("content") or ""),
+                    description=description,
                     url=str(job.get("absolute_url") or ""),
                     source_kind=self.source_kind,
                     posted_on=parse_date(job.get("updated_at") or job.get("first_published")),
+                    # The list endpoint carries no pay fields; most boards state
+                    # pay in the description instead.
                     salary=salary_from(
                         first.get("min_cents", 0) / 100 if first.get("min_cents") else None,
                         first.get("max_cents", 0) / 100 if first.get("max_cents") else None,
                         first.get("currency_type"),
-                    ),
+                    )
+                    or salary_in_text(description),
                 )
             )
         return postings

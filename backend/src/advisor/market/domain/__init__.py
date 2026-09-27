@@ -17,6 +17,7 @@ from advisor.market.domain.events import (
     PostingsChanged,
     SubscriptionAdded,
 )
+from advisor.market.domain.pay_text import salary_in_text
 from advisor.market.domain.posting import (
     MAX_CANONICAL_KEY,
     MAX_COMPANY_NAME,
@@ -32,6 +33,7 @@ from advisor.market.domain.posting import (
     canonical_key,
     clip,
     expired_keys,
+    in_market,
     normalize,
     normalize_title,
 )
@@ -113,7 +115,9 @@ __all__ = [
     "canonical_key",
     "clip",
     "expired_keys",
+    "in_market",
     "normalize",
     "normalize_title",
     "refresh_allowed",
+    "salary_in_text",
 ]

@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from advisor.market import MarketService, PostingView, Visibility, band_from
+from advisor.market import MarketService, PostingView, Visibility, band_from, in_market
 from advisor.profile import ProfileService
 from advisor.rolemap.domain import (
     DEFAULT_ROLE_COUNT,
@@ -480,7 +480,7 @@ class RoleMapService:
             ranges = [
                 (p.salary.min_amount, p.salary.max_amount, p.salary.currency)
                 for p in postings
-                if p.salary is not None and (not market or (p.location or "") == market)
+                if p.salary is not None and (not market or in_market(p.location, market))
             ]
             band = band_from(ranges)
             if band is not None:

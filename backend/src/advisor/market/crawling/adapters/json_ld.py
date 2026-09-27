@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from advisor.market.crawling.adapters.base import parse_date, salary_from, strip_html
-from advisor.market.service import NormalizedPosting, SourceKind
+from advisor.market.service import NormalizedPosting, SourceKind, salary_in_text
 
 _SCRIPT = re.compile(
     r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -59,13 +59,14 @@ class JsonLdAdapter:
             employer = job.get("hiringOrganization") or {}
             name = str(employer.get("name") or company_name).strip() or company_name
             salary_spec = (job.get("baseSalary") or {}).get("value") or {}
+            description = strip_html(str(job.get("description") or ""))
             postings.append(
                 NormalizedPosting(
                     external_id=str(job.get("identifier") or job.get("url") or title),
                     company_name=name,
                     title=title,
                     location=_location(job),
-                    description=strip_html(str(job.get("description") or "")),
+                    description=description,
                     url=str(job.get("url") or ""),
                     source_kind=self.source_kind,
                     posted_on=parse_date(job.get("datePosted")),
@@ -73,7 +74,8 @@ class JsonLdAdapter:
                         salary_spec.get("minValue"),
                         salary_spec.get("maxValue") or salary_spec.get("value"),
                         (job.get("baseSalary") or {}).get("currency"),
-                    ),
+                    )
+                    or salary_in_text(description),
                 )
             )
         return postings
