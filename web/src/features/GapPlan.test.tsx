@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Plan, PlanSummary, TargetOption } from "../api/types";
@@ -225,8 +225,12 @@ describe("gap plan screen", () => {
       screen.getByText("GitHub · payments-svc — 38 merged PRs"),
     ).toBeInTheDocument();
     expect(screen.getByText("Platform Engineer")).toBeInTheDocument();
-    expect(shell.setTarget).toHaveBeenCalledWith(
-      "Senior Backend Engineer · Northwind Pay · 71%",
+    // The top bar's target is set by an effect after the page renders, so the
+    // page being on screen does not mean it has been set yet.
+    await waitFor(() =>
+      expect(shell.setTarget).toHaveBeenCalledWith(
+        "Senior Backend Engineer · Northwind Pay · 71%",
+      ),
     );
   });
 
