@@ -12,12 +12,7 @@
  * screen.
  */
 
-export type Screen =
-  | "sources"
-  | "strengths"
-  | "roles"
-  | "advisor"
-  | "model";
+export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
 
 /** The Advisor's two tabs. */
 export type AdvisorTab = "plan" | "resume";
