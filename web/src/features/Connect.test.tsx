@@ -330,13 +330,14 @@ describe("Connect", () => {
     const user = userEvent.setup();
     renderConnect();
 
-    const card = await screen.findByRole("region", { name: "Your answers" });
+    const card = await screen.findByRole("region", { name: "Fill the gaps" });
     expect(
       await within(card).findByText(
         "Did you design the public API, or extend one?",
       ),
     ).toBeInTheDocument();
     expect(within(card).getByText("API design")).toBeInTheDocument();
+    expect(within(card).getByText("1 gap")).toBeInTheDocument();
 
     const before = calls.filter((c) => c.url === "/evidence").length;
     await user.click(within(card).getByRole("button", { name: "Designed it" }));

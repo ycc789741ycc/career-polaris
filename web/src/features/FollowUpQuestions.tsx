@@ -28,8 +28,9 @@ interface Reanalysis {
 }
 
 /**
- * Follow-up questions, shown on the Sources screen as the "Your answers"
- * source: an answer becomes evidence like a sync or an upload does.
+ * Follow-up questions, shown on the Sources screen as "Fill the gaps": they
+ * cover what the other sources leave thin, and an answer becomes evidence like
+ * a sync or an upload does.
  *
  * These appear when a dimension's confidence is below the threshold — the
  * domain's definition of "the context is not enough". Each says why it is being
@@ -170,18 +171,19 @@ export function FollowUpQuestions({
   const failed = !working && round?.status === "failed" ? round : null;
   const rerunning = reanalysis !== null && !generating;
 
-
   return (
-    <section className="panel panel-tight" aria-label="Your answers">
+    <section className="panel panel-tight" aria-label="Fill the gaps">
       <div className="row-between" style={{ alignItems: "flex-start" }}>
         <div>
-          <div className="card-title">Your answers</div>
-          <div className="subcopy">Follow-up questions</div>
+          <div className="card-title">Fill the gaps</div>
+          <div className="subcopy">Where your sources say too little</div>
         </div>
         <span
           className={open.length > 0 ? "tag tag-outline" : "tag tag-accent-2"}
         >
-          {open.length > 0 ? `${open.length} open` : "Up to date"}
+          {open.length === 0
+            ? "No gaps"
+            : `${open.length} ${open.length === 1 ? "gap" : "gaps"}`}
         </span>
       </div>
 
