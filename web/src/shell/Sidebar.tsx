@@ -25,7 +25,7 @@ export function Sidebar({
         <ul className="nav-list">
           {JOURNEY.map((item) => {
             const flag =
-              item.id === "questions" && status.openQuestions > 0
+              item.id === "sources" && status.openQuestions > 0
                 ? String(status.openQuestions)
                 : null;
             return (

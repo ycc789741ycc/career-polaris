@@ -44,7 +44,7 @@ describe("sidebar", () => {
     expect(onNavigate).toHaveBeenCalledWith("plan");
   });
 
-  it("flags how many questions are still unanswered", () => {
+  it("flags on Sources how many questions are still unanswered", () => {
     render(
       <Sidebar
         current="sources"
@@ -52,7 +52,8 @@ describe("sidebar", () => {
         onNavigate={() => {}}
       />,
     );
-    expect(screen.getByLabelText("3 unanswered")).toBeInTheDocument();
+    const sources = screen.getByRole("button", { name: /Sources/ });
+    expect(within(sources).getByLabelText("3 unanswered")).toBeInTheDocument();
   });
 
   it("flags the model when no key is set, and names the model once it is", () => {

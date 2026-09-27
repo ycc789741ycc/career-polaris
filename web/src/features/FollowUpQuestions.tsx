@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Assessment, Question, QuestionStatus } from "../api/types";
 import {
-  AutoGrid,
   Button,
   Done,
   EmptyState,
@@ -29,7 +28,8 @@ interface Reanalysis {
 }
 
 /**
- * Follow-up questions.
+ * Follow-up questions, shown on the Sources screen as the "Your answers"
+ * source: an answer becomes evidence like a sync or an upload does.
  *
  * These appear when a dimension's confidence is below the threshold — the
  * domain's definition of "the context is not enough". Each says why it is being
@@ -40,7 +40,12 @@ interface Reanalysis {
  * round while it is generating, and while an answer's re-analysis runs, and
  * shows a status bar until the work is done (ADR 0006).
  */
-export function Clarify() {
+export function FollowUpQuestions({
+  onAnswered,
+}: {
+  /** Called when answers or a finished round may have added evidence. */
+  onAnswered?: () => void;
+}) {
   const { status, navigate, refresh } = useShell();
   const model = modelName(status.credential);
   const questions = useAsync<Question[]>(() => api.get("/questions"), []);
@@ -108,6 +113,7 @@ export function Clarify() {
           if (wasGenerating.current && !nowGenerating) {
             void questions.reload();
             void refresh();
+            onAnswered?.();
             if (next?.status === "ready") setRefreshed(true);
           }
           wasGenerating.current = nowGenerating;
@@ -146,6 +152,7 @@ export function Clarify() {
           },
       );
       await Promise.all([questions.reload(), refresh()]);
+      onAnswered?.();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -163,105 +170,109 @@ export function Clarify() {
   const failed = !working && round?.status === "failed" ? round : null;
   const rerunning = reanalysis !== null && !generating;
 
+
   return (
-    <AutoGrid col={340}>
-      <div>
-        <span className="model-pill">
-          Written by {model} after reading your profile
-        </span>
-
-        <section
-          className="panel panel-tight"
-          style={{ marginTop: 14 }}
-          aria-label="What this is for"
+    <section className="panel panel-tight" aria-label="Your answers">
+      <div className="row-between" style={{ alignItems: "flex-start" }}>
+        <div>
+          <div className="card-title">Your answers</div>
+          <div className="subcopy">Follow-up questions</div>
+        </div>
+        <span
+          className={open.length > 0 ? "tag tag-outline" : "tag tag-accent-2"}
         >
-          <Eyebrow style={{ marginBottom: 6 }}>What this is for</Eyebrow>
-          <p className="lead" style={{ margin: 0 }}>
-            Every skill in your report carries a confidence — how sure the
-            analysis can be, given the evidence behind it. When a skill&apos;s
-            confidence is low, a question about it appears here. Answer what you
-            can: each answer becomes evidence, re-runs the analysis on your
-            model, and raises the confidence of the skill it is about.
-          </p>
-          <p className="subcopy" style={{ marginTop: 8, marginBottom: 0 }}>
-            Questions refresh by themselves after you sync a source or upload a
-            résumé.
-          </p>
-        </section>
+          {open.length > 0 ? `${open.length} open` : "Up to date"}
+        </span>
+      </div>
 
-        <ErrorNote error={error} />
-        {answered > 0 && !working && !slow && (
-          <Done>
-            {answered} answered — your analysis has re-run with{" "}
-            {answered === 1 ? "it" : "them"}.
-          </Done>
-        )}
-        {refreshed && !working && (
-          <Done>
-            {round?.question_count
-              ? "New questions are ready below."
-              : "Nothing left to ask — your evidence covers every skill well enough."}
-          </Done>
-        )}
-        {slow && (
-          <p className="subcopy" role="status">
-            The analysis is taking longer than usual. Your skill report and
-            these questions update when it finishes — check back in a few
-            minutes.
-          </p>
-        )}
+      <section
+        aria-label="What this is for"
+        className="subcopy"
+        style={{ fontSize: 13.5, lineHeight: 1.55, margin: "13px 0" }}
+      >
+        <p style={{ margin: 0 }}>
+          Every skill in your report carries a confidence — how sure the
+          analysis can be, given the evidence behind it. When a skill&apos;s
+          confidence is low, a question about it appears here. Each answer
+          becomes evidence, re-runs the analysis on your model, and raises the
+          confidence of the skill it is about.
+        </p>
+        <p style={{ margin: "6px 0 0" }}>
+          Questions refresh by themselves after you sync a source or upload a
+          résumé.
+        </p>
+      </section>
 
-        {working && (
-          <div className="panel" role="status" style={{ marginTop: 14 }}>
-            <span className="model-pill">
-              {rerunning
-                ? `Re-running your analysis on ${model}…`
-                : `Analysing your evidence on ${model}…`}
-            </span>
-            <div style={{ marginTop: 12 }}>
-              <ProgressBar
-                indeterminate
-                label="Generating follow-up questions"
-              />
-            </div>
-            <p className="subcopy" style={{ marginTop: 12, marginBottom: 0 }}>
-              {rerunning
-                ? "Scoring your skills again with your answer, then checking what is still unclear."
-                : "Looking for what your evidence doesn't settle yet."}{" "}
-              New questions appear here when it finishes; the page updates
-              itself.
+      <span className="model-pill">
+        Written by {model} after reading your profile
+      </span>
+
+      <ErrorNote error={error} />
+      {answered > 0 && !working && !slow && (
+        <Done>
+          {answered} answered — your analysis has re-run with{" "}
+          {answered === 1 ? "it" : "them"}.
+        </Done>
+      )}
+      {refreshed && !working && (
+        <Done>
+          {round?.question_count
+            ? "New questions are ready below."
+            : "Nothing left to ask — your evidence covers every skill well enough."}
+        </Done>
+      )}
+      {slow && (
+        <p className="subcopy" role="status">
+          The analysis is taking longer than usual. Your skill report and these
+          questions update when it finishes — check back in a few minutes.
+        </p>
+      )}
+
+      {working && (
+        <div className="inset" role="status" style={{ marginTop: 14 }}>
+          <span className="model-pill">
+            {rerunning
+              ? `Re-running your analysis on ${model}…`
+              : `Analysing your evidence on ${model}…`}
+          </span>
+          <div style={{ marginTop: 12 }}>
+            <ProgressBar indeterminate label="Generating follow-up questions" />
+          </div>
+          <p className="subcopy" style={{ marginTop: 12, marginBottom: 0 }}>
+            {rerunning
+              ? "Scoring your skills again with your answer, then checking what is still unclear."
+              : "Looking for what your evidence doesn't settle yet."}{" "}
+            New questions appear here when it finishes; the page updates
+            itself.
+          </p>
+        </div>
+      )}
+
+      {failed && (
+        <div className="inset" style={{ marginTop: 14 }}>
+          <div className="card-title">New questions could not be written</div>
+          <ErrorNote error={failed.error?.message ?? "Generation failed."} />
+          {failed.error?.code?.startsWith("ai_") ? (
+            <p className="subcopy">
+              This is about your model or budget, not your evidence.{" "}
+              <Button variant="ghost" onClick={() => navigate("model")}>
+                Open AI &amp; model
+              </Button>
             </p>
-          </div>
-        )}
+          ) : (
+            <p className="subcopy">
+              Your next sync, upload or analysis tries again.
+            </p>
+          )}
+        </div>
+      )}
 
-        {failed && (
-          <div className="panel" style={{ marginTop: 14 }}>
-            <h3>New questions could not be written</h3>
-            <ErrorNote error={failed.error?.message ?? "Generation failed."} />
-            {failed.error?.code?.startsWith("ai_") ? (
-              <p className="subcopy">
-                This is about your model or budget, not your evidence.{" "}
-                <Button variant="ghost" onClick={() => navigate("model")}>
-                  Open AI &amp; model
-                </Button>
-              </p>
-            ) : (
-              <p className="subcopy">
-                Your next sync, upload or analysis tries again.
-              </p>
-            )}
-          </div>
-        )}
-
-        {questions.loading || assessment.loading || !roundLoaded ? (
-          <Loading what="questions" />
-        ) : open.length > 0 ? (
-          open.map((question, index) => (
-            <div
-              key={question.id}
-              className="panel panel-tight"
-              style={{ marginTop: 14 }}
-            >
+      {questions.loading || assessment.loading || !roundLoaded ? (
+        <Loading what="questions" />
+      ) : open.length > 0 ? (
+        <div className="divided" style={{ marginTop: 6 }}>
+          {open.map((question, index) => (
+            <div key={question.id}>
               <div style={{ display: "flex", gap: 14, alignItems: "baseline" }}>
                 <span
                   style={{
@@ -273,13 +284,15 @@ export function Clarify() {
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <div>
-                  <div className="card-title">{question.text}</div>
+                  <div style={{ fontSize: 14.5, fontWeight: 600 }}>
+                    {question.text}
+                  </div>
                   <div className="subcopy" style={{ marginTop: 6 }}>
                     Asked because: {question.why}
                   </div>
                 </div>
               </div>
-              <div className="row" style={{ gap: 8, marginTop: 14 }}>
+              <div className="row" style={{ gap: 8, marginTop: 12 }}>
                 {question.options.map((option) => (
                   <PillToggle
                     key={option}
@@ -292,38 +305,23 @@ export function Clarify() {
                 ))}
               </div>
             </div>
-          ))
-        ) : working ? null : assessment.data === null ? (
-          <EmptyState title="No analysis yet">
-            Questions come after your first analysis. Run it from your skill
-            report, and anything it can&apos;t settle shows up here.
-          </EmptyState>
-        ) : (
-          <EmptyState title="Nothing to clarify">
-            Every skill in your report is confident enough to stand on the
-            evidence alone.
-          </EmptyState>
-        )}
-
-        <div className="row" style={{ marginTop: 20 }}>
-          <Button onClick={() => navigate("strengths")}>
-            See my skill report
-          </Button>
-          {open.length > 0 && (
-            <Button variant="ghost" onClick={() => navigate("strengths")}>
-              Skip for now
-            </Button>
-          )}
+          ))}
         </div>
-      </div>
+      ) : working ? null : assessment.data === null ? (
+        <EmptyState title="No analysis yet">
+          Questions come after your first analysis. Run it with “Analyze with
+          AI”, and anything it can&apos;t settle shows up here.
+        </EmptyState>
+      ) : (
+        <EmptyState title="Nothing to clarify">
+          Every skill in your report is confident enough to stand on the
+          evidence alone.
+        </EmptyState>
+      )}
 
-      <div className="panel">
-        <Eyebrow style={{ marginBottom: 4 }}>What your answers sharpen</Eyebrow>
-        {moved.length === 0 ? (
-          <p className="subcopy" style={{ marginTop: 10, marginBottom: 0 }}>
-            No open questions, so every score stands on the evidence alone.
-          </p>
-        ) : (
+      {moved.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Eyebrow style={{ marginBottom: 4 }}>What your answers sharpen</Eyebrow>
           <div className="divided">
             {moved.map((dimension) => (
               <div key={dimension.key}>
@@ -346,8 +344,8 @@ export function Clarify() {
               </div>
             ))}
           </div>
-        )}
-      </div>
-    </AutoGrid>
+        </div>
+      )}
+    </section>
   );
 }
