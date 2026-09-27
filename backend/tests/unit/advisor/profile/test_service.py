@@ -28,10 +28,22 @@ pytestmark = pytest.mark.usefixtures("clean_env")
 
 
 class FakeConnector:
-    def __init__(self, drafts: list[EvidenceDraft] | None = None, *, fails: bool = False) -> None:
+    def __init__(
+        self,
+        drafts: list[EvidenceDraft] | None = None,
+        *,
+        fails: bool = False,
+        account: str | None = "octo",
+    ) -> None:
         self.drafts = drafts or []
         self.fails = fails
+        self.account = account
         self.tokens: list[str] = []
+
+    async def account_name(self, client: Any, token: str) -> str:
+        if self.account is None:
+            raise UpstreamFailedError("GitHub did not return an account")
+        return self.account
 
     async def fetch(self, client: Any, token: str) -> list[EvidenceDraft]:
         self.tokens.append(token)
@@ -86,7 +98,6 @@ async def test_a_connection_stores_its_tokens_encrypted_and_reconnects_in_place(
         refresh_token="ghr_x",
         scopes=("repo", "read:org"),
         expires_at=None,
-        account="octo",
     )
 
     (stored,) = uow.store.connections.values()
@@ -164,6 +175,63 @@ async def test_a_failed_sync_marks_the_connection_and_writes_nothing() -> None:
 async def test_syncing_a_source_that_is_not_connected_is_not_found() -> None:
     with pytest.raises(NotFoundError):
         await _service(FakeProfileUnitOfWork()).sync_connection(OWNER, "github")
+
+
+async def test_a_token_the_provider_will_not_identify_is_not_stored() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow, connector=FakeConnector(account=None))
+
+    with pytest.raises(UpstreamFailedError):
+        await profile.store_connection(
+            OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+        )
+
+    assert uow.store.connections == {}
+
+
+async def test_a_sync_refreshes_the_account_name() -> None:
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector([_draft("pr/1")])
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+
+    connector.account = "octo-renamed"
+    await profile.sync_connection(OWNER, "github")
+
+    (view,) = await profile.connections(OWNER)
+    assert view.account == "octo-renamed"
+
+
+async def test_disconnecting_removes_that_sources_evidence_and_nothing_else() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow, connector=FakeConnector([_draft("pr/1"), _draft("pr/2")]))
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+    uploaded = await profile.upload_resume(
+        OWNER, filename="cv.txt", content_type="text/plain", content=RESUME
+    )
+    await profile.parse_resume(OWNER, uploaded.id)
+    before = await profile.snapshot(OWNER)
+    uow.store.events.clear()
+
+    await profile.disconnect(OWNER, "github")
+
+    after = await profile.snapshot(OWNER)
+    assert await profile.connections(OWNER) == []
+    assert after.evidence and {e.source for e in after.evidence} == {EvidenceSource.RESUME}
+    assert after.version == before.version + 1
+    assert uow.store.events == [
+        ProfileUpdated(owner_id=OWNER, source=EvidenceSource.GITHUB, version=after.version, count=2)
+    ]
+
+
+async def test_disconnecting_an_unknown_connector_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        await _service(FakeProfileUnitOfWork()).disconnect(OWNER, "gitlab")
 
 
 async def test_disconnecting_twice_is_harmless() -> None:

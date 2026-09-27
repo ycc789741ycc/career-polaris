@@ -30,14 +30,15 @@ class GitHubConnector:
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")
 
-    async def account_name(self, client: GuardedClient, access_token: str) -> str | None:
+    async def account_name(self, client: GuardedClient, access_token: str) -> str:
         user = await self._get(client, access_token, "/user")
-        return str(user.get("login")) if isinstance(user, dict) else None
+        login = user.get("login") if isinstance(user, dict) else None
+        if not login:
+            raise UpstreamFailedError("GitHub did not return an account")
+        return str(login)
 
     async def fetch(self, client: GuardedClient, access_token: str) -> list[EvidenceDraft]:
         login = await self.account_name(client, access_token)
-        if not login:
-            raise UpstreamFailedError("GitHub did not return an account")
 
         drafts: list[EvidenceDraft] = []
         merged = await self._search(

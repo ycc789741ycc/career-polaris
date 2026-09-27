@@ -106,3 +106,17 @@ def test_the_authorize_url_carries_the_redirect_the_provider_must_return_to() ->
         state="s",
     )
     assert "redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fconnections%2Fjira%2Fcallback" in url
+
+
+def test_github_offers_its_account_picker_so_a_reconnect_can_switch_accounts() -> None:
+    url = authorize_url(
+        "github", jira_oauth_base=JIRA_BASE, client_id="c", redirect_uri="r", state="s"
+    )
+    assert "prompt=select_account" in url
+
+
+def test_jira_asks_for_consent_so_a_reconnect_can_switch_accounts() -> None:
+    url = authorize_url(
+        "jira", jira_oauth_base=JIRA_BASE, client_id="c", redirect_uri="r", state="s"
+    )
+    assert "prompt=consent" in url

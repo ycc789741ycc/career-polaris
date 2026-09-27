@@ -38,7 +38,9 @@ GITHUB = ProviderEndpoints(
     authorize_url="https://github.com/login/oauth/authorize",
     token_url="https://github.com/login/oauth/access_token",  # noqa: S106 - a URL
     scopes=("read:user", "repo:status", "public_repo"),
-    extra_authorize_params={},
+    # Show GitHub's account picker rather than silently reusing whoever is
+    # signed in to the browser, so reconnecting can switch accounts.
+    extra_authorize_params={"prompt": "select_account"},
 )
 
 

@@ -40,6 +40,8 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The connector whose card is asking "are you sure?", if any.
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   async function connect(kind: string) {
     setBusy(kind);
@@ -61,6 +63,20 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
     try {
       await api.post(`/connections/${kind}/sync`);
       await connections.reload();
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function disconnect(kind: string) {
+    setBusy(kind);
+    setError(null);
+    try {
+      await api.del(`/connections/${kind}`);
+      setConfirming(null);
+      await Promise.all([connections.reload(), evidence.reload()]);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -124,7 +140,20 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                       />
                       <div>
                         <div className="card-title">{label.name}</div>
-                        <div className="subcopy">{label.kind}</div>
+                        <div className="subcopy">
+                          {connection.connected ? (
+                            connection.account ? (
+                              <>
+                                Connected as{" "}
+                                <strong>{connection.account}</strong>
+                              </>
+                            ) : (
+                              "Account unknown — sync to refresh"
+                            )
+                          ) : (
+                            label.kind
+                          )}
+                        </div>
                       </div>
                     </div>
                     <span
@@ -172,27 +201,75 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                       ))}
                     </ul>
                   )}
-                  <div className="row">
-                    <Button
-                      variant={connection.connected ? "secondary" : "primary"}
-                      busy={busy === connection.kind}
-                      onClick={() =>
-                        connection.connected
-                          ? sync(connection.kind)
-                          : connect(connection.kind)
-                      }
+                  {confirming === connection.kind ? (
+                    <div
+                      role="group"
+                      aria-label={`Disconnect ${label.name}`}
+                      className="stack"
+                      style={{ gap: 10 }}
                     >
-                      {connection.connected ? "Sync now" : "Connect"}
-                    </Button>
-                    {connection.connected && (
-                      <span className="muted" style={{ fontSize: 12.5 }}>
-                        {connection.account ? `${connection.account} · ` : ""}
-                        {connection.last_synced_at
-                          ? `last synced ${new Date(connection.last_synced_at).toLocaleDateString()}`
-                          : "not synced yet"}
-                      </span>
-                    )}
-                  </div>
+                      <p style={{ margin: 0, fontSize: 13.5 }}>
+                        Disconnect {connection.account ?? label.name}? This
+                        removes {factCount(bySource[connection.kind] ?? 0)}{" "}
+                        gathered from {label.name}.
+                      </p>
+                      <div className="row">
+                        <Button
+                          variant="danger"
+                          busy={busy === connection.kind}
+                          onClick={() => void disconnect(connection.kind)}
+                        >
+                          Disconnect
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={busy === connection.kind}
+                          onClick={() => setConfirming(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="row">
+                      <Button
+                        variant={connection.connected ? "secondary" : "primary"}
+                        busy={busy === connection.kind}
+                        onClick={() =>
+                          connection.connected
+                            ? sync(connection.kind)
+                            : connect(connection.kind)
+                        }
+                      >
+                        {connection.connected ? "Sync now" : "Connect"}
+                      </Button>
+                      {connection.connected && (
+                        <Button
+                          variant="ghost"
+                          disabled={busy === connection.kind}
+                          onClick={() => setConfirming(connection.kind)}
+                        >
+                          Disconnect
+                        </Button>
+                      )}
+                      {connection.connected && (
+                        <span className="muted" style={{ fontSize: 12.5 }}>
+                          {connection.last_synced_at
+                            ? `last synced ${new Date(connection.last_synced_at).toLocaleDateString()}`
+                            : "not synced yet"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {connection.connected && confirming !== connection.kind && (
+                    <p
+                      className="muted"
+                      style={{ fontSize: 12.5, margin: "10px 0 0" }}
+                    >
+                      To use a different account, disconnect, then connect again
+                      and pick the other account.
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -349,6 +426,10 @@ const SOURCE_NAMES: Record<string, string> = {
 
 function sourceName(source: string): string {
   return LABELS[source]?.name ?? SOURCE_NAMES[source] ?? source;
+}
+
+function factCount(count: number): string {
+  return `${count} ${count === 1 ? "fact" : "facts"}`;
 }
 
 function countBy<T>(
