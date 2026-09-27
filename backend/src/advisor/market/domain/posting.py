@@ -94,8 +94,33 @@ def in_market(location: str | None, market: str) -> bool:
     never write a location the way a user names a market, so equal strings
     almost never happen.
     """
-    wanted = set(normalize(market).split())
+    wanted = set(market_words(market))
     return bool(wanted) and wanted <= set(normalize(location or "").split())
+
+
+def market_words(market: str) -> tuple[str, ...]:
+    """The words a location must contain to be in ``market``: lowercase ASCII
+    letters and digits only, so they are safe inside a database pattern."""
+    return tuple(dict.fromkeys(normalize(market).split()))
+
+
+def _accent_folds() -> tuple[str, str]:
+    """Each lowercase accented Latin letter and the ASCII letter ``normalize``
+    turns it into, for a database to fold a location the same way."""
+    accented, plain = [], []
+    for code in range(0xC0, 0x250):
+        char = chr(code)
+        if char != char.lower():
+            continue
+        folded = unicodedata.normalize("NFKD", char).encode("ascii", "ignore").decode()
+        if len(folded) == 1 and folded.isalpha():
+            accented.append(char)
+            plain.append(folded.lower())
+    return "".join(accented), "".join(plain)
+
+
+# ("àáâ…", "aaa…"): what SQL's translate() needs to match ``market_words``.
+ACCENT_FOLDS = _accent_folds()
 
 
 def clip(text: str, limit: int) -> str:

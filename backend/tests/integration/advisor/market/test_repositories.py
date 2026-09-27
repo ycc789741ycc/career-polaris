@@ -263,6 +263,87 @@ async def test_shared_postings_round_trip_through_the_crawler_role(
                 )
 
 
+async def test_a_market_scope_matches_locations_by_their_words(
+    crawler_database: Database,
+) -> None:
+    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
+    # A made-up place per run, so real postings in the database never match.
+    place = f"Zyrich{uuid.uuid4().hex[:8]}"
+    seen_at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    async with uow.shared() as market:
+        company = await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
+        source = await market.sources.create(
+            CrawlSource.board(
+                kind="greenhouse",
+                endpoint=f"https://boards.test/{uuid.uuid4()}",
+                company_id=company.id,
+                origin=SourceOrigin.DEMAND,
+            )
+        )
+
+    def seen(title: str, location: str) -> NormalizedPosting:
+        return NormalizedPosting(
+            external_id=title,
+            company_name=company.name,
+            title=title,
+            location=location,
+            description="Build things.",
+            url=f"https://boards.test/{title}",
+            source_kind=SourceKind.ATS_BOARD,
+            posted_on=date(2026, 9, 1),
+            salary=None,
+        )
+
+    try:
+        postings = {}
+        async with uow.shared() as market:
+            for title, location in (
+                ("in-city", f"{place}, Germany"),
+                ("accented", f"{place.replace('y', 'ü', 1)} Nord, Germany"),
+                ("prefix-only", f"{place}er Land, Germany"),
+            ):
+                postings[title] = await market.postings.create(
+                    JobPosting.first_seen(
+                        seen(title, location),
+                        company_id=company.id,
+                        source_id=source.id,
+                        at=seen_at,
+                    )
+                )
+
+        async with uow.shared() as market:
+            in_scope = await market.postings.get_open_in_scope(
+                PostingScope(company_ids=(), markets=(place.lower(),))
+            )
+            typed_with_accent = await market.postings.get_open_in_scope(
+                PostingScope(company_ids=(), markets=(f"{place.replace('y', 'ü', 1)} Nord",))
+            )
+            typed_without = await market.postings.get_open_in_scope(
+                PostingScope(company_ids=(), markets=(f"{place.replace('y', 'u', 1)} nord",))
+            )
+            wordless = await market.postings.get_open_in_scope(
+                PostingScope(company_ids=(), markets=("---",))
+            )
+        ids = {p.id for p in in_scope}
+        assert postings["in-city"].id in ids
+        assert postings["prefix-only"].id not in ids
+        assert postings["accented"].id not in ids
+        # The database folds "ü" to "u" as normalize does, so either spelling
+        # of the market reaches the accented location.
+        assert [p.id for p in typed_with_accent] == [postings["accented"].id]
+        assert [p.id for p in typed_without] == [postings["accented"].id]
+        assert wordless == []
+    finally:
+        async with crawler_database.shared() as session:
+            for table, column in (
+                ("market.job_posting", "crawl_source_id"),
+                ("market.crawl_source", "id"),
+            ):
+                await session.execute(
+                    text(f"DELETE FROM {table} WHERE {column} = :id"), {"id": source.id}
+                )
+
+
 async def test_owner_events_reach_the_outbox_as_the_dispatcher_reads_them(
     database: Database, account: uuid.UUID
 ) -> None:

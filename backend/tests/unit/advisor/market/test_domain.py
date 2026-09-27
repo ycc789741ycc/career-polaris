@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from advisor.market.domain import (
+    ACCENT_FOLDS,
     MAX_CANONICAL_KEY,
     MAX_LOCATION,
     NormalizedPosting,
@@ -17,6 +18,8 @@ from advisor.market.domain import (
     clip,
     expired_keys,
     in_market,
+    market_words,
+    normalize,
     normalize_title,
 )
 
@@ -185,6 +188,8 @@ def test_an_overlong_key_is_bounded_stable_and_still_distinct() -> None:
         ("Remote, United States", "Remote"),
         ("New York, NY", "New York"),
         ("Remote - EU", "Remote EU"),
+        ("Zürich, Switzerland", "Zurich"),
+        ("Zurich, Switzerland", "Zürich"),
     ],
 )
 def test_a_location_is_in_a_market_when_it_names_every_word_of_it(
@@ -206,3 +211,14 @@ def test_a_location_missing_any_word_of_the_market_is_outside_it(
     location: str | None, market: str
 ) -> None:
     assert not in_market(location, market)
+
+
+def test_market_words_are_plain_ascii_and_each_appears_once() -> None:
+    assert market_words("  São Paulo / são-paulo ") == ("sao", "paulo")
+    assert market_words("---") == ()
+
+
+def test_the_database_folds_accents_exactly_as_normalize_does() -> None:
+    accented, plain = ACCENT_FOLDS
+    assert len(accented) == len(plain) and "ü" in accented and "é" in accented
+    assert all(normalize(a) == p for a, p in zip(accented, plain, strict=True))

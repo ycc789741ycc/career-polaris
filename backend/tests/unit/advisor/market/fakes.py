@@ -35,6 +35,7 @@ from advisor.market.domain import (
     PrivateJobPostingFilter,
     SourceOrigin,
     SubscriptionFilter,
+    in_market,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -122,7 +123,7 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter]):
             p
             for p in opened
             if p.company_id in scope.company_ids
-            or p.location in scope.markets
+            or any(in_market(p.location, market) for market in scope.markets)
             or (scope.includes_baseline and p.crawl_source_id in baseline)
         ]
 
