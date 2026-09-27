@@ -3,8 +3,6 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TargetOption } from "../api/types";
-import type { Focus } from "../shell/navigation";
-import { ShellContext, type Shell } from "../shell/ShellContext";
 import { OwnJdPanel } from "./OwnJd";
 
 const pasted: TargetOption = {
@@ -24,49 +22,39 @@ const pasted: TargetOption = {
 
 type Call = { method: string; url: string; body: unknown };
 
-function serve(saved: TargetOption[]) {
+function serve() {
   const calls: Call[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input).replace("http://api.test/api/v1", "");
-      const method = init?.method ?? "GET";
       calls.push({
-        method,
+        method: init?.method ?? "GET",
         url,
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
-      const body =
-        url === "/targets"
-          ? saved
-          : url === "/job-descriptions"
-            ? { id: "jd-2" }
-            : null;
-      return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify(url === "/job-descriptions" ? { id: "jd-2" } : null),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }),
   );
   return calls;
 }
 
-function renderPanel(focus: Focus | null) {
-  const shell: Shell = {
-    status: { me: null, credential: null, openQuestions: 0, confidence: null },
-    navigate: vi.fn(),
-    focus,
-    setFocus: vi.fn(),
-    refresh: async () => {},
-    target: null,
-    setTarget: vi.fn(),
-  };
+function renderPanel(selectedId: string | null = null) {
+  const onSelect = vi.fn();
+  const onAdded = vi.fn(async () => {});
   render(
-    <ShellContext.Provider value={shell}>
-      <OwnJdPanel />
-    </ShellContext.Provider>,
+    <OwnJdPanel
+      pasted={[pasted]}
+      selectedId={selectedId}
+      error={null}
+      onSelect={onSelect}
+      onAdded={onAdded}
+    />,
   );
-  return shell;
+  return { onSelect, onAdded };
 }
 
 describe("my own JD on the role map", () => {
@@ -75,13 +63,13 @@ describe("my own JD on the role map", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("saves a pasted JD privately and selects it for the Advisor", async () => {
-    const calls = serve([]);
+  it("saves a pasted JD privately and hands it back to be selected", async () => {
+    const calls = serve();
     const user = userEvent.setup();
-    const shell = renderPanel(null);
+    const { onAdded } = renderPanel();
 
     await user.click(screen.getByRole("button", { name: "Use a sample" }));
-    await user.click(screen.getByRole("button", { name: "Save & select" }));
+    await user.click(screen.getByRole("button", { name: "Add JD" }));
 
     expect(calls).toContainEqual(
       expect.objectContaining({
@@ -93,19 +81,19 @@ describe("my own JD on the role map", () => {
         }),
       }),
     );
-    expect(shell.setFocus).toHaveBeenCalledWith({ kind: "jd", id: "jd-2" });
+    expect(onAdded).toHaveBeenCalledWith("jd-2");
   });
 
   it("asks for a title and company before saving", async () => {
-    const calls = serve([]);
+    const calls = serve();
     const user = userEvent.setup();
-    renderPanel(null);
+    renderPanel();
 
     await user.type(
       screen.getByRole("textbox", { name: "Job description" }),
       "Lead a platform team.",
     );
-    await user.click(screen.getByRole("button", { name: "Save & select" }));
+    await user.click(screen.getByRole("button", { name: "Add JD" }));
 
     expect(
       await screen.findByText("Give the posting a title and a company first."),
@@ -113,18 +101,17 @@ describe("my own JD on the role map", () => {
     expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 
-  it("opens the Advisor on the selected JD", async () => {
-    serve([pasted]);
+  it("selects a saved JD without aiming the Advisor at it", async () => {
+    serve();
     const user = userEvent.setup();
-    const shell = renderPanel({ kind: "jd", id: "jd-1" });
+    const { onSelect } = renderPanel("jd-1");
 
+    const chip = screen.getByRole("button", { name: /Meridian Labs/ });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    await user.click(chip);
+    expect(onSelect).toHaveBeenCalledWith("jd-1");
     expect(
-      await screen.findByRole("button", { name: /Meridian Labs/ }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await user.click(screen.getByRole("button", { name: "Tailor résumé" }));
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      tab: "resume",
-      focus: { kind: "jd", id: "jd-1" },
-    });
+      screen.queryByRole("button", { name: /Tailor|Plan a route|Target/ }),
+    ).not.toBeInTheDocument();
   });
 });

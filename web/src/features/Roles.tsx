@@ -9,6 +9,7 @@ import type {
   RoleMapSettings,
   SalaryBand,
   Subscription,
+  TargetOption,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
@@ -23,6 +24,7 @@ import {
   PillToggle,
   StatTile,
 } from "../components/ui";
+import type { Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -59,6 +61,8 @@ export function Roles() {
     [],
   );
   const markets = useAsync<string[]>(() => api.get("/market-preferences"), []);
+  // For the pasted JDs: the only Targets that are not a role on the map.
+  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
   const matched = useAsync<MatchedPosting[]>(
     () => api.get("/matched-postings?limit=10"),
     [],
@@ -123,6 +127,27 @@ export function Roles() {
     (sum, role) => sum + role.opening_count,
     0,
   );
+
+  const pastedJds = (targets.data ?? []).filter(
+    (o) => o.kind === "privatePosting",
+  );
+  const pickedJd =
+    focus?.kind === "jd" ? pastedJds.find((o) => o.id === focus.id) : undefined;
+  // The one thing the Advisor will be aimed at: the picked JD, or the role
+  // shown as selected — which is the best fit until the user picks one.
+  const aim: { focus: Focus; label: string; what: string } | null = pickedJd
+    ? {
+        focus: { kind: "jd", id: pickedJd.id },
+        label: pickedJd.label,
+        what: "JD",
+      }
+    : activeRole
+      ? {
+          focus: { kind: "role", id: activeRole.id },
+          label: activeRole.name,
+          what: "role",
+        }
+      : null;
 
   async function act(label: string, run: () => Promise<unknown>) {
     setBusy(true);
@@ -333,30 +358,6 @@ export function Roles() {
                 </>
               )}
 
-              <div className="panel-actions">
-                <Button
-                  onClick={() =>
-                    navigate("advisor", {
-                      tab: "plan",
-                      focus: { kind: "role", id: activeRole.id },
-                    })
-                  }
-                >
-                  Plan a route
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    navigate("advisor", {
-                      tab: "resume",
-                      focus: { kind: "role", id: activeRole.id },
-                    })
-                  }
-                >
-                  Tailor résumé
-                </Button>
-              </div>
-
               <details style={{ marginTop: 16 }}>
                 <summary
                   className="eyebrow"
@@ -488,7 +489,16 @@ export function Roles() {
         </div>
       )}
 
-      <OwnJdPanel />
+      <OwnJdPanel
+        pasted={pastedJds}
+        selectedId={focus?.kind === "jd" ? focus.id : null}
+        error={targets.error}
+        onSelect={(id) => setFocus({ kind: "jd", id })}
+        onAdded={async (id) => {
+          await targets.reload();
+          setFocus({ kind: "jd", id });
+        }}
+      />
 
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
@@ -682,6 +692,22 @@ export function Roles() {
           </div>
         </div>
       </AutoGrid>
+
+      {aim && (
+        <div
+          className="panel panel-tight target-bar"
+          role="region"
+          aria-label="Advisor target"
+        >
+          <div style={{ minWidth: 0 }}>
+            <Eyebrow>Advisor target</Eyebrow>
+            <div className="ellipsis target-bar-label">{aim.label}</div>
+          </div>
+          <Button onClick={() => navigate("advisor", { focus: aim.focus })}>
+            Target this {aim.what}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

@@ -231,7 +231,8 @@ Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
 aimed at what the role map has selected: a role, whose openings and watched
 companies it offers as Targets, or a JD pasted on the role map. That selection
 is carried in the hash (`?role=` / `?jd=`), so neither tab picks a Target of
-its own.
+its own. The role map has exactly one control that aims the Advisor — the
+sticky "Advisor target" bar; picking a bubble or a pasted JD only selects.
 
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé

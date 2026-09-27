@@ -48,8 +48,9 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
   if (!focus) {
     return (
       <EmptyState title="Pick a role on the role map first">
-        The Advisor plans a route to — and writes your résumé for — whatever you
-        select there: a role, or a job description you pasted.
+        Select a role, or a job description you pasted, and press the target
+        button at the bottom of the map. The Advisor then plans a route to it
+        and writes your résumé for it.
         <span style={{ display: "block", marginTop: 14 }}>
           <Button onClick={() => navigate("roles")}>Open the role map</Button>
         </span>
