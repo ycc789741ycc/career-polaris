@@ -8,7 +8,7 @@ Containment: crawled pages, uploaded resumes, ticket text and pasted JDs are
 untrusted. They are inserted inside ``<data>`` blocks that the system prompt
 tells the model to treat as material to analyse, never as instructions. Any
 closing delimiter inside the text is neutralised before insertion
-(docs/technical_boundaries.md section 4).
+(docs/architecture.md section 4).
 """
 
 from __future__ import annotations

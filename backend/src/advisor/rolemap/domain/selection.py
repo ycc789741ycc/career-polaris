@@ -7,7 +7,7 @@ decided before any AI runs, from local embeddings: the assessed fit needs a
 role's requirements, and those come from the very analysis this limits.
 
 The cost shown before a first role map comes from the api, which runs no local
-ML (technical boundaries: embeddings and clustering live in the crawler and the
+ML (architecture: embeddings and clustering live in the crawler and the
 worker). So that estimate is a ceiling rather than a prediction: every cluster
 needs at least ``MIN_POSTINGS_FOR_A_ROLE`` members, which bounds how many there
 can be, and the user is never charged more than they were shown.

@@ -2,7 +2,7 @@
 
 Login OAuth, which is separate from connector OAuth in every way. It uses
 another provider, other tokens and other storage, and it shares no code path
-with ``advisor.profile.infra.oauth`` (docs/technical_boundaries.md section 4).
+with ``advisor.profile.infra.oauth`` (docs/architecture.md section 4).
 
 The browser is sent to Google with three one-time values: ``state``, ``nonce``
 and a PKCE ``code_verifier``. They travel in a signed, short-lived cookie. It

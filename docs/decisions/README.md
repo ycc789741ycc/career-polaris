@@ -19,5 +19,5 @@ new record that supersedes the old one.
 | [0011](0011-give-every-repository-the-same-six-methods.md) | Give every repository the same six methods, a filter and a factory | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
-`docs/domain_model.md` section 6 and `docs/technical_boundaries.md`
+`docs/domain_model.md` section 6 and `docs/architecture.md`
 sections 7 and 8.

@@ -5,7 +5,7 @@ requirement extraction, difficulty estimates, fits, gap plans, résumé writing)
 ``sync`` (connectors, resume parsing) and ``docs`` (résumé PDF export).
 ``notify`` arrives with the digest work. Splitting a queue into its own process group
 later is a deployment change, not a code change
-(docs/technical_boundaries.md section 1).
+(docs/architecture.md section 1).
 """
 
 from __future__ import annotations

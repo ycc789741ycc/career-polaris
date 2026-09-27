@@ -3,7 +3,7 @@
 A plan row holds its Target as a kind plus exactly one reference — a shared
 posting, a subscription or a pasted JD — and the frozen snapshot of what that
 Target required, so the plan survives posting expiry and re-clustering
-(docs/technical_boundaries.md section 3). Regenerating adds a row with the next
+(docs/architecture.md section 3). Regenerating adds a row with the next
 version; nothing is overwritten.
 """
 

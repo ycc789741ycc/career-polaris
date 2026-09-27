@@ -6,7 +6,7 @@ measured up when it was chosen. Postings expire and roles re-cluster; the
 snapshot is what lets a plan still say what it was planned against.
 
 Two features aim at Targets, so the concept has its own package rather than
-living in either of them (docs/technical_boundaries.md rule 7).
+living in either of them (docs/architecture.md rule 7).
 """
 
 from __future__ import annotations

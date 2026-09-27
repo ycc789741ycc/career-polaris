@@ -2,7 +2,7 @@
 
 Write-only: it can be set, tested, replaced or deleted, but never read back.
 What the client may see is the provider, the model and the last four
-characters (docs/technical_boundaries.md section 4).
+characters (docs/architecture.md section 4).
 """
 
 from __future__ import annotations

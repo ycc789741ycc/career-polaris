@@ -5,7 +5,7 @@
 
 Used by ``api`` (streaming chat, from Phase 3) and by ``worker`` jobs. Modules
 never import a provider adapter directly; an import-linter contract enforces
-that (docs/technical_boundaries.md section 5).
+that (docs/architecture.md section 5).
 """
 
 from __future__ import annotations

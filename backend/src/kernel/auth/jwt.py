@@ -7,7 +7,7 @@ external OpenID provider (``JwksResolver``) — which is what keeps a later move
 to hosted sign-in a wiring change rather than a rewrite.
 
 Connector OAuth (GitHub, Jira) is a separate flow with separate token storage
-and never touches this module (docs/technical_boundaries.md section 4).
+and never touches this module (docs/architecture.md section 4).
 """
 
 from __future__ import annotations

@@ -190,7 +190,7 @@ class Settings(BaseSettings):
         different parts of it — and deliberately must not hold each other's
         secrets. Checking per unit keeps "missing configuration fails at
         startup" true without forcing every process to carry every credential
-        (docs/technical_boundaries.md section 4).
+        (docs/architecture.md section 4).
         """
         required = _REQUIRED_BY_UNIT[unit]
         if unit is Unit.API and self.google_sign_in_enabled:

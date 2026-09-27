@@ -16,7 +16,7 @@ new question is a new filter field, not a new method. The two extra methods on
 expiry and an OR query.
 
 The unit of work hands out repositories per *zone*, mirroring where the data
-lives (docs/technical_boundaries.md section 3):
+lives (docs/architecture.md section 3):
 
 * ``for_owner`` — one user's owner-zone data, and nothing else of anyone's.
 * ``shared`` — the shared zone: companies, sources, crawled postings.

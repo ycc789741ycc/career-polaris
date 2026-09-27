@@ -3,7 +3,7 @@
 Fetch each due source, normalise, dedup, expire what has gone, then embed.
 The crawler never works out which users are affected — that would need user
 data it has no grant on. It emits events about markets and companies, and the
-worker fans them out (docs/technical_boundaries.md section 2).
+worker fans them out (docs/architecture.md section 2).
 """
 
 from __future__ import annotations

@@ -221,7 +221,7 @@ class MarketService:
         The only cross-user read in the system, through the fan-out transaction
         and its SELECT-only policy. The crawler cannot answer this — it has no
         grant on any user schema — so the worker's dispatcher asks here when a
-        market changes (docs/technical_boundaries.md section 2).
+        market changes (docs/architecture.md section 2).
         """
         affected: set[uuid.UUID] = set()
         async with self._uow.fanout() as everyone:

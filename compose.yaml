@@ -8,7 +8,7 @@
 # Each service is given only the configuration it needs. `env_file` is
 # deliberately NOT on a shared anchor: handing every container the whole .env
 # would put the master encryption key and the connector secrets inside the
-# crawler and the SPA, which technical_boundaries section 4 forbids.
+# crawler and the SPA, which architecture.md section 4 forbids.
 #
 # The network is created by `start-infra`, which is why `start-app` needs infra
 # to be up and cannot bring it up itself.

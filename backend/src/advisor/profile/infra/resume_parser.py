@@ -2,7 +2,7 @@
 
 Runs in the worker only, never in a request handler, under size, page-count
 and time limits. The file is untrusted: a PDF is an execution format, and a
-resume is a document a stranger uploaded (docs/technical_boundaries.md
+resume is a document a stranger uploaded (docs/architecture.md
 section 4).
 
 No LLM is involved here. The text is split into traceable lines so every claim

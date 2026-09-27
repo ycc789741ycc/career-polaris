@@ -3,7 +3,7 @@
 Turns committed domain events into queued jobs. This is also where a market
 event becomes user work: the crawler emits ``PostingsChanged`` about a company
 or a market and knows nothing about users, so the fan-out happens here, where
-user data is legitimately readable (docs/technical_boundaries.md section 2).
+user data is legitimately readable (docs/architecture.md section 2).
 """
 
 from __future__ import annotations

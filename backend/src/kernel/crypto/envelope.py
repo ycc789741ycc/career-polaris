@@ -3,7 +3,7 @@
 Each record gets its own AES-256-GCM data key, which is itself wrapped with the
 process master key. Moving to a cloud KMS later replaces only ``_wrap``/
 ``_unwrap``; the stored format and the schema stay as they are
-(docs/technical_boundaries.md section 4).
+(docs/architecture.md section 4).
 
 Importing this module is restricted by an import-linter contract: only
 ``kernel.ai_gateway`` and ``advisor.profile.infra.connectors`` may decrypt.

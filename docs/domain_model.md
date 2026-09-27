@@ -452,4 +452,4 @@ Defaults chosen during the update; change them if they don't fit:
 
 **Suggested next step:** apply 2.11 to the v2 diagram (split the Background worker into crawler and per-user role-map job, add Target, draw the Gap Planner and Resume Advisor LLM arrows), and update the prototype copy listed in 2.12.
 
-**Technical boundaries:** deployable units, data and trust boundaries are in [`technical_boundaries.md`](technical_boundaries.md).
+**Architecture:** deployable units, module dependencies, data and trust boundaries are in [`architecture.md`](architecture.md).
