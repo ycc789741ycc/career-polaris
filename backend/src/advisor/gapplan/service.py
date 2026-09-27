@@ -18,7 +18,6 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from advisor.assessment import AssessmentService
 from advisor.gapplan.domain import (
@@ -29,16 +28,24 @@ from advisor.gapplan.domain import (
     DraftMilestone,
     DraftProject,
     DraftTask,
+    GapPlan,
+    GapPlanFilter,
+    GapPlanUnitOfWork,
     GapReading,
+    Milestone,
+    MilestoneFilter,
+    OwnerGapPlans,
+    PlanDrafted,
     PlanError,
     PlanStatus,
     RoleOption,
+    Task,
+    TaskFilter,
     assert_draft_valid,
     carried_done,
     progress,
     stepping_stones,
 )
-from advisor.gapplan.infra.models import GapPlan, Milestone, Task
 from advisor.profile import CitationError, ProfileService, assert_citations_exist
 from advisor.rolemap import RoleMapService
 from advisor.target import (
@@ -51,8 +58,7 @@ from advisor.target import (
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
-from kernel.db import Database
-from kernel.db.base import utcnow
+from kernel.clock import utcnow
 from kernel.errors import (
     DomainError,
     EvidenceNotOwnedError,
@@ -61,7 +67,6 @@ from kernel.errors import (
     TargetUnusableError,
 )
 from kernel.logging import get_logger
-from kernel.outbox import EventName, emit
 
 __all__ = [
     "EvidenceCite",
@@ -201,7 +206,7 @@ class PlanView:
 class GapPlanService:
     def __init__(
         self,
-        database: Database,
+        uow: GapPlanUnitOfWork,
         *,
         target: TargetService,
         profile: ProfileService,
@@ -209,7 +214,7 @@ class GapPlanService:
         rolemap: RoleMapService,
         gateway: AiGateway,
     ) -> None:
-        self._db = database
+        self._uow = uow
         self._target = target
         self._profile = profile
         self._assessment = assessment
@@ -247,34 +252,31 @@ class GapPlanService:
         refused now rather than failing in the background.
         """
         preview = await self._target.preview(owner_id, ref)
-        async with self._db.for_user(owner_id) as session:
-            previous = await session.execute(
-                select(GapPlan.version).where(GapPlan.owner_id == owner_id, *_target_filter(ref))
+        async with self._uow.for_owner(owner_id) as mine:
+            earlier = await mine.plans.get_list(_same_target(ref), page_size=1)
+            plan = await mine.plans.create(
+                GapPlan.requested(
+                    owner_id=owner_id,
+                    target_kind=str(ref.kind),
+                    target_id=uuid.UUID(ref.id),
+                    label=preview.label,
+                    # Versions only grow, so the newest plan holds the highest.
+                    version=(max(p.version for p in earlier) if earlier else 0) + 1,
+                    at=utcnow(),
+                )
             )
-            version = max(previous.scalars(), default=0) + 1
-            plan = GapPlan(
-                owner_id=owner_id,
-                target_kind=str(ref.kind),
-                target_label=preview.label[:400],
-                version=version,
-                status=str(PlanStatus.DRAFTING),
-                created_at=utcnow(),
-                **_target_columns(ref),
-            )
-            session.add(plan)
-            await session.flush()
-            return _summary(plan, progress_percent=0)
+        return _summary(plan, progress_percent=0)
 
     async def draft(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
         """The worker job. Any expected failure is recorded on the plan, with
         its stable code, and not retried: a retry would spend the key again."""
-        async with self._db.for_user(owner_id) as session:
-            plan = await session.get(GapPlan, plan_id)
-            if plan is None or plan.owner_id != owner_id:
-                raise NotFoundError("plan not found", plan_id=str(plan_id))
-            if plan.status != str(PlanStatus.DRAFTING):
-                return
-            ref = _ref_of(plan)
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+        if plan is None:
+            raise NotFoundError("plan not found", plan_id=str(plan_id))
+        if plan.status is not PlanStatus.DRAFTING:
+            return
+        ref = _ref_of(plan)
 
         try:
             await self._draft(owner_id, plan_id, ref)
@@ -291,33 +293,20 @@ class GapPlanService:
             raise
 
     async def get(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> PlanView:
-        async with self._db.for_user(owner_id) as session:
-            plan = await session.get(GapPlan, plan_id)
-            if plan is None or plan.owner_id != owner_id:
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+            if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
-            all_plans = list(
-                (
-                    await session.execute(
-                        select(GapPlan)
-                        .where(GapPlan.owner_id == owner_id)
-                        .order_by(GapPlan.created_at.desc())
-                    )
-                ).scalars()
+            same_target = await mine.plans.get_list(_same_target(_ref_of(plan)))
+            milestones = sorted(
+                await mine.milestones.get_list(MilestoneFilter(plan_id=plan_id)),
+                key=lambda m: m.position,
             )
-            milestones = list(
-                (
-                    await session.execute(
-                        select(Milestone)
-                        .where(Milestone.plan_id == plan_id)
-                        .order_by(Milestone.position)
-                    )
-                ).scalars()
-            )
-            tasks = await _tasks_by_plan(session, owner_id)
+            tasks = await _tasks_by_plan(mine)
 
         done_elsewhere = _done_tasks(tasks, excluding=plan_id)
         own = tasks.get(plan_id, [])
-        counted = carried_done([(t.text, t.closes) for t in own], done_elsewhere)
+        counted = carried_done([(t.text, list(t.closes)) for t in own], done_elsewhere)
         task_views = {
             task.id: TaskView(
                 id=task.id,
@@ -330,7 +319,6 @@ class GapPlanService:
             for index, task in enumerate(own)
         }
         progress_by_plan = _progress_by_plan(tasks)
-        same_target = [p for p in all_plans if _ref_of(p) == _ref_of(plan)]
 
         return PlanView(
             summary=_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)),
@@ -342,11 +330,7 @@ class GapPlanService:
                     title=m.title,
                     window=m.time_window,
                     outcome=m.outcome,
-                    tasks=tuple(
-                        task_views[t.id]
-                        for t in sorted(own, key=lambda t: t.position)
-                        if t.milestone_id == m.id
-                    ),
+                    tasks=tuple(task_views[t.id] for t in own if t.milestone_id == m.id),
                 )
                 for m in milestones
             ),
@@ -359,18 +343,13 @@ class GapPlanService:
         )
 
     async def history(self, owner_id: uuid.UUID) -> list[PlanSummaryView]:
-        """Each Target's latest version, newest first. Every plan is kept."""
-        async with self._db.for_user(owner_id) as session:
-            plans = list(
-                (
-                    await session.execute(
-                        select(GapPlan)
-                        .where(GapPlan.owner_id == owner_id)
-                        .order_by(GapPlan.created_at.desc())
-                    )
-                ).scalars()
-            )
-            tasks = await _tasks_by_plan(session, owner_id)
+        """Each Target's latest version, newest first. Every plan is kept.
+
+        One user's plans: one per Target per regeneration, read whole.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            plans = await mine.plans.get_list(GapPlanFilter())
+            tasks = await _tasks_by_plan(mine)
         progress_by_plan = _progress_by_plan(tasks)
         seen: set[TargetRef] = set()
         latest: list[PlanSummaryView] = []
@@ -383,11 +362,12 @@ class GapPlanService:
         return latest
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
-        async with self._db.for_user(owner_id) as session:
-            task = await session.get(Task, task_id)
-            if task is None or task.owner_id != owner_id:
+        async with self._uow.for_owner(owner_id) as mine:
+            task = await mine.tasks.get(task_id)
+            if task is None:
                 raise NotFoundError("task not found", task_id=str(task_id))
-            task.done_at = (task.done_at or utcnow()) if done else None
+            task.mark(done, at=utcnow())
+            await mine.tasks.update(task)
 
     # -- internals ----------------------------------------------------------
 
@@ -478,63 +458,69 @@ class GapPlanService:
         ]
 
         stones = await self._stepping_stones(owner_id, snapshot)
-        async with self._db.for_user(owner_id) as session:
-            plan = await session.get(GapPlan, plan_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
             if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
-            previous_done = await self._previous_done(session, owner_id, plan)
+            previous_done = await _previous_done(mine, plan)
 
             new_tasks: list[Task] = []
             for m_index, milestone in enumerate(milestones):
-                row = Milestone(
-                    owner_id=owner_id,
-                    plan_id=plan_id,
-                    position=m_index,
-                    title=milestone.title,
-                    time_window=milestone.window,
-                    outcome=milestone.outcome,
+                stored = await mine.milestones.create(
+                    Milestone(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        plan_id=plan_id,
+                        position=m_index,
+                        title=milestone.title,
+                        time_window=milestone.window,
+                        outcome=milestone.outcome,
+                    )
                 )
-                session.add(row)
-                await session.flush()
                 for drafted in milestone.tasks:
                     new_tasks.append(
                         Task(
+                            id=uuid.uuid4(),
                             owner_id=owner_id,
                             plan_id=plan_id,
-                            milestone_id=row.id,
+                            milestone_id=stored.id,
                             position=len(new_tasks),
                             text=drafted.text,
                             due=drafted.due,
-                            closes=list(drafted.closes),
+                            closes=tuple(drafted.closes),
                         )
                     )
             # Regenerating rewords tasks; finished work stays finished.
-            carried = carried_done([(t.text, t.closes) for t in new_tasks], previous_done)
+            carried = carried_done([(t.text, list(t.closes)) for t in new_tasks], previous_done)
             now = utcnow()
             for index, task in enumerate(new_tasks):
                 if index in carried:
                     task.done_at = now
-                session.add(task)
+                await mine.tasks.create(task)
 
-            plan.snapshot = snapshot.to_dict()
-            plan.target_label = snapshot.label[:400]
-            plan.gaps = gaps
-            plan.projects = [
-                {"name": p.name, "note": p.note, "closes": list(p.closes)} for p in projects
-            ]
-            plan.stepping_stones = [
-                {"role_id": s.role_id, "name": s.name, "fit": s.fit, "openings": s.openings}
-                for s in stones
-            ]
-            plan.model_id = result.model_id
-            plan.template_version = result.template_version
-            plan.status = str(PlanStatus.READY)
-            plan.drafted_at = now
-            await emit(
-                session,
-                EventName.PLAN_DRAFTED,
-                {"plan_id": str(plan_id), "target_kind": str(ref.kind), "version": plan.version},
-                owner_id=owner_id,
+            plan.drafted(
+                snapshot=snapshot.to_dict(),
+                label=snapshot.label,
+                gaps=tuple(gaps),
+                projects=tuple(
+                    {"name": p.name, "note": p.note, "closes": list(p.closes)} for p in projects
+                ),
+                stepping_stones=tuple(
+                    {"role_id": s.role_id, "name": s.name, "fit": s.fit, "openings": s.openings}
+                    for s in stones
+                ),
+                model_id=result.model_id,
+                template_version=result.template_version,
+                at=now,
+            )
+            await mine.plans.update(plan)
+            mine.record(
+                PlanDrafted(
+                    owner_id=owner_id,
+                    plan_id=plan_id,
+                    target_kind=str(ref.kind),
+                    version=plan.version,
+                )
             )
 
     async def _inputs(
@@ -596,63 +582,45 @@ class GapPlanService:
             target_role_id=snapshot.role_id, target_fit=snapshot.fit_score, roles=roles
         )
 
-    async def _previous_done(
-        self, session: Any, owner_id: uuid.UUID, plan: GapPlan
-    ) -> list[tuple[str, list[str]]]:
-        """Finished tasks from earlier versions of this plan's Target."""
-        earlier = await session.execute(
-            select(Task.text, Task.closes)
-            .join(GapPlan, Task.plan_id == GapPlan.id)
-            .where(
-                Task.owner_id == owner_id,
-                Task.done_at.is_not(None),
-                GapPlan.id != plan.id,
-                *_target_filter(_ref_of(plan)),
-            )
-        )
-        return [(text, list(closes)) for text, closes in earlier.all()]
-
     async def _fail(
         self, owner_id: uuid.UUID, plan_id: uuid.UUID, *, code: str, message: str
     ) -> None:
-        async with self._db.for_user(owner_id) as session:
-            plan = await session.get(GapPlan, plan_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
             if plan is not None:
-                plan.status = str(PlanStatus.FAILED)
-                plan.error_code = code
-                plan.error_message = message
+                plan.failed(code=code, message=message)
+                await mine.plans.update(plan)
 
 
 # --- helpers ---------------------------------------------------------------
 
 
-def _target_columns(ref: TargetRef) -> dict[str, uuid.UUID]:
-    column = {
-        TargetKind.MATCHED_POSTING: "job_posting_id",
-        TargetKind.SUBSCRIPTION: "subscription_id",
-        TargetKind.PRIVATE_POSTING: "private_posting_id",
-    }[ref.kind]
-    return {column: uuid.UUID(ref.id)}
-
-
-def _target_filter(ref: TargetRef) -> list[Any]:
-    column, value = next(iter(_target_columns(ref).items()))
-    return [GapPlan.target_kind == str(ref.kind), getattr(GapPlan, column) == value]
+def _same_target(ref: TargetRef) -> GapPlanFilter:
+    return GapPlanFilter(target_kind=str(ref.kind), target_id=uuid.UUID(ref.id))
 
 
 def _ref_of(plan: GapPlan) -> TargetRef:
-    reference = plan.job_posting_id or plan.subscription_id or plan.private_posting_id
-    return TargetRef(TargetKind(plan.target_kind), str(reference))
+    return TargetRef(TargetKind(plan.target_kind), str(plan.target_id))
 
 
-async def _tasks_by_plan(session: Any, owner_id: uuid.UUID) -> dict[uuid.UUID, list[Task]]:
-    rows = await session.execute(
-        select(Task).where(Task.owner_id == owner_id).order_by(Task.position)
-    )
+async def _tasks_by_plan(mine: OwnerGapPlans) -> dict[uuid.UUID, list[Task]]:
+    """Every task of this user's, grouped by plan in position order. One user's
+    plans, read whole: progress counts work done in any of them."""
     by_plan: dict[uuid.UUID, list[Task]] = {}
-    for task in rows.scalars():
+    for task in sorted(await mine.tasks.get_list(TaskFilter()), key=lambda t: t.position):
         by_plan.setdefault(task.plan_id, []).append(task)
     return by_plan
+
+
+async def _previous_done(mine: OwnerGapPlans, plan: GapPlan) -> list[tuple[str, list[str]]]:
+    """Finished tasks from earlier versions of this plan's Target."""
+    earlier = tuple(
+        p.id for p in await mine.plans.get_list(_same_target(_ref_of(plan))) if p.id != plan.id
+    )
+    if not earlier:
+        return []
+    done = await mine.tasks.get_list(TaskFilter(plan_ids=earlier, is_done=True))
+    return [(t.text, list(t.closes)) for t in done]
 
 
 def _done_tasks(
@@ -672,7 +640,7 @@ def _progress_by_plan(tasks: dict[uuid.UUID, list[Task]]) -> dict[uuid.UUID, int
     result: dict[uuid.UUID, int] = {}
     for plan_id, plan_tasks in tasks.items():
         elsewhere = carried_done(
-            [(t.text, t.closes) for t in plan_tasks], _done_tasks(tasks, excluding=plan_id)
+            [(t.text, list(t.closes)) for t in plan_tasks], _done_tasks(tasks, excluding=plan_id)
         )
         result[plan_id] = progress(
             [t.done_at is not None or i in elsewhere for i, t in enumerate(plan_tasks)]
@@ -686,7 +654,7 @@ def _summary(plan: GapPlan, *, progress_percent: int) -> PlanSummaryView:
         target=_ref_of(plan),
         label=plan.target_label,
         version=plan.version,
-        status=PlanStatus(plan.status),
+        status=plan.status,
         error_code=plan.error_code,
         error_message=plan.error_message,
         model_id=plan.model_id,

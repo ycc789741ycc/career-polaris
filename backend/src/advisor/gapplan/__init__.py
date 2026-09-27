@@ -9,6 +9,7 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.gapplan import jobs
+from advisor.gapplan.factory import create_gapplan_service
 from advisor.gapplan.service import (
     EvidenceCite,
     GapPlanService,
@@ -31,5 +32,6 @@ __all__ = [
     "PlanView",
     "SteppingStoneView",
     "TaskView",
+    "create_gapplan_service",
     "jobs",
 ]

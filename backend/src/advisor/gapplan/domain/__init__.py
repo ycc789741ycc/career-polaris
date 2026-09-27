@@ -1,3 +1,5 @@
+from advisor.gapplan.domain.entities import GapPlan, Milestone, Task
+from advisor.gapplan.domain.events import GapPlanEvent, PlanDrafted
 from advisor.gapplan.domain.plan import (
     MAX_MILESTONES,
     MAX_PROJECTS,
@@ -20,6 +22,17 @@ from advisor.gapplan.domain.plan import (
     stepping_stones,
     tasks_match,
 )
+from advisor.gapplan.domain.repositories import (
+    GapPlanFilter,
+    GapPlanRepository,
+    GapPlanUnitOfWork,
+    MilestoneFilter,
+    MilestoneRepository,
+    OwnerGapPlans,
+    Repository,
+    TaskFilter,
+    TaskRepository,
+)
 
 __all__ = [
     "MAX_MILESTONES",
@@ -33,10 +46,24 @@ __all__ = [
     "DraftMilestone",
     "DraftProject",
     "DraftTask",
+    "GapPlan",
+    "GapPlanEvent",
+    "GapPlanFilter",
+    "GapPlanRepository",
+    "GapPlanUnitOfWork",
     "GapReading",
+    "Milestone",
+    "MilestoneFilter",
+    "MilestoneRepository",
+    "OwnerGapPlans",
+    "PlanDrafted",
     "PlanError",
     "PlanStatus",
+    "Repository",
     "RoleOption",
+    "Task",
+    "TaskFilter",
+    "TaskRepository",
     "assert_draft_valid",
     "carried_done",
     "progress",
