@@ -30,6 +30,7 @@ from advisor.profile.infra.oauth import (
 from advisor.profile.service import (
     ACCEPTED_TYPES,
     CitationError,
+    CitationHandles,
     ConnectionView,
     EvidenceSource,
     EvidenceView,
@@ -44,6 +45,7 @@ __all__ = [
     "GITHUB_SCOPE_DESCRIPTIONS",
     "JIRA_SCOPE_DESCRIPTIONS",
     "CitationError",
+    "CitationHandles",
     "ConnectionView",
     "EvidenceSource",
     "EvidenceView",

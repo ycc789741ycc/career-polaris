@@ -11,6 +11,7 @@ claims, so the rules here are enforced on every AI output that cites an id
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
@@ -157,3 +158,30 @@ def assert_citations_exist(cited: set[str], owned: set[str]) -> None:
     invented = cited - owned
     if invented:
         raise CitationError(frozenset(invented))
+
+
+class CitationHandles:
+    """Short names the model cites evidence by, in place of its ids.
+
+    Copying a 36-character id back exactly is where a model slips: one wrong
+    character and a real citation reads as an invented one, failing the whole
+    reply. ``E12`` is hard to garble. Resolving stays strict — a handle that was
+    never handed out is an invented citation — and the ids it resolves to still
+    go through ``assert_citations_exist``.
+    """
+
+    def __init__(self, evidence_ids: Iterable[object]) -> None:
+        self._ids = {f"E{n}": str(i) for n, i in enumerate(evidence_ids, start=1)}
+        self._handles = {i: handle for handle, i in self._ids.items()}
+
+    def handle(self, evidence_id: object) -> str:
+        """The handle an id is shown under; an id never given one shows as itself."""
+        return self._handles.get(str(evidence_id), str(evidence_id))
+
+    def resolve(self, cited: Iterable[str]) -> tuple[str, ...]:
+        """The ids behind the cited handles, in order."""
+        cited = tuple(cited)
+        invented = {handle for handle in cited if handle not in self._ids}
+        if invented:
+            raise CitationError(frozenset(invented))
+        return tuple(self._ids[handle] for handle in cited)

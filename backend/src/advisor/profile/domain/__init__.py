@@ -9,6 +9,7 @@ from advisor.profile.domain.entities import (
 from advisor.profile.domain.events import ProfileEvent, ProfileUpdated, SourceSynced
 from advisor.profile.domain.evidence import (
     CitationError,
+    CitationHandles,
     Evidence,
     EvidenceGranularity,
     EvidenceSource,
@@ -36,6 +37,7 @@ __all__ = [
     "CareerPositionFilter",
     "CareerPositionRepository",
     "CitationError",
+    "CitationHandles",
     "ConnectionStatus",
     "Evidence",
     "EvidenceFilter",
