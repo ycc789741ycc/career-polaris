@@ -1,6 +1,6 @@
 # Technical Boundaries: Job Searching Advisor
 
-This doc turns the domain model in [`domain_model_review.md`](domain_model_review.md) into technical boundaries. It covers what gets deployed separately, who owns which data, where secrets can be decrypted, where untrusted input enters, and how modules talk to each other.
+This doc turns the domain model in [`domain_model.md`](domain_model.md) into technical boundaries. It covers what gets deployed separately, who owns which data, where secrets can be decrypted, where untrusted input enters, and how modules talk to each other.
 
 **Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for clustering · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
@@ -88,6 +88,89 @@ web/                        # TS client
 > `kernel/` stays outside the application on purpose: it is infrastructure, and the rules below name its packages. It is named `kernel`, not `platform`, because `platform` would shadow Python's standard-library module.
 >
 > `gapplan` replaces the earlier `growth`: with no CareerGoal (domain decision 16), the component is about plans for a Target and nothing else. The Target itself has its own component, `target`, because both `gapplan` and `resume` aim at one and neither may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)). `target` has no tables: it resolves a Target through other components' public APIs and hands back a frozen snapshot that the plan or résumé stores. `resume` serves its routes under `/tailored-resumes`, because `/resumes` is the profile's, for uploaded files.
+
+### Top-level dependencies
+
+An arrow means "imports"; an arrow from a group means every package in it imports the target. Nothing points upward: the deployables sit on top, `wiring/` composes, and the application and the kernel never import either of them.
+
+```mermaid
+flowchart TB
+  subgraph DEP["Deployables"]
+    direction LR
+    API["api/"]
+    W["worker/"]
+    CLI["cli/"]
+    CR["crawler/"]
+  end
+  subgraph WIRE["wiring/: composition root"]
+    direction LR
+    WC["container · queue · models"]
+    WK["crawl"]
+  end
+  subgraph APP["advisor/"]
+    direction LR
+    ADV["components, public API only"]
+    MKT["market"]
+  end
+  K["kernel/"]
+
+  CLI -- OpenAPI export --> API
+  API --> WC
+  W --> WC
+  CR --> WK
+  API --> ADV
+  WC --> ADV
+  WK --> MKT
+  CR --> MKT
+  CLI -- baseline seed --> MKT
+  DEP -- "crawler: never crypto, ai_gateway, auth, storage" --> K
+  WIRE --> K
+  APP --> K
+```
+
+| Package | Responsibility | May import |
+|---|---|---|
+| `api/` | HTTP and SSE delivery: routes per component, request dependencies, the error envelope | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
+| `worker/` | Queue worker entrypoint, and the outbox dispatcher that fans crawler events out to users | `wiring.container`, `wiring.queue`, `kernel` |
+| `crawler/` | The crawl loop and nothing else; holds no secrets and reads no user data | `advisor.market`, `wiring.crawl`, a secret-free subset of `kernel` |
+| `cli/` | One-off commands: migrate, job-queue schema, baseline seed, OpenAPI export | `advisor.market`, `api.main`, `kernel` |
+| `wiring/` | Composition root: `container` builds every component from its `factory`, `queue` registers each component's `jobs`, `crawl` is the crawler's narrow wiring, `models` gathers ORM models for migrations | `advisor` components, `kernel` |
+| `advisor/` | The application, one component per capability; no framework or delivery code | other components (in the order below), `kernel` |
+| `kernel/` | Technical kernel: `db`, `outbox`, `jobs`, `auth`, `crypto`, `storage`, `ai_gateway`, `fetch`, `embeddings`, plus config, logging, errors, clock, paging, parsing | nothing above it |
+
+Inside `advisor/`, components depend on each other in one direction (rule 5). `gapplan` and `resume` are siblings and must not import each other; `identity`, `profile` and `market` import no other component.
+
+```mermaid
+flowchart TB
+  GP[gapplan] --> T[target]
+  RS[resume] --> T
+  GP --> AS[assessment]
+  RS --> AS
+  GP --> RM[rolemap]
+  GP --> PR[profile]
+  RS --> PR
+  T --> AS
+  T --> RM
+  T --> MK[market]
+  AS --> RM
+  AS --> PR
+  AS --> MK
+  RM --> PR
+  RM --> MK
+  ID[identity]
+  RM ~~~ ID
+```
+
+| Component | Uses | Responsibility |
+|---|---|---|
+| `identity` | none | Accounts, password and Google sign-in, sessions, and the write-only AI credential |
+| `profile` | none | Evidence: GitHub and Jira connectors, résumé upload and parsing; never reaches the AI gateway (rule 10) |
+| `market` | none | Openings: board adapters, discovery and politeness (`crawling/`), the baseline seed, subscriptions, pasted JDs, posting embeddings |
+| `rolemap` | market, profile | Clusters the user's market into Roles and keeps the user's top k |
+| `assessment` | market, profile, rolemap | Skill dimensions, the strength report, follow-up questions and RoleFit |
+| `target` | market, rolemap, assessment | Resolves what a plan or résumé aims at into a frozen snapshot; no tables |
+| `gapplan` | profile, rolemap, assessment, target | Gap plans per Target: ranked gaps, milestones, tasks, versions |
+| `resume` | profile, assessment, target | Résumés tailored to a Target, versions, the revision chat and PDF export |
 
 ### Rules (enforced in CI with `import-linter` contracts, `backend/.importlinter`)
 1. A component is imported **only** through its `__init__.py`. Nothing outside it imports its submodules (`service`, `domain`, `infra`, …); `jobs` is public, for the worker.

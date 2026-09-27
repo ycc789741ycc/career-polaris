@@ -1,6 +1,6 @@
 """Event names, in one place.
 
-These are the events from docs/domain_model_review.md section 3 that Phase 1
+These are the events from docs/domain_model.md section 3 that Phase 1
 actually emits. A name is a contract between modules, so it is spelled once
 here rather than typed as a string at each call site.
 """

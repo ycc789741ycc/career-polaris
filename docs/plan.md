@@ -15,7 +15,7 @@
 ## Job Platform for Role Map Analysis
 **Changed during implementation.** Glassdoor, Indeed and LinkedIn cannot be
 crawled — their terms forbid it, and LinkedIn has litigated it
-(`domain_model_review.md` decision 6). Replaced by sources that permit it:
+(`domain_model.md` decision 6). Replaced by sources that permit it:
 
 * Public ATS job boards: Greenhouse, Lever, Ashby — driven by the companies a
   user watches

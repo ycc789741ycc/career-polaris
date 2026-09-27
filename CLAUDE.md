@@ -12,7 +12,7 @@ that needs no model: crawling, parsing, embedding, clustering.
 | Document | What it settles |
 |---|---|
 | `docs/intent.md` | What the product is for |
-| `docs/domain_model_review.md` | The domain model, bounded contexts and the 14 decisions behind them |
+| `docs/domain_model.md` | The domain model, bounded contexts and the 14 decisions behind them |
 | `docs/technical_boundaries.md` | Deployables, module boundaries, data and trust boundaries, the AI gateway |
 | `docs/plan.md` | Phase 1 / 2 / 3 scope |
 | `docs/decisions/` | Decision records for choices that are costly to reverse |
