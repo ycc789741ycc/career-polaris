@@ -7,11 +7,14 @@ from datetime import date
 import pytest
 
 from advisor.market.domain import (
+    MAX_CANONICAL_KEY,
+    MAX_LOCATION,
     NormalizedPosting,
     SalaryRange,
     SourceKind,
     band_from,
     canonical_key,
+    clip,
     expired_keys,
     normalize_title,
 )
@@ -120,3 +123,51 @@ def test_embedding_text_leads_with_the_title() -> None:
     )
     assert posting.embedding_text.startswith("Senior Backend Engineer")
     assert "You will build services." in posting.embedding_text
+
+
+# --- storage bounds --------------------------------------------------------
+
+
+def _long_posting(location: str) -> NormalizedPosting:
+    return NormalizedPosting(
+        external_id="1",
+        company_name="Datadog",
+        title="Staff Application Security Engineer",
+        location=location,
+        description="Secure things.",
+        url="https://boards.test/1",
+        source_kind=SourceKind.ATS_BOARD,
+        posted_on=None,
+        salary=None,
+    )
+
+
+EVERY_OFFICE = "; ".join(f"Remote, US State {n}" for n in range(60))
+
+
+def test_a_location_listing_every_office_is_kept_to_what_storage_holds() -> None:
+    posting = _long_posting(EVERY_OFFICE)
+
+    assert posting.location is not None
+    assert len(posting.location) == MAX_LOCATION
+    assert posting.location.endswith("…")
+    assert posting.location.startswith("Remote, US State 0")
+
+
+def test_short_text_is_left_alone() -> None:
+    assert clip("Berlin", MAX_LOCATION) == "Berlin"
+    assert _long_posting("Berlin").location == "Berlin"
+
+
+def test_an_overlong_key_is_bounded_stable_and_still_distinct() -> None:
+    long_title = "engineer " * 120
+    first = canonical_key(company="Acme", title=long_title + "one", location=None)
+    second = canonical_key(company="Acme", title=long_title + "two", location=None)
+
+    assert len(first) <= MAX_CANONICAL_KEY and len(second) <= MAX_CANONICAL_KEY
+    assert first != second
+    assert first == canonical_key(company="Acme", title=long_title + "one", location=None)
+    # A key within bounds is unchanged, so every stored posting keeps its key.
+    assert canonical_key(company="Acme", title="Engineer", location="Berlin") == (
+        "acme|engineer|berlin"
+    )

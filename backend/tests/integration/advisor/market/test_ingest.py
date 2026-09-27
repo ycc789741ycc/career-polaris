@@ -502,3 +502,28 @@ async def test_materialising_leaves_a_baseline_source_alone(
             {"name": baseline.company_name},
         )
         assert {origin: count for origin, count in found.all()} == {"baseline": 1}
+
+
+async def test_a_posting_listing_every_office_still_stores(
+    crawler_database: Database, source
+) -> None:
+    """A board once sent a location naming dozens of offices; storing it failed
+    and took the whole crawl down with it."""
+    ingest = create_crawl_ingest(crawler_database)
+    every_office = "; ".join(f"Remote, US State {n}" for n in range(60))
+
+    upserted, _ = await ingest.record_crawl(
+        source, [posting("Staff Application Security Engineer", location=every_office)]
+    )
+
+    assert upserted == 1
+    async with crawler_database.shared() as session:
+        stored = await session.execute(
+            text(
+                "SELECT location, canonical_key FROM market.job_posting WHERE crawl_source_id = :id"
+            ),
+            {"id": source},
+        )
+        location, key = stored.one()
+    assert len(location) == 255 and location.endswith("…")
+    assert len(key) <= 768

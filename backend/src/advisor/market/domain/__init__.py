@@ -18,6 +18,10 @@ from advisor.market.domain.events import (
     SubscriptionAdded,
 )
 from advisor.market.domain.posting import (
+    MAX_CANONICAL_KEY,
+    MAX_COMPANY_NAME,
+    MAX_LOCATION,
+    MAX_TITLE,
     Coverage,
     NormalizedPosting,
     PostingStatus,
@@ -26,6 +30,7 @@ from advisor.market.domain.posting import (
     SourceOrigin,
     Visibility,
     canonical_key,
+    clip,
     expired_keys,
     normalize,
     normalize_title,
@@ -57,6 +62,10 @@ from advisor.market.domain.salary import CONFIDENT_SAMPLE_SIZE, SalaryBand, band
 
 __all__ = [
     "CONFIDENT_SAMPLE_SIZE",
+    "MAX_CANONICAL_KEY",
+    "MAX_COMPANY_NAME",
+    "MAX_LOCATION",
+    "MAX_TITLE",
     "Company",
     "CompanyFilter",
     "CompanyRepository",
@@ -102,6 +111,7 @@ __all__ = [
     "Visibility",
     "band_from",
     "canonical_key",
+    "clip",
     "expired_keys",
     "normalize",
     "normalize_title",

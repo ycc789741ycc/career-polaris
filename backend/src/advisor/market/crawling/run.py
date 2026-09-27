@@ -82,8 +82,7 @@ async def crawl_one_source(
         except UpstreamFailedError as exc:
             await ingest.record_crawl(source.id, [], error=exc.message)
             return CrawlOutcome(source.id, 0, 0, exc.message)
-    upserted, expired = await ingest.record_crawl(source.id, postings)
-    return CrawlOutcome(source.id, upserted, expired, None)
+    return await _store(ingest, source, postings)
 
 
 async def crawl_all(
@@ -110,17 +109,35 @@ async def crawl_all(
                 outcomes.append(CrawlOutcome(source.id, 0, 0, exc.message))
                 continue
 
-            upserted, expired = await ingest.record_crawl(source.id, postings)
-            outcomes.append(CrawlOutcome(source.id, upserted, expired, None))
-            log.info(
-                "crawl.source_done",
-                source_id=str(source.id),
-                upserted=upserted,
-                expired=expired,
-            )
+            outcome = await _store(ingest, source, postings)
+            outcomes.append(outcome)
+            if outcome.error is None:
+                log.info(
+                    "crawl.source_done",
+                    source_id=str(source.id),
+                    upserted=outcome.upserted,
+                    expired=outcome.expired,
+                )
 
     await embed_new_postings(ingest, embedding_model)
     return outcomes
+
+
+async def _store(
+    ingest: CrawlIngest, source: CrawlSourceView, postings: list[NormalizedPosting]
+) -> CrawlOutcome:
+    """Store one source's postings. A source whose postings cannot be stored is
+    recorded as failed, so one bad board costs its own run and not everyone's."""
+    try:
+        upserted, expired = await ingest.record_crawl(source.id, postings)
+    except Exception as exc:
+        # The storing transaction rolled back as a whole; nothing half-written
+        # remains. Record why on the source and let the run go on.
+        reason = f"storing postings failed: {type(exc).__name__}"
+        log.exception("crawl.source_store_failed", source_id=str(source.id), reason=reason)
+        await ingest.record_crawl(source.id, [], error=reason)
+        return CrawlOutcome(source.id, 0, 0, reason)
+    return CrawlOutcome(source.id, upserted, expired, None)
 
 
 async def embed_new_postings(ingest: CrawlIngest, model_name: str, batch: int = 200) -> int:
