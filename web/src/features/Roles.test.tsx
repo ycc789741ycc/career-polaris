@@ -2,7 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Fit, Role, TargetOption } from "../api/types";
+import type { Activity, Fit, Role, TargetOption } from "../api/types";
+import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
@@ -65,6 +66,13 @@ function serve() {
     "/market-preferences": page([]),
     "/matched-postings?page_size=10": page([]),
     "/targets": page([pasted]),
+    "/roles/cost-estimate?role_count=8": {
+      max_clusters: 8,
+      role_count: 8,
+      cost_usd: "0.40",
+      model_id: "claude-opus-5",
+      rate_is_published: true,
+    },
   };
   vi.stubGlobal(
     "fetch",
@@ -78,7 +86,7 @@ function serve() {
   );
 }
 
-function renderRoles(focus: Focus | null) {
+function renderRoles(focus: Focus | null, activity: Activity | null = null) {
   const shell: Shell = {
     status: { me: null, credential: null, openQuestions: 0, confidence: null },
     navigate: vi.fn(),
@@ -90,9 +98,17 @@ function renderRoles(focus: Focus | null) {
   };
   render(
     <ShellContext.Provider value={shell}>
-      <ToastProvider>
-        <Roles />
-      </ToastProvider>
+      <ActivityContext.Provider
+        value={{
+          activity,
+          refresh: async () => {},
+          settled: { sources: 0, analysis: 0, roleMap: 0 },
+        }}
+      >
+        <ToastProvider>
+          <Roles />
+        </ToastProvider>
+      </ActivityContext.Provider>
     </ShellContext.Provider>,
   );
   return shell;
@@ -152,5 +168,53 @@ describe("the role map's one Advisor target", () => {
     expect(
       screen.getAllByRole("button", { name: /^Target this/ }),
     ).toHaveLength(1);
+  });
+});
+
+describe("the role map while an analysis runs", () => {
+  const running = {
+    started_at: "2026-09-28T09:00:00Z",
+    finished_at: null,
+    error: null,
+  };
+
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("queues a build that starts when the analysis finishes", async () => {
+    const user = userEvent.setup();
+    renderRoles(null, {
+      syncing: [],
+      parsing: [],
+      analysis: { status: "running", ...running },
+      role_map: null,
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "Build role map" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Run it" }));
+
+    expect(
+      await screen.findByText(
+        "Role map queued — it starts when your analysis finishes.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no second build while one waits", async () => {
+    renderRoles(null, {
+      syncing: [],
+      parsing: [],
+      analysis: { status: "running", ...running },
+      role_map: { status: "waiting", ...running },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Waiting for analysis…" }),
+    ).toBeDisabled();
   });
 });

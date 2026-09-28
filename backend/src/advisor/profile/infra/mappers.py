@@ -31,6 +31,7 @@ def connection(row: models.SourceConnection) -> SourceConnection:
         last_error=row.last_error,
         last_synced_at=row.last_synced_at,
         token_expires_at=row.token_expires_at,
+        sync_started_at=row.sync_started_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -51,6 +52,7 @@ def apply_connection(row: models.SourceConnection, entity: SourceConnection) -> 
     row.last_error = entity.last_error
     row.last_synced_at = entity.last_synced_at
     row.token_expires_at = entity.token_expires_at
+    row.sync_started_at = entity.sync_started_at
 
 
 # --- resume file -----------------------------------------------------------

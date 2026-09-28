@@ -21,6 +21,10 @@ from advisor.assessment.domain import (
     DEFAULT_MATCHES,
     MAX_DIMENSIONS,
     MIN_DIMENSIONS,
+    AnalysisFinished,
+    AnalysisRun,
+    AnalysisRunFilter,
+    AnalysisRunStatus,
     AssessedScore,
     AssessedScoreFilter,
     AssessmentCompleted,
@@ -80,6 +84,7 @@ from kernel.logging import get_logger
 from kernel.paging import Page, paginate
 
 __all__ = [
+    "AnalysisRunView",
     "AssessmentService",
     "AssessmentView",
     "DimensionView",
@@ -206,6 +211,22 @@ class QuestionRoundView:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisRunView:
+    """Whether an analysis is running, and why the last one could not finish."""
+
+    id: uuid.UUID
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    error_code: str | None
+    error_message: str | None
+
+    @property
+    def is_running(self) -> bool:
+        return self.status == AnalysisRunStatus.RUNNING
+
+
+@dataclass(frozen=True, slots=True)
 class FitView:
     role_id: uuid.UUID | None
     private_posting_id: uuid.UUID | None
@@ -295,6 +316,84 @@ class AssessmentService:
         }
 
     # -- the strength report ------------------------------------------------
+
+    async def request_run(self, owner_id: uuid.UUID) -> AnalysisRunView:
+        """Record an analysis as running before it is queued (ADR 0006), so the
+        page shows it from the moment it is asked for. Whether one may start
+        now is ``advisor.activity``'s rule, not this component's."""
+        async with self._uow.for_owner(owner_id) as mine:
+            requested = await mine.runs.create(
+                AnalysisRun.requested(owner_id=owner_id, at=utcnow())
+            )
+        log.info("assessment.run_requested", run_id=str(requested.id))
+        return _run_view(requested)
+
+    async def latest_run(self, owner_id: uuid.UUID) -> AnalysisRunView | None:
+        async with self._uow.for_owner(owner_id) as mine:
+            newest = await mine.runs.get_list(AnalysisRunFilter(), page_size=1)
+        return _run_view(newest[0]) if newest else None
+
+    async def analyse(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> AssessmentView | None:
+        """The worker job for one recorded run.
+
+        An expected failure is recorded on the run with its stable code and not
+        raised: a retry would spend the key again. Anything else is recorded as
+        ``internal`` and re-raised for the log. Returns ``None`` when the run
+        has already ended, or ended without a result.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            requested = await mine.runs.get(run_id)
+        if requested is None:
+            raise NotFoundError("analysis run not found", run_id=str(run_id))
+        if not requested.is_running:
+            return None
+
+        try:
+            assessment = await self.run(owner_id)
+        except DomainError as exc:
+            log.warning("assessment.run_failed", run_id=str(run_id), code=str(exc.code))
+            await self.fail_run(owner_id, run_id, code=str(exc.code), message=exc.message)
+            return None
+        except Exception:
+            await self.fail_run(
+                owner_id,
+                run_id,
+                code="internal",
+                message="The analysis stopped unexpectedly. Try again in a moment.",
+            )
+            raise
+
+        async with self._uow.for_owner(owner_id) as mine:
+            done = await mine.runs.get(run_id)
+            if done is not None and done.is_running:
+                done.ready(utcnow())
+                await mine.runs.update(done)
+                mine.record(
+                    AnalysisFinished(
+                        owner_id=owner_id, run_id=run_id, status=str(AnalysisRunStatus.READY)
+                    )
+                )
+        return assessment
+
+    async def fail_run(
+        self, owner_id: uuid.UUID, run_id: uuid.UUID, *, code: str, message: str
+    ) -> None:
+        """Close a run without a result. Also how ``advisor.activity`` gives up
+        on a run whose worker never came back."""
+        async with self._uow.for_owner(owner_id) as mine:
+            failed = await mine.runs.get(run_id)
+            if failed is None or not failed.is_running:
+                return
+            failed.failed(code=code, message=message, at=utcnow())
+            await mine.runs.update(failed)
+            mine.record(
+                AnalysisFinished(
+                    owner_id=owner_id,
+                    run_id=run_id,
+                    status=str(AnalysisRunStatus.FAILED),
+                    error_code=code,
+                )
+            )
 
     async def run(self, owner_id: uuid.UUID) -> AssessmentView:
         snapshot = await self._profile.snapshot(owner_id)
@@ -1081,6 +1180,17 @@ def _uncovered_from(
         if statement not in mapped:
             uncovered.append(UncoveredRequirement(statement=statement, weight=weight))
     return uncovered
+
+
+def _run_view(run: AnalysisRun) -> AnalysisRunView:
+    return AnalysisRunView(
+        id=run.id,
+        status=str(run.status),
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        error_code=run.error_code,
+        error_message=run.error_message,
+    )
 
 
 def _never() -> AssessmentView:

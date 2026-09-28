@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from advisor.assessment.domain.entities import (
+    AnalysisRun,
+    AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
     FollowUpQuestion,
@@ -100,6 +102,14 @@ class QuestionRoundRepository(Repository[QuestionRound, QuestionRoundFilter], Pr
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisRunFilter:
+    status: AnalysisRunStatus | None = None
+
+
+class AnalysisRunRepository(Repository[AnalysisRun, AnalysisRunFilter], Protocol): ...
+
+
+@dataclass(frozen=True, slots=True)
 class RoleFitFilter:
     role_id: uuid.UUID | None = None
     private_posting_id: uuid.UUID | None = None
@@ -127,6 +137,9 @@ class OwnerAssessment(Protocol):
 
     @property
     def rounds(self) -> QuestionRoundRepository: ...
+
+    @property
+    def runs(self) -> AnalysisRunRepository: ...
 
     @property
     def fits(self) -> RoleFitRepository: ...

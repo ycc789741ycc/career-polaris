@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from advisor.rolemap.domain.entities import (
+    BuildRun,
+    BuildRunStatus,
     LineageEntry,
     Role,
     RoleMapSetting,
@@ -86,6 +88,14 @@ class RoleMapSettingFilter:
 class RoleMapSettingRepository(Repository[RoleMapSetting, RoleMapSettingFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class BuildRunFilter:
+    statuses: tuple[BuildRunStatus, ...] | None = None
+
+
+class BuildRunRepository(Repository[BuildRun, BuildRunFilter], Protocol): ...
+
+
 class OwnerRoleMap(Protocol):
     @property
     def roles(self) -> RoleRepository: ...
@@ -101,6 +111,9 @@ class OwnerRoleMap(Protocol):
 
     @property
     def settings(self) -> RoleMapSettingRepository: ...
+
+    @property
+    def builds(self) -> BuildRunRepository: ...
 
     def record(self, event: RoleMapEvent) -> None: ...
 

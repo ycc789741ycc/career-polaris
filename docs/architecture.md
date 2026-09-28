@@ -72,7 +72,7 @@ backend/src/
   kernel/                   # shared technical kernel, no domain logic
     db/ outbox/ jobs/ auth/ crypto/ storage/ ai_gateway/ fetch/ embeddings/
   advisor/                  # the application: one package per component, no framework code
-    identity/  profile/  market/  rolemap/  assessment/  target/  gapplan/  resume/
+    identity/  profile/  market/  rolemap/  assessment/  target/  gapplan/  resume/  activity/
       __init__.py           # the ONLY importable surface: service interface, views, job functions
       service.py           # use cases: data only through domain/repositories.py (ADR 0011)
       domain/              # entities, rules, events and repository interfaces; pure Python, no I/O
@@ -138,7 +138,7 @@ flowchart TB
 | `advisor/` | The application, one component per capability; no framework or delivery code | other components (in the order below), `kernel` |
 | `kernel/` | Technical kernel: `db`, `outbox`, `jobs`, `auth`, `crypto`, `storage`, `ai_gateway`, `fetch`, `embeddings`, plus config, logging, errors, clock, paging, parsing | nothing above it |
 
-Inside `advisor/`, components depend on each other in one direction (rule 5). `gapplan` and `resume` are siblings and must not import each other; `identity`, `profile` and `market` import no other component.
+Inside `advisor/`, components depend on each other in one direction (rule 5). `gapplan`, `resume` and `activity` are siblings and must not import each other; `identity`, `profile` and `market` import no other component.
 
 ```mermaid
 flowchart TB
@@ -157,6 +157,9 @@ flowchart TB
   AS --> MK
   RM --> PR
   RM --> MK
+  AC[activity] --> AS
+  AC --> RM
+  AC --> PR
   ID[identity]
   RM ~~~ ID
 ```
@@ -171,13 +174,14 @@ flowchart TB
 | `target` | market, rolemap, assessment | Resolves what a plan or résumé aims at into a frozen snapshot; no tables |
 | `gapplan` | profile, rolemap, assessment, target | Gap plans per Target: ranked gaps, milestones, tasks, versions |
 | `resume` | profile, assessment, target | Résumés tailored to a Target, versions, the revision chat and PDF export |
+| `activity` | profile, assessment, rolemap | What background work is running across the journey, and the rules between stages: an analysis waits for syncs and parses, a role-map build waits for an analysis; no tables ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
 
 ### Rules (enforced in CI with `import-linter` contracts, `backend/.importlinter`)
 1. A component is imported **only** through its `__init__.py`. Nothing outside it imports its submodules (`service`, `domain`, `infra`, …); `jobs` is public, for the worker.
 2. A component's `domain/` imports no kernel, deployable, framework, ORM or HTTP library, and nothing else from its own component.
 3. Component domain models are independent: none imports another. A concept two components need gets its own component.
 4. `advisor` imports no deployable (`api`, `worker`, `crawler`, `cli`), no composition root (`wiring`) and no web or queue framework.
-5. Components depend on each other one way only: `gapplan | resume` → `target` → `assessment` → `rolemap` → `identity | profile | market`.
+5. Components depend on each other one way only: `gapplan | resume | activity` → `target` → `assessment` → `rolemap` → `identity | profile | market`.
 6. `crawler/` may import only `advisor.market`, `wiring.crawl` and the kernel pieces it needs. It never reaches `kernel.crypto`, `kernel.ai_gateway`, `kernel.auth` or `kernel.storage`, even indirectly.
 7. Only `kernel.ai_gateway`, `advisor.identity` (to encrypt the credential it stores) and `advisor.profile`'s connectors may import `kernel.crypto`.
 8. Components never call an LLM SDK directly; they go through `kernel.ai_gateway`.
@@ -193,8 +197,9 @@ flowchart TB
 |---|---|---|
 | `ProfileUpdated` | profile | assessment.generate_questions: a question round against the latest analysis, if any dimension is below the threshold. Not for an answer, whose route re-runs the analysis instead ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)) |
 | `AssessmentCompleted` / `DimensionsChanged` | assessment | assessment.compute_fits |
-| `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → rolemap.recluster per user. A baseline-only change reaches every user whose scope includes that market. |
-| `RoleCountChanged(k)` | rolemap | rolemap.recluster for that user, after the cost estimate is confirmed |
+| `AnalysisFinished(run, status)` | assessment, as the run closes | activity.release_waiting_builds → rolemap.recluster for a build that waited on it, whether the analysis succeeded or failed ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
+| `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → activity.request_role_map per user: joins a build already open, waits for a running analysis, or queues rolemap.recluster. A baseline-only change reaches every user whose scope includes that market. |
+| `RoleCountChanged(k)` | rolemap | nothing: the route that saved k already recorded and queued the rebuild, after the cost estimate was confirmed (ADR 0018) |
 | `SubscriptionAdded(company, url)` | market | worker materialises a `market.crawl_source` from the URL with no user id → single-company crawl |
 | `RoleRequirementsChanged`, `RoleSplitOrMerged` | rolemap | assessment.compute_fits; later gapplan.suggest_successor (for Targets whose snapshot came from that Role — not built: rolemap does not emit `RoleSplitOrMerged` yet) |
 | `PlanDrafted` | gapplan | nothing yet; recorded for the match digest and progress history |
@@ -318,7 +323,9 @@ flowchart LR
 | Weekly cron, after crawl | worker (`notify`) | send `MatchDigest`; send interview-report prompts about 2 weeks after tailoring |
 | Weekly cron | worker | re-check `manual` subscriptions for a supported board; refresh `crawl_source` from `market_user` |
 | User subscribes / clicks refresh | api → crawler | single-company crawl, rate-limited per user per day |
-| User clicks "Analyze" | api → worker (`ai`) | cost estimate → user confirms → assessment → fits, and a question round `generating` → `ready` or `failed`; the SPA polls the round (ADR 0006, ADR 0012) |
+| User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits, and a question round `generating` → `ready` or `failed`; the SPA polls the round (ADR 0006, ADR 0012, ADR 0018) |
+| User rebuilds the role map, or saves a new k | api → worker (`ai`) | cost estimate → user confirms → build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → `ready` or `failed` (ADR 0018) |
+| Any background work running | api | the shell polls `GET /activity` every 2 s while a sync, parse, analysis or build is busy: the running bar, sidebar marks, a toast when a stage ends, and screens reload what it wrote. Work busy past `JOB_STALE_AFTER_SECONDS` reads as `failed`/`stale` (ADR 0018) |
 | Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated` → question round on `ai` (ADR 0012) |
 | Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé → `ProfileUpdated` → question round on `ai` (ADR 0012) |
 | User picks a Target and generates a plan | api → worker (`ai`) | cost estimate → user confirms → plan row `drafting` → worker snapshots the Target (a pasted JD is read and scored first) → gaps ranked by fit points → draft → validate → `ready` or `failed` with a code; the SPA polls the row (ADR 0006) |

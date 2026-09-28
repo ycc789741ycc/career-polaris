@@ -15,6 +15,7 @@ from typing import Any, assert_never
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.assessment.domain import (
+    AnalysisFinished,
     AssessmentCompleted,
     AssessmentEvent,
     DimensionsChanged,
@@ -23,6 +24,7 @@ from advisor.assessment.domain import (
     RoleFitsComputed,
 )
 from advisor.assessment.infra.repositories import (
+    SqlAlchemyAnalysisRunRepository,
     SqlAlchemyAssessedScoreRepository,
     SqlAlchemyDimensionChangeRepository,
     SqlAlchemyFollowUpQuestionRepository,
@@ -43,6 +45,7 @@ class SqlAlchemyOwnerAssessment:
         self.changes = SqlAlchemyDimensionChangeRepository(session, owner_id=owner_id)
         self.questions = SqlAlchemyFollowUpQuestionRepository(session, owner_id=owner_id)
         self.rounds = SqlAlchemyQuestionRoundRepository(session, owner_id=owner_id)
+        self.runs = SqlAlchemyAnalysisRunRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 
@@ -77,6 +80,16 @@ def _outbox_entry(event: AssessmentEvent) -> tuple[EventName, dict[str, Any], uu
                     "assessment_id": str(event.assessment_id),
                     "dimensions": event.dimensions,
                     "model_id": event.model_id,
+                },
+                event.owner_id,
+            )
+        case AnalysisFinished():
+            return (
+                EventName.ANALYSIS_FINISHED,
+                {
+                    "run_id": str(event.run_id),
+                    "status": event.status,
+                    "error_code": event.error_code,
                 },
                 event.owner_id,
             )

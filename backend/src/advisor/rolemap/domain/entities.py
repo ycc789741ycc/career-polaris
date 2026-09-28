@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from advisor.rolemap.domain.hiring_bar import HiringBar
@@ -120,3 +121,70 @@ class RoleMapSetting:
     role_count: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class BuildRunStatus(StrEnum):
+    """A role-map build runs in the background, so it is recorded before it
+    starts and the page polls it (ADR 0006, ADR 0018).
+
+    ``waiting`` means it was asked for while an analysis was running, and starts
+    when that analysis finishes.
+    """
+
+    WAITING = "waiting"
+    RUNNING = "running"
+    READY = "ready"
+    FAILED = "failed"
+
+
+@dataclass(slots=True)
+class BuildRun:
+    """One request to rebuild this user's role map."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    status: BuildRunStatus
+    requested_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    @classmethod
+    def requested(cls, *, owner_id: uuid.UUID, at: datetime, wait: bool) -> BuildRun:
+        return cls(
+            id=uuid.uuid4(),
+            owner_id=owner_id,
+            status=BuildRunStatus.WAITING if wait else BuildRunStatus.RUNNING,
+            requested_at=at,
+            started_at=None if wait else at,
+        )
+
+    @property
+    def is_waiting(self) -> bool:
+        return self.status is BuildRunStatus.WAITING
+
+    @property
+    def is_running(self) -> bool:
+        return self.status is BuildRunStatus.RUNNING
+
+    @property
+    def is_open(self) -> bool:
+        """Still to finish: waiting or running."""
+        return self.is_waiting or self.is_running
+
+    def start(self, at: datetime) -> None:
+        if not self.is_waiting:
+            raise ValueError(f"a {self.status} build cannot start")
+        self.status = BuildRunStatus.RUNNING
+        self.started_at = at
+
+    def ready(self, at: datetime) -> None:
+        self.status = BuildRunStatus.READY
+        self.finished_at = at
+
+    def failed(self, *, code: str, message: str, at: datetime) -> None:
+        self.status = BuildRunStatus.FAILED
+        self.error_code = code
+        self.error_message = message
+        self.finished_at = at

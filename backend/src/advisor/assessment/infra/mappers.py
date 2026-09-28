@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from advisor.assessment.domain import (
+    AnalysisRun,
+    AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
     FollowUpQuestion,
@@ -186,6 +188,31 @@ def question_round_row(entity: QuestionRound) -> models.QuestionRound:
 def apply_question_round(row: models.QuestionRound, entity: QuestionRound) -> None:
     row.status = str(entity.status)
     row.question_count = entity.question_count
+    row.error_code = entity.error_code
+    row.error_message = entity.error_message
+    row.finished_at = entity.finished_at
+
+
+def analysis_run(row: models.AnalysisRun) -> AnalysisRun:
+    return AnalysisRun(
+        id=row.id,
+        owner_id=row.owner_id,
+        status=AnalysisRunStatus(row.status),
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        error_code=row.error_code,
+        error_message=row.error_message,
+    )
+
+
+def analysis_run_row(entity: AnalysisRun) -> models.AnalysisRun:
+    row = models.AnalysisRun(id=entity.id, owner_id=entity.owner_id, started_at=entity.started_at)
+    apply_analysis_run(row, entity)
+    return row
+
+
+def apply_analysis_run(row: models.AnalysisRun, entity: AnalysisRun) -> None:
+    row.status = str(entity.status)
     row.error_code = entity.error_code
     row.error_message = entity.error_message
     row.finished_at = entity.finished_at

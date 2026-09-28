@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from advisor.rolemap.domain import (
+    BuildRun,
+    BuildRunFilter,
     LineageEntry,
     LineageEntryFilter,
     Role,
@@ -30,6 +32,7 @@ class Store:
     requirements: dict[uuid.UUID, RoleRequirement] = field(default_factory=dict)
     lineage: dict[uuid.UUID, LineageEntry] = field(default_factory=dict)
     settings: dict[uuid.UUID, RoleMapSetting] = field(default_factory=dict)
+    builds: dict[uuid.UUID, BuildRun] = field(default_factory=dict)
     events: list[RoleMapEvent] = field(default_factory=list)
 
 
@@ -79,6 +82,16 @@ class FakeSettings(FakeRepository[RoleMapSetting, RoleMapSettingFilter]):
         return True
 
 
+class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter]):
+    created_field = "requested_at"
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "role map build"
+
+    def matches(self, entity: BuildRun, filter: BuildRunFilter) -> bool:
+        return filter.statuses is None or entity.status in filter.statuses
+
+
 class FakeOwner:
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.roles = FakeRoles(store.roles, owner_id=owner_id)
@@ -86,6 +99,7 @@ class FakeOwner:
         self.requirements = FakeRequirements(store.requirements, owner_id=owner_id)
         self.lineage = FakeLineage(store.lineage, owner_id=owner_id)
         self.settings = FakeSettings(store.settings, owner_id=owner_id)
+        self.builds = FakeBuilds(store.builds, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:

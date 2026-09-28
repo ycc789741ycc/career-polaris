@@ -34,9 +34,11 @@ from advisor.profile.service import (
     ConnectionView,
     EvidenceSource,
     EvidenceView,
+    PendingSourceView,
     ProfileService,
     ProfileSnapshot,
     ResumeFileView,
+    SourceProcessingView,
     assert_citations_exist,
 )
 
@@ -51,9 +53,11 @@ __all__ = [
     "EvidenceView",
     "GitHubConnector",
     "JiraConnector",
+    "PendingSourceView",
     "ProfileService",
     "ProfileSnapshot",
     "ResumeFileView",
+    "SourceProcessingView",
     "assert_citations_exist",
     "authorize_url",
     "create_profile_service",

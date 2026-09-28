@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from advisor.assessment.domain import (
+    AnalysisRun,
+    AnalysisRunFilter,
     AssessedScore,
     AssessedScoreFilter,
     AssessmentEvent,
@@ -35,6 +37,7 @@ class Store:
     changes: dict[uuid.UUID, DimensionChange] = field(default_factory=dict)
     questions: dict[uuid.UUID, FollowUpQuestion] = field(default_factory=dict)
     rounds: dict[uuid.UUID, QuestionRound] = field(default_factory=dict)
+    runs: dict[uuid.UUID, AnalysisRun] = field(default_factory=dict)
     fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
     events: list[AssessmentEvent] = field(default_factory=list)
 
@@ -96,6 +99,16 @@ class FakeRounds(FakeRepository[QuestionRound, QuestionRoundFilter]):
         return filter.status is None or entity.status is filter.status
 
 
+class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter]):
+    created_field = "started_at"
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "analysis run"
+
+    def matches(self, entity: AnalysisRun, filter: AnalysisRunFilter) -> bool:
+        return filter.status is None or entity.status is filter.status
+
+
 class FakeFits(FakeRepository[RoleFit, RoleFitFilter]):
     updated_field = None
     owner_field = "owner_id"
@@ -120,6 +133,7 @@ class FakeOwner:
         self.changes = FakeChanges(store.changes, owner_id=owner_id)
         self.questions = FakeQuestions(store.questions, owner_id=owner_id)
         self.rounds = FakeRounds(store.rounds, owner_id=owner_id)
+        self.runs = FakeRuns(store.runs, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 

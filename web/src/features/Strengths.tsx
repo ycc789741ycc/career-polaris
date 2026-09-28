@@ -10,13 +10,13 @@ import { SkillRadar } from "../charts/SkillRadar";
 import {
   AutoGrid,
   Button,
-  Done,
   EmptyState,
   ErrorNote,
   Eyebrow,
   Loading,
   ProgressBar,
 } from "../components/ui";
+import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
 import { modelName, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
 import { messageOf, useAsync } from "./useAsync";
@@ -38,12 +38,17 @@ import { messageOf, useAsync } from "./useAsync";
  * and the analysis: no fit, role or bar from the role map, which reclusters
  * and rescores as the market moves. Comparing against a role's bar is the role
  * map's job, where "Where you clear it / where you don't" already does it.
+ *
+ * An analysis reads the evidence as it stands, so it cannot start while a
+ * source is still syncing or a résumé still parsing (ADR 0018); the running
+ * bar says what it waits for, and the report reloads when a run finishes.
  */
 export function Strengths() {
   const { status, navigate } = useShell();
+  const { activity, refresh: refreshActivity, settled } = useActivity();
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
-    [],
+    [settled.analysis],
   );
   const evidence = useAsync<Evidence[]>(
     () => api.items<EvidencePage>("/evidence"),
@@ -52,7 +57,6 @@ export function Strengths() {
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queued, setQueued] = useState(false);
   const [selected, setSelected] = useState<string | undefined>(undefined);
 
   async function askForEstimate() {
@@ -72,14 +76,23 @@ export function Strengths() {
     setError(null);
     try {
       await api.post("/assessments");
-      setQueued(true);
       setEstimate(null);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
       setBusy(false);
+      // Refused or started, the running bar should say why.
+      await refreshActivity();
     }
   }
+
+  const processing = sourcesBusy(activity);
+  const analysing = isBusy(activity?.analysis);
+  const lastRun = activity?.analysis ?? null;
+  const lastRunFailed =
+    lastRun?.status === "failed" &&
+    (!assessment.data ||
+      new Date(lastRun.started_at) > new Date(assessment.data.created_at));
 
   const dimensions = assessment.data?.dimensions ?? [];
   const leastCertain = [...dimensions].sort(
@@ -112,23 +125,45 @@ export function Strengths() {
             variant={assessment.data ? "secondary" : "primary"}
             onClick={askForEstimate}
             busy={busy}
+            disabled={processing || analysing}
           >
-            {assessment.data ? "Re-analyse" : "Analyse with AI"}
+            {analysing
+              ? "Analysing…"
+              : assessment.data
+                ? "Re-analyse"
+                : "Analyse with AI"}
           </Button>
         </div>
       </div>
 
       <ErrorNote error={error} />
-      {assessment.data?.is_out_of_date && !queued && (
+      {processing && !analysing && (
+        <p role="status" className="subcopy" style={{ margin: "8px 0" }}>
+          Waiting for your sources to finish syncing and parsing — the analysis
+          reads every fact, so it starts once they are in.
+        </p>
+      )}
+      {lastRunFailed && !analysing && (
+        <div role="alert" className="note-warning" style={{ margin: "8px 0" }}>
+          <span aria-hidden="true">⚠</span> The last analysis did not finish:{" "}
+          {lastRun?.error?.message ?? "it stopped before finishing"}.
+          {lastRun?.error?.code.startsWith("ai_") && (
+            <>
+              {" "}
+              <Button variant="ghost" onClick={() => navigate("model")}>
+                Open AI &amp; model
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+      {assessment.data?.is_out_of_date && !analysing && (
         <p role="status" className="note-warning" style={{ margin: "8px 0" }}>
           {/* Never colour alone. */}
           <span aria-hidden="true">⚠</span> Out of date: your evidence has
           changed since this analysis ran, so these scores may not match it.
           Re-analyse to catch up.
         </p>
-      )}
-      {queued && (
-        <Done>Queued. This runs on your model — reload in a moment.</Done>
       )}
       {estimate && (
         <CostConfirm

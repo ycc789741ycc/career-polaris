@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Credential } from "../api/types";
+import { ActivityContext } from "./activity";
 import { initialsOf } from "./PageHeader";
 import type { ShellStatus } from "./ShellContext";
 import { Sidebar } from "./Sidebar";
@@ -103,5 +104,40 @@ describe("account initials", () => {
   it("falls back to the first two letters, or a placeholder", () => {
     expect(initialsOf("maya@example.com")).toBe("MA");
     expect(initialsOf(null)).toBe("?");
+  });
+});
+
+describe("sidebar while work runs", () => {
+  it("marks each step whose stage is still working, and only those", () => {
+    render(
+      <ActivityContext.Provider
+        value={{
+          activity: {
+            syncing: [],
+            parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
+            analysis: null,
+            role_map: {
+              status: "waiting",
+              started_at: "2026-09-28T09:00:00Z",
+              finished_at: null,
+              error: null,
+            },
+          },
+          refresh: async () => {},
+          settled: { sources: 0, analysis: 0, roleMap: 0 },
+        }}
+      >
+        <Sidebar current="sources" status={status()} onNavigate={() => {}} />
+      </ActivityContext.Provider>,
+    );
+
+    const nav = screen.getByRole("navigation", { name: "Screens" });
+    const running = (name: RegExp) =>
+      within(within(nav).getByRole("button", { name })).queryByRole("img", {
+        name: "running",
+      });
+    expect(running(/Sources/)).toBeInTheDocument();
+    expect(running(/Strengths/)).not.toBeInTheDocument();
+    expect(running(/Role map/)).toBeInTheDocument();
   });
 });

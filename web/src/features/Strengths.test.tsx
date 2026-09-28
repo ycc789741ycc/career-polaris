@@ -2,6 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment } from "../api/types";
+import type { Activity } from "../api/types";
+import { ActivityContext } from "../shell/activity";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { Strengths } from "./Strengths";
 import { page } from "../test/page";
@@ -62,14 +64,22 @@ function serve(latest: Assessment) {
   return fetch;
 }
 
-function renderStrengths() {
+function renderStrengths(activity: Activity | null = null) {
   const shell = {
     status: { me: null, credential: null, openQuestions: 0, confidence: 0 },
     navigate: vi.fn(),
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>
-      <Strengths />
+      <ActivityContext.Provider
+        value={{
+          activity,
+          refresh: async () => {},
+          settled: { sources: 0, analysis: 0, roleMap: 0 },
+        }}
+      >
+        <Strengths />
+      </ActivityContext.Provider>
     </ShellContext.Provider>,
   );
 }
@@ -184,5 +194,44 @@ describe("Strengths", () => {
         .getAllByRole("button")
         .map((row) => row.textContent),
     ).toEqual(["Builds⚠ 20% sure", "Caching60% sure", "APIs90% sure"]);
+  });
+
+  it("waits for a résumé still parsing before it offers an analysis", async () => {
+    serve(assessment({}));
+    renderStrengths({
+      syncing: [],
+      parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
+      analysis: null,
+      role_map: null,
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Re-analyse" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/Waiting for your sources to finish/),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no second analysis while one runs, and says why the last one failed", async () => {
+    serve(assessment({}));
+    renderStrengths({
+      syncing: [],
+      parsing: [],
+      analysis: {
+        status: "failed",
+        started_at: "2026-09-28T09:00:00Z",
+        finished_at: "2026-09-28T09:01:00Z",
+        error: { code: "ai_budget_exceeded", message: "The budget is spent" },
+      },
+      role_map: null,
+    });
+
+    expect(
+      await screen.findByText(
+        /The last analysis did not finish: The budget is spent/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Re-analyse" })).toBeEnabled();
   });
 });

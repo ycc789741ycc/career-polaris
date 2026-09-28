@@ -27,6 +27,8 @@ import {
   type Place,
   type Screen,
 } from "./shell/navigation";
+import { ActivityProvider } from "./shell/activity";
+import { ActivityBar } from "./shell/ActivityBar";
 import { PageHeader } from "./shell/PageHeader";
 import {
   ShellContext,
@@ -52,7 +54,9 @@ export function App() {
   }
   return status === "signed-in" ? (
     <ToastProvider>
-      <Shell />
+      <ActivityProvider>
+        <Shell />
+      </ActivityProvider>
     </ToastProvider>
   ) : (
     <SignInScreen />
@@ -180,6 +184,7 @@ function Shell() {
             email={me?.email ?? email}
             onSignOut={() => void signOut()}
           />
+          <ActivityBar />
           <div className="page-body" key={screen}>
             {me?.background_jobs_paused && (
               <p

@@ -48,6 +48,8 @@ class SourceConnection(Base, OwnedMixin, TimestampMixin):
     token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set while a sync is queued or running; null when idle (ADR 0018).
+    sync_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ResumeFile(Base, OwnedMixin, TimestampMixin):

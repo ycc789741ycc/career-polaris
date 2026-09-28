@@ -22,6 +22,7 @@ from advisor.rolemap.domain import (
     RolesReclustered,
 )
 from advisor.rolemap.infra.repositories import (
+    SqlAlchemyBuildRunRepository,
     SqlAlchemyLineageEntryRepository,
     SqlAlchemyRoleMapSettingRepository,
     SqlAlchemyRoleMemberRepository,
@@ -39,6 +40,7 @@ class SqlAlchemyOwnerRoleMap:
         self.requirements = SqlAlchemyRoleRequirementRepository(session, owner_id=owner_id)
         self.lineage = SqlAlchemyLineageEntryRepository(session, owner_id=owner_id)
         self.settings = SqlAlchemyRoleMapSettingRepository(session, owner_id=owner_id)
+        self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:

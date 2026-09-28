@@ -50,6 +50,12 @@ EVIDENCE = EvidenceView(
 class FakeProfile:
     def __init__(self) -> None:
         self.deleted: list[uuid.UUID] = []
+        self.sync_requests: list[str] = []
+
+    async def request_sync(self, owner_id: uuid.UUID, kind: str) -> None:
+        if kind != "github":
+            raise NotFoundError(f"{kind} is not connected", kind=kind)
+        self.sync_requests.append(kind)
 
     async def delete_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
         if resume_id != RESUME_ID:
@@ -247,3 +253,21 @@ def test_paging_that_makes_no_sense_is_refused_in_the_envelope(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+
+
+def test_a_sync_shows_as_running_before_it_is_queued(
+    client: TestClient, profile: FakeProfile, queued: list[dict[str, Any]]
+) -> None:
+    response = client.post("/connections/github/sync")
+
+    assert response.status_code == 202
+    assert profile.sync_requests == ["github"]
+    assert [c["name"] for c in queued] == ["profile.sync_connection"]
+
+
+def test_a_sync_of_a_source_that_is_not_connected_is_not_queued(
+    client: TestClient, queued: list[dict[str, Any]]
+) -> None:
+    response = client.post("/connections/jira/sync")
+
+    assert response.status_code == 404 and queued == []

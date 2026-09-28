@@ -42,6 +42,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.identity.service
     advisor.identity.domain
@@ -67,6 +68,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.profile.service
     advisor.profile.domain
@@ -90,6 +92,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.market.service
     advisor.market.domain
@@ -115,6 +118,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.rolemap.service
     advisor.rolemap.domain
@@ -144,6 +148,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.assessment.service
     advisor.assessment.domain
@@ -172,6 +177,7 @@ source_modules =
     advisor.assessment
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.target.service
     advisor.target.domain
@@ -194,6 +200,7 @@ source_modules =
     advisor.assessment
     advisor.target
     advisor.resume
+    advisor.activity
 forbidden_modules =
     advisor.gapplan.service
     advisor.gapplan.domain
@@ -221,10 +228,34 @@ source_modules =
     advisor.assessment
     advisor.target
     advisor.gapplan
+    advisor.activity
 forbidden_modules =
     advisor.resume.service
     advisor.resume.domain
     advisor.resume.infra
+allow_indirect_imports = True
+
+[importlinter:contract:activity-public-surface]
+name = Only advisor.activity itself is importable from outside the component
+type = forbidden
+source_modules =
+    api
+    worker
+    crawler
+    cli
+    wiring
+    kernel
+    advisor.identity
+    advisor.profile
+    advisor.market
+    advisor.rolemap
+    advisor.assessment
+    advisor.target
+    advisor.gapplan
+    advisor.resume
+forbidden_modules =
+    advisor.activity.service
+    advisor.activity.domain
 allow_indirect_imports = True
 
 # Rule 2: the domain model inside each component is pure: no application
@@ -242,6 +273,7 @@ source_modules =
     advisor.target.domain
     advisor.gapplan.domain
     advisor.resume.domain
+    advisor.activity.domain
 forbidden_modules =
     api
     worker
@@ -273,6 +305,7 @@ modules =
     advisor.target.domain
     advisor.gapplan.domain
     advisor.resume.domain
+    advisor.activity.domain
 
 # Rule 4: the application holds no framework or delivery code (design
 # guideline, package by component). Routes live in api/, task registration in
@@ -301,7 +334,7 @@ type = layers
 containers =
     advisor
 layers =
-    gapplan | resume
+    gapplan | resume | activity
     target
     assessment
     rolemap
@@ -333,6 +366,7 @@ forbidden_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
     advisor.market.service
     advisor.market.domain
     advisor.market.infra
@@ -374,6 +408,7 @@ source_modules =
     advisor.target
     advisor.gapplan
     advisor.resume
+    advisor.activity
 forbidden_modules =
     kernel.crypto
 # Direct imports only: reaching kernel.crypto *through* the gateway is the

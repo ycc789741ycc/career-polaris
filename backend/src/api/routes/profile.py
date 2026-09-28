@@ -140,12 +140,15 @@ async def complete_authorization(
         scopes=tuple(str(token.get("scope", "")).split()),
         expires_at=None,
     )
+    await deps.profile.request_sync(user, kind)
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
     return ConnectionResult.from_view(connection)
 
 
 @router.post("/connections/{kind}/sync", status_code=202)
 async def sync_now(kind: str, user: CurrentUser, deps: Deps) -> Accepted:
+    """Marked as syncing before it is queued, so the page shows it at once."""
+    await deps.profile.request_sync(user, kind)
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
     return Accepted()
 

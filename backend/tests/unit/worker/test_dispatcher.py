@@ -1,4 +1,5 @@
-"""The outbox dispatcher turning evidence changes into question rounds (ADR 0012).
+"""The outbox dispatcher turning evidence changes into question rounds (ADR 0012),
+and finished analyses into the role-map builds that waited for them (ADR 0018).
 
 Calls the dispatcher's handler directly with stand-in services and a recorded
 queue — no database, no job runner.
@@ -89,3 +90,93 @@ async def test_nothing_is_queued_when_there_is_nothing_to_ask(
     await dispatcher._handle(_deps(assessment), _profile_updated("github"))
 
     assert len(assessment.requests) == 1 and queued == []
+
+
+# --- role maps waiting on an analysis (ADR 0018) ---------------------------
+
+
+class FakeActivity:
+    def __init__(self, *, released: Any = None, requested: Any = None) -> None:
+        self.released = released
+        self.requested = requested
+        self.releases: list[uuid.UUID] = []
+        self.requests: list[uuid.UUID] = []
+
+    async def release_waiting_builds(self, owner_id: uuid.UUID) -> Any:
+        self.releases.append(owner_id)
+        return self.released
+
+    async def request_role_map(self, owner_id: uuid.UUID) -> Any:
+        self.requests.append(owner_id)
+        return self.requested
+
+
+def _container(**services: Any) -> Any:
+    return SimpleNamespace(**services)
+
+
+def _analysis_finished(status: str) -> OutboxEvent:
+    return OutboxEvent(
+        name=str(EventName.ANALYSIS_FINISHED),
+        owner_id=OWNER,
+        payload={"run_id": str(uuid.uuid4()), "status": status, "error_code": None},
+    )
+
+
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_finished_analysis_starts_the_role_map_that_waited_for_it(
+    status: str, queued: list[dict[str, Any]]
+) -> None:
+    build_id = uuid.uuid4()
+    activity = FakeActivity(released=SimpleNamespace(id=build_id))
+
+    await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
+
+    assert activity.releases == [OWNER]
+    assert queued == [
+        {"name": "rolemap.recluster", "owner_id": str(OWNER), "build_id": str(build_id)}
+    ]
+
+
+async def test_a_finished_analysis_queues_nothing_when_no_role_map_waited(
+    queued: list[dict[str, Any]],
+) -> None:
+    activity = FakeActivity(released=None)
+
+    await dispatcher._handle(_container(activity=activity), _analysis_finished("ready"))
+
+    assert activity.releases == [OWNER] and queued == []
+
+
+@pytest.mark.parametrize(("should_queue", "expected"), [(True, 1), (False, 0)])
+async def test_new_postings_rebuild_only_a_role_map_that_is_not_waiting_or_running(
+    should_queue: bool,
+    expected: int,
+    queued: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def affected(deps: Any, payload: dict[str, Any]) -> list[uuid.UUID]:
+        return [OWNER]
+
+    monkeypatch.setattr(dispatcher, "_users_affected_by", affected)
+    build = SimpleNamespace(id=uuid.uuid4())
+    activity = FakeActivity(requested=SimpleNamespace(build=build, should_queue=should_queue))
+    event = OutboxEvent(name=str(EventName.POSTINGS_CHANGED), owner_id=None, payload={})
+
+    await dispatcher._handle(_container(activity=activity), event)
+
+    assert activity.requests == [OWNER] and len(queued) == expected
+
+
+async def test_a_new_role_count_is_rebuilt_by_its_route_not_again_here(
+    queued: list[dict[str, Any]],
+) -> None:
+    event = OutboxEvent(
+        name=str(EventName.ROLE_COUNT_CHANGED),
+        owner_id=OWNER,
+        payload={"previous": 10, "current": 12},
+    )
+
+    await dispatcher._handle(_container(), event)
+
+    assert queued == []

@@ -14,6 +14,8 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.assessment.domain import (
+    AnalysisRun,
+    AnalysisRunFilter,
     AssessedScore,
     AssessedScoreFilter,
     DimensionChange,
@@ -205,6 +207,33 @@ class SqlAlchemyQuestionRoundRepository(
         if filter.status is None:
             return []
         return [models.QuestionRound.status == str(filter.status)]
+
+
+class SqlAlchemyAnalysisRunRepository(
+    SqlAlchemyRepository[AnalysisRun, models.AnalysisRun, AnalysisRunFilter]
+):
+    model = models.AnalysisRun
+    id_column = models.AnalysisRun.id
+    created_column = models.AnalysisRun.started_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.AnalysisRun.owner_id
+    noun = "analysis run"
+
+    def to_entity(self, row: models.AnalysisRun) -> AnalysisRun:
+        return mappers.analysis_run(row)
+
+    def to_row(self, entity: AnalysisRun) -> models.AnalysisRun:
+        return mappers.analysis_run_row(entity)
+
+    def apply(self, row: models.AnalysisRun, entity: AnalysisRun) -> None:
+        mappers.apply_analysis_run(row, entity)
+
+    def id_of(self, entity: AnalysisRun) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: AnalysisRunFilter) -> list[ColumnElement[bool]]:
+        if filter.status is None:
+            return []
+        return [models.AnalysisRun.status == str(filter.status)]
 
 
 class SqlAlchemyRoleFitRepository(SqlAlchemyRepository[RoleFit, models.RoleFit, RoleFitFilter]):

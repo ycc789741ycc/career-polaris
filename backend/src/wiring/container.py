@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
 
+from advisor.activity import ActivityService
 from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.gapplan import GapPlanService, create_gapplan_service
 from advisor.identity import (
@@ -56,6 +57,7 @@ class Container:
     target: TargetService
     gapplan: GapPlanService
     resume: ResumeService
+    activity: ActivityService
     object_store: ObjectStore
     _verifier: TokenVerifier | None = None
     _google: GoogleSignIn | None = None
@@ -194,6 +196,13 @@ def build(settings: Settings | None = None) -> Container:
         object_store=object_store,
     )
 
+    activity = ActivityService(
+        profile=profile,
+        assessment=assessment,
+        rolemap=rolemap,
+        stale_after_seconds=settings.job_stale_after_seconds,
+    )
+
     return Container(
         settings=settings,
         database=database,
@@ -206,6 +215,7 @@ def build(settings: Settings | None = None) -> Container:
         target=target,
         gapplan=gapplan,
         resume=resume,
+        activity=activity,
         object_store=object_store,
     )
 

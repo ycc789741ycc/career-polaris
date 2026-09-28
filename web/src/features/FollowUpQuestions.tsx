@@ -16,19 +16,17 @@ import {
   PillToggle,
   ProgressBar,
 } from "../components/ui";
+import { isBusy, useActivity } from "../shell/activity";
 import { modelName, useShell } from "../shell/ShellContext";
 import { messageOf, useAsync } from "./useAsync";
 
 /** How often the page re-reads the question round while work is running. */
 const POLL_MS = 2000;
-/** How long an answer's re-analysis is waited for: five minutes of polls. */
-const MAX_REANALYSIS_POLLS = 150;
 /** Polls to wait, once the new analysis is in, for the round it opens. */
 const ROUND_GRACE_POLLS = 2;
 
-/** What an answer is waiting on: the analysis and round it replaces. */
+/** What an answer is waiting on: the round its re-analysis replaces. */
 interface Reanalysis {
-  assessmentId: string | null;
   roundId: string | null;
 }
 
@@ -44,7 +42,8 @@ interface Reanalysis {
  * Questions are written by a background round on the user's key, after a sync
  * or upload and after every analysis (ADR 0012). The page polls the newest
  * round while it is generating, and while an answer's re-analysis runs, and
- * shows a status bar until the work is done (ADR 0006).
+ * shows a status bar until the work is done (ADR 0006). Whether that analysis
+ * is still running is the recorded run the shell already polls (ADR 0018).
  */
 export function FollowUpQuestions({
   onAnswered,
@@ -53,6 +52,12 @@ export function FollowUpQuestions({
   onAnswered?: () => void;
 }) {
   const { status, navigate, refresh } = useShell();
+  const { activity, refresh: refreshActivity } = useActivity();
+  // Read inside the polling loop, which should not restart on every answer.
+  const analysisRun = useRef(activity?.analysis ?? null);
+  useEffect(() => {
+    analysisRun.current = activity?.analysis ?? null;
+  }, [activity]);
   const model = modelName(status.credential);
   const questions = useAsync<Question[]>(
     () => api.items<QuestionPage>("/questions"),
@@ -65,7 +70,6 @@ export function FollowUpQuestions({
   const [round, setRound] = useState<QuestionStatus | null>(null);
   const [roundLoaded, setRoundLoaded] = useState(false);
   const [reanalysis, setReanalysis] = useState<Reanalysis | null>(null);
-  const [slow, setSlow] = useState(false);
   const [poll, setPoll] = useState(0);
   const [answering, setAnswering] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +77,6 @@ export function FollowUpQuestions({
   const [refreshed, setRefreshed] = useState(false);
 
   const wasGenerating = useRef(false);
-  const reanalysisPolls = useRef(0);
   const analysedPolls = useRef(0);
 
   const generating = round?.status === "generating";
@@ -87,14 +90,6 @@ export function FollowUpQuestions({
       async () => {
         try {
           let waiting = reanalysis;
-          let analysed = false;
-          if (waiting) {
-            const latest = await api.get<Assessment | null>(
-              "/assessments/latest",
-            );
-            if (cancelled) return;
-            analysed = latest !== null && latest.id !== waiting.assessmentId;
-          }
           const next = await api.get<QuestionStatus | null>(
             "/questions/status",
           );
@@ -103,19 +98,16 @@ export function FollowUpQuestions({
           setRoundLoaded(true);
 
           if (waiting) {
-            reanalysisPolls.current += 1;
-            if (analysed) analysedPolls.current += 1;
+            if (!isBusy(analysisRun.current)) analysedPolls.current += 1;
             const opened = next !== null && next.id !== waiting.roundId;
             if (opened || analysedPolls.current > ROUND_GRACE_POLLS) {
-              // The analysis is in, and either its round has opened or none
-              // was needed. From here the round's own status drives polling.
+              // The analysis has ended, and either its round has opened or
+              // none was needed. From here the round's own status drives
+              // polling.
               waiting = null;
               void assessment.reload();
-            } else if (reanalysisPolls.current >= MAX_REANALYSIS_POLLS) {
-              waiting = null;
-              setSlow(true);
+              setReanalysis(null);
             }
-            if (waiting === null) setReanalysis(null);
           }
 
           const nowGenerating = next?.status === "generating";
@@ -146,20 +138,15 @@ export function FollowUpQuestions({
     setAnswering(id);
     setError(null);
     setRefreshed(false);
-    setSlow(false);
     try {
       await api.post(`/questions/${id}/answer`, { answer: value });
       setAnswered((count) => count + 1);
-      // The answer re-runs the analysis, which ends in a new round.
-      reanalysisPolls.current = 0;
+      // The answer re-runs the analysis, which ends in a new round. It is
+      // recorded as running before the answer returns, so the shell sees it
+      // on this refresh.
       analysedPolls.current = 0;
-      setReanalysis(
-        (current) =>
-          current ?? {
-            assessmentId: assessment.data?.id ?? null,
-            roundId: round?.id ?? null,
-          },
-      );
+      await refreshActivity();
+      setReanalysis((current) => current ?? { roundId: round?.id ?? null });
       await Promise.all([questions.reload(), refresh()]);
       onAnswered?.();
     } catch (caught) {
@@ -178,6 +165,7 @@ export function FollowUpQuestions({
     .filter((d) => d !== undefined);
   const failed = !working && round?.status === "failed" ? round : null;
   const rerunning = reanalysis !== null && !generating;
+  const rerunFailed = activity?.analysis?.status === "failed";
 
   return (
     <section className="panel panel-tight" aria-label="Fill the gaps">
@@ -218,7 +206,14 @@ export function FollowUpQuestions({
       </span>
 
       <ErrorNote error={error} />
-      {answered > 0 && !working && !slow && (
+      {answered > 0 && !working && rerunFailed && (
+        <ErrorNote
+          error={`Your answer is saved, but the analysis did not re-run: ${
+            activity?.analysis?.error?.message ?? "it stopped before finishing"
+          }`}
+        />
+      )}
+      {answered > 0 && !working && !rerunFailed && (
         <Done>
           {answered} answered — your analysis has re-run with{" "}
           {answered === 1 ? "it" : "them"}.
@@ -230,12 +225,6 @@ export function FollowUpQuestions({
             ? "New questions are ready below."
             : "Nothing left to ask — your evidence covers every skill well enough."}
         </Done>
-      )}
-      {slow && (
-        <p className="subcopy" role="status">
-          The analysis is taking longer than usual. Your skill report and these
-          questions update when it finishes — check back in a few minutes.
-        </p>
       )}
 
       {working && (

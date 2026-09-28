@@ -17,6 +17,7 @@ from advisor.assessment.domain import (
 )
 from advisor.assessment.factory import create_assessment_service
 from advisor.assessment.service import (
+    AnalysisRunView,
     AssessmentService,
     AssessmentView,
     DimensionView,
@@ -30,6 +31,7 @@ __all__ = [
     "DEFAULT_MATCHES",
     "MAX_MATCHES",
     "MIN_MATCHES",
+    "AnalysisRunView",
     "AssessmentService",
     "AssessmentView",
     "DimensionView",

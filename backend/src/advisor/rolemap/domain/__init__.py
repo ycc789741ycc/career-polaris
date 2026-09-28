@@ -1,4 +1,6 @@
 from advisor.rolemap.domain.entities import (
+    BuildRun,
+    BuildRunStatus,
     LineageEntry,
     Role,
     RoleMapSetting,
@@ -22,6 +24,8 @@ from advisor.rolemap.domain.identity import (
     reconcile,
 )
 from advisor.rolemap.domain.repositories import (
+    BuildRunFilter,
+    BuildRunRepository,
     LineageEntryFilter,
     LineageEntryRepository,
     OwnerRoleMap,
@@ -55,6 +59,10 @@ __all__ = [
     "MIN_ROLE_COUNT",
     "SAME_ROLE_THRESHOLD",
     "BarBasis",
+    "BuildRun",
+    "BuildRunFilter",
+    "BuildRunRepository",
+    "BuildRunStatus",
     "HiringBar",
     "LineageEntry",
     "LineageEntryFilter",

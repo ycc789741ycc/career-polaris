@@ -204,3 +204,110 @@ async def test_lineage_retires_what_is_gone_and_announces_splits() -> None:
     expected.append(RolesReclustered(owner_id=OWNER, roles=2))
     assert uow.store.events == expected
     assert all(isinstance(e, RoleLineage) for e in splits)
+
+
+# --- builds (ADR 0006, ADR 0018) -------------------------------------------
+
+
+async def test_a_build_asked_for_now_runs_and_is_queued_once() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+
+    first = await service.request_build(OWNER, wait=False)
+    again = await service.request_build(OWNER, wait=False)
+
+    assert first.should_queue and first.build.status == "running"
+    assert not again.should_queue and again.build.id == first.build.id
+
+
+async def test_a_build_asked_for_during_an_analysis_waits_until_it_is_started() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+
+    waiting = await service.request_build(OWNER, wait=True)
+    assert not waiting.should_queue and waiting.build.status == "waiting"
+    assert (await service.request_build(OWNER, wait=True)).build.id == waiting.build.id
+
+    started = await service.start_waiting(OWNER)
+
+    assert started is not None and started.id == waiting.build.id
+    assert started.status == "running" and started.started_at is not None
+    assert await service.start_waiting(OWNER) is None
+
+
+async def test_asking_again_once_nothing_is_running_starts_the_waiting_build() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    waiting = await service.request_build(OWNER, wait=True)
+
+    now = await service.request_build(OWNER, wait=False)
+
+    assert now.should_queue and now.build.id == waiting.build.id
+    assert now.build.status == "running"
+
+
+async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    requested = await service.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+        return []
+
+    monkeypatch.setattr(service, "recluster", recluster)
+
+    assert await service.build(OWNER, requested.build.id) == []
+
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and latest.status == "ready" and latest.finished_at is not None
+    assert (await service.request_build(OWNER, wait=False)).build.id != requested.build.id
+
+
+async def test_a_failed_build_is_recorded_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    requested = await service.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+        raise ValidationError("no market chosen")
+
+    monkeypatch.setattr(service, "recluster", recluster)
+
+    assert await service.build(OWNER, requested.build.id) == []
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == (
+        "failed",
+        "validation_failed",
+    )
+
+
+async def test_a_build_that_stops_unexpectedly_is_recorded_and_still_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    requested = await service.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(service, "recluster", recluster)
+
+    with pytest.raises(RuntimeError):
+        await service.build(OWNER, requested.build.id)
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("failed", "internal")
+
+
+async def test_a_waiting_build_is_not_run_by_its_job() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    waiting = await service.request_build(OWNER, wait=True)
+
+    assert await service.build(OWNER, waiting.build.id) == []
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and latest.status == "waiting"
+
+
+async def test_builds_are_per_user() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    mine = await service.request_build(OWNER, wait=False)
+
+    theirs = await service.request_build(OTHER, wait=False)
+
+    assert theirs.should_queue and theirs.build.id != mine.build.id

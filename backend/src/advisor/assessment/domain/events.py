@@ -18,6 +18,20 @@ class AssessmentCompleted:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisFinished:
+    """An analysis run stopped running, with a result or without one.
+
+    Recorded in the same transaction that closes the run, so a role map waiting
+    on it is released only once the run no longer counts as running (ADR 0018).
+    """
+
+    owner_id: uuid.UUID
+    run_id: uuid.UUID
+    status: str
+    error_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DimensionsChanged:
     owner_id: uuid.UUID
     added_or_renamed: int
@@ -45,5 +59,10 @@ class RoleFitsComputed:
 
 
 AssessmentEvent = (
-    AssessmentCompleted | DimensionsChanged | QuestionsRaised | QuestionAnswered | RoleFitsComputed
+    AssessmentCompleted
+    | AnalysisFinished
+    | DimensionsChanged
+    | QuestionsRaised
+    | QuestionAnswered
+    | RoleFitsComputed
 )
