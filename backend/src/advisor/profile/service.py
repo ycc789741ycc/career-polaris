@@ -240,6 +240,7 @@ class ProfileService:
             drafts,
             source_connection_id=connection_id,
             retired_refs=connector.retired_refs,
+            replaced_refs=connector.replaced_refs,
         )
 
         async with self._uow.for_owner(owner_id) as mine:
@@ -474,20 +475,26 @@ class ProfileService:
         source_connection_id: uuid.UUID | None = None,
         resume_file_id: uuid.UUID | None = None,
         retired_refs: tuple[str, ...] = (),
+        replaced_refs: tuple[str, ...] = (),
     ) -> int:
         """Upsert by ``external_ref`` so a re-sync updates rather than duplicates.
 
         Facts matching ``retired_refs`` — shapes the source's connector no
         longer writes — are deleted first, so old and new shapes never both count.
+        Facts matching ``replaced_refs`` that are not among ``drafts`` are
+        deleted too: the source no longer backs them.
         Bumps the profile version and records ``ProfileUpdated`` in the same
         transaction. Per domain section 2.9 this does not start an analysis —
         the user asks for that explicitly.
         """
-        if not drafts and not retired_refs:
+        if not drafts and not retired_refs and not replaced_refs:
             return 0
 
         async with self._uow.for_owner(owner_id) as mine:
-            retired = await _retire(mine, source, retired_refs)
+            written = {d.external_ref for d in drafts}
+            retired = await _retire(mine, source, retired_refs) + await _retire(
+                mine, source, replaced_refs, keep=written
+            )
             if not drafts and not retired:
                 return 0
 
@@ -541,14 +548,24 @@ class ProfileService:
             return len(drafts)
 
 
-async def _retire(mine: OwnerProfile, source: EvidenceSource, patterns: tuple[str, ...]) -> int:
-    """Delete a source's facts whose ``external_ref`` matches any of the glob ``patterns``."""
+async def _retire(
+    mine: OwnerProfile,
+    source: EvidenceSource,
+    patterns: tuple[str, ...],
+    *,
+    keep: frozenset[str] | set[str] = frozenset(),
+) -> int:
+    """Delete a source's facts whose ``external_ref`` matches any of the glob ``patterns``.
+
+    A fact whose ``external_ref`` is in ``keep`` stays.
+    """
     if not patterns:
         return 0
     stale = [
         e
         for e in await mine.evidence.get_list(EvidenceFilter(source=source))
-        if any(fnmatchcase(e.external_ref, pattern) for pattern in patterns)
+        if e.external_ref not in keep
+        and any(fnmatchcase(e.external_ref, pattern) for pattern in patterns)
     ]
     for evidence in stale:
         await mine.evidence.delete(evidence.id)

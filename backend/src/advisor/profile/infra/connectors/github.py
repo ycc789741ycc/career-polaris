@@ -40,6 +40,7 @@ class GitHubConnector:
     # them, so the same work never counts once as merged pull requests and
     # again as commits.
     retired_refs: tuple[str, ...] = ("github:merged:*", "github:pr:*")
+    replaced_refs: tuple[str, ...] = ()
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")

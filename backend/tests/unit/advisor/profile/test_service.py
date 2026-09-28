@@ -37,9 +37,11 @@ class FakeConnector:
         fails: bool = False,
         account: str | None = "octo",
         retired_refs: tuple[str, ...] = (),
+        replaced_refs: tuple[str, ...] = (),
     ) -> None:
         self.drafts = drafts or []
         self.retired_refs = retired_refs
+        self.replaced_refs = replaced_refs
         self.fails = fails
         self.account = account
         self.tokens: list[str] = []
@@ -183,6 +185,34 @@ async def test_a_retired_pattern_can_match_in_the_middle_of_a_ref() -> None:
 
     snapshot = await profile.snapshot(OWNER)
     assert [e.reference for e in snapshot.evidence] == ["https://github.test/jira:c1:epic:PAY-1"]
+
+
+async def test_a_sync_deletes_replaced_facts_it_no_longer_returns() -> None:
+    """A Jira ticket reopened since the last sync stops being evidence."""
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector(
+        [_draft("jira:issue:1"), _draft("jira:issue:2"), _draft("jira:c1:throughput")],
+        replaced_refs=("jira:issue:*",),
+    )
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+    await profile.record_answer(OWNER, question_id="q1", question="Led it?", answer="Yes")
+
+    connector.drafts = [_draft("jira:issue:2")]
+    await profile.sync_connection(OWNER, "github")
+
+    snapshot = await profile.snapshot(OWNER)
+    assert sorted(e.reference for e in snapshot.evidence) == [
+        "Your answer",
+        "https://github.test/jira:c1:throughput",
+        "https://github.test/jira:issue:2",
+    ]
+    assert uow.store.events[-2] == ProfileUpdated(
+        owner_id=OWNER, source=EvidenceSource.GITHUB, version=snapshot.version, count=2
+    )
 
 
 async def test_a_sync_that_only_retires_facts_still_bumps_the_version() -> None:

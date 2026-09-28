@@ -71,13 +71,21 @@ async def test_github_without_a_login_is_refused() -> None:
 SEARCH = f"{API}/ex/jira/cloud-1/rest/api/3/search/jql"
 
 
-def _issue(key: str, *, resolved: str | None = None, updated: str | None = None) -> Any:
+DONE = {"name": "Done", "statusCategory": {"key": "done"}}
+VERIFYING = {"name": "To be verified", "statusCategory": {"key": "indeterminate"}}
+IN_PROGRESS = {"name": "In Progress", "statusCategory": {"key": "indeterminate"}}
+TO_DO = {"name": "To Do", "statusCategory": {"key": "new"}}
+
+
+def _issue(
+    key: str, *, resolved: str | None = None, updated: str | None = None, status: Any = None
+) -> Any:
     return {
         "id": key,
         "key": key,
         "fields": {
             "summary": f"Work on {key}",
-            "status": {"name": "Done" if resolved else "In Progress"},
+            "status": status or (DONE if resolved else VERIFYING),
             "resolutiondate": resolved,
             "updated": updated,
         },
@@ -331,3 +339,58 @@ async def test_a_jira_issue_without_a_key_names_no_epic() -> None:
 
 async def test_jira_retires_the_project_tallies_epics_replaced() -> None:
     assert JiraConnector(API).retired_refs == ("jira:*:project:*",)
+
+
+async def test_jira_replaces_its_issues_and_epics_on_every_sync() -> None:
+    assert JiraConnector(API).replaced_refs == ("jira:issue:*", "jira:*:epic:*")
+
+
+def _with(key: str, status: Any) -> Any:
+    return _issue(key, updated="2026-06-03", status=status)
+
+
+async def test_only_done_or_to_be_verified_tickets_are_evidence() -> None:
+    closed = {"name": "Closed", "statusCategory": {"key": "done"}}
+    shouting = {"name": "TO BE VERIFIED", "statusCategory": {"key": "indeterminate"}}
+    client = JqlClient(
+        {
+            MINE: [
+                [
+                    _with("PAY-1", DONE),
+                    _with("PAY-2", VERIFYING),
+                    _with("PAY-3", closed),
+                    _with("PAY-4", shouting),
+                    _with("PAY-5", IN_PROGRESS),
+                    _with("PAY-6", TO_DO),
+                ]
+            ]
+        }
+    )
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    items = sorted(d.reference for d in drafts if d.external_ref.startswith("jira:issue:"))
+    assert items == ["Jira · PAY-1", "Jira · PAY-2", "Jira · PAY-3", "Jira · PAY-4"]
+    throughput = next(d for d in drafts if d.external_ref == "jira:cloud-1:throughput")
+    assert (throughput.tally, throughput.fact) == (
+        4,
+        "4 finished issues: 2 done, 2 to be verified.",
+    )
+
+
+async def test_an_unfinished_epic_is_no_work_of_its_own_but_still_names_its_stories() -> None:
+    open_epic = _work("PAY-1", kind=EPIC_TYPE)
+    open_epic["fields"]["status"] = IN_PROGRESS
+    client = JqlClient({MINE: [[open_epic, _work("PAY-2", parent=LEDGER)]]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    shapes = {d.external_ref: (d.tally, d.subject) for d in drafts}
+    assert shapes == {
+        "jira:cloud-1:throughput": (1, None),
+        "jira:cloud-1:epic:PAY-1": (1, "PAY-1 Ledger rewrite"),
+        "jira:issue:PAY-2": (None, "PAY-1 Ledger rewrite"),
+    }
+
+
+async def test_a_site_with_nothing_finished_gives_no_evidence() -> None:
+    client = JqlClient({MINE: [[_with("PAY-1", IN_PROGRESS), _with("PAY-2", TO_DO)]]})
+    assert await JiraConnector(API).fetch(client, "t") == []  # type: ignore[arg-type]
