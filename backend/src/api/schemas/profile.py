@@ -100,7 +100,6 @@ class Evidence(ApiModel):
     reference: str
     fact: str
     observed_on: date | None
-    confidence: float
     # One piece of work, or a tally over many ("12 commits authored in x").
     granularity: Literal["item", "summary"]
     # How many items a summary counts; null on an item.
@@ -116,7 +115,6 @@ class Evidence(ApiModel):
             reference=evidence.reference,
             fact=evidence.fact,
             observed_on=evidence.observed_on,
-            confidence=evidence.confidence,
             granularity=str(evidence.granularity),
             tally=evidence.tally,
             subject=evidence.subject,

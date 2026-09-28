@@ -23,7 +23,6 @@ class EvidenceDraft:
     reference: str
     fact: str
     observed_on: date | None
-    confidence: float
     granularity: EvidenceGranularity = EvidenceGranularity.ITEM
     tally: int | None = None
     subject: str | None = None

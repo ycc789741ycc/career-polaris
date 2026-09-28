@@ -129,7 +129,6 @@ class JiraConnector:
                     reference=f"Jira · {site_name}",
                     fact=f"{len(issues)} finished issues: {done} done, {verifying} to be verified.",
                     observed_on=_latest(_date_of(i) for i in issues),
-                    confidence=0.85,
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=len(issues),
                 )
@@ -152,7 +151,6 @@ class JiraConnector:
                         reference=f"Jira · {site_name} · {epic.key}",
                         fact=f"{count} issues worked in the epic {epic.key}: {epic.summary}.",
                         observed_on=worked[epic],
-                        confidence=0.8,
                         granularity=EvidenceGranularity.SUMMARY,
                         tally=count,
                         subject=epic.label,
@@ -171,7 +169,6 @@ class JiraConnector:
                         reference=f"Jira · {issue.get('key')}",
                         fact=summary,
                         observed_on=_date_of(issue),
-                        confidence=0.75,
                         subject=home.label if home else None,
                     )
                 )

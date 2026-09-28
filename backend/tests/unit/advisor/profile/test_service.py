@@ -64,7 +64,6 @@ def _draft(ref: str, fact: str = "Shipped the thing") -> EvidenceDraft:
         reference=f"https://github.test/{ref}",
         fact=fact,
         observed_on=date(2026, 9, 1),
-        confidence=0.9,
     )
 
 

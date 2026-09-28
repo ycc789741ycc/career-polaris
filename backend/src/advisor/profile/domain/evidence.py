@@ -57,7 +57,6 @@ class Evidence:
     reference: str
     fact: str
     observed_on: date | None
-    confidence: float
     granularity: EvidenceGranularity = EvidenceGranularity.ITEM
     tally: int | None = None
     subject: str | None = None
@@ -67,7 +66,6 @@ class Evidence:
     updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        _check_confidence(self.confidence)
         _check_tally(self.granularity, self.tally)
 
     @classmethod
@@ -80,7 +78,6 @@ class Evidence:
         reference: str,
         fact: str,
         observed_on: date | None,
-        confidence: float,
         granularity: EvidenceGranularity = EvidenceGranularity.ITEM,
         tally: int | None = None,
         subject: str | None = None,
@@ -95,7 +92,6 @@ class Evidence:
             reference=reference,
             fact=fact,
             observed_on=observed_on,
-            confidence=confidence,
             granularity=granularity,
             tally=tally,
             subject=subject,
@@ -109,18 +105,15 @@ class Evidence:
         reference: str,
         fact: str,
         observed_on: date | None,
-        confidence: float,
         granularity: EvidenceGranularity,
         tally: int | None,
         subject: str | None,
     ) -> None:
         """A re-sync brings the fact up to date; where it came from stays."""
-        _check_confidence(confidence)
         _check_tally(granularity, tally)
         self.reference = reference
         self.fact = fact
         self.observed_on = observed_on
-        self.confidence = confidence
         self.granularity = granularity
         self.tally = tally
         self.subject = subject
@@ -133,11 +126,6 @@ class Evidence:
         removing the newest takes it away.
         """
         self.resume_file_id = resume_file_id
-
-
-def _check_confidence(confidence: float) -> None:
-    if not 0.0 <= confidence <= 1.0:
-        raise ValueError("evidence confidence must be between 0 and 1")
 
 
 def _check_tally(granularity: EvidenceGranularity, tally: int | None) -> None:

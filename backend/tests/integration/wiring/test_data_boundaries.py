@@ -25,9 +25,9 @@ async def test_row_level_security_isolates_two_users(
         await session.execute(
             text(
                 "INSERT INTO profile.evidence "
-                "(id, owner_id, source, external_ref, reference, fact, confidence, "
+                "(id, owner_id, source, external_ref, reference, fact, "
                 " created_at, updated_at) "
-                "VALUES (:id, :owner, 'github', 'ref-1', 'GitHub · x', 'A fact', 0.9, "
+                "VALUES (:id, :owner, 'github', 'ref-1', 'GitHub · x', 'A fact', "
                 " now(), now())"
             ),
             {"id": uuid.uuid4(), "owner": account},
@@ -50,9 +50,9 @@ async def test_a_query_without_app_user_id_sees_nothing_in_the_owner_zone(
         await session.execute(
             text(
                 "INSERT INTO profile.evidence "
-                "(id, owner_id, source, external_ref, reference, fact, confidence, "
+                "(id, owner_id, source, external_ref, reference, fact, "
                 " created_at, updated_at) "
-                "VALUES (:id, :owner, 'github', 'ref-2', 'GitHub · x', 'A fact', 0.9, "
+                "VALUES (:id, :owner, 'github', 'ref-2', 'GitHub · x', 'A fact', "
                 " now(), now())"
             ),
             {"id": uuid.uuid4(), "owner": account},
@@ -72,9 +72,9 @@ async def test_a_user_cannot_write_a_row_owned_by_someone_else(
             await session.execute(
                 text(
                     "INSERT INTO profile.evidence "
-                    "(id, owner_id, source, external_ref, reference, fact, confidence, "
+                    "(id, owner_id, source, external_ref, reference, fact, "
                     " created_at, updated_at) "
-                    "VALUES (:id, :owner, 'github', 'forged', 'x', 'y', 0.5, now(), now())"
+                    "VALUES (:id, :owner, 'github', 'forged', 'x', 'y', now(), now())"
                 ),
                 {"id": uuid.uuid4(), "owner": other_account},
             )

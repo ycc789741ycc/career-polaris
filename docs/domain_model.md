@@ -138,7 +138,7 @@ The first v2 draft had the Ingester calling the LLM. **Decision 18: ingestion ne
 - The diagram now reflects this: the Ingester → LLM arrow is gone. It still needs LLM arrows from the Gap Planner and Resume Advisor (2.11).
 
 ### 2.7 Evidence, snapshots and follow-up questions
-- **Evidence** `{ source, reference, fact, observedAt, confidence }` makes every score explainable and lets résumé bullets be traced to real work. **CareerProfile** = career timeline + Evidence set, facts only.
+- **Evidence** `{ source, reference, fact, observedAt }` makes every score explainable and lets résumé bullets be traced to real work. **CareerProfile** = career timeline + Evidence set, facts only. Evidence carries no confidence of its own: confidence belongs to a dimension, and says how much evidence its score rests on.
 - **The Assessment and RoleFit are immutable snapshots** that reference the profile version and market snapshot they came from, and record the model used. Saved résumés and plans can say what they were based on, and stale results can be detected.
 - **Confidence per dimension.** v2's step 2a ("check evidences in profile are enough or not") is this rule: when a dimension's confidence is below a threshold, the Analyzer raises **FollowUpQuestions** (2b). Answers come back as self-reported Evidence, not as an upload, so in the diagram the Questions → Ingester arrow means "answers are ingested as Evidence".
 
@@ -318,7 +318,7 @@ flowchart LR
 | Ingester | The process that turns connector data, uploaded résumés and answers into Evidence, with deterministic rules and no AI | Profile |
 | SourceConnection | An authorized link to GitHub, Jira, LinkedIn, or a personal-site URL; has scopes and sync state | Profile |
 | ResumeFile | An uploaded résumé (PDF/DOCX); parsed into Evidence and usable as a revision base | Profile |
-| Evidence | One cited fact about the user's work (source, reference, fact, date, confidence) | Profile |
+| Evidence | One cited fact about the user's work (source, reference, fact, date) | Profile |
 | Answer | A user's reply to a FollowUpQuestion, stored as self-reported Evidence | Profile |
 | CareerProfile | Career timeline plus all Evidence for one user; facts only, one per user | Profile |
 | CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or public job API); `origin` is `baseline` (platform-curated) or `demand` (a subscription or market asked for it), never who asked | Market |

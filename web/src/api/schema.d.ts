@@ -1325,8 +1325,6 @@ export interface components {
         };
         /** Evidence */
         Evidence: {
-            /** Confidence */
-            confidence: number;
             /** Fact */
             fact: string;
             /**

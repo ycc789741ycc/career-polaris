@@ -11,7 +11,6 @@ function facts(source: string, count: number): Evidence[] {
     reference: source,
     fact: "A fact",
     observed_on: null,
-    confidence: 0.8,
     granularity: "item",
     tally: null,
     subject: null,

@@ -14,7 +14,6 @@ function fact(overrides: Partial<Evidence>): Evidence {
     reference: "GitHub · acme/ledger#1",
     fact: "Split the ledger writer",
     observed_on: "2026-05-12",
-    confidence: 0.8,
     granularity: "item",
     tally: null,
     subject: "acme/ledger",

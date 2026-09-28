@@ -73,7 +73,6 @@ async def test_profile_entities_round_trip_and_stay_with_their_owner(
                 reference="https://github.test/pr/1",
                 fact="Shipped",
                 observed_on=date(2026, 9, 1),
-                confidence=0.9,
                 granularity=EvidenceGranularity.SUMMARY,
                 tally=12,
                 subject="acme/ledger",

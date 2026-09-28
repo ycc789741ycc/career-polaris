@@ -28,7 +28,6 @@ def _draft(ref: str) -> EvidenceDraft:
         reference=f"GitHub · {ref}",
         fact=f"Work behind {ref}",
         observed_on=date(2026, 9, 1),
-        confidence=0.8,
     )
 
 
