@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>04 Advisor — Fill the gap</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&amp;family=Figtree:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:#201e1d}
+a{color:#8c491a}a:hover{color:#643312}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1500px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<dc-import name="Sidebar" current="advisor" hint-size="246px,100%"></dc-import>
+<main style="flex-grow: 1; min-width: 0">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
+<div>
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8c491a; font-weight: 700; margin-bottom: 7px">Plan &amp; résumé</div>
+<h1 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 38px; line-height: 1.1">Closing the distance to one role</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #e1eecc; color: #3d472b"><span style="width: 8px; height: 8px; border-radius: 999px; background: currentColor"></span>claude-sonnet-5</span>
+<button type="button" aria-label="Account maya.chen@example.com" style="width: 44px; height: 44px; border: 0; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-family: Caprasimo, system-ui, sans-serif; font-size: 14px; cursor: pointer">MC</button>
+</div>
+</header>
+
+<div style="padding: 4px 34px 64px; display: flex; flex-direction: column; gap: 20px">
+<section aria-label="Your target role" style="display: flex; align-items: center; gap: 24px; background: #ffe1d0; border: 2px solid #c67139; border-radius: 28px; padding: 20px 24px">
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #643312">Your target role</div>
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 30px; line-height: 1.15; margin-top: 4px; color: #201e1d">Staff Backend Engineer</div>
+<div style="font-size: 14.5px; margin-top: 4px; color: #474238">at <b style="color: #201e1d">Northwind Pay</b> · Berlin · Staff Engineer, Ledger posting</div>
+<div style="font-size: 13px; margin-top: 8px; color: #643312">Everything on this page is measured against this one role.</div>
+</div>
+<div style="display: flex; gap: 10px; flex: 0 0 auto">
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 16px; min-width: 110px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: #645c50">Fit today</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 22px; margin-top: 2px">86%</div></div>
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 16px; min-width: 110px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: #645c50">Band</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 22px; margin-top: 2px">€165–190k</div></div>
+</div>
+<a href="Roles.dc.html" style="flex: 0 0 auto; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.2); background: #f9f4ed; color: #643312; font: 600 14px Figtree, sans-serif; text-decoration: none">Change role</a>
+</section>
+
+<nav aria-label="Advisor steps" style="display: flex; align-items: center; gap: 14px">
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">First</span>
+<a href="Gaps.dc.html" aria-current="page" style="padding: 10px 20px; border-radius: 999px; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8; font: 600 14px Figtree, sans-serif; text-decoration: none">Fill the gap</a>
+</div>
+<svg width="28" height="16" viewBox="0 0 28 16" fill="none" stroke="#645c50" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h22M18 3l6 5-6 5"></path></svg>
+<div style="display: flex; align-items: center; gap: 8px; padding: 5px 5px 5px 16px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3)">
+<span style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Then, either</span>
+<a href="Plan.dc.html" style="padding: 10px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d; font: 600 14px Figtree, sans-serif; text-decoration: none">Gap plan</a>
+<a href="Resume.dc.html" style="padding: 10px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d; font: 600 14px Figtree, sans-serif; text-decoration: none">Résumé</a>
+</div>
+</nav>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Between your evidence and Staff Backend Engineer · Northwind Pay</div>
+<p style="font-size: 14px; line-height: 1.55; margin: 8px 0 0">claude-sonnet-5 compared your sources with what this role asks for and wrote a few questions for each gap. Answer what you can, then submit. Anything you skip stays a gap.</p>
+</div>
+
+<div>
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<div style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">1 · Own incidents end to end</span><span style="padding: 3px 10px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 12px; font-weight: 700">Partial</span></div>
+<span style="font-size: 12.5px; font-weight: 700; color: #8c491a">up to +9 fit pts</span>
+</div>
+<div style="padding: 14px 0; border-bottom: 1px solid rgba(32,30,29,0.12);">
+<div style="display: flex; gap: 14px; align-items: baseline">
+<span style="font-family: Caprasimo, system-ui, sans-serif; color: #8c491a; font-size: 14px">01</span>
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 14.5px; font-weight: 600">Have you been on an on-call rotation for a production service?</div>
+<div style="font-size: 13px; color: #474238; margin-top: 6px">Asked because: Incident response rests on one post-incident review.</div>
+<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap">
+<button type="button" aria-pressed="true" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8">Yes, as primary</button>
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">As secondary</button>
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">Never</button>
+</div>
+</div>
+</div>
+</div>
+<div style="padding: 14px 0;">
+<div style="display: flex; gap: 14px; align-items: baseline">
+<span style="font-family: Caprasimo, system-ui, sans-serif; color: #8c491a; font-size: 14px">02</span>
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 14.5px; font-weight: 600">Have you led the response to a production incident, coordinating rather than only fixing? Which one?</div>
+<div style="font-size: 13px; color: #474238; margin-top: 6px">Asked because: Staff postings ask for rotation ownership, not just reviews.</div>
+<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap">
+<button type="button" aria-pressed="true" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8">Yes</button>
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">Not yet</button>
+</div>
+<label for="gq2" style="position: absolute; left: -9999px">Which incident</label><textarea id="gq2" rows="2" style="width: 100%; box-sizing: border-box; margin-top: 12px; padding: 11px 16px; border-radius: 16px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif; resize: vertical">Led the Feb 2026 payment-write outage response: paged in, ran the bridge, restored in 38 min.</textarea>
+</div>
+</div>
+</div>
+</div>
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<div style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">2 · Lead a design across teams</span><span style="padding: 3px 10px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 12px; font-weight: 700">Partial</span></div>
+<span style="font-size: 12.5px; font-weight: 700; color: #8c491a">up to +6 fit pts</span>
+</div>
+<div style="padding: 14px 0; border-bottom: 1px solid rgba(32,30,29,0.12);">
+<div style="display: flex; gap: 14px; align-items: baseline">
+<span style="font-family: Caprasimo, system-ui, sans-serif; color: #8c491a; font-size: 14px">03</span>
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 14.5px; font-weight: 600">How many engineers did the largest design you led touch?</div>
+<div style="font-size: 13px; color: #474238; margin-top: 6px">Asked because: Technical leadership is scored from RFC authorship alone.</div>
+<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap">
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">1–3</button>
+<button type="button" aria-pressed="true" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8">4–10</button>
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">More than 10</button>
+</div>
+</div>
+</div>
+</div>
+<div style="padding: 14px 0;">
+<div style="display: flex; gap: 14px; align-items: baseline">
+<span style="font-family: Caprasimo, system-ui, sans-serif; color: #8c491a; font-size: 14px">04</span>
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 14.5px; font-weight: 600">Did another team build on a design you wrote? Which team, and what did they build?</div>
+<div style="font-size: 13px; color: #474238; margin-top: 6px">Asked because: The bar is a design other teams build on.</div>
+<label for="gq4" style="position: absolute; left: -9999px">Your answer</label><textarea id="gq4" rows="2" placeholder="e.g. The risk team moved their reads onto the ledger read path…" style="width: 100%; box-sizing: border-box; margin-top: 12px; padding: 11px 16px; border-radius: 16px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif; resize: vertical"></textarea>
+</div>
+</div>
+</div>
+</div>
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<div style="display: flex; gap: 10px; align-items: baseline"><span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">3 · Multi-region capacity planning</span><span style="padding: 3px 10px; border-radius: 999px; background: #f9f4ed; color: #474238; font-size: 12px; font-weight: 700">No evidence</span></div>
+<span style="font-size: 12.5px; font-weight: 700; color: #8c491a">up to +4 fit pts</span>
+</div>
+<div style="padding: 14px 0;">
+<div style="display: flex; gap: 14px; align-items: baseline">
+<span style="font-family: Caprasimo, system-ui, sans-serif; color: #8c491a; font-size: 14px">05</span>
+<div style="flex-grow: 1; min-width: 0">
+<div style="font-size: 14.5px; font-weight: 600">Have you planned capacity for a service running in more than one region?</div>
+<div style="font-size: 13px; color: #474238; margin-top: 6px">Asked because: Nothing in your sources speaks to it either way.</div>
+<div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap">
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">Yes</button>
+<button type="button" aria-pressed="true" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8">Partly</button>
+<button type="button" aria-pressed="false" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; cursor: pointer; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; color: #201e1d">No</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 20px; background: #ebddc5; border-radius: 28px; padding: 18px 22px">
+<div style="min-width: 0">
+<div style="font-size: 14.5px; font-weight: 700">4 of 5 answered</div>
+<div style="font-size: 13px; color: #474238; margin-top: 3px">Submitting adds your answers to Sources and updates the gap plan and résumé · about 3 calls on your key</div>
+</div>
+<button type="button" style="flex: 0 0 auto; padding: 12px 26px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 15px Figtree, sans-serif; cursor: pointer">Submit answers</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

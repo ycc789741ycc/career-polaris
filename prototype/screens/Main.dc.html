@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>01 Sources</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&amp;family=Figtree:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:#201e1d}
+a{color:#8c491a}a:hover{color:#643312}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1560px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<dc-import name="Sidebar" current="sources" hint-size="246px,100%"></dc-import>
+<main style="flex-grow: 1; min-width: 0">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
+<div>
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8c491a; font-weight: 700; margin-bottom: 7px">Profile</div>
+<h1 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 38px; line-height: 1.1">Bring in your real work</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #e1eecc; color: #3d472b"><span style="width: 8px; height: 8px; border-radius: 999px; background: currentColor"></span>claude-sonnet-5</span>
+<button type="button" aria-label="Account maya.chen@example.com" style="width: 44px; height: 44px; border: 0; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-family: Caprasimo, system-ui, sans-serif; font-size: 14px; cursor: pointer">MC</button>
+</div>
+</header>
+
+<div style="padding: 4px 34px 64px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start">
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<section aria-labelledby="loc-h" style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<h2 id="loc-h" style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 19px">Where you want to work</h2>
+<span style="font-size: 12.5px; font-weight: 700; color: #645c50">2 of 3 chosen</span>
+</div>
+<p style="font-size: 13.5px; line-height: 1.55; margin: 6px 0 12px; color: #474238">Pick up to 3 locations. The role map only searches postings in these places, and salary bands are shown for them.</p>
+<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px">
+<span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 14px; border-radius: 999px; background: #201e1d; color: #f5ead8; font-size: 13.5px; font-weight: 600">Berlin<button type="button" aria-label="Remove Berlin" style="width: 30px; height: 30px; border: 0; border-radius: 999px; background: transparent; color: #f5ead8; cursor: pointer; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></span>
+<span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 14px; border-radius: 999px; background: #201e1d; color: #f5ead8; font-size: 13.5px; font-weight: 600">Remote EU<button type="button" aria-label="Remove Remote EU" style="width: 30px; height: 30px; border: 0; border-radius: 999px; background: transparent; color: #f5ead8; cursor: pointer; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></span>
+</div>
+<div style="display: flex; gap: 10px">
+<label for="loc-input" style="position: absolute; left: -9999px">Add a location</label>
+<input id="loc-input" placeholder="City, country or Remote region…" style="flex-grow: 1; min-width: 0; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Add</button>
+</div>
+<p style="font-size: 12.5px; color: #645c50; margin: 8px 0 0">1 slot left. At 3, remove one to add another.</p>
+</section>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; gap: 14px; align-items: center">
+<div style="width: 42px; height: 42px; flex: 0 0 auto; border-radius: 999px; background: #e1eecc; color: #3d472b; display: flex; align-items: center; justify-content: center">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7M18 10.5c0 4-6 3-11 6"></path></svg>
+</div>
+<div style="flex-grow: 1">
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">GitHub</div>
+<div style="font-size: 13px; color: #474238">Code, reviews, RFCs</div>
+</div>
+<span style="padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #e1eecc; color: #3d472b">Connected</span>
+</div>
+<p style="font-size: 13.5px; line-height: 1.55; margin: 12px 0 14px; color: #474238">Commits, reviews and RFCs — the work a resume usually flattens.</p>
+<div style="display: flex; align-items: center; gap: 10px">
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Sync now</button>
+<button type="button" style="padding: 11px 8px; border-radius: 999px; border: 0; background: transparent; font: 600 14px Figtree, sans-serif; color: #b2622d; cursor: pointer">Disconnect</button>
+<span style="font-size: 12.5px; color: #645c50">last synced 26 Sep 2026</span>
+</div>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; gap: 14px; align-items: center">
+<div style="width: 42px; height: 42px; flex: 0 0 auto; border-radius: 999px; background: #ffe1d0; color: #643312; display: flex; align-items: center; justify-content: center">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 9-9 9-9-9z"></path><path d="M12 8l4 4-4 4-4-4z"></path></svg>
+</div>
+<div style="flex-grow: 1">
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">Jira</div>
+<div style="font-size: 13px; color: #474238">Delivery scope</div>
+</div>
+<span style="padding: 4px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #f9f4ed; color: #474238">Not connected</span>
+</div>
+<p style="font-size: 13.5px; line-height: 1.55; margin: 12px 0 14px; color: #474238">Cycle time, epic ownership and incident response — your scope.</p>
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Connect</button>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px">
+<div>
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 19px">Existing résumé</div>
+<div style="font-size: 13px; color: #474238; margin-top: 3px">maya-chen-2026.pdf — parsed</div>
+</div>
+<div style="display: flex; gap: 10px; flex: 0 0 auto">
+<button type="button" style="padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Upload PDF / DOCX</button>
+<a href="Strengths.dc.html" style="padding: 11px 18px; border-radius: 999px; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; text-decoration: none">Analyze with AI</a>
+</div>
+</div>
+
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 20px">
+<div style="background: #e1eecc; border-radius: 28px; padding: 24px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #3d472b; margin-bottom: 10px">What it found so far</div>
+<div role="img" aria-label="Facts by source: GitHub 118, Résumé 34, Your answers 6" style="display: flex; height: 18px; border-radius: 999px; overflow: hidden; gap: 2px">
+<div style="width: 75%; background: #b2622d"></div>
+<div style="width: 21%; background: #82796a"></div>
+<div style="width: 4%; background: #2e2b25"></div>
+</div>
+<div style="display: flex; gap: 18px; margin-top: 12px; font-size: 13px; color: #272e1b; flex-wrap: wrap">
+<span style="display: inline-flex; align-items: center; gap: 7px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #b2622d"></span>GitHub · 118</span>
+<span style="display: inline-flex; align-items: center; gap: 7px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #82796a"></span>Résumé · 34</span>
+<span style="display: inline-flex; align-items: center; gap: 7px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #2e2b25"></span>Your answers · 6</span>
+</div>
+<p style="font-size: 13.5px; line-height: 1.55; margin: 14px 0 0; color: #272e1b">158 facts, each traceable to where it came from. The bar shares out facts, not effort: one fact can be a single commit or a total of many.</p>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
+<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Where the work lives</h3>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin: 14px 0 8px">Commits by repository</div>
+<div style="display: flex; flex-direction: column; gap: 9px">
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px"><span>payments-api</span><span style="height: 12px; border-radius: 999px; background: #b2622d; width: 100%"></span><span style="text-align: right; font-weight: 700">412</span></div>
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px"><span>ledger-service</span><span style="height: 12px; border-radius: 999px; background: #b2622d; width: 62%"></span><span style="text-align: right; font-weight: 700">256</span></div>
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px"><span>infra-terraform</span><span style="height: 12px; border-radius: 999px; background: #b2622d; width: 34%"></span><span style="text-align: right; font-weight: 700">141</span></div>
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px"><span>design-docs</span><span style="height: 12px; border-radius: 999px; background: #b2622d; width: 12%"></span><span style="text-align: right; font-weight: 700">48</span></div>
+</div>
+<p style="font-size: 12.5px; color: #474238; margin: 12px 0 0">Pick a bar to list only its facts below.</p>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
+<h3 style="margin: 0 0 6px; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Evidence gathered</h3>
+<div role="group" aria-label="Filter by source" style="display: flex; gap: 7px; margin: 4px 0 10px; flex-wrap: wrap">
+<button type="button" aria-pressed="true" style="padding: 6px 14px; border-radius: 999px; border: 1px solid #201e1d; background: #201e1d; color: #f5ead8; font: 600 12.5px Figtree, sans-serif; cursor: pointer">All · 158</button>
+<button type="button" aria-pressed="false" style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; color: #201e1d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">GitHub · 118</button>
+<button type="button" aria-pressed="false" style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; color: #201e1d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Résumé · 34</button>
+<button type="button" aria-pressed="false" style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; color: #201e1d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Your answers · 6</button>
+</div>
+<p style="font-size: 13px; color: #474238; margin: 0 0 8px">The first 50 of 158 facts, grouped by source.</p>
+<table aria-label="Evidence gathered" style="width: 100%; border-collapse: collapse; font-size: 13.5px">
+<thead><tr><th style="text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #645c50; padding: 8px 10px 8px 0; border-bottom: 1px solid rgba(32,30,29,0.16)">Source</th><th style="text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #645c50; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.16)">Fact</th></tr></thead>
+<tbody>
+<tr><td style="padding: 10px 10px 10px 0; color: #645c50; border-bottom: 1px solid rgba(32,30,29,0.1); vertical-align: top">payments-api#1284</td><td style="padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">Led the idempotency-key rollout across payment writes</td></tr>
+<tr><td style="padding: 10px 10px 10px 0; color: #645c50; border-bottom: 1px solid rgba(32,30,29,0.1); vertical-align: top">ledger-service</td><td style="padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">256 commits over 14 months, mostly Go</td></tr>
+<tr><td style="padding: 10px 10px 10px 0; color: #645c50; border-bottom: 1px solid rgba(32,30,29,0.1); vertical-align: top">design-docs/rfc-017</td><td style="padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">Authored the RFC splitting ledger reads from writes</td></tr>
+<tr><td style="padding: 10px 10px 10px 0; color: #645c50; border-bottom: 1px solid rgba(32,30,29,0.1); vertical-align: top">Résumé · Acme Pay</td><td style="padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">Senior Backend Engineer, 2022 – present</td></tr>
+<tr><td style="padding: 10px 10px 10px 0; color: #645c50; vertical-align: top">Your answer</td><td style="padding: 10px 0">Mentored two engineers through their first on-call</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

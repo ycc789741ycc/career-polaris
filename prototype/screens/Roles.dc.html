@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>03 Role map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&amp;family=Figtree:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:#201e1d}
+a{color:#8c491a}a:hover{color:#643312}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1720px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<dc-import name="Sidebar" current="roles" hint-size="246px,100%"></dc-import>
+<main style="flex-grow: 1; min-width: 0; position: relative">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
+<div>
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8c491a; font-weight: 700; margin-bottom: 7px">Report</div>
+<h1 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 38px; line-height: 1.1">The roles worth your next six months</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #e1eecc; color: #3d472b"><span style="width: 8px; height: 8px; border-radius: 999px; background: currentColor"></span>claude-sonnet-5</span>
+<button type="button" aria-label="Account maya.chen@example.com" style="width: 44px; height: 44px; border: 0; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-family: Caprasimo, system-ui, sans-serif; font-size: 14px; cursor: pointer">MC</button>
+</div>
+</header>
+
+<div style="padding: 4px 34px 120px; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start">
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 12px">
+<div>
+<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Role market map</h3>
+<div style="font-size: 13px; color: #474238">Bubble size = fit. The 10 best-fit roles on the market, plus the ones you add.</div>
+</div>
+<span style="font-size: 12.5px; color: #645c50; text-align: right">Built after your strength analysis<br>26 Sep 2026 · 1,284 open postings in Berlin and Remote EU</span>
+</div>
+<svg viewBox="0 0 540 380" width="100%" role="img" aria-label="11 roles plotted by interview difficulty and salary, sized by how well they fit you: 10 recommended, 1 you added" style="display: block">
+<g stroke="rgba(32,30,29,0.14)">
+<line x1="60" x2="520" y1="20" y2="20"></line><line x1="60" x2="520" y1="97.5" y2="97.5"></line><line x1="60" x2="520" y1="175" y2="175"></line><line x1="60" x2="520" y1="252.5" y2="252.5"></line>
+</g>
+<line x1="60" x2="520" y1="330" y2="330" stroke="rgba(32,30,29,0.45)"></line>
+<g font-family="Figtree, sans-serif" font-size="11" fill="#645c50" text-anchor="end">
+<text x="50" y="24">€200k</text><text x="50" y="101">€175k</text><text x="50" y="179">€150k</text><text x="50" y="256">€125k</text><text x="50" y="334">€100k</text>
+</g>
+<g font-family="Figtree, sans-serif" font-size="11" fill="#645c50" text-anchor="middle">
+<text x="60" y="348">20</text><text x="191.4" y="348">40</text><text x="322.9" y="348">60</text><text x="454.3" y="348">80</text>
+</g>
+<text x="290" y="372" text-anchor="middle" font-family="Figtree, sans-serif" font-size="12" fill="#474238">Hiring bar — how hard the interview is</text>
+<text transform="translate(14 175) rotate(-90)" text-anchor="middle" font-family="Figtree, sans-serif" font-size="12" fill="#474238">Salary, midpoint of the band</text>
+<circle cx="191.4" cy="243.2" r="32" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="401.7" cy="88.2" r="30" fill="rgba(198,113,57,0.5)" stroke="#643312" stroke-width="3"></circle>
+<circle cx="309.7" cy="144" r="26" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="362.3" cy="119.2" r="21" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5" stroke-dasharray="4 3"></circle>
+<circle cx="349.1" cy="175" r="18" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="224.3" cy="261.8" r="15" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="388.6" cy="51" r="14" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5" stroke-dasharray="4 3"></circle>
+<circle cx="244" cy="190.5" r="24" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="257" cy="66.5" r="12" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5" stroke-dasharray="4 3"></circle>
+<circle cx="388.6" cy="221.5" r="13" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
+<circle cx="487" cy="35.5" r="16" fill="rgba(86,99,63,0.22)" stroke="#56633f" stroke-width="2.5"></circle>
+<g font-family="Figtree, sans-serif" font-size="11.5" font-weight="700" fill="#201e1d">
+<text x="191.4" y="292" text-anchor="middle">Backend Engineer II</text>
+<text x="440" y="84" text-anchor="start">Staff Backend</text>
+<text x="270" y="118" text-anchor="middle">Senior Platform</text>
+<text x="390" y="140" text-anchor="start">Data Infra</text>
+<text x="372" y="196" text-anchor="start">SRE</text>
+<text x="244" y="228" text-anchor="middle">Senior Backend</text>
+<text x="257" y="48" text-anchor="middle">Eng Manager</text>
+<text x="406" y="226" text-anchor="start">Solutions Architect</text>
+<text x="487" y="66" text-anchor="middle" fill="#3d472b">Principal · yours</text>
+</g>
+</svg>
+<p style="font-size: 12.5px; color: #474238; margin: 6px 0 0">Dashed outline: the hiring bar is an AI estimate, not yet reported. Green: a role you added.</p>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px; display: flex; flex-direction: column">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Selected role</div>
+<h3 style="margin: 8px 0 6px; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 27px">Staff Backend Engineer</h3>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 16px">
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Fit</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">81%</div></div>
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Band</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">160–196k</div></div>
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Openings</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">38</div></div>
+</div>
+<p style="font-size: 14.5px; line-height: 1.65; margin: 0 0 12px">Your ledger and payments work clears the systems bar outright. The distance is leadership across teams and incident ownership, which these postings screen for at staff level.</p>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin: 6px 0">Where you clear it / where you don't</div>
+<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #8c491a"></span><span style="font-size: 13.5px; flex-grow: 1">Incident response</span><span style="font-size: 12.5px; font-weight: 700; color: #8c491a">−23</span></div>
+<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #8c491a"></span><span style="font-size: 13.5px; flex-grow: 1">Tech leadership</span><span style="font-size: 12.5px; font-weight: 700; color: #8c491a">−15</span></div>
+<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #56633f"></span><span style="font-size: 13.5px; flex-grow: 1">Distributed data</span><span style="font-size: 12.5px; font-weight: 700; color: #56633f">+8</span></div>
+<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #56633f"></span><span style="font-size: 13.5px; flex-grow: 1">Backend systems</span><span style="font-size: 12.5px; font-weight: 700; color: #56633f">+14</span></div>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin: 16px 0 6px">No evidence at all for these</div>
+<p style="font-size: 13px; color: #474238; margin: 0 0 6px">Different from a low score: nothing in your profile speaks to them either way.</p>
+<ul style="font-size: 13.5px; margin: 0; padding-left: 18px"><li>Capacity planning for multi-region deployments</li></ul>
+<details style="margin-top: 16px"><summary style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; cursor: pointer">What this role asks for</summary>
+<ul style="font-size: 13.5px; margin: 8px 0 0; padding-left: 18px"><li>Designs systems spanning several teams <span style="color: #645c50">(expert)</span></li><li>Owns production reliability <span style="color: #645c50">(advanced)</span></li></ul></details>
+</div>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
+<h3 style="margin: 0 0 8px; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Top matched openings</h3>
+<div style="display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">
+<span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 13px; width: 26px; color: #645c50">01</span>
+<span style="min-width: 44px; padding: 5px 0; text-align: center; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 12.5px; font-weight: 700">86%</span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14px; font-weight: 700">Staff Backend Engineer · Northwind Pay</div><div style="font-size: 12.5px; color: #474238">EUR 165k–190k · <a href="#">Staff Engineer, Ledger</a> · Berlin</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(32,30,29,0.1)">
+<span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 13px; width: 26px; color: #645c50">02</span>
+<span style="min-width: 44px; padding: 5px 0; text-align: center; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 12.5px; font-weight: 700">82%</span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14px; font-weight: 700">Staff Backend Engineer · Fjord Bank</div><div style="font-size: 12.5px; color: #474238">EUR 160k–180k · <a href="#">Staff Software Engineer, Payments</a> · Remote EU</div></div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 0">
+<span style="font-family: Caprasimo, system-ui, sans-serif; font-size: 13px; width: 26px; color: #645c50">03</span>
+<span style="min-width: 44px; padding: 5px 0; text-align: center; border-radius: 999px; background: #56633f; color: #f9f4ed; font-size: 12.5px; font-weight: 700">74%</span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14px; font-weight: 700">Senior Platform Engineer · Kestrel Cloud</div><div style="font-size: 12.5px; color: #474238">EUR 140k–165k · <a href="#">Senior Platform Engineer</a> · Berlin</div></div>
+</div>
+</div>
+</div>
+
+<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
+<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Add a role of your own</h3>
+<div style="font-size: 13px; color: #474238; margin-top: 2px">Not seeing a role you want? Add it and it is analysed against your strengths, then placed on the map beside the recommended ones. A pasted JD stays private to you.</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px">
+<div>
+<label for="role-title" style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px">Job title</label>
+<input id="role-title" required="" placeholder="e.g. Principal Engineer" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+</div>
+<div>
+<label for="role-company" style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px">Company name <span style="font-weight: 500; color: #645c50">(optional)</span></label>
+<input id="role-company" placeholder="e.g. Halden Labs" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+</div>
+</div>
+<label for="jd-paste" style="display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px">Job description <span style="font-weight: 500; color: #645c50">(optional, sharpens the analysis)</span></label>
+<textarea id="jd-paste" rows="4" placeholder="Paste the full posting…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif; resize: vertical"></textarea>
+<div style="display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap">
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Add to Role Map</button>
+<span style="font-size: 12.5px; color: #474238">On the map: <strong style="color: #3d472b">Principal Engineer · Halden Labs</strong></span>
+</div>
+</div>
+</div>
+
+<div role="region" aria-label="Advisor target" style="position: absolute; left: 34px; right: 34px; bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #ebddc5; border-radius: 28px; padding: 16px 22px; box-shadow: 0 12px 32px rgba(46,43,37,0.22)">
+<div style="min-width: 0">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Advisor target</div>
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 18px; margin-top: 2px">Staff Backend Engineer</div>
+</div>
+<a href="Gaps.dc.html" style="padding: 11px 20px; border-radius: 999px; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; text-decoration: none; flex: 0 0 auto">Target this role</a>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
