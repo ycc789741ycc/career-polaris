@@ -23,6 +23,7 @@ const assessment: Assessment = {
       confidence: 0.35,
       read: "One repository shows it.",
       evidence_ids: ["e1"],
+      needs_more_evidence: true,
     },
   ],
 };
