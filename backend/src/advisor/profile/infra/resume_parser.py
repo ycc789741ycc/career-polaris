@@ -95,8 +95,6 @@ def _to_drafts(text: str, filename: str) -> list[EvidenceDraft]:
                 reference=f"Resume · {filename} · line {number}",
                 fact=line,
                 observed_on=None,
-                # Self-authored, so it is weaker evidence than a commit.
-                confidence=0.6,
             )
         )
         if len(drafts) >= _MAX_LINES:

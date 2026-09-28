@@ -35,17 +35,6 @@ def test_headings_and_stray_tokens_are_not_evidence() -> None:
     assert [d.fact for d in parsed.drafts] == ["Built and ran the multi-region ledger service."]
 
 
-def test_resume_evidence_is_weaker_than_a_merged_pull_request() -> None:
-    """Self-authored claims should not outweigh observed work."""
-    parsed = parse(
-        text_resume("- Led the payments reliability workstream end to end.\n"),
-        content_type="text/plain",
-        filename="r.txt",
-        max_pages=10,
-    )
-    assert parsed.drafts[0].confidence < 0.8
-
-
 def test_an_unsupported_format_is_refused() -> None:
     with pytest.raises(ValidationError, match="not a resume format"):
         parse(b"\x00\x01", content_type="image/png", filename="x.png", max_pages=10)

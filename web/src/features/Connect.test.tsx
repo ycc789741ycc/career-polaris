@@ -84,7 +84,6 @@ const prFact = {
   reference: "GitHub · acme/ledger#214",
   fact: "Split the ledger writer",
   observed_on: null,
-  confidence: 0.8,
   granularity: "item",
   tally: null,
   subject: "acme/ledger",

@@ -9,7 +9,6 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -91,7 +90,6 @@ class Evidence(Base, OwnedMixin, TimestampMixin):
     reference: Mapped[str] = mapped_column(String(512), nullable=False)
     fact: Mapped[str] = mapped_column(Text, nullable=False)
     observed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
     granularity: Mapped[str] = mapped_column(String(16), nullable=False, server_default="item")
     tally: Mapped[int | None] = mapped_column(Integer, nullable=True)
     subject: Mapped[str | None] = mapped_column(String(255), nullable=True)

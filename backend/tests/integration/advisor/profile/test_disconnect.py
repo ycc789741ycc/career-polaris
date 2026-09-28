@@ -36,7 +36,6 @@ class FakeJira:
                 reference=f"Jira · ACME-{n}",
                 fact=f"Closed ACME-{n}",
                 observed_on=date(2026, 9, 1),
-                confidence=0.75,
             )
             for n in range(3)
         ]

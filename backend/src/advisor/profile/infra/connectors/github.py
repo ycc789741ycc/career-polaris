@@ -73,7 +73,6 @@ class GitHubConnector:
                     observed_on=_latest(
                         _commit_date(c) for c in commits if _repo_of_commit(c) == repo
                     ),
-                    confidence=0.9,
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=count,
                     subject=repo,
@@ -90,7 +89,6 @@ class GitHubConnector:
                         f"{len({_repo_of_issue(i) for i in reviewed})} repositories."
                     ),
                     observed_on=_latest(_issue_date(i) for i in reviewed),
-                    confidence=0.85,
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=len(reviewed),
                 )
@@ -108,7 +106,6 @@ class GitHubConnector:
                     reference=f"GitHub · {repo}@{sha[:7]}",
                     fact=headline,
                     observed_on=_commit_date(commit),
-                    confidence=0.8,
                     subject=repo,
                 )
             )

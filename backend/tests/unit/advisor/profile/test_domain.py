@@ -19,19 +19,6 @@ from advisor.profile.domain import (
 )
 
 
-def test_evidence_confidence_must_be_a_probability() -> None:
-    with pytest.raises(ValueError, match="between 0 and 1"):
-        Evidence.cited(
-            owner_id=uuid.uuid4(),
-            source=EvidenceSource.GITHUB,
-            external_ref="repo",
-            reference="repo",
-            fact="fact",
-            observed_on=date(2026, 1, 1),
-            confidence=1.4,
-        )
-
-
 def _fact(**overrides: object) -> Evidence:
     fields: dict[str, object] = {
         "owner_id": uuid.uuid4(),
@@ -40,7 +27,6 @@ def _fact(**overrides: object) -> Evidence:
         "reference": "GitHub · acme/ledger",
         "fact": "12 merged pull requests authored in acme/ledger.",
         "observed_on": date(2026, 1, 1),
-        "confidence": 0.9,
         **overrides,
     }
     return Evidence.cited(**fields)  # type: ignore[arg-type]
@@ -69,7 +55,6 @@ def test_a_restated_fact_is_checked_like_a_new_one() -> None:
             reference=fact.reference,
             fact=fact.fact,
             observed_on=fact.observed_on,
-            confidence=fact.confidence,
             granularity=EvidenceGranularity.ITEM,
             tally=12,
             subject=None,
