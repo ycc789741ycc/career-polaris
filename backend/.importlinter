@@ -450,3 +450,41 @@ forbidden_modules =
 # another component through its public API must not count as reaching its ORM.
 ignore_imports =
     advisor.* -> advisor.*.factory
+
+# Rule 13: the HTTP schemas are the wire contract and nothing else (ADR 0013).
+# They are built from a component's public views, so they import no framework
+# beyond Pydantic, no kernel and no composition root — and nothing but the
+# routes and the app that mounts them imports the schemas.
+[importlinter:contract:http-schemas-are-pure]
+name = api.schemas imports only Pydantic and component public APIs
+type = forbidden
+source_modules =
+    api.schemas
+forbidden_modules =
+    api.routes
+    api.dependencies
+    api.main
+    wiring
+    kernel
+    fastapi
+    starlette
+    sqlalchemy
+# A component's public API reaches the kernel; that is the component's business.
+allow_indirect_imports = True
+
+[importlinter:contract:http-schemas-only-in-routes]
+name = Only api.routes and api.main import api.schemas
+type = forbidden
+source_modules =
+    advisor
+    kernel
+    wiring
+    worker
+    crawler
+    cli
+    api.dependencies
+    api.errors
+forbidden_modules =
+    api.schemas
+# cli exports the OpenAPI document through api.main, which is the point.
+allow_indirect_imports = True

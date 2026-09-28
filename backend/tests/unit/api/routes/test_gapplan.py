@@ -46,6 +46,7 @@ class FakeGapPlans:
     def __init__(self) -> None:
         self.refuse = False
         self.done: list[tuple[uuid.UUID, bool]] = []
+        self.priced: list[TargetRef] = []
 
     async def request(self, owner_id: uuid.UUID, ref: TargetRef) -> PlanSummaryView:
         if self.refuse:
@@ -56,7 +57,14 @@ class FakeGapPlans:
         return [summary(TargetRef(TargetKind.SUBSCRIPTION, str(uuid.uuid4())), PlanStatus.READY)]
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
-        return {"cost_usd": "0.04", "model_id": "claude-opus-5", "kind": str(ref.kind)}
+        self.priced.append(ref)
+        return {
+            "cost_usd": "0.04",
+            "model_id": "claude-opus-5",
+            "input_tokens": 1200,
+            "rate_is_published": True,
+            "includes_scoring": False,
+        }
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
         self.done.append((task_id, done))
@@ -141,10 +149,20 @@ def test_an_unknown_target_kind_is_refused_in_the_envelope(client: TestClient) -
     assert response.json()["error"]["code"] == "validation_failed"
 
 
-def test_the_estimate_is_for_the_target_asked_about(client: TestClient) -> None:
-    response = client.get(f"/gap-plans/cost-estimate?kind=matchedPosting&id={uuid.uuid4()}")
+def test_the_estimate_is_for_the_target_asked_about(
+    client: TestClient, plans: FakeGapPlans
+) -> None:
+    target = uuid.uuid4()
+    response = client.get(f"/gap-plans/cost-estimate?kind=matchedPosting&id={target}")
     assert response.status_code == 200
-    assert response.json()["kind"] == "matchedPosting"
+    assert plans.priced == [TargetRef(TargetKind.MATCHED_POSTING, str(target))]
+    assert response.json() == {
+        "cost_usd": "0.04",
+        "model_id": "claude-opus-5",
+        "input_tokens": 1200,
+        "rate_is_published": True,
+        "includes_scoring": False,
+    }
 
 
 def test_ticking_a_task_is_recorded(client: TestClient, plans: FakeGapPlans) -> None:

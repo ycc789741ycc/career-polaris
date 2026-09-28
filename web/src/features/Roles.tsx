@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import type {
   Assessment,
-  CostEstimate,
   Fit,
   MatchedPosting,
   Role,
+  RoleMapEstimate,
   RoleMapSettings,
   SalaryBand,
   Subscription,
@@ -73,7 +73,7 @@ export function Roles() {
   const [watchUrl, setWatchUrl] = useState("");
   const [market, setMarket] = useState("");
   const [bandMarket, setBandMarket] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   // The k being considered; saved only once its estimate is confirmed.
   const [roleCount, setRoleCount] = useState<number | null>(null);
   const savedRoleCount = settings.data?.role_count;
@@ -167,7 +167,7 @@ export function Roles() {
     setError(null);
     try {
       setEstimate(
-        await api.get<CostEstimate>(
+        await api.get<RoleMapEstimate>(
           chosenRoleCount === undefined
             ? "/roles/cost-estimate"
             : `/roles/cost-estimate?role_count=${chosenRoleCount}`,

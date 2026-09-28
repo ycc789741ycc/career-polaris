@@ -9,6 +9,7 @@
  * Every call sets `credentials: "include"` so the browser attaches that cookie.
  */
 
+import type { components } from "../api/schema";
 import { loadConfig } from "../config";
 
 export interface Session {
@@ -29,12 +30,7 @@ export class AuthError extends Error {
   }
 }
 
-interface SessionPayload {
-  account_id: string;
-  email: string;
-  access_token: string;
-  expires_in: number;
-}
+type SessionPayload = components["schemas"]["SessionResponse"];
 
 async function post(path: string, body?: unknown): Promise<Response> {
   return fetch(`${loadConfig().apiBaseUrl}/api/v1/auth${path}`, {
@@ -95,10 +91,7 @@ export async function signOut(): Promise<void> {
   await post("/sign-out");
 }
 
-export interface SignInMethods {
-  password: boolean;
-  google: boolean;
-}
+export type SignInMethods = components["schemas"]["SignInMethods"];
 
 /** Which ways in to offer. Google is on only when the server is set up for it. */
 export async function signInMethods(): Promise<SignInMethods> {

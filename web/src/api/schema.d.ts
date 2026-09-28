@@ -1011,15 +1011,59 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Accepted
+         * @description A 202: the work is queued, and something else reports how it went.
+         */
+        Accepted: {
+            /**
+             * Status
+             * @default queued
+             * @constant
+             */
+            status: "queued";
+        };
         /** AnswerRequest */
         AnswerRequest: {
             /** Answer */
             answer: string;
         };
+        /** Assessment */
+        Assessment: {
+            /** Created At */
+            created_at: string;
+            /** Dimensions */
+            dimensions: components["schemas"]["Dimension"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Id */
+            model_id: string;
+            /** Profile Version */
+            profile_version: number;
+            /** Template Version */
+            template_version: string;
+        };
+        /** AuthorizationUrl */
+        AuthorizationUrl: {
+            /** Url */
+            url: string;
+        };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
             /** File */
             file: string;
+        };
+        /** Budget */
+        Budget: {
+            /** Monthly Cap Usd */
+            monthly_cap_usd: string;
+            /** Remaining Usd */
+            remaining_usd: string;
+            /** Spent This Month Usd */
+            spent_this_month_usd: string;
         };
         /** BudgetRequest */
         BudgetRequest: {
@@ -1033,19 +1077,64 @@ export interface components {
             /** State */
             state: string;
         };
-        /** CredentialRequest */
-        CredentialRequest: {
-            /** Api Key */
-            api_key: string;
-            /** Base Url */
-            base_url?: string | null;
-            /** Model */
-            model: string;
-            /** Provider */
-            provider: string;
+        /**
+         * Connection
+         * @description One connector, whether or not the user has connected it.
+         */
+        Connection: {
+            /** Account */
+            account: string | null;
+            /** Connected */
+            connected: boolean;
+            /** Kind */
+            kind: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /** Scopes */
+            scopes: string[];
+            /** Status */
+            status: string;
         };
-        /** CredentialResponse */
-        CredentialResponse: {
+        /** ConnectionResult */
+        ConnectionResult: {
+            /** Kind */
+            kind: string;
+            /** Status */
+            status: string;
+        };
+        /**
+         * CostEstimate
+         * @description What an AI run will cost on the user's key, shown before it runs.
+         */
+        CostEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published: boolean;
+        };
+        /** Coverage */
+        Coverage: {
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceCitation"][];
+            /** Requirement */
+            requirement: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "covered" | "partial" | "gap";
+        };
+        /**
+         * Credential
+         * @description Write-only in effect: provider, model and the last four, never the key.
+         */
+        Credential: {
             /** Base Url */
             base_url: string | null;
             /** Last Error */
@@ -1059,15 +1148,139 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** CredentialRequest */
+        CredentialRequest: {
+            /** Api Key */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /** Dimension */
+        Dimension: {
+            /** Confidence */
+            confidence: number;
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Read */
+            read: string;
+            /** Score */
+            score: number;
+            /** Short Name */
+            short_name: string;
+        };
+        /**
+         * DownloadUrl
+         * @description Short-lived and signed: an upload is never publicly addressable.
+         */
+        DownloadUrl: {
+            /** Url */
+            url: string;
+        };
+        /** ErrorDetail */
+        ErrorDetail: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * ErrorEnvelope
+         * @description Every non-2xx body (``api.errors``): a stable code and a readable message.
+         */
+        ErrorEnvelope: {
+            error: components["schemas"]["ErrorDetail"];
+        };
+        /** Evidence */
+        Evidence: {
+            /** Confidence */
+            confidence: number;
+            /** Fact */
+            fact: string;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "item" | "summary";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Observed On */
+            observed_on: string | null;
+            /** Reference */
+            reference: string;
+            /** Source */
+            source: string;
+            /** Subject */
+            subject: string | null;
+            /** Tally */
+            tally: number | null;
+        };
+        /**
+         * EvidenceCitation
+         * @description One cited piece of Evidence, by the handle the AI used for it.
+         */
+        EvidenceCitation: {
+            /** Fact */
+            fact: string;
+            /** Id */
+            id: string;
+            /** Reference */
+            reference: string;
+        };
+        /** EvidenceNote */
+        EvidenceNote: {
+            /** Fact */
+            fact: string;
+            /** Reference */
+            reference: string;
+        };
         /** ExportRequest */
         ExportRequest: {
             /** Version */
             version: number;
         };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
+        /**
+         * Fit
+         * @description A bubble's size. Fit belongs to the User x Role pair, never to the role.
+         */
+        Fit: {
+            /** Computed At */
+            computed_at: string;
+            /** Gaps */
+            gaps: components["schemas"]["FitGap"][];
+            /** Model Id */
+            model_id: string;
+            /** Private Posting Id */
+            private_posting_id: string | null;
+            /** Reasoning */
+            reasoning: string;
+            /** Role Id */
+            role_id: string | null;
+            /** Score */
+            score: number;
+            /** Uncovered */
+            uncovered: components["schemas"]["UncoveredRequirement"][];
+        };
+        /** FitGap */
+        FitGap: {
+            /** Delta */
+            delta: number;
+            /** Dimension Key */
+            dimension_key: string;
+            /** Target Score */
+            target_score: number;
+            /** User Score */
+            user_score: number;
         };
         /** JobDescriptionRequest */
         JobDescriptionRequest: {
@@ -1082,10 +1295,86 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /**
+         * JobError
+         * @description Why a drafting, rendering or generating job failed, by stable code.
+         */
+        JobError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string | null;
+        };
         /** MarketRequest */
         MarketRequest: {
             /** Market */
             market: string;
+        };
+        /**
+         * MatchedPosting
+         * @description An opening inside one of the user's roles, ranked by that role's fit.
+         */
+        MatchedPosting: {
+            /** Company Name */
+            company_name: string;
+            /** Fit */
+            fit: number | null;
+            /**
+             * Fit Basis
+             * @default role
+             * @constant
+             */
+            fit_basis: "role";
+            /** Location */
+            location: string | null;
+            /**
+             * Posting Id
+             * Format: uuid
+             */
+            posting_id: string;
+            /**
+             * Role Id
+             * Format: uuid
+             */
+            role_id: string;
+            /** Role Name */
+            role_name: string;
+            salary: components["schemas"]["Salary"] | null;
+            /** Source Kind */
+            source_kind: string | null;
+            /** Subscription Id */
+            subscription_id: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string | null;
+        };
+        /** Me */
+        Me: {
+            /** Background Jobs Paused */
+            background_jobs_paused: boolean;
+            /** Email */
+            email: string | null;
+            /** Id */
+            id: string;
+            /** Paused Reason */
+            paused_reason: string | null;
+        };
+        /** Milestone */
+        Milestone: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Outcome */
+            outcome: string;
+            /** Tasks */
+            tasks: components["schemas"]["PlanTask"][];
+            /** Title */
+            title: string;
+            /** Window */
+            window: string;
         };
         /** OptionsBody */
         OptionsBody: {
@@ -1105,6 +1394,246 @@ export interface components {
              */
             trim: boolean;
         };
+        /**
+         * PastedJobDescription
+         * @description A pasted JD. It is private to its owner and never enters shared data.
+         */
+        PastedJobDescription: {
+            /** Company Name */
+            company_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Location */
+            location: string | null;
+            /** Title */
+            title: string;
+            /** Visibility */
+            visibility: string;
+        };
+        /** Plan */
+        Plan: {
+            /** Created At */
+            created_at: string;
+            /** Drafted At */
+            drafted_at: string | null;
+            error: components["schemas"]["JobError"] | null;
+            /** Gaps */
+            gaps: components["schemas"]["PlanGap"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Milestones */
+            milestones: components["schemas"]["Milestone"][];
+            /** Model Id */
+            model_id: string | null;
+            /** Progress */
+            progress: number;
+            /** Projects */
+            projects: components["schemas"]["PlanProject"][];
+            snapshot: components["schemas"]["PlanSnapshot"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "drafting" | "ready" | "failed";
+            /** Stepping Stones */
+            stepping_stones: components["schemas"]["SteppingStone"][];
+            target: components["schemas"]["TargetRefBody"];
+            /** Template Version */
+            template_version: string | null;
+            /** Version */
+            version: number;
+            /** Versions */
+            versions: components["schemas"]["PlanSummary"][];
+        };
+        /** PlanGap */
+        PlanGap: {
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceCitation"][];
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dimension" | "uncovered";
+            /** Lift */
+            lift: number;
+            /** Name */
+            name: string;
+            /** Target Score */
+            target_score: number | null;
+            /** User Score */
+            user_score: number | null;
+            /** Why */
+            why: string;
+        };
+        /** PlanProject */
+        PlanProject: {
+            /** Closes */
+            closes: string[];
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+        };
+        /** PlanRequirement */
+        PlanRequirement: {
+            /** Expected Level */
+            expected_level: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * PlanSnapshot
+         * @description The Target as it was when the plan was drafted.
+         */
+        PlanSnapshot: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "role" | "posting";
+            /** Company */
+            company: string;
+            /** Fit */
+            fit: number | null;
+            /** Requirements */
+            requirements: components["schemas"]["PlanRequirement"][];
+            /** Role Name */
+            role_name: string | null;
+            /** Taken At */
+            taken_at: string;
+            /** Title */
+            title: string;
+        };
+        /** PlanSummary */
+        PlanSummary: {
+            /** Created At */
+            created_at: string;
+            /** Drafted At */
+            drafted_at: string | null;
+            error: components["schemas"]["JobError"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Progress */
+            progress: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "drafting" | "ready" | "failed";
+            target: components["schemas"]["TargetRefBody"];
+            /** Version */
+            version: number;
+        };
+        /** PlanTask */
+        PlanTask: {
+            /** Closes */
+            closes: string[];
+            /** Done */
+            done: boolean;
+            /** Done Elsewhere */
+            done_elsewhere: boolean;
+            /** Due */
+            due: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** Position */
+        Position: {
+            /** Company */
+            company: string;
+            /** Ended On */
+            ended_on: string | null;
+            /**
+             * Started On
+             * Format: date
+             */
+            started_on: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * Profile
+         * @description The profile's headline numbers and career timeline.
+         */
+        Profile: {
+            /** Evidence Count */
+            evidence_count: number;
+            /** Positions */
+            positions: components["schemas"]["Position"][];
+            /** Total Experience Months */
+            total_experience_months: number;
+            /** Version */
+            version: number;
+        };
+        /** Question */
+        Question: {
+            /** Answer */
+            answer: string | null;
+            /** Dimension Key */
+            dimension_key: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Options */
+            options: string[];
+            /** Text */
+            text: string;
+            /** Why */
+            why: string;
+        };
+        /**
+         * QuestionStatus
+         * @description The newest question round, which the page polls while it is
+         *     ``generating`` (ADR 0006, ADR 0012).
+         */
+        QuestionStatus: {
+            /** Created At */
+            created_at: string;
+            error: components["schemas"]["JobError"] | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Question Count */
+            question_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "generating" | "ready" | "failed" | "superseded";
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "evidence" | "assessment";
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /**
@@ -1114,6 +1643,97 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** ResumeBullet */
+        ResumeBullet: {
+            /** Answers */
+            answers: string | null;
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "written" | "yours";
+            /** Text */
+            text: string;
+        };
+        /** ResumeContent */
+        ResumeContent: {
+            /** Contact */
+            contact: string;
+            /** Experience */
+            experience: components["schemas"]["ResumePosition"][];
+            /** Headline */
+            headline: string;
+            /** Name */
+            name: string;
+            /** Skills */
+            skills: string[];
+            /** Summary */
+            summary: string;
+        };
+        /** ResumeExport */
+        ResumeExport: {
+            /** Download Url */
+            download_url: string | null;
+            error: components["schemas"]["JobError"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rendering" | "ready" | "failed";
+            /**
+             * Template
+             * @enum {string}
+             */
+            template: "warm" | "plain" | "brief";
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+        };
+        /** ResumeFile */
+        ResumeFile: {
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Parse Error */
+            parse_error: string | null;
+            /** Status */
+            status: string;
+            /** Uploaded At */
+            uploaded_at: string;
+        };
+        /** ResumeOptions */
+        ResumeOptions: {
+            /** Metrics */
+            metrics: boolean;
+            /** Reorder */
+            reorder: boolean;
+            /** Trim */
+            trim: boolean;
+        };
+        /** ResumePosition */
+        ResumePosition: {
+            /** Bullets */
+            bullets: components["schemas"]["ResumeBullet"][];
+            /** Org */
+            org: string;
+            /** Title */
+            title: string;
+            /** When */
+            when: string;
         };
         /** ResumeRequest */
         ResumeRequest: {
@@ -1127,6 +1747,100 @@ export interface components {
             /** @default warm */
             template: components["schemas"]["Template"];
         };
+        /** ResumeSnapshot */
+        ResumeSnapshot: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "role" | "posting";
+            /** Company */
+            company: string;
+            /** Fit */
+            fit: number | null;
+            /** Role Name */
+            role_name: string | null;
+            /** Title */
+            title: string;
+        };
+        /** ResumeSummary */
+        ResumeSummary: {
+            /** Created At */
+            created_at: string;
+            error: components["schemas"]["JobError"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Latest Version */
+            latest_version: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "drafting" | "ready" | "failed";
+            target: components["schemas"]["TargetRefBody"];
+            /** Updated At */
+            updated_at: string;
+        };
+        /** ResumeUpload */
+        ResumeUpload: {
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @default parsing
+             * @constant
+             */
+            status: "parsing";
+        };
+        /** ResumeVersion */
+        ResumeVersion: {
+            /** Created At */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Number */
+            number: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "generated" | "manual" | "chat";
+        };
+        /** Revision */
+        Revision: {
+            /** Applied Version Id */
+            applied_version_id: string | null;
+            /** Created At */
+            created_at: string;
+            /** Has Proposal */
+            has_proposal: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Reply */
+            reply: string;
+            /** Request */
+            request: string;
+        };
         /** RevisionRequest */
         RevisionRequest: {
             /** Content */
@@ -1137,12 +1851,95 @@ export interface components {
             message: string;
         };
         /**
+         * Role
+         * @description One bubble. Its size, the fit, is the assessment's (``GET /fits``).
+         */
+        Role: {
+            /** Bar Basis */
+            bar_basis: string;
+            /** Bar Confidence */
+            bar_confidence: number;
+            /** Bar Reasoning */
+            bar_reasoning: string | null;
+            /** Hiring Bar */
+            hiring_bar: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Coherent */
+            is_coherent: boolean;
+            /** Name */
+            name: string;
+            /** Opening Count */
+            opening_count: number;
+            /** Requirements */
+            requirements: components["schemas"]["RoleRequirement"][];
+            /** Salary Bands */
+            salary_bands: {
+                [key: string]: components["schemas"]["SalaryBand"];
+            };
+        };
+        /**
+         * RoleMapEstimate
+         * @description The most a role map can cost: a ceiling, not a prediction.
+         */
+        RoleMapEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Max Clusters */
+            max_clusters: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published?: boolean | null;
+            /** Role Count */
+            role_count: number;
+        };
+        /**
          * RoleMapSettings
          * @description How many roles the role map analyses on the user's key (ADR 0003).
+         *
+         *     Both the body of a change and the answer to a read, so it keeps a
+         *     request's leniency.
          */
         RoleMapSettings: {
             /** Role Count */
             role_count: number;
+        };
+        /** RoleRequirement */
+        RoleRequirement: {
+            /** Expected Level */
+            expected_level: string;
+            /** Statement */
+            statement: string;
+            /** Weight */
+            weight: number;
+        };
+        /** Salary */
+        Salary: {
+            /** Currency */
+            currency: string;
+            /** Max */
+            max: number;
+            /** Min */
+            min: number;
+        };
+        /** SalaryBand */
+        SalaryBand: {
+            /** Currency */
+            currency: string;
+            /** High */
+            high: number;
+            /** Is Confident */
+            is_confident: boolean;
+            /** Low */
+            low: number;
+            /** Mid */
+            mid: number;
+            /** Sample Size */
+            sample_size: number;
         };
         /**
          * SessionResponse
@@ -1184,6 +1981,45 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** SteppingStone */
+        SteppingStone: {
+            /** Fit */
+            fit: number;
+            /** Name */
+            name: string;
+            /** Openings */
+            openings: number;
+            /** Role Id */
+            role_id: string;
+        };
+        /**
+         * Subscription
+         * @description A watch on one role at one company (domain decision 19).
+         */
+        Subscription: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+            /** Company Name */
+            company_name: string;
+            /** Coverage */
+            coverage: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Refreshed At */
+            last_refreshed_at: string | null;
+            /** Role Id */
+            role_id: string | null;
+            /** Role Title */
+            role_title: string;
+            /** Url */
+            url: string | null;
+        };
         /**
          * SubscriptionRequest
          * @description A watch on one role at one company (domain decision 19).
@@ -1198,11 +2034,114 @@ export interface components {
             /** Url */
             url?: string | null;
         };
+        /** TailoredResume */
+        TailoredResume: {
+            content: components["schemas"]["ResumeContent"] | null;
+            /** Coverage */
+            coverage: components["schemas"]["Coverage"][];
+            /** Created At */
+            created_at: string;
+            error: components["schemas"]["JobError"] | null;
+            /** Evidence */
+            evidence: {
+                [key: string]: components["schemas"]["EvidenceNote"];
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Latest Version */
+            latest_version: number | null;
+            options: components["schemas"]["ResumeOptions"];
+            /** Revisions */
+            revisions: components["schemas"]["Revision"][];
+            snapshot: components["schemas"]["ResumeSnapshot"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "drafting" | "ready" | "failed";
+            target: components["schemas"]["TargetRefBody"];
+            /**
+             * Template
+             * @enum {string}
+             */
+            template: "warm" | "plain" | "brief";
+            /** Updated At */
+            updated_at: string;
+            version: components["schemas"]["ResumeVersion"] | null;
+            /** Versions */
+            versions: components["schemas"]["ResumeVersion"][];
+        };
+        /**
+         * TargetEstimate
+         * @description The price of drafting for a Target: a gap plan or a tailored résumé.
+         */
+        TargetEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Includes Scoring */
+            includes_scoring: boolean;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published: boolean;
+        };
         /**
          * TargetKind
          * @enum {string}
          */
         TargetKind: "matchedPosting" | "subscription" | "privatePosting";
+        /**
+         * TargetOption
+         * @description One row of the "Plan a route to" / "Write for" pickers (domain decision 16).
+         */
+        TargetOption: {
+            /** Company Name */
+            company_name: string;
+            /** Fit */
+            fit: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "matchedPosting" | "subscription" | "privatePosting";
+            /** Label */
+            label: string;
+            /** Role Id */
+            role_id: string | null;
+            /** Role Name */
+            role_name: string | null;
+            salary: components["schemas"]["Salary"] | null;
+            /** Source Kind */
+            source_kind: string | null;
+            /** Subscription Id */
+            subscription_id: string | null;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string | null;
+        };
+        /** TargetRefBody */
+        TargetRefBody: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "matchedPosting" | "subscription" | "privatePosting";
+        };
         /** TargetRequest */
         TargetRequest: {
             /**
@@ -1226,18 +2165,12 @@ export interface components {
          * @enum {string}
          */
         Template: "warm" | "plain" | "brief";
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
+        /** UncoveredRequirement */
+        UncoveredRequirement: {
+            /** Statement */
+            statement: string;
+            /** Weight */
+            weight: number;
         };
         /** VersionRequest */
         VersionRequest: {
@@ -1274,18 +2207,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Budget"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1311,18 +2260,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Budget"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1344,16 +2309,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CredentialResponse"] | null;
+                    "application/json": components["schemas"]["Credential"] | null;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1379,16 +2362,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CredentialResponse"];
+                    "application/json": components["schemas"]["Credential"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1411,13 +2412,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1442,6 +2461,33 @@ export interface operations {
                     };
                 };
             };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     history_api_v1_assessments_get: {
@@ -1461,18 +2507,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Assessment"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1494,18 +2556,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1527,18 +2605,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CostEstimate"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1560,18 +2654,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    } | null;
+                    "application/json": components["schemas"]["Assessment"] | null;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1594,6 +2704,33 @@ export interface operations {
                     "application/json": components["schemas"]["SignInMethods"];
                 };
             };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     refresh_api_v1_auth_refresh_post: {
@@ -1612,6 +2749,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1638,13 +2802,31 @@ export interface operations {
                     "application/json": components["schemas"]["SessionResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1671,13 +2853,31 @@ export interface operations {
                     "application/json": components["schemas"]["SessionResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1697,6 +2897,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
         };
     };
@@ -1718,13 +2945,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1746,18 +2991,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Connection"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1782,13 +3043,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1812,18 +3091,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["AuthorizationUrl"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1851,18 +3146,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ConnectionResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1886,18 +3197,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1919,18 +3246,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Evidence"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1952,18 +3295,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Fit"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -1985,18 +3344,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2025,13 +3400,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2053,18 +3446,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["PlanSummary"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2090,18 +3499,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PlanSummary"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2126,18 +3551,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TargetEstimate"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2161,18 +3602,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Plan"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2194,18 +3651,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["PastedJobDescription"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2231,18 +3704,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PastedJobDescription"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2267,13 +3756,31 @@ export interface operations {
                     "application/json": string[];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2302,13 +3809,31 @@ export interface operations {
                     "application/json": string[];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2335,13 +3860,31 @@ export interface operations {
                     "application/json": string[];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2365,18 +3908,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["MatchedPosting"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2398,18 +3957,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Me"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2431,18 +4006,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Profile"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2464,18 +4055,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Question"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2497,18 +4104,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    } | null;
+                    "application/json": components["schemas"]["QuestionStatus"] | null;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2536,18 +4159,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2571,18 +4210,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeExport"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2604,18 +4259,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["ResumeFile"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2641,18 +4312,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeUpload"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2676,18 +4363,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["DownloadUrl"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2709,18 +4412,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Subscription"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2746,18 +4465,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["Subscription"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2782,13 +4517,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2812,18 +4565,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2845,18 +4614,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["Role"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2880,18 +4665,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RoleMapEstimate"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2913,18 +4714,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["Accepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2949,13 +4766,31 @@ export interface operations {
                     "application/json": components["schemas"]["RoleMapSettings"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2984,13 +4819,31 @@ export interface operations {
                     "application/json": components["schemas"]["RoleMapSettings"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3012,18 +4865,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["ResumeSummary"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3049,18 +4918,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeSummary"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3085,18 +4970,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TargetEstimate"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3122,18 +5023,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TailoredResume"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3161,18 +5078,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeExport"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3203,13 +5136,31 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3234,18 +5185,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeVersion"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3274,13 +5241,31 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3308,18 +5293,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResumeVersion"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -3341,18 +5342,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["TargetOption"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request could not be read. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

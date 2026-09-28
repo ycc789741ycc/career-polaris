@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import errors
+from api.schemas.common import ERROR_RESPONSES
 from kernel.config import Unit, get_settings
 from kernel.logging import configure_logging, get_logger
 from wiring.container import container
@@ -73,7 +74,7 @@ def create_app() -> FastAPI:
         gapplan_router,
         resume_router,
     ):
-        application.include_router(router, prefix="/api/v1")
+        application.include_router(router, prefix="/api/v1", responses=ERROR_RESPONSES)
 
     @application.get("/health")
     async def health() -> dict[str, str]:
