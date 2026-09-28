@@ -4,6 +4,8 @@ This doc turns the domain model in [`domain_model.md`](domain_model.md) into an 
 
 **Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for clustering · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
+> **This describes the v3 design** (domain decisions 21–28). The code has not caught up with it yet: it still has role subscriptions, market preferences without a cap, a user-chosen k, pasted JDs as their own Target, and follow-up questions in `assessment`. [`plan.md`](plan.md) Phase 5 lists the steps that close the gap, in order. Each step's ADR is written in the PR that makes the change.
+
 ## 1. Deployable units
 
 ```mermaid
@@ -39,8 +41,8 @@ flowchart LR
 |---|---|---|---|
 | `web` | SPA for the prototype's screens; no business rules, no AI calls | No | API, auth provider |
 | `api` | HTTP + SSE, routers for every module, résumé chat streaming | **AI key only** (for chat streaming) | User's LLM provider |
-| `worker` | Queued and scheduled jobs: `ai` (assessment, per-user role map over the user's top k, fit, gap plans per Target, résumé writing, difficulty estimates), `sync` (connectors, résumé parsing — **no AI**, domain decision 18), `docs` (résumé PDF export with WeasyPrint, ADR 0007), `notify` (weekly digest, interview prompts — not built yet) | AI key (`ai` queue), connector OAuth tokens (`sync` queue) | LLM provider, GitHub/Jira/LinkedIn, personal sites, email |
-| `crawler` | Weekly crawl of baseline and demand sources, and rate-limited single-company refresh: parse, normalize, dedup, embed and expire postings | **None** | Public job boards, job APIs, and subscription URLs (SSRF-guarded) |
+| `worker` | Queued and scheduled jobs: `ai` (assessment, the per-user role map of ten recommended roles plus custom roles, fit, gap-fill questions, gap plans per Target, résumé writing, difficulty estimates), `sync` (connectors, résumé parsing — **no AI**, domain decision 18), `docs` (résumé PDF export with WeasyPrint, ADR 0007), `notify` (interview prompts — not built yet) | AI key (`ai` queue), connector OAuth tokens (`sync` queue) | LLM provider, GitHub/Jira/LinkedIn, personal sites, email |
+| `crawler` | Weekly crawl of baseline and demand sources, and board discovery for companies named on custom roles: parse, normalize, dedup, embed and expire postings | **None** | Public job boards, job APIs, and custom-role companies' careers sites (SSRF-guarded) |
 
 **Why the crawler is its own unit:**
 - It has a different trust level: it parses hostile HTML from the internet.
@@ -72,7 +74,7 @@ backend/src/
   kernel/                   # shared technical kernel, no domain logic
     db/ outbox/ jobs/ auth/ crypto/ storage/ ai_gateway/ fetch/ embeddings/
   advisor/                  # the application: one package per component, no framework code
-    identity/  profile/  market/  rolemap/  assessment/  target/  gapplan/  resume/  activity/
+    identity/  profile/  market/  rolemap/  assessment/  target/  gapfill/  gapplan/  resume/  activity/
       __init__.py           # the ONLY importable surface: service interface, views, job functions
       service.py           # use cases: data only through domain/repositories.py (ADR 0011)
       domain/              # entities, rules, events and repository interfaces; pure Python, no I/O
@@ -87,7 +89,9 @@ web/                        # TS client
 >
 > `kernel/` stays outside the application on purpose: it is infrastructure, and the rules below name its packages. It is named `kernel`, not `platform`, because `platform` would shadow Python's standard-library module.
 >
-> `gapplan` replaces the earlier `growth`: with no CareerGoal (domain decision 16), the component is about plans for a Target and nothing else. The Target itself has its own component, `target`, because both `gapplan` and `resume` aim at one and neither may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)). `target` has no tables: it resolves a Target through other components' public APIs and hands back a frozen snapshot that the plan or résumé stores. `resume` serves its routes under `/tailored-resumes`, because `/resumes` is the profile's, for uploaded files.
+> `gapplan` replaces the earlier `growth`: with no CareerGoal (domain decision 16), the component is about plans for a Target and nothing else. The Target itself has its own component, `target`, because `gapfill`, `gapplan` and `resume` all aim at one and none of them may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)). `target` has no tables: it resolves a Target (a role, and optionally an opening in it, domain decision 26) through other components' public APIs and hands back a frozen snapshot that the consumer stores. `resume` serves its routes under `/tailored-resumes`, because `/resumes` is the profile's, for uploaded files.
+>
+> `gapfill` owns the Advisor's first step (domain decision 27): the questions written for one Target's gaps, and the one submit that turns the answers into evidence. It sits below `gapplan` and `resume` because both regenerate from what it records, and above `target` because its questions are about a Target. Follow-up questions used to live in `assessment`, driven by low confidence ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)); that path goes away with it.
 
 ### Top-level dependencies
 
@@ -142,13 +146,18 @@ Inside `advisor/`, components depend on each other in one direction (rule 5). `g
 
 ```mermaid
 flowchart TB
-  GP[gapplan] --> T[target]
-  RS[resume] --> T
+  GP[gapplan] --> GF[gapfill]
+  RS[resume] --> GF
+  GF --> T[target]
+  GP --> T
+  RS --> T
   GP --> AS[assessment]
   RS --> AS
   GP --> RM[rolemap]
   GP --> PR[profile]
   RS --> PR
+  GF --> AS
+  GF --> PR
   T --> AS
   T --> RM
   T --> MK[market]
@@ -157,7 +166,8 @@ flowchart TB
   AS --> MK
   RM --> PR
   RM --> MK
-  AC[activity] --> AS
+  AC[activity] --> GF
+  AC --> AS
   AC --> RM
   AC --> PR
   ID[identity]
@@ -168,20 +178,21 @@ flowchart TB
 |---|---|---|
 | `identity` | none | Accounts, password and Google sign-in, sessions, and the write-only AI credential |
 | `profile` | none | Evidence: GitHub and Jira connectors, résumé upload and parsing; never reaches the AI gateway (rule 10) |
-| `market` | none | Openings: board adapters, discovery and politeness (`crawling/`), the baseline seed, subscriptions, pasted JDs, posting embeddings |
-| `rolemap` | market, profile | Clusters the user's market into Roles and keeps the user's top k |
-| `assessment` | market, profile, rolemap | Skill dimensions, the strength report, follow-up questions and RoleFit |
-| `target` | market, rolemap, assessment | Resolves what a plan or résumé aims at into a frozen snapshot; no tables |
-| `gapplan` | profile, rolemap, assessment, target | Gap plans per Target: ranked gaps, milestones, tasks, versions |
-| `resume` | profile, assessment, target | Résumés tailored to a Target, versions, the revision chat and PDF export |
-| `activity` | profile, assessment, rolemap | What background work is running across the journey, and the rules between stages: an analysis waits for syncs and parses, a role-map build waits for an analysis; no tables ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
+| `market` | none | Openings: board adapters, discovery and politeness (`crawling/`), the baseline seed, the user's 1–3 target locations, custom roles' private JDs, posting embeddings |
+| `rolemap` | market, profile | Clusters the user's market into Roles, keeps the ten closest, and places the user's custom Roles beside them |
+| `assessment` | market, profile, rolemap | Skill dimensions, the strength report with per-dimension and profile confidence, and RoleFit |
+| `target` | market, rolemap, assessment | Resolves a role (and optionally an opening) into a frozen snapshot; no tables |
+| `gapfill` | profile, assessment, target | Questions per gap of a Target, and the one submit that records every answer as `user_answer` evidence |
+| `gapplan` | profile, rolemap, assessment, target, gapfill | Gap plans per Target: ranked gaps, milestones, tasks, versions; regenerated after answers are submitted |
+| `resume` | profile, assessment, target, gapfill | Résumés tailored to a Target, versions, the revision chat and PDF export; regenerated after answers are submitted |
+| `activity` | profile, assessment, rolemap, gapfill | What background work is running across the journey, and the rules between stages: an analysis waits for syncs and parses, the role-map build follows every analysis, questions wait for the Target's fit; no tables ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
 
 ### Rules (enforced in CI with `import-linter` contracts, `backend/.importlinter`)
 1. A component is imported **only** through its `__init__.py`. Nothing outside it imports its submodules (`service`, `domain`, `infra`, …); `jobs` is public, for the worker.
 2. A component's `domain/` imports no kernel, deployable, framework, ORM or HTTP library, and nothing else from its own component.
 3. Component domain models are independent: none imports another. A concept two components need gets its own component.
 4. `advisor` imports no deployable (`api`, `worker`, `crawler`, `cli`), no composition root (`wiring`) and no web or queue framework.
-5. Components depend on each other one way only: `gapplan | resume | activity` → `target` → `assessment` → `rolemap` → `identity | profile | market`.
+5. Components depend on each other one way only: `gapplan | resume | activity` → `gapfill` → `target` → `assessment` → `rolemap` → `identity | profile | market`.
 6. `crawler/` may import only `advisor.market`, `wiring.crawl` and the kernel pieces it needs. It never reaches `kernel.crypto`, `kernel.ai_gateway`, `kernel.auth` or `kernel.storage`, even indirectly.
 7. Only `kernel.ai_gateway`, `advisor.identity` (to encrypt the credential it stores) and `advisor.profile`'s connectors may import `kernel.crypto`.
 8. Components never call an LLM SDK directly; they go through `kernel.ai_gateway`.
@@ -195,12 +206,13 @@ flowchart TB
 
 | Event | Emitted by | Handled by |
 |---|---|---|
-| `ProfileUpdated` | profile | assessment.generate_questions: a question round against the latest analysis, if any dimension is below the threshold. Not for an answer, whose route re-runs the analysis instead ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)) |
+| `ProfileUpdated` | profile | nothing that spends: the strength report marks itself out of date (ADR 0015). Evidence no longer opens a question round — questions come from a Target's gaps (domain decision 27) |
 | `AssessmentCompleted` / `DimensionsChanged` | assessment | assessment.compute_fits |
-| `AnalysisFinished(run, status)` | assessment, as the run closes | activity.release_waiting_builds → rolemap.recluster for a build that waited on it, whether the analysis succeeded or failed ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
+| `AnalysisFinished(run, status)` | assessment, as the run closes | activity.request_role_map: a successful analysis always queues rolemap.recluster (domain decision 24; its cost was confirmed with the analysis's), and a build that waited on it starts whether the analysis succeeded or failed ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
 | `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → activity.request_role_map per user: joins a build already open, waits for a running analysis, or queues rolemap.recluster. A baseline-only change reaches every user whose scope includes that market. |
-| `RoleCountChanged(k)` | rolemap | nothing: the route that saved k already recorded and queued the rebuild, after the cost estimate was confirmed (ADR 0018) |
-| `SubscriptionAdded(company, url)` | market | worker materialises a `market.crawl_source` from the URL with no user id → single-company crawl |
+| `TargetLocationsChanged(markets)` | market | worker materialises the markets' public-API `crawl_source` rows with no user id, and activity.request_role_map for that user |
+| `CustomRoleAdded(role, company?)` | rolemap | a named company → market board discovery, materialised as a `demand` `crawl_source` with no user id; activity.request_role_map places the role (its cost was confirmed when it was added) |
+| `GapAnswersSubmitted(target, evidence ids)` | gapfill | gapplan.regenerate and resume.regenerate for that Target, each only if the user already has one — dispatched separately, so the two never import each other |
 | `RoleRequirementsChanged`, `RoleSplitOrMerged` | rolemap | assessment.compute_fits; later gapplan.suggest_successor (for Targets whose snapshot came from that Role — not built: rolemap does not emit `RoleSplitOrMerged` yet) |
 | `PlanDrafted` | gapplan | nothing yet; recorded for the match digest and progress history |
 | `ResumeTailored`, `ResumeVersionSaved` | resume | nothing yet; `ResumeTailored` is what the interview-report prompt will key on |
@@ -219,7 +231,8 @@ flowchart TB
 | Market (shared data) | `market` | `market` (shared) and `market_user` (owner zone; see §3) |
 | Role map (per user) | `rolemap` | `rolemap` |
 | Assessment | `assessment` | `assessment` |
-| Gap plan (Target) | `target` | none: resolves through other modules, and the snapshot is stored by its consumer |
+| Target | `target` | none: resolves through other modules, and the snapshot is stored by its consumer |
+| Gap fill | `gapfill` | `gapfill` |
 | Gap plan | `gapplan` | `gapplan` |
 | Resume | `resume` | `resume` |
 
@@ -230,24 +243,25 @@ flowchart TB
 ### Database roles (least privilege)
 | Role | Used by | Access |
 |---|---|---|
-| `app_rw` | api, worker | All module schemas. `market`: read-only, except inserts into `market.interview_contribution` and writes to `market.crawl_source` (materialized from subscriptions) |
+| `app_rw` | api, worker | All module schemas. `market`: read-only, except inserts into `market.interview_contribution` and writes to `market.crawl_source` (materialized from target locations and custom-role companies) |
 | `crawler_rw` | crawler | `market.crawl_source` (read/update status; baseline rows are loaded by `migrate`, not the crawler), `market.job_posting`, `market.company`, `market.posting_embedding`; insert into `outbox`. **No access to any user schema.** |
 | `aggregator` | worker, aggregation job only | Read `market.interview_contribution`, write `market.interview_difficulty_agg` |
 | `migrator` | Alembic in CI/CD | DDL |
 
 ### Shared zone vs. owner zone: privacy by storage location, not by a flag
 - **Shared zone** (no `owner_id`, no RLS): `market.company`, `market.job_posting`, `market.crawl_source`, `market.posting_embedding`, `market.interview_contribution`, `market.interview_difficulty_agg`.
-- **Owner zone:** every table has `owner_id` and **Postgres row-level security** keyed on a per-transaction `app.user_id` setting. The API sets it from the JWT; a worker sets it from the job's user. Covers `identity.provider_credential`, `identity.ai_usage_*`, and all of `profile.*`, `market_user.*`, `rolemap.*`, `assessment.*`, `gapplan.*` and `resume.*`.
+- **Owner zone:** every table has `owner_id` and **Postgres row-level security** keyed on a per-transaction `app.user_id` setting. The API sets it from the JWT; a worker sets it from the job's user. Covers `identity.provider_credential`, `identity.ai_usage_*`, and all of `profile.*`, `market_user.*`, `rolemap.*`, `assessment.*`, `gapfill.*`, `gapplan.*` and `resume.*`.
 
 | Domain data | Stored in | Why |
 |---|---|---|
-| RoleSubscription, MarketPreference | `market_user.company_subscription`, `market_user.market_preference` | User-owned. The subscription table keeps its name and gains `role_title`, a nullable `role_id` and a nullable `url` (domain decision 19); renaming it would mean rewriting the fan-out RLS policy for no gain. The worker copies the needed companies, URLs and markets into `market.crawl_source` **without user ids**, so the crawler can't tell who asked for them. |
-| Baseline sources (domain decision 15) | `market.crawl_source` with `origin = 'baseline'` | A versioned seed owned by `advisor.market`, loaded by `make migrate`. It is data reviewed like code, not environment configuration. Demand rows have `origin = 'demand'`. Neither carries a user id. |
-| Role count k (domain decision 17) | `rolemap.role_map_setting` | Owner zone, one row per user; the bound is enforced in the `rolemap` domain rule and the API schema (ADR 0003). |
-| Resume, ResumeVersion, RevisionThread, exports | `resume.resume`, `resume.version`, `resume.revision`, `resume.export` | Owner zone. A résumé holds its Target like a plan does, with its snapshot and RequirementCoverage. Versions are never overwritten (`generated`, `manual`, `chat`); each chat exchange keeps the proposal it made and the version it became; exported PDFs live in object storage under `users/{owner}/exports/`. |
-| GapPlan, Milestone, Task | `gapplan.plan`, `gapplan.milestone`, `gapplan.task` | Owner zone. A plan row holds the Target as `target_kind` plus one of `job_posting_id`, `subscription_id` or `private_posting_id`, and the frozen requirements snapshot, so a plan survives posting expiry and re-clustering. Regenerating adds a row with the next `version`; finished tasks carry over by matching. Each row has a `status` (`drafting`, `ready`, `failed`) and the failure's code ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)). |
-| What a fit was projected from | `assessment.role_fit.requirements`, `requirement_map` | The requirements and which of the user's dimensions each mapped to, so a Target snapshot and requirement coverage can be read without the role or posting. A fit may now be for a pasted JD (`private_posting_id`). |
-| Pasted JDs (decision 12) | `market_user.private_job_posting` | The crawler role and shared queries physically can't reach them. An optional `shared_posting_id` gives a one-way link to a matching crawled posting. |
+| TargetLocation (domain decision 21) | `market_user.market_preference` | User-owned, at most three rows per user — a rule in the `market` domain, checked again by the API schema. The table keeps its name: renaming it would mean rewriting the fan-out RLS policy for no gain. The worker copies each market's public-API sources into `market.crawl_source` **without user ids**, so the crawler can't tell who asked for them. |
+| Baseline sources (domain decision 15) | `market.crawl_source` with `origin = 'baseline'` | A versioned seed owned by `advisor.market`, loaded by `make migrate`. It is data reviewed like code, not environment configuration. Demand rows have `origin = 'demand'` and come from target locations and custom-role companies. Neither carries a user id. |
+| Role, with `origin` (domain decisions 23, 25) | `rolemap.role` | Owner zone. `origin` is `recommended` (one of the ten; retired by reconciliation when it falls out) or `custom` (kept until the user removes it, with its title, optional company and optional `private_posting_id`). The count of ten is a constant in the `rolemap` domain, not a setting. |
+| Resume, ResumeVersion, RevisionThread, exports | `resume.resume`, `resume.version`, `resume.revision`, `resume.export` | Owner zone. A résumé holds its Target like a plan does, with its snapshot and RequirementCoverage. Versions are never overwritten (`generated`, `manual`, `chat`, and `answers` for a regeneration after Fill the gap); each chat exchange keeps the proposal it made and the version it became; exported PDFs live in object storage under `users/{owner}/exports/`. |
+| GapPlan, Milestone, Task | `gapplan.plan`, `gapplan.milestone`, `gapplan.task` | Owner zone. A plan row holds the Target as a `role_id` plus a nullable `job_posting_id` (domain decision 26), and the frozen requirements snapshot, so a plan survives posting expiry and re-clustering. Regenerating adds a row with the next `version`; finished tasks carry over by matching. Each row has a `status` (`drafting`, `ready`, `failed`) and the failure's code ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)). |
+| QuestionSet, GapQuestion (domain decision 27) | `gapfill.question_set`, `gapfill.question` | Owner zone. A set is keyed on the Target (`role_id`, nullable `job_posting_id`) and records the model and a `status` the page polls (`writing`, `ready`, `failed`, `superseded`). Each question keeps its gap (dimension id or requirement), "asked because", answer type and choices. Answers are **not** stored here while the user types — they arrive in one submit and are written as `profile.evidence` with source `user_answer`, citing the question; the question keeps the evidence id. |
+| What a fit was projected from | `assessment.role_fit.requirements`, `requirement_map` | The requirements and which of the user's dimensions each mapped to, so a Target snapshot and requirement coverage can be read without the role or posting. A fit may be for a custom role's JD (`private_posting_id`). |
+| A custom role's JD (decisions 12, 25) | `market_user.private_job_posting` | The crawler role and shared queries physically can't reach it. An optional `shared_posting_id` gives a one-way link to a matching crawled posting. It is referenced by the custom role that owns it. |
 | InterviewReport, private part (outcome, stage notes) | `profile.interview_outcome` | Owner only; becomes Evidence and calibrates fit |
 | InterviewReport, shared part (company, title, stages, difficulty) | `market.interview_contribution` with salted `contributor_hash` | Allows one vote per user with no link back to the account |
 | Aggregated difficulty | `market.interview_difficulty_agg` | Published only for **≥ 3 distinct contributors**; the API reads this table, never raw contributions |
@@ -283,7 +297,7 @@ Crawled pages, uploaded PDF/DOCX files, pasted JDs, repository and ticket conten
   - Evidence ids cited by the AI must exist in *this user's* profile, or the output is rejected. This also blocks invented résumé claims.
 - **SSRF protection** (`kernel.fetch`):
   - Block private, loopback, link-local and cloud-metadata addresses, and re-check after every redirect and DNS resolution.
-  - Applies to personal-site crawling, to **subscription URLs** (fetched only by the crawler, from a `crawl_source` row with no owner), and to the **user-supplied LLM base URL**. A "Local" model therefore means an endpoint at a public URL the user controls, not one on the server's network.
+  - Applies to personal-site crawling, to **board discovery for a custom role's company** (fetched only by the crawler, from a `crawl_source` row with no owner), and to the **user-supplied LLM base URL**. A "Local" model therefore means an endpoint at a public URL the user controls, not one on the server's network.
 - **Auth:** the API verifies JWT signature, issuer, audience and expiry on every request. Login OAuth (Google, our own exchange in `identity`, stored in `identity.federated_identity`) and connector OAuth (handled by `profile`) are separate flows with separate token storage — they share no code path. Login OAuth keeps no Google token at all: the ID token is verified once and discarded (ADR 0008).
 
 ## 5. AI gateway (`kernel/ai_gateway`)
@@ -307,9 +321,9 @@ flowchart LR
   F --> G[Return result + model id + template version]
 ```
 
-- **Prompt templates** are versioned files. Each snapshot (SkillAssessment, RoleFit, GapPlan, ResumeVersion) stores the model id and template version.
-- **First-run cost confirmation** comes from the same estimate step, run in dry-run mode. The role-map estimate is capped at the user's k, and raising k asks for confirmation again (ADR 0003).
-- **Callers:** `assessment` (analysis, follow-up questions, fit, reading a pasted JD's requirements), `rolemap` (naming, requirements, difficulty), `gapplan` (drafting) and `resume` (writing, and the revision chat through `stream_structured`: prose streams, the marker never does, and the JSON after it is validated like any `run`). Never `profile`: ingestion is outside the gateway (rule 6).
+- **Prompt templates** are versioned files. Each snapshot (SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion) stores the model id and template version.
+- **Cost confirmation** comes from the same estimate step, run in dry-run mode. Analyze's estimate covers the analysis **and** the ten-role build that follows it (domain decision 24); "Add to Role Map" and "Submit answers" (which regenerates the plan and résumé) estimate their own.
+- **Callers:** `assessment` (analysis, fit, reading a custom role's JD), `rolemap` (naming, requirements, difficulty), `gapfill` (questions per gap), `gapplan` (drafting) and `resume` (writing, and the revision chat through `stream_structured`: prose streams, the marker never does, and the JSON after it is validated like any `run`). Never `profile`: ingestion is outside the gateway (rule 10).
 - **Local ML is outside the gateway.** sentence-transformers and HDBSCAN run in `crawler` (posting embeddings, dedup) and in `worker` (per-user clustering over the embeddings of that user's market postings). The gateway on the user's key only **names clusters and extracts requirements**. Rule: *generative AI is paid by the user; plain computation is paid by the platform* (domain decision 7).
 
 ## 6. Schedules and flows across units
@@ -317,20 +331,21 @@ flowchart LR
 | Trigger | Unit | Flow |
 |---|---|---|
 | Weekly cron | crawler | crawl every `crawl_source`, baseline and demand → normalize → dedup → embed → expire unseen → outbox `PostingsChanged` |
-| `PostingsChanged` | worker (`ai`) | resolve affected users → recluster → keep the user's top k clusters → name them and extract requirements → compute fits |
-| User changes k | api → worker (`ai`) | cost estimate for k → user confirms → recluster → fits; lowering k retires roles without spending |
-| User subscribes to a role (with URL) | api → worker → crawler | store in `market_user` → materialise `crawl_source` without user id → single-company crawl; no board found → `manual` coverage |
-| Weekly cron, after crawl | worker (`notify`) | send `MatchDigest`; send interview-report prompts about 2 weeks after tailoring |
-| Weekly cron | worker | re-check `manual` subscriptions for a supported board; refresh `crawl_source` from `market_user` |
-| User subscribes / clicks refresh | api → crawler | single-company crawl, rate-limited per user per day |
-| User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits, and a question round `generating` → `ready` or `failed`; the SPA polls the round (ADR 0006, ADR 0012, ADR 0018) |
-| User rebuilds the role map, or saves a new k | api → worker (`ai`) | cost estimate → user confirms → build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → `ready` or `failed` (ADR 0018) |
+| `PostingsChanged` | worker (`ai`) | resolve affected users → recluster → keep the ten clusters closest to the profile, and re-match each custom role → name them and extract requirements → compute fits |
+| User adds, removes or changes a target location | api → worker | at most three, checked in the domain → store in `market_user` → materialise the market's public-API `crawl_source` rows without user id → rebuild the role map on the new scope (ADR 0018 gating) |
+| Weekly cron, after crawl | worker (`notify`) | send interview-report prompts about 2 weeks after tailoring (not built yet) |
+| Weekly cron | worker | re-check demand `crawl_source` rows whose company had no board yet; refresh public-API rows from target locations through the `app.fanout` read. A custom role's company needs no fan-out: `CustomRoleAdded` carries it, and the ownerless row it becomes persists |
+| User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits → the role-map build, whose cost was part of the same confirmation (domain decision 24; ADR 0006, ADR 0018) |
+| Role-map build (after an analysis, or a market change) | worker (`ai`) | build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → the ten closest clusters plus every custom role → `ready` or `failed` (ADR 0018) |
+| User clicks "Add to Role Map" (title, company?, JD?) | api → worker (`ai`) | cost estimate → user confirms → a custom role in `rolemap` (its JD stored privately in `market_user`) → `CustomRoleAdded` → board discovery for the company, if any → match postings in scope by title (and company) → requirements from the JD or the matches → fit → placed on the map, drawn green |
 | Any background work running | api | the shell polls `GET /activity` every 2 s while a sync, parse, analysis or build is busy: the running bar, sidebar marks, a toast when a stage ends, and screens reload what it wrote. Work busy past `JOB_STALE_AFTER_SECONDS` reads as `failed`/`stale` (ADR 0018) |
-| Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated` → question round on `ai` (ADR 0012) |
-| Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé → `ProfileUpdated` → question round on `ai` (ADR 0012) |
-| User picks a Target and generates a plan | api → worker (`ai`) | cost estimate → user confirms → plan row `drafting` → worker snapshots the Target (a pasted JD is read and scored first) → gaps ranked by fit points → draft → validate → `ready` or `failed` with a code; the SPA polls the row (ADR 0006) |
+| Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated`; nothing on the user's key |
+| Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé → `ProfileUpdated`; nothing on the user's key |
+| User aims the Advisor ("Target this role") | api → worker (`ai`) | the SPA carries the role (and opening) in the hash → Fill the gap asks for the Target's question set → none current: cost estimate → user confirms → set `writing` → questions per gap from the Target snapshot's dimension gaps and uncovered requirements → `ready` or `failed`; the SPA polls the set (ADR 0006) |
+| User clicks "Submit answers" | api → worker (`ai`) | cost estimate for the regenerations → user confirms → one transaction: every answer validated and recorded as `user_answer` Evidence through `profile`, the questions linked to it → `ProfileUpdated` and `GapAnswersSubmitted` → the Target's plan and résumé regenerate as new versions, if they exist |
+| User picks a Target and generates a plan | api → worker (`ai`) | cost estimate → user confirms → plan row `drafting` → worker snapshots the Target (a custom role's JD is scored first) → gaps ranked by fit points → draft → validate → `ready` or `failed` with a code; the SPA polls the row (ADR 0006) |
 | User reopens a plan | api | read the GapPlan version; no AI |
-| User picks a résumé Target | api → worker (`ai`) | cost estimate → user confirms → résumé row `drafting` → Target snapshot → RequirementCoverage from scores against the snapshot's bar → first ResumeVersion, every written line citing the user's Evidence, over the uploaded résumé when there is one |
+| User writes a résumé for the Target | api → worker (`ai`) | cost estimate → user confirms → résumé row `drafting` → Target snapshot → RequirementCoverage from scores against the snapshot's bar → first ResumeVersion, every written line citing the user's Evidence, over the uploaded résumé when there is one |
 | Résumé chat | api | `ai_gateway.stream_structured` over SSE (a POST read with `fetch`, since it carries the draft and a bearer token): `text` events, then one `proposal` or `error`; an accepted proposal saves a ResumeVersion |
 | Export PDF | api → worker (`docs`) | WeasyPrint render of a saved version (white page, template, nothing fetched) → object storage → the SPA polls the export and gets a signed URL |
 
@@ -341,19 +356,26 @@ flowchart LR
 | T1 | Modular monolith (`api` + `worker`) plus a separate `crawler`; Python backend, TypeScript SPA; managed PaaS; small-team MVP |
 | T2 | Components interact only through their `__init__.py`, enforced by `import-linter`; side effects via transactional outbox and events |
 | T3 | One Postgres with a schema per module; separate least-privilege DB roles for crawler and aggregator; RLS on every owner-zone table |
-| T4 | Privacy by storage location: subscriptions and pasted JDs in `market_user`; interview reports split into a private outcome and an anonymized contribution, aggregated at ≥ 3 contributors |
+| T4 | Privacy by storage location: target locations and custom roles' JDs in `market_user`; interview reports split into a private outcome and an anonymized contribution, aggregated at ≥ 3 contributors |
 | T5 | Envelope encryption for the LLM key and connector tokens; master key only on `api` and `worker`; path to cloud KMS later |
 | T6 | A single AI gateway: budget check → decrypt → provider adapter → schema validation → usage ledger |
 | T7 | Local embeddings plus HDBSCAN for dedup and clustering; the LLM only names clusters and extracts requirements |
 | T8 | ~~Managed auth provider~~ — **superseded by [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)**: own email-and-password sign-in. Still true: FastAPI verifies JWTs on every request, and login is kept separate from connector OAuth |
-| T9 | Untrusted-input rules: parsing only in workers, delimited prompts, no side-effecting tools, schema-validated output, SSRF-guarded fetch including custom LLM base URLs and subscription URLs |
+| T9 | Untrusted-input rules: parsing only in workers, delimited prompts, no side-effecting tools, schema-validated output, SSRF-guarded fetch including custom LLM base URLs and custom-role company discovery |
 | T10 | Baseline crawl: a platform-curated seed in `market.crawl_source` (`origin = 'baseline'`), loaded by `migrate`, shared zone, no user linkage |
-| T11 | The role map's k is a per-user setting in `rolemap`, bounded, with the cost estimate capped at k ([ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md), superseding [ADR 0002](decisions/0002-analyse-only-the-ten-closest-roles.md)) |
+| T11 | ~~The role map's k is a per-user setting in `rolemap`, bounded, with the cost estimate capped at k~~ ([ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md), superseding [ADR 0002](decisions/0002-analyse-only-the-ten-closest-roles.md)) — **superseded by T18** |
 | T12 | Ingestion never reaches the AI gateway: `profile` may not import `kernel.ai_gateway`, enforced by `import-linter` |
-| T13 | Gap plans are keyed by Target (kind plus reference plus frozen requirements snapshot) in the `gapplan` module; the earlier `growth` module is not built |
+| T13 | Gap plans are keyed by Target (kind plus reference plus frozen requirements snapshot) in the `gapplan` module; the earlier `growth` module is not built — *the reference is amended by T21* |
 | T14 | Targets are resolved by their own table-less `target` module ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)) |
 | T15 | A job-produced result exists from the request, with a status the SPA polls; SSE is kept for the résumé chat ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)) |
 | T16 | Résumé PDFs are rendered by WeasyPrint on the `docs` queue, not a headless browser ([ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)) |
+| T17 | Target locations stay in `market_user.market_preference`, capped at three by a `market` domain rule; they scope the role map and salary bands and seed public-API demand sources without user ids (domain decision 21) |
+| T18 | The role map keeps a fixed ten recommended roles — a `rolemap` domain constant, no setting table — and is built after every analysis, its cost confirmed with the analysis's (domain decisions 23, 24; supersedes T11) |
+| T19 | Role subscriptions (with the `fanout_read` policy on their table; the one on `market_preference` stays) and the match digest are removed; board discovery is kept and driven by custom-role companies (domain decision 22) |
+| T20 | A custom role is a `rolemap.role` with `origin = 'custom'`, never retired by reconciliation; its JD stays in `market_user.private_job_posting` (domain decision 25) |
+| T21 | A Target is stored as `role_id` plus a nullable `job_posting_id` with its frozen snapshot, in every consumer (domain decision 26; amends T13) |
+| T22 | Follow-up questions live in a `gapfill` component between `target` and its consumers, keyed on the Target; answers are submitted once and written as `user_answer` Evidence through `profile`; `GapAnswersSubmitted` regenerates the plan and résumé by separate jobs (domain decision 27; replaces ADR 0012's question rounds) |
+| T23 | Profile confidence is computed in `assessment` and returned with the strength report, not averaged in the SPA (domain decision 28) |
 
 ### Coverage of domain decisions
 
@@ -366,16 +388,23 @@ flowchart LR
 | 5 / 11 Interview difficulty, reporter incentive | T4: split storage, ≥ 3 aggregation, outcome → Evidence → `calibrate_fit` |
 | 6 Crawler, permitted sources only | T1, §1: separate `crawler`, no secrets, SSRF-guarded `kernel.fetch` |
 | 8 5–10 dimensions | Enforced in the `assessment` domain rules and output schema |
-| 9 User selects markets | `market_user.market_preference` → `market.crawl_source` without user ids |
+| 9 User selects markets | *Superseded by 21* |
 | 10 / 20 App suggests successor role | `RoleSplitOrMerged` → `gapplan.suggest_successor` for affected Targets |
-| 12 Private pasted JDs | T4: `market_user.private_job_posting` |
-| 13 Manual fallback for uncrawlable companies | Weekly re-check job; `coverage` column in `market_user` |
-| 14 Weekly crawl | §6 weekly cron chain; `MatchDigest` |
+| 12 Private pasted JDs | T4, T20: `market_user.private_job_posting`, owned by a custom role |
+| 13 Manual fallback for uncrawlable companies | Amended by 22: a custom role whose company has no board runs on its JD; the weekly re-check keeps looking |
+| 14 Weekly crawl | §6 weekly cron chain; no digest (22) |
 | 15 Baseline crawl | T10 |
-| 16 GapPlan per Target | T13, T14: `gapplan` schema, `target` module |
-| 17 User-chosen k | T11: `rolemap.role_map_setting`, `RoleCountChanged` |
-| 18 Ingestion AI-free | T12: rule 6 |
-| 19 Role subscriptions with URL | `market_user.company_subscription` gains role and URL columns; SSRF-guarded crawl of the URL |
+| 16 GapPlan per Target | T13, T14: `gapplan` schema, `target` module; the Target's shape is amended by 26 |
+| 17 User-chosen k | *Superseded by 23* |
+| 18 Ingestion AI-free | T12: rule 10 |
+| 19 Role subscriptions with URL | *Superseded by 22* |
+| 21 Target locations, 1–3 | T17 |
+| 22 No subscriptions or digest | T19 |
+| 23 / 24 Ten roles, built after each analysis | T18: `AnalysisFinished` → activity → `rolemap.recluster` |
+| 25 Custom roles | T20: `CustomRoleAdded` → discovery and a build |
+| 26 Target = role + optional opening | T21, T14 |
+| 27 Questions per gap of the Target | T22: `gapfill` schema, rule 5 layering, `GapAnswersSubmitted` |
+| 28 Profile confidence on the analysis | T23 |
 
 ## 8. Open questions
 
@@ -383,7 +412,7 @@ flowchart LR
 |---|---|---|
 | 1 | **PaaS choice** (Fly.io / Render / Railway) | **Still open.** Phase 1 runs on local Docker Compose, so the decision is deferred. It affects per-service secrets — the master key must be settable on `api` and `worker` only — and whether one Playwright-capable worker image fits the memory limit. |
 | 2 | **Auth provider** | **Answered: our own email and password, in `identity`** — see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md), which supersedes the earlier choice of Clerk (it needs an external account). Argon2id hashes, time-based lockout after 5 failures, 15-minute access tokens held in memory, and rotating 30-day refresh tokens in an httpOnly `SameSite=Strict` cookie, stored hashed. A reused refresh token revokes its whole chain. `kernel/auth` verifies through a `SigningKeyResolver`, so moving to a hosted OpenID provider later is a wiring change, not a rewrite. **Not yet built, both blocked on Q3:** address verification and password reset. |
-| 3 | **Email delivery** for digests and prompts | **Still open — and now on the critical path.** Beyond `MatchDigest` and interview-report prompts (Phase 2), owning sign-in means address verification and password reset both need it. Until then, anyone can register an address they do not own, and a forgotten password cannot be recovered. |
+| 3 | **Email delivery** for digests and prompts | **Still open — and now on the critical path.** Beyond interview-report prompts (Phase 2), owning sign-in means address verification and password reset both need it. Until then, anyone can register an address they do not own, and a forgotten password cannot be recovered. |
 
 ### Decided during Phase 1 implementation
 

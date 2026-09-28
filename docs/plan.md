@@ -104,3 +104,125 @@ later phase — never a market data source.
   from the latest analysis, a count of how many facts back a score, a filter
   for the ones none cite, and a note when sources changed after the analysis.
   The strength report already lists the facts behind each score.
+
+# Phase 5
+## v3 journey redesign
+The v3 domain diagram (`docs/job_searching_advisor_domain_concepts_v3.excalidraw`)
+and the redesigned prototype (`prototype/`) change the journey. `domain_model.md`
+(decisions 21–28) and `architecture.md` (T17–T23) describe where it ends up;
+this is the order the code gets there.
+
+Every step is its own branch cut from `master` and its own PR:
+* tests for the new behaviour in the right tier, and `make lint`,
+  `make typecheck`, `make test-unit` and `make test-integration` passing, with
+  nothing skipped
+* its ADR, and the `docs/decisions/README.md` index updated with it
+* `CLAUDE.md`, and its row of the "What it does" table in `README.md`, updated
+  to say what is now built
+
+ADR numbers below are the next free ones at the time of writing. A step takes
+whatever is next when it merges.
+
+1. **Docs — done.** The v3 diagram, the prototype screens, the domain model,
+   the architecture and this phase.
+
+2. **Target locations** — `feature/no-ticket/target-locations`
+   * 1–3 target locations, as a `market` domain rule next to
+     `MarketPreference.chosen()`, checked again by the API schema. Served as
+     `/target-locations`; the table stays `market_user.market_preference`.
+   * The "Where you want to work" panel moves from `Roles.tsx` to 01 Sources
+     (`features/Connect.tsx`). The role map drops the market filter pills and
+     the band toggle, and says how many postings are in the chosen locations.
+   * README row: Profile & evidence.
+
+3. **Remove the watchlist** — `refactor/no-ticket/drop-role-subscriptions`,
+   ADR 0019
+   * Delete `CompanySubscription`, `SubscriptionAdded`, the
+     `/role-subscriptions` routes, `refresh_company`, and the subscription
+     input to `materialize_crawl_sources`. Keep board discovery
+     (`market/crawling/discovery.py`, `discover_board`), which step 5 drives.
+   * Remove the `subscription` Target kind, `MatchedPostingView.subscription_id`,
+     and the SPA's watch form, Subscribe toggle and "subscribed" chip.
+   * Migration: drop `market_user.company_subscription` and its `fanout_read`
+     policy, then drop `subscription_id` from `gapplan.plan` and
+     `resume.resume`. Rows aimed at a subscription are deleted first, and the
+     migration says how many.
+   * README row: Gap plan (no watched roles).
+
+4. **Ten roles, built after each analysis** — `refactor/no-ticket/fixed-ten-roles`,
+   ADR 0020, superseding ADR 0003
+   * `rolemap/domain/selection.py` replaces the 3–20 bound with a constant of
+     ten. Drop `RoleMapSetting`, `rolemap.role_map_setting`, `RoleCountChanged`,
+     `/roles/settings`, `role_count` on the cost estimate, and the SPA's
+     count input.
+   * `AnalysisFinished` → `activity` requests a build for every successful
+     analysis, reusing ADR 0018's gating. The Analyze cost estimate adds the
+     build's, so there is one confirmation.
+   * README row: Role map.
+
+5. **Custom roles** — `feature/no-ticket/custom-roles`, ADR 0021
+   * `Role.origin` (`recommended` | `custom`). Reconciliation never retires a
+     custom role, and custom roles do not count toward the ten.
+   * `POST /roles/custom {title, company?, job_description?}` and a delete. The
+     JD is stored through `MarketService.paste_job_description`. A company
+     goes to board discovery as an ownerless `demand` source
+     (`CustomRoleAdded`).
+   * The role-map job matches in-scope postings by title words (and company).
+     Requirements come from the JD when there is one, else from the matches.
+     The cost estimate comes before "Add to Role Map".
+   * The SPA's "Add a role of your own" form replaces `OwnJd.tsx`, and
+     `charts/RoleMap.tsx` draws custom roles green, labelled "yours".
+   * Pasted JDs already stored become custom roles, titled from the JD.
+   * README row: Role map.
+
+6. **A Target is a role, plus an optional opening** — `refactor/no-ticket/role-targets`,
+   ADR 0022, amending ADR 0005
+   * `TargetRef{role_id, job_posting_id?}` in `target/domain/snapshot.py`.
+     `RequirementBasis` becomes posting, then private JD, then role.
+     `TargetService.options()` goes: the role map is the only picker.
+   * Migrate `gapplan.plan` and `resume.resume` to `role_id` + nullable
+     `job_posting_id`. Plans and résumés aimed at a pasted JD point at the
+     custom role step 5 made from it.
+   * The Advisor: a "Your target role" banner with "Change role", no
+     `TargetChips`, and only `?role=` (plus the opening) in the hash —
+     `?jd=` goes from `shell/navigation.ts`. Plan history and saved résumés
+     are listed by role and company.
+   * README rows: Gap plan, and "Resume Advisor" becomes "Résumé".
+
+7. **Fill the gap** — `feature/no-ticket/gap-fill`, ADR 0023, superseding
+   ADR 0012
+   * A new `advisor/gapfill` component (domain, service, infra, factory,
+     jobs), its `gapfill` schema with RLS, routes and schemas, a
+     public-surface contract in `backend/.importlinter`, and the layering
+     contract updated to `gapplan | resume | activity → gapfill → target`.
+   * Questions per gap, from the Target snapshot's `DimensionGap` /
+     `UncoveredGap`: "asked because", answer type and choices, fit points. A
+     job on the `ai` queue with a status the page polls (ADR 0006).
+   * One submit: the whole batch validated, each answer recorded through
+     `profile.record_answer` in one transaction, then `GapAnswersSubmitted`,
+     which the dispatcher turns into `gapplan` and `resume` regenerate jobs
+     for that Target.
+   * `EvidenceSource.SELF_REPORTED` becomes `USER_ANSWER` ("Your answers"),
+     with a data migration.
+   * Remove the old questions: `FollowUpQuestion`, `QuestionRound`,
+     `generate_questions`, `/questions`, the `ProfileUpdated` branch in
+     `worker/dispatcher.py`, the `assessment.follow_up_question` and
+     `assessment.question_round` tables, and `FollowUpQuestions.tsx` on
+     Sources.
+   * The Advisor opens on `#/advisor/gaps`: "First: Fill the gap → Then,
+     either: Gap plan | Résumé".
+   * README row: Profile & evidence (answers), and a Fill the gap row.
+
+8. **Profile confidence on Strengths** — `feature/no-ticket/profile-confidence`
+   * `assessment` returns profile confidence with the strength report. Today
+     `App.tsx` averages it in the SPA.
+   * Strengths shows it next to Re-analyse, and lists dimensions least
+     certain first. The sidebar loses its meter (`shell/Sidebar.tsx`,
+     `ShellContext`).
+   * Copy from the prototype: "What runs on your key" on the AI & model
+     screen, and the Organic and Plain résumé templates.
+   * README: the Strength report row, and removing the "redesign under way"
+     line.
+
+Order: step 3 before 6, step 4 before 5, and steps 5 and 6 before 7. Step 2
+and step 8 can land any time.
