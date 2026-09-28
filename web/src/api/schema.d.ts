@@ -684,6 +684,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resumes/{resume_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Resume
+         * @description The file, and every fact taken from it, leave the profile.
+         */
+        delete: operations["delete_resume_api_v1_resumes__resume_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resumes/{resume_id}/download-url": {
         parameters: {
             query?: never;
@@ -1068,6 +1088,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Is Out Of Date */
+            is_out_of_date: boolean;
             /** Model Id */
             model_id: string;
             /** Profile Version */
@@ -4545,6 +4567,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResumeUpload"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_resume_api_v1_resumes__resume_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

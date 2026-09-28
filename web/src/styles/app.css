@@ -755,6 +755,12 @@ select.input { appearance: auto; }
   font-weight: 600;
 }
 
+.note-warning {
+  color: var(--status-warning);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
 /* --- tables, legend, tooltip (charts) ------------------------------------ */
 
 .data-table {

@@ -162,8 +162,16 @@ class DimensionView:
 
 @dataclass(frozen=True, slots=True)
 class AssessmentView:
+    """``is_out_of_date``: the profile's evidence has changed since this ran.
+
+    Any sync, upload, answer, disconnect or deleted résumé bumps the profile
+    version, so an older ``profile_version`` means the scores read facts that
+    have since been added, restated or removed.
+    """
+
     id: uuid.UUID
     profile_version: int
+    is_out_of_date: bool
     model_id: str
     template_version: str
     created_at: datetime
@@ -347,9 +355,10 @@ class AssessmentService:
         return await self.latest(owner_id) or _never()
 
     async def latest(self, owner_id: uuid.UUID) -> AssessmentView | None:
+        current = await self._profile.version(owner_id)
         async with self._uow.for_owner(owner_id) as mine:
             newest = await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1)
-            return await _view(mine, newest[0]) if newest else None
+            return await _view(mine, newest[0], current) if newest else None
 
     async def history(
         self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
@@ -359,10 +368,11 @@ class AssessmentService:
         Newest first, paged by the store: one per analysis the user paid for.
         """
         everything = SkillAssessmentFilter()
+        current = await self._profile.version(owner_id)
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.assessments.get_list(everything, page=page, page_size=page_size)
             total = await mine.assessments.get_count(everything)
-            views = tuple([await _view(mine, assessment) for assessment in found])
+            views = tuple([await _view(mine, assessment, current) for assessment in found])
         return Page(views, page, page_size, total)
 
     # -- follow-up questions ------------------------------------------------
@@ -972,8 +982,14 @@ class AssessmentService:
             )
 
 
-async def _view(mine: OwnerAssessment, assessment: SkillAssessment) -> AssessmentView:
-    """An assessment with its scores, named by the user's dimensions."""
+async def _view(
+    mine: OwnerAssessment, assessment: SkillAssessment, profile_version: int
+) -> AssessmentView:
+    """An assessment with its scores, named by the user's dimensions.
+
+    ``profile_version`` is the profile's version now, to compare against the
+    one the assessment read.
+    """
     scores = await mine.scores.get_list(AssessedScoreFilter(assessment_id=assessment.id))
     names = {
         d.key: (d.name, d.short_name)
@@ -984,6 +1000,7 @@ async def _view(mine: OwnerAssessment, assessment: SkillAssessment) -> Assessmen
     return AssessmentView(
         id=assessment.id,
         profile_version=assessment.profile_version,
+        is_out_of_date=assessment.profile_version < profile_version,
         model_id=assessment.model_id,
         template_version=assessment.template_version,
         created_at=assessment.created_at,

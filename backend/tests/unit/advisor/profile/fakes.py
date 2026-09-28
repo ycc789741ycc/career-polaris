@@ -63,8 +63,10 @@ class FakeEvidence(FakeRepository[Evidence, EvidenceFilter]):
     noun = "evidence"
 
     def matches(self, entity: Evidence, filter: EvidenceFilter) -> bool:
-        return (filter.source is None or entity.source == filter.source) and (
-            filter.external_refs is None or entity.external_ref in filter.external_refs
+        return (
+            (filter.source is None or entity.source == filter.source)
+            and (filter.external_refs is None or entity.external_ref in filter.external_refs)
+            and (filter.resume_file_id is None or entity.resume_file_id == filter.resume_file_id)
         )
 
 
@@ -122,3 +124,6 @@ class FakeObjectStore:
 
     def signed_url(self, key: str) -> str:
         return f"https://objects.test/{key}"
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)

@@ -330,6 +330,87 @@ async def test_another_users_resume_cannot_be_downloaded() -> None:
     assert (await profile.resume_download_url(OTHER, theirs.id)).startswith("https://")
 
 
+def _service_with_store(uow: FakeProfileUnitOfWork) -> tuple[ProfileService, FakeObjectStore]:
+    store = FakeObjectStore()
+    profile = ProfileService(
+        uow,
+        object_store=store,  # type: ignore[arg-type]
+        connectors={"github": FakeConnector([_draft("pr/1")])},  # type: ignore[dict-item]
+        resume_max_bytes=10_000,
+        resume_max_pages=5,
+        http_timeout_seconds=1,
+        user_agent="test",
+    )
+    return profile, store
+
+
+async def _upload_and_parse(
+    profile: ProfileService, content: bytes = RESUME, filename: str = "cv.txt"
+) -> uuid.UUID:
+    uploaded = await profile.upload_resume(
+        OWNER, filename=filename, content_type="text/plain", content=content
+    )
+    await profile.parse_resume(OWNER, uploaded.id)
+    return uploaded.id
+
+
+async def test_deleting_a_resume_removes_the_file_and_only_its_evidence() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile, store = _service_with_store(uow)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+    resume_id = await _upload_and_parse(profile)
+    before = await profile.snapshot(OWNER)
+    resume_facts = [e for e in before.evidence if e.source is EvidenceSource.RESUME]
+    assert resume_facts
+    uow.store.events.clear()
+
+    await profile.delete_resume(OWNER, resume_id)
+
+    after = await profile.snapshot(OWNER)
+    assert {e.source for e in after.evidence} == {EvidenceSource.GITHUB}
+    assert uow.store.resumes == {} and store.objects == {}
+    assert after.version == before.version + 1 == await profile.version(OWNER)
+    assert uow.store.events == [
+        ProfileUpdated(
+            owner_id=OWNER,
+            source=EvidenceSource.RESUME,
+            version=after.version,
+            count=len(resume_facts),
+        )
+    ]
+
+
+async def test_a_line_restated_by_a_newer_upload_belongs_to_that_upload() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile, _ = _service_with_store(uow)
+    older = await _upload_and_parse(profile)
+    newer = await _upload_and_parse(profile)
+    count = len((await profile.snapshot(OWNER)).evidence)
+
+    # Removing the older copy keeps what the newer one still says...
+    await profile.delete_resume(OWNER, older)
+    assert len((await profile.snapshot(OWNER)).evidence) == count
+
+    # ...and removing the newer one takes it away.
+    await profile.delete_resume(OWNER, newer)
+    assert (await profile.snapshot(OWNER)).evidence == ()
+
+
+async def test_a_resume_that_is_not_yours_cannot_be_deleted() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile, store = _service_with_store(uow)
+    theirs = await profile.upload_resume(
+        OTHER, filename="cv.txt", content_type="text/plain", content=RESUME
+    )
+
+    with pytest.raises(NotFoundError):
+        await profile.delete_resume(OWNER, theirs.id)
+    assert list(uow.store.resumes) == [theirs.id] and store.objects
+
+
 # --- answers and the snapshot ----------------------------------------------
 
 

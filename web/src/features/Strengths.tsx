@@ -137,6 +137,14 @@ export function Strengths() {
       </div>
 
       <ErrorNote error={error} />
+      {assessment.data?.is_out_of_date && !queued && (
+        <p role="status" className="note-warning" style={{ margin: "8px 0" }}>
+          {/* Never colour alone. */}
+          <span aria-hidden="true">⚠</span> Out of date: your evidence has
+          changed since this analysis ran, so these scores may not match it.
+          Re-analyse to catch up.
+        </p>
+      )}
       {queued && (
         <Done>Queued. This runs on your model — reload in a moment.</Done>
       )}

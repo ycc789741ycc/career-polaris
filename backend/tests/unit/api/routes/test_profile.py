@@ -27,6 +27,7 @@ from advisor.profile.domain.timeline import Position
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import profile as profile_api
+from kernel.errors import NotFoundError
 from kernel.paging import Page, paginate
 
 EVIDENCE_ID = uuid.uuid4()
@@ -47,6 +48,14 @@ EVIDENCE = EvidenceView(
 
 
 class FakeProfile:
+    def __init__(self) -> None:
+        self.deleted: list[uuid.UUID] = []
+
+    async def delete_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
+        if resume_id != RESUME_ID:
+            raise NotFoundError("resume not found", resume_id=str(resume_id))
+        self.deleted.append(resume_id)
+
     async def connections(self, owner_id: uuid.UUID) -> list[ConnectionView]:
         return [
             ConnectionView(
@@ -107,12 +116,17 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def client(queued: list[dict[str, Any]]) -> TestClient:
+def profile() -> FakeProfile:
+    return FakeProfile()
+
+
+@pytest.fixture
+def client(queued: list[dict[str, Any]], profile: FakeProfile) -> TestClient:
     app = FastAPI()
     errors.install(app)
     app.include_router(profile_api.router)
     app.dependency_overrides[current_user] = lambda: uuid.uuid4()
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(profile=FakeProfile())
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(profile=profile)
     return TestClient(app)
 
 
@@ -154,6 +168,20 @@ def test_uploaded_resumes_list_their_parse_state(client: TestClient) -> None:
             "uploaded_at": "2026-09-20T08:00:00+00:00",
         }
     ]
+
+
+def test_deleting_a_resume_answers_no_content(client: TestClient, profile: FakeProfile) -> None:
+    response = client.delete(f"/resumes/{RESUME_ID}")
+
+    assert response.status_code == 204
+    assert profile.deleted == [RESUME_ID]
+
+
+def test_deleting_a_resume_that_is_not_yours_is_not_found(client: TestClient) -> None:
+    response = client.delete(f"/resumes/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 def test_evidence_goes_out_with_dates_and_enums_as_strings(client: TestClient) -> None:

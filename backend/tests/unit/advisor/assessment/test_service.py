@@ -44,8 +44,12 @@ class _Snapshot:
 
 
 class FakeProfile:
-    def __init__(self) -> None:
+    def __init__(self, version: int = 1) -> None:
         self.answers: list[tuple[str, str]] = []
+        self.current_version = version
+
+    async def version(self, owner_id: uuid.UUID) -> int:
+        return self.current_version
 
     async def record_answer(
         self, owner_id: uuid.UUID, *, question_id: str, question: str, answer: str
@@ -136,6 +140,30 @@ async def test_an_assessment_is_stored_as_a_snapshot_and_announced() -> None:
         DimensionsChanged(owner_id=OWNER, added_or_renamed=2, retired=0),
     ]
     assert await service.latest(OTHER) is None
+
+
+async def test_an_assessment_is_up_to_date_while_the_profile_has_not_changed() -> None:
+    service = _service(FakeAssessmentUnitOfWork(), FakeProfile(version=3))
+    await _assess(service, [_dimension("api", "APIs")], version=3)
+
+    latest = await service.latest(OWNER)
+    assert latest is not None and latest.is_out_of_date is False
+
+
+async def test_any_change_to_the_profile_puts_every_earlier_assessment_out_of_date() -> None:
+    profile = FakeProfile(version=1)
+    service = _service(FakeAssessmentUnitOfWork(), profile)
+    await _assess(service, [_dimension("api", "APIs")], version=1)
+    await _assess(service, [_dimension("api", "APIs")], version=2)
+    profile.current_version = 2
+
+    history = (await service.history(OWNER)).items
+    assert [(h.profile_version, h.is_out_of_date) for h in history] == [(2, False), (1, True)]
+
+    # A sync, an upload, a disconnect or a deleted résumé: each bumps it.
+    profile.current_version = 3
+    latest = await service.latest(OWNER)
+    assert latest is not None and latest.is_out_of_date is True
 
 
 async def test_a_dimension_that_disappears_is_retired_with_a_record() -> None:

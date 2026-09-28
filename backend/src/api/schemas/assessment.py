@@ -34,6 +34,8 @@ class Dimension(ApiModel):
 class Assessment(ApiModel):
     id: uuid.UUID
     profile_version: int
+    # The profile's evidence has changed since this ran: re-analyse to catch up.
+    is_out_of_date: bool
     model_id: str
     template_version: str
     created_at: Timestamp
@@ -44,6 +46,7 @@ class Assessment(ApiModel):
         return cls(
             id=assessment.id,
             profile_version=assessment.profile_version,
+            is_out_of_date=assessment.is_out_of_date,
             model_id=assessment.model_id,
             template_version=assessment.template_version,
             created_at=assessment.created_at,

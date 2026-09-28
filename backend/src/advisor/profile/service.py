@@ -358,6 +358,40 @@ class ProfileService:
             total = await mine.evidence.get_count(everything)
         return Page(tuple(_evidence_view(e) for e in found), page, page_size, total)
 
+    async def delete_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
+        """Remove an uploaded résumé and every line of evidence it owns.
+
+        The stored file goes first: deleting an object is idempotent, so if the
+        database step then fails, trying again finishes the job, rather than
+        leaving a row that points at nothing or a file nothing points at.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await mine.resumes.get(resume_id)
+        if resume is None:
+            raise NotFoundError("resume not found", resume_id=str(resume_id))
+
+        self._store.delete(resume.storage_key)
+
+        async with self._uow.for_owner(owner_id) as mine:
+            owned = EvidenceFilter(resume_file_id=resume_id)
+            removed = 0
+            while stale := await mine.evidence.get_list(owned):
+                for evidence in stale:
+                    await mine.evidence.delete(evidence.id)
+                removed += len(stale)
+            await mine.resumes.delete(resume_id)
+
+            version = await _bump_version(mine, owner_id, utcnow())
+            mine.record(
+                ProfileUpdated(
+                    owner_id=owner_id,
+                    source=EvidenceSource.RESUME,
+                    version=version.version,
+                    count=removed,
+                )
+            )
+        log.info("resume.deleted", evidence_removed=removed)
+
     async def resume_download_url(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> str:
         async with self._uow.for_owner(owner_id) as mine:
             resume = await mine.resumes.get(resume_id)
@@ -414,6 +448,12 @@ class ProfileService:
             positions=positions,
             total_experience_months=total_experience_months(list(positions), as_of=utcnow().date()),
         )
+
+    async def version(self, owner_id: uuid.UUID) -> int:
+        """The profile's current version: bumped by every change to its evidence."""
+        async with self._uow.for_owner(owner_id) as mine:
+            versions = await mine.versions.get_list(ProfileVersionFilter(), page_size=1)
+        return versions[0].version if versions else 0
 
     async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
         """Used to reject AI output citing evidence this user does not have."""
@@ -476,6 +516,8 @@ class ProfileService:
                         tally=draft.tally,
                         subject=draft.subject,
                     )
+                    if resume_file_id is not None:
+                        known.found_in_resume(resume_file_id)
                     await mine.evidence.update(known)
 
             version = await _bump_version(mine, owner_id, utcnow())
