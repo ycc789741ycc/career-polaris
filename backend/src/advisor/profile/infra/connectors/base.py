@@ -35,6 +35,10 @@ class Connector(Protocol):
     # this one no longer does, as glob patterns ("jira:*:project:*"). A sync
     # deletes the source's facts that match any of them.
     retired_refs: tuple[str, ...]
+    # ``external_ref`` shapes each sync writes in full, as glob patterns. A
+    # stored fact of one of these shapes that the latest sync did not return
+    # is deleted, so what the source no longer backs stops counting.
+    replaced_refs: tuple[str, ...]
 
     async def account_name(self, client: GuardedClient, access_token: str) -> str:
         """Who the token belongs to, as the user would recognise it."""

@@ -38,6 +38,7 @@ class FakeGitHub:
     def __init__(self) -> None:
         self.refs = ["github:pr:1", "github:merged:acme/ledger", "github:reviews"]
         self.retired_refs: tuple[str, ...] = ()
+        self.replaced_refs: tuple[str, ...] = ()
 
     async def account_name(self, client: Any, token: str) -> str:
         return token

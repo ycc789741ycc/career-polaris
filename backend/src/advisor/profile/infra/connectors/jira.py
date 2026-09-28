@@ -3,6 +3,9 @@
 This is the scope evidence a resume usually loses — "shipped the thing" with
 no way to show how big the thing was. Work is grouped by epic, because an epic
 is the thing that was shipped; a project is only where a team files its tickets.
+
+Only finished tickets count: one done, or handed over as "To be verified". A
+ticket still open says what someone meant to do, not what they did.
 """
 
 from __future__ import annotations
@@ -35,6 +38,11 @@ _EPIC_LEVEL = 1
 # Only a key of this shape is ever written into a JQL query.
 _ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9_]*-[0-9]+$")
 _SUBJECT_LIMIT = 255
+# A finished ticket: one of these status names, or any status in Jira's Done
+# category (Done, Closed, Resolved — whatever the workflow calls it).
+_VERIFYING = "to be verified"
+_FINISHED_NAMES = frozenset({"done", _VERIFYING})
+_DONE_CATEGORY = "done"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +60,9 @@ class JiraConnector:
     kind = "jira"
     # Tallies per project, which epics replaced.
     retired_refs: tuple[str, ...] = ("jira:*:project:*",)
+    # Issues and epics a sync no longer returns — reopened, or never finished
+    # when an earlier version wrote them — stop being evidence.
+    replaced_refs: tuple[str, ...] = ("jira:issue:*", "jira:*:epic:*")
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")
@@ -93,27 +104,30 @@ class JiraConnector:
             site_name = str(site.get("name") or "jira")
             if not cloud_id:
                 continue
-            issues = await self._search(
-                client,
-                access_token,
-                str(cloud_id),
-                "assignee = currentUser() ORDER BY updated DESC",
-                _MAX_ISSUES,
-            )
+            # Filtered here rather than in JQL: a status name a site does not
+            # have makes Jira refuse the whole query.
+            issues = [
+                i
+                for i in await self._search(
+                    client,
+                    access_token,
+                    str(cloud_id),
+                    "assignee = currentUser() ORDER BY updated DESC",
+                    _MAX_ISSUES,
+                )
+                if _is_finished(i.get("fields") or {})
+            ]
             if not issues:
                 continue
             epics = await self._epics(client, access_token, str(cloud_id), issues)
 
-            statuses = Counter(
-                str(((i.get("fields") or {}).get("status") or {}).get("name") or "unknown")
-                for i in issues
-            )
-            done = sum(count for name, count in statuses.items() if name.lower() == "done")
+            verifying = sum(_status_name(i.get("fields") or {}) == _VERIFYING for i in issues)
+            done = len(issues) - verifying
             drafts.append(
                 EvidenceDraft(
                     external_ref=f"jira:{cloud_id}:throughput",
                     reference=f"Jira · {site_name}",
-                    fact=f"{len(issues)} assigned issues, {done} of them closed.",
+                    fact=f"{len(issues)} finished issues: {done} done, {verifying} to be verified.",
                     observed_on=_latest(_date_of(i) for i in issues),
                     confidence=0.85,
                     granularity=EvidenceGranularity.SUMMARY,
@@ -243,6 +257,20 @@ def _is_epic(fields: dict[str, Any]) -> bool:
     if isinstance(level, int):
         return level == _EPIC_LEVEL
     return str(kind.get("name") or "").lower() == "epic"
+
+
+def _status_name(fields: dict[str, Any]) -> str:
+    status = fields.get("status")
+    return str(status.get("name") or "").strip().lower() if isinstance(status, dict) else ""
+
+
+def _is_finished(fields: dict[str, Any]) -> bool:
+    """Done, or waiting to be verified: work that was actually carried out."""
+    if _status_name(fields) in _FINISHED_NAMES:
+        return True
+    status = fields.get("status")
+    category = status.get("statusCategory") if isinstance(status, dict) else None
+    return isinstance(category, dict) and category.get("key") == _DONE_CATEGORY
 
 
 def _epic_of(key: str, fields: dict[str, Any]) -> Epic:
