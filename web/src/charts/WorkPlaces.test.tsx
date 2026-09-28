@@ -91,7 +91,7 @@ describe("WorkPlaces", () => {
       <WorkPlaces facts={[tally("jira", "PAY", 4)]} onSelect={() => {}} />,
     );
     const group = screen.getByRole("heading", {
-      name: "Issues by Jira project",
+      name: "Issues by Jira epic",
     });
     expect(
       within(group.parentElement as HTMLElement).getByText("PAY"),

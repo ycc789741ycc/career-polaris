@@ -79,7 +79,7 @@ async def test_a_sync_deletes_only_the_callers_retired_shapes(
     before = await profile.snapshot(account)
 
     github.refs = ["github:commits:acme/ledger", "github:reviews"]
-    github.retired_refs = ("github:merged:", "github:pr:")
+    github.retired_refs = ("github:merged:*", "github:pr:*")
     await profile.sync_connection(account, "github")
 
     after = await profile.snapshot(account)

@@ -5,7 +5,7 @@ import { SOURCES } from "./SourceMix";
 /** What a bar on this chart counts, per source. */
 const GROUPS = [
   { source: "github", title: "Commits by repository" },
-  { source: "jira", title: "Issues by Jira project" },
+  { source: "jira", title: "Issues by Jira epic" },
 ] as const;
 
 export interface Place {
