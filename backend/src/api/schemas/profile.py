@@ -101,7 +101,7 @@ class Evidence(ApiModel):
     fact: str
     observed_on: date | None
     confidence: float
-    # One piece of work, or a tally over many ("12 merged pull requests").
+    # One piece of work, or a tally over many ("12 commits authored in x").
     granularity: Literal["item", "summary"]
     # How many items a summary counts; null on an item.
     tally: int | None

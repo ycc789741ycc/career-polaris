@@ -31,6 +31,9 @@ class EvidenceDraft:
 
 class Connector(Protocol):
     kind: str
+    # ``external_ref`` prefixes an earlier version of this connector wrote and
+    # this one no longer does. A sync deletes the source's facts under them.
+    retired_refs: tuple[str, ...]
 
     async def account_name(self, client: GuardedClient, access_token: str) -> str:
         """Who the token belongs to, as the user would recognise it."""

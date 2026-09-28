@@ -29,6 +29,7 @@ _MAX_ISSUES = 100
 
 class JiraConnector:
     kind = "jira"
+    retired_refs: tuple[str, ...] = ()
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")

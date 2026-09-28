@@ -466,7 +466,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
               >
                 {factCount(facts.length)}, each traceable to where it came from.
                 The bar shares out facts, not effort: one fact can be a single
-                pull request or a total of many.
+                commit or a total of many.
               </p>
             </>
           )}

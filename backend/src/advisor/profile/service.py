@@ -238,6 +238,7 @@ class ProfileService:
             EvidenceSource(kind),
             drafts,
             source_connection_id=connection_id,
+            retired_refs=connector.retired_refs,
         )
 
         async with self._uow.for_owner(owner_id) as mine:
@@ -471,17 +472,24 @@ class ProfileService:
         *,
         source_connection_id: uuid.UUID | None = None,
         resume_file_id: uuid.UUID | None = None,
+        retired_refs: tuple[str, ...] = (),
     ) -> int:
         """Upsert by ``external_ref`` so a re-sync updates rather than duplicates.
 
+        Facts under ``retired_refs`` — shapes the source's connector no longer
+        writes — are deleted first, so old and new shapes never both count.
         Bumps the profile version and records ``ProfileUpdated`` in the same
         transaction. Per domain section 2.9 this does not start an analysis —
         the user asks for that explicitly.
         """
-        if not drafts:
+        if not drafts and not retired_refs:
             return 0
 
         async with self._uow.for_owner(owner_id) as mine:
+            retired = await _retire(mine, source, retired_refs)
+            if not drafts and not retired:
+                return 0
+
             existing = await mine.evidence.get_list(
                 EvidenceFilter(source=source, external_refs=tuple(d.external_ref for d in drafts))
             )
@@ -523,10 +531,29 @@ class ProfileService:
             version = await _bump_version(mine, owner_id, utcnow())
             mine.record(
                 ProfileUpdated(
-                    owner_id=owner_id, source=source, version=version.version, count=len(drafts)
+                    owner_id=owner_id,
+                    source=source,
+                    version=version.version,
+                    count=len(drafts) + retired,
                 )
             )
             return len(drafts)
+
+
+async def _retire(mine: OwnerProfile, source: EvidenceSource, prefixes: tuple[str, ...]) -> int:
+    """Delete a source's facts whose ``external_ref`` starts with any of ``prefixes``."""
+    if not prefixes:
+        return 0
+    stale = [
+        e
+        for e in await mine.evidence.get_list(EvidenceFilter(source=source))
+        if e.external_ref.startswith(prefixes)
+    ]
+    for evidence in stale:
+        await mine.evidence.delete(evidence.id)
+    if stale:
+        log.info("evidence.retired", source=str(source), evidence_removed=len(stale))
+    return len(stale)
 
 
 async def _bump_version(mine: OwnerProfile, owner_id: uuid.UUID, now: datetime) -> ProfileVersion:

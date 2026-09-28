@@ -4,7 +4,7 @@ import { SOURCES } from "./SourceMix";
 
 /** What a bar on this chart counts, per source. */
 const GROUPS = [
-  { source: "github", title: "Merged pull requests by repository" },
+  { source: "github", title: "Commits by repository" },
   { source: "jira", title: "Issues by Jira project" },
 ] as const;
 
@@ -23,8 +23,8 @@ export interface PlaceGroup {
 }
 
 /**
- * Bars come from each source's own per-place tallies ("12 merged pull
- * requests in acme/ledger"), not from counting items: a sync keeps only the
+ * Bars come from each source's own per-place tallies ("12 commits
+ * authored in acme/ledger"), not from counting items: a sync keeps only the
  * latest few items, but its tallies cover everything it read.
  */
 export function placeGroups(facts: Evidence[]): PlaceGroup[] {
@@ -57,7 +57,7 @@ export function placeKey(place: Place): string {
 /**
  * Where the work lives: one bar per repository or project.
  *
- * Each source gets its own scale, because a merged pull request and a Jira
+ * Each source gets its own scale, because a commit and a Jira
  * issue are not the same unit and one axis would invite comparing them.
  */
 export function WorkPlaces({
