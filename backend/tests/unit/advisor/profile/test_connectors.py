@@ -176,6 +176,24 @@ async def test_jira_tallies_issues_by_their_epic_and_every_fact_names_it() -> No
     )
 
 
+def _under(epic: str, n: int, *, resolved: str) -> Any:
+    parent = {"key": epic, "fields": {"summary": epic, "issuetype": EPIC_TYPE}}
+    issue = _work(f"W-{epic}-{n}", parent=parent)
+    issue["fields"]["resolutiondate"] = resolved
+    return issue
+
+
+async def test_jira_keeps_the_ten_epics_worked_on_most_recently_newest_first() -> None:
+    """A busy epic from last year gives way to a small one from this month."""
+    old_and_busy = [_under("OLD-1", n, resolved="2025-01-10") for n in range(30)]
+    recent = [_under(f"NEW-{m}", 0, resolved=f"2026-09-{m:02d}") for m in range(1, 11)]
+    client = JqlClient({MINE: [old_and_busy + recent]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    epics = [d.external_ref for d in drafts if ":epic:" in d.external_ref]
+    assert epics == [f"jira:cloud-1:epic:NEW-{m}" for m in range(10, 0, -1)]
+
+
 async def test_a_subtask_counts_toward_the_epic_of_its_story() -> None:
     story = {"key": "PAY-2", "fields": {"summary": "Story", "issuetype": STORY_TYPE}}
     client = JqlClient(

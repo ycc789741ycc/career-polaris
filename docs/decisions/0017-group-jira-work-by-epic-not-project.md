@@ -32,11 +32,17 @@ An issue is an epic when its type's `hierarchyLevel` is 1. Where Jira leaves the
 level out, the type's name `Epic` decides. An issue under no epic is left out of
 the epic tallies, but it still counts toward the site's throughput.
 
-For the ten epics with the most issues there is a summary,
+For the ten epics worked on most recently there is a summary, newest first,
 `jira:{site}:epic:{KEY}`, stating `"{n} issues worked in the epic {KEY}: {summary}."`.
 Its `subject` is `"{KEY} {summary}"`, so a chart bar reads as the thing that was
 built. Each issue item carries the same `subject` as its epic, so clicking a
 bar lists the tally and its issues.
+
+An epic's time is the latest date of its issues: when each was resolved, or last
+touched while still open. When two epics tie, the busier one comes first. The
+chart lists Jira bars in the same order, while GitHub's repositories stay
+busiest first. A career is read from its recent work, and a large epic from
+years ago should not crowd out what someone is doing now.
 
 **The search pages** by `nextPageToken`, up to 1000 issues per site.
 
@@ -61,6 +67,8 @@ stories cannot be turned into a different search.
 - Harder: teams that do not use epics get no per-epic tallies at all. Their
   work still counts toward throughput and as items, but the chart shows no Jira
   bars for them. The project view, which every issue had, is gone.
+- Harder: a long-running epic that has gone quiet drops out of the ten, even if
+  it holds most of the user's issues. Its issues still count toward throughput.
 - Harder: a sync makes more calls. It pages up to ten times per site, plus one
   lookup per 100 distinct subtask parents.
 - Harder: an epic's summary is part of the `subject`. When an epic is renamed,

@@ -2,16 +2,21 @@ import type { Evidence } from "../api/types";
 import type { FactSelection } from "./selection";
 import { SOURCES } from "./SourceMix";
 
-/** What a bar on this chart counts, per source. */
+/**
+ * What a bar on this chart counts, per source, and the order the bars go in:
+ * repositories busiest first, epics most recently worked on first.
+ */
 const GROUPS = [
-  { source: "github", title: "Commits by repository" },
-  { source: "jira", title: "Issues by Jira epic" },
+  { source: "github", title: "Commits by repository", order: "busiest" },
+  { source: "jira", title: "Issues by Jira epic", order: "latest" },
 ] as const;
 
 export interface Place {
   source: string;
   subject: string;
   count: number;
+  /** The latest date of the work the tally counts, as an ISO date. */
+  latest: string | null;
   /** Every fact about this repository or project: the tally and its items. */
   ids: string[];
 }
@@ -28,7 +33,7 @@ export interface PlaceGroup {
  * latest few items, but its tallies cover everything it read.
  */
 export function placeGroups(facts: Evidence[]): PlaceGroup[] {
-  return GROUPS.map(({ source, title }) => {
+  return GROUPS.map(({ source, title, order }) => {
     const places = facts
       .filter(
         (f) =>
@@ -41,11 +46,19 @@ export function placeGroups(facts: Evidence[]): PlaceGroup[] {
         source,
         subject: tally.subject as string,
         count: tally.tally as number,
+        latest: tally.observed_on,
         ids: facts
           .filter((f) => f.source === source && f.subject === tally.subject)
           .map((f) => f.id),
       }))
-      .sort((a, b) => b.count - a.count || a.subject.localeCompare(b.subject));
+      .sort(
+        (a, b) =>
+          (order === "latest"
+            ? (b.latest ?? "").localeCompare(a.latest ?? "")
+            : 0) ||
+          b.count - a.count ||
+          a.subject.localeCompare(b.subject),
+      );
     return { source, title, places };
   }).filter((group) => group.places.length > 0);
 }

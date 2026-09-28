@@ -122,15 +122,22 @@ class JiraConnector:
             )
 
             by_epic = Counter(e for e in (epics.get(str(i.get("key"))) for i in issues) if e)
-            for epic, count in by_epic.most_common(10):
+            worked = {
+                epic: _latest(_date_of(i) for i in issues if epics.get(str(i.get("key"))) == epic)
+                for epic in by_epic
+            }
+            # The ten epics worked on most recently, newest first; the busier on a tie.
+            recent = sorted(
+                by_epic, key=lambda e: (worked[e] or date.min, by_epic[e]), reverse=True
+            )[:10]
+            for epic in recent:
+                count = by_epic[epic]
                 drafts.append(
                     EvidenceDraft(
                         external_ref=f"jira:{cloud_id}:epic:{epic.key}",
                         reference=f"Jira · {site_name} · {epic.key}",
                         fact=f"{count} issues worked in the epic {epic.key}: {epic.summary}.",
-                        observed_on=_latest(
-                            _date_of(i) for i in issues if epics.get(str(i.get("key"))) == epic
-                        ),
+                        observed_on=worked[epic],
                         confidence=0.8,
                         granularity=EvidenceGranularity.SUMMARY,
                         tally=count,
