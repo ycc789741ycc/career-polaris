@@ -5,10 +5,6 @@ import type {
   CostEstimate,
   Evidence,
   EvidencePage,
-  Fit,
-  FitPage,
-  Role,
-  RolePage,
 } from "../api/types";
 import { SkillRadar } from "../charts/SkillRadar";
 import {
@@ -32,8 +28,13 @@ type Layout = "radar" | "ledger";
  * The strength report.
  *
  * Nothing is spent without asking: the first run shows its estimated cost and
- * waits for a yes. Scores are compared against the role that fits best, the
- * prototype's "Compared against …".
+ * waits for a yes.
+ *
+ * The journey runs Sources → Strengths → Role map → Advisor, and a later step
+ * never changes an earlier one's result. So the report reads only the evidence
+ * and the analysis: no fit, role or bar from the role map, which reclusters
+ * and rescores as the market moves. Comparing against a role's bar is the role
+ * map's job, where "Where you clear it / where you don't" already does it.
  */
 export function Strengths() {
   const { status, navigate } = useShell();
@@ -45,8 +46,6 @@ export function Strengths() {
     () => api.items<EvidencePage>("/evidence"),
     [],
   );
-  const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
-  const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
   const [layout, setLayout] = useState<Layout>("radar");
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,18 +80,10 @@ export function Strengths() {
   }
 
   const dimensions = assessment.data?.dimensions ?? [];
-  const best = bestRoleFit(fits.data ?? [], roles.data ?? []);
-  const bar = best
-    ? Object.fromEntries(
-        best.fit.gaps.map((gap) => [gap.dimension_key, gap.target_score]),
-      )
-    : {};
   const activeKey = selected ?? dimensions[0]?.key;
   const active = dimensions.find((d) => d.key === activeKey);
   const byId = new Map((evidence.data ?? []).map((item) => [item.id, item]));
-  const ledger = [...dimensions].sort(
-    (a, b) => a.score - (bar[a.key] ?? 0) - (b.score - (bar[b.key] ?? 0)),
-  );
+  const ledger = [...dimensions].sort((a, b) => a.score - b.score);
 
   return (
     <section>
@@ -114,9 +105,6 @@ export function Strengths() {
           >
             Ranked ledger
           </PillToggle>
-          {best && (
-            <span className="subcopy">Compared against {best.role.name}</span>
-          )}
         </div>
         <div className="row">
           {assessment.data && (
@@ -185,7 +173,6 @@ export function Strengths() {
                 confidence: d.confidence,
                 read: d.read,
               }))}
-              target={best ? { label: best.role.name, scores: bar } : undefined}
               onSelect={(key) => {
                 setSelected(key);
                 setLayout("radar");
@@ -225,9 +212,7 @@ export function Strengths() {
                     {active.score}
                   </span>
                   <span className="subcopy">
-                    {best && bar[active.key] !== undefined
-                      ? `vs ${bar[active.key]} expected at ${best.role.name}`
-                      : `confidence ${Math.round(active.confidence * 100)}%`}
+                    confidence {Math.round(active.confidence * 100)}%
                   </span>
                 </div>
                 <p style={{ fontSize: 14.5, lineHeight: 1.65 }}>
@@ -263,64 +248,42 @@ export function Strengths() {
             ) : (
               <div>
                 <Eyebrow style={{ marginBottom: 10 }}>
-                  {best
-                    ? "Every dimension, ranked by distance to the bar"
-                    : "Every dimension, weakest first"}
+                  Every dimension, weakest first
                 </Eyebrow>
-                {ledger.map((dimension) => {
-                  const target = bar[dimension.key];
-                  const delta =
-                    target === undefined ? null : dimension.score - target;
-                  return (
-                    <button
-                      key={dimension.key}
-                      type="button"
-                      className="ledger-row"
-                      onClick={() => {
-                        setSelected(dimension.key);
-                        setLayout("radar");
-                      }}
-                    >
-                      <div className="row-between">
-                        <span
-                          style={{
-                            fontSize: 14,
-                            fontWeight: dimension.key === activeKey ? 700 : 500,
-                          }}
-                        >
-                          {dimension.name}
-                        </span>
-                        {delta !== null && (
-                          <span
-                            style={{
-                              fontSize: 12.5,
-                              fontWeight: 700,
-                              color:
-                                delta >= 0
-                                  ? "var(--color-accent-2-800)"
-                                  : "var(--color-accent-700)",
-                            }}
-                          >
-                            {delta >= 0 ? `+${delta}` : delta}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ marginTop: 7 }}>
-                        <YouVsBar
-                          you={dimension.score}
-                          bar={target ?? 0}
-                          label={dimension.name}
-                        />
-                      </div>
-                      <div
-                        className="subcopy"
-                        style={{ fontSize: 12.5, marginTop: 6 }}
+                {ledger.map((dimension) => (
+                  <button
+                    key={dimension.key}
+                    type="button"
+                    className="ledger-row"
+                    onClick={() => {
+                      setSelected(dimension.key);
+                      setLayout("radar");
+                    }}
+                  >
+                    <div className="row-between">
+                      <span
+                        style={{
+                          fontSize: 14,
+                          fontWeight: dimension.key === activeKey ? 700 : 500,
+                        }}
                       >
-                        {firstSentence(dimension.read)}
-                      </div>
-                    </button>
-                  );
-                })}
+                        {dimension.name}
+                      </span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>
+                        {dimension.score}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 7 }}>
+                      <YouVsBar you={dimension.score} label={dimension.name} />
+                    </div>
+                    <div
+                      className="subcopy"
+                      style={{ fontSize: 12.5, marginTop: 6 }}
+                    >
+                      {firstSentence(dimension.read)}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
             <div className="panel-actions">
@@ -333,20 +296,6 @@ export function Strengths() {
       )}
     </section>
   );
-}
-
-/** The analysed role the user fits best, with its fit. Pure. */
-export function bestRoleFit(
-  fits: Fit[],
-  roles: Role[],
-): { role: Role; fit: Fit } | null {
-  const byId = new Map(roles.map((role) => [role.id, role]));
-  let best: { role: Role; fit: Fit } | null = null;
-  for (const fit of fits) {
-    const role = fit.role_id ? byId.get(fit.role_id) : undefined;
-    if (role && (!best || fit.score > best.fit.score)) best = { role, fit };
-  }
-  return best;
 }
 
 function firstSentence(text: string): string {
