@@ -103,8 +103,19 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return
 
-    if name == EventName.SUBSCRIPTION_ADDED or name == EventName.MARKET_SELECTED:
+    if name == EventName.SUBSCRIPTION_ADDED:
         await enqueue("market.materialize_crawl_sources")
+        return
+
+    if name == EventName.TARGET_LOCATIONS_CHANGED and owner_id:
+        # A new scope: a role map the user already has is rebuilt on it, with
+        # ADR 0018's gating. Nothing is materialised for the locations yet —
+        # there is no public job API adapter to crawl them with.
+        rebuild = await deps.activity.rebuild_role_map(owner_id)
+        if rebuild is not None and rebuild.should_queue:
+            await enqueue(
+                "rolemap.recluster", owner_id=str(owner_id), build_id=str(rebuild.build.id)
+            )
         return
 
     if name == EventName.POSTINGS_CHANGED:

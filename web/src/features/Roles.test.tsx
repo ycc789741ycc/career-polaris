@@ -7,7 +7,7 @@ import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { Roles } from "./Roles";
+import { Roles, scopeLine } from "./Roles";
 import { page } from "../test/page";
 
 function role(id: string, name: string): Role {
@@ -63,7 +63,10 @@ function serve() {
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
     "/role-subscriptions": page([]),
-    "/market-preferences": page([]),
+    "/market-scope": {
+      target_locations: ["Berlin", "Remote EU"],
+      open_posting_count: 1284,
+    },
     "/matched-postings?page_size=10": page([]),
     "/targets": page([pasted]),
     "/roles/cost-estimate?role_count=8": {
@@ -216,5 +219,43 @@ describe("the role map while an analysis runs", () => {
     expect(
       await screen.findByRole("button", { name: "Waiting for analysis…" }),
     ).toBeDisabled();
+  });
+});
+
+describe("how much of the market the role map takes in", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("counts the open postings in the chosen locations", async () => {
+    renderRoles(null);
+
+    expect(
+      await screen.findByText(/1,284 open postings in Berlin and Remote EU\./),
+    ).toBeInTheDocument();
+  });
+
+  it("has no market pills to switch between", async () => {
+    renderRoles(null);
+
+    await screen.findByText(/1,284 open postings/);
+    expect(
+      screen.queryByRole("button", { name: "Best sample" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Market")).not.toBeInTheDocument();
+  });
+
+  it("names the baseline when no location is chosen", () => {
+    expect(scopeLine({ target_locations: [], open_posting_count: 1 })).toBe(
+      "1 open posting in the platform's baseline.",
+    );
+    expect(
+      scopeLine({
+        target_locations: ["Berlin", "Lisbon", "Remote EU"],
+        open_posting_count: 12,
+      }),
+    ).toBe("12 open postings in Berlin, Lisbon and Remote EU.");
   });
 });

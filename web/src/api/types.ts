@@ -53,6 +53,8 @@ export type RoleMapSettings = Schemas["RoleMapSettings"];
 export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 
 // Market
+/** The user's target locations and the open postings they take in (domain decision 21). */
+export type MarketScope = Schemas["MarketScope"];
 /** A watch on one role at one company (domain decision 19). */
 export type Subscription = Schemas["Subscription"];
 

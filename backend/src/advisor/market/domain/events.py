@@ -18,9 +18,12 @@ class SubscriptionAdded:
 
 
 @dataclass(frozen=True, slots=True)
-class MarketSelected:
+class TargetLocationsChanged:
+    """The user's target locations after a change: the whole set, since it is
+    the set that scopes their role map."""
+
     owner_id: uuid.UUID
-    market: str
+    locations: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,4 +37,4 @@ class PostingsChanged:
     expired: int
 
 
-MarketEvent = SubscriptionAdded | MarketSelected | PostingsChanged
+MarketEvent = SubscriptionAdded | TargetLocationsChanged | PostingsChanged

@@ -110,6 +110,10 @@ class FakeActivity:
         self.requests.append(owner_id)
         return self.requested
 
+    async def rebuild_role_map(self, owner_id: uuid.UUID) -> Any:
+        self.requests.append(owner_id)
+        return self.requested
+
 
 def _container(**services: Any) -> Any:
     return SimpleNamespace(**services)
@@ -180,3 +184,35 @@ async def test_a_new_role_count_is_rebuilt_by_its_route_not_again_here(
     await dispatcher._handle(_container(), event)
 
     assert queued == []
+
+
+def _target_locations_changed() -> OutboxEvent:
+    return OutboxEvent(
+        name=str(EventName.TARGET_LOCATIONS_CHANGED),
+        owner_id=OWNER,
+        payload={"locations": ["Berlin", "Remote EU"]},
+    )
+
+
+async def test_new_target_locations_rebuild_the_role_map_on_the_new_scope(
+    queued: list[dict[str, Any]],
+) -> None:
+    build = SimpleNamespace(id=uuid.uuid4())
+    activity = FakeActivity(requested=SimpleNamespace(build=build, should_queue=True))
+
+    await dispatcher._handle(_container(activity=activity), _target_locations_changed())
+
+    assert activity.requests == [OWNER]
+    assert queued == [
+        {"name": "rolemap.recluster", "owner_id": str(OWNER), "build_id": str(build.id)}
+    ]
+
+
+async def test_new_target_locations_queue_nothing_without_a_role_map_to_rebuild(
+    queued: list[dict[str, Any]],
+) -> None:
+    activity = FakeActivity(requested=None)
+
+    await dispatcher._handle(_container(activity=activity), _target_locations_changed())
+
+    assert activity.requests == [OWNER] and queued == []

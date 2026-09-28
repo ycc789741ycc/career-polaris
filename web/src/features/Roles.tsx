@@ -11,7 +11,7 @@ import type {
   RoleMapSettings,
   RolePage,
   SalaryBand,
-  StringPage,
+  MarketScope,
   Subscription,
   SubscriptionPage,
   TargetOption,
@@ -75,10 +75,7 @@ export function Roles() {
     () => api.items<SubscriptionPage>("/role-subscriptions"),
     [],
   );
-  const markets = useAsync<string[]>(
-    () => api.items<StringPage>("/market-preferences"),
-    [],
-  );
+  const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
   // For the pasted JDs: the only Targets that are not a role on the map.
   const targets = useAsync<TargetOption[]>(
     () => api.items<TargetOptionPage>("/targets"),
@@ -92,8 +89,6 @@ export function Roles() {
   const [company, setCompany] = useState("");
   const [watchRole, setWatchRole] = useState("");
   const [watchUrl, setWatchUrl] = useState("");
-  const [market, setMarket] = useState("");
-  const [bandMarket, setBandMarket] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   // The k being considered; saved only once its estimate is confirmed.
   const [roleCount, setRoleCount] = useState<number | null>(null);
@@ -114,7 +109,7 @@ export function Roles() {
   );
 
   const bubbles: RoleBubble[] = (roles.data ?? []).map((role) => {
-    const band = pickBand(role.salary_bands, bandMarket);
+    const band = pickBand(role.salary_bands);
     const fit = fitByRole.get(role.id);
     return {
       id: role.id,
@@ -141,13 +136,7 @@ export function Roles() {
   const activeId = pickedId ?? (focus?.kind === "jd" ? undefined : bestId);
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
-  const activeBand = activeRole
-    ? pickBand(activeRole.salary_bands, bandMarket)
-    : null;
-  const postings = (roles.data ?? []).reduce(
-    (sum, role) => sum + role.opening_count,
-    0,
-  );
+  const activeBand = activeRole ? pickBand(activeRole.salary_bands) : null;
 
   const pastedJds = (targets.data ?? []).filter(
     (o) => o.kind === "privatePosting",
@@ -253,47 +242,18 @@ export function Roles() {
         <Loading what="your roles" />
       ) : bubbles.length === 0 ? (
         <EmptyState title="No roles yet">
-          Add a market or watch a role below, then build your role map.
+          Choose where you want to work on Sources, or watch a role below, then
+          build your role map.
         </EmptyState>
       ) : (
         <AutoGrid col={400} gap={20}>
           <div className="panel">
-            <div
-              className="row-between"
-              style={{
-                alignItems: "flex-end",
-                flexWrap: "wrap",
-                marginBottom: 12,
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0 }}>Role market map</h3>
-                <div className="subcopy">
-                  Bubble size = fit. {postings.toLocaleString()} open postings
-                  across {bubbles.length} roles.
-                </div>
+            <div style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Role market map</h3>
+              <div className="subcopy">
+                Bubble size = fit.
+                {scope.data && ` ${scopeLine(scope.data)}`}
               </div>
-              {(markets.data ?? []).length > 0 && (
-                <div className="row" style={{ gap: 7 }}>
-                  <PillToggle
-                    small
-                    pressed={bandMarket === null}
-                    onClick={() => setBandMarket(null)}
-                  >
-                    Best sample
-                  </PillToggle>
-                  {(markets.data ?? []).map((name) => (
-                    <PillToggle
-                      key={name}
-                      small
-                      pressed={bandMarket === name}
-                      onClick={() => setBandMarket(name)}
-                    >
-                      {name}
-                    </PillToggle>
-                  ))}
-                </div>
-              )}
             </div>
             <RoleMap
               roles={bubbles}
@@ -533,39 +493,6 @@ export function Roles() {
 
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
-          <h3>Markets you are looking in</h3>
-          <p className="subcopy">
-            Postings in these markets feed your map, and their salary bands are
-            what the pills above switch between.
-          </p>
-          <div className="row" style={{ flexWrap: "nowrap", marginTop: 10 }}>
-            <input
-              className="input"
-              aria-label="Market"
-              value={market}
-              placeholder="Berlin, Remote EU…"
-              onChange={(event) => setMarket(event.target.value)}
-            />
-            <Button
-              variant="secondary"
-              disabled={!market.trim()}
-              onClick={() =>
-                act("Market added", async () => {
-                  await api.post("/market-preferences", { market });
-                  setMarket("");
-                  await markets.reload();
-                })
-              }
-            >
-              Add
-            </Button>
-          </div>
-          <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
-            {(markets.data ?? []).join(" · ") || "None selected yet"}
-          </p>
-        </div>
-
-        <div className="panel">
           <h3>Roles to watch</h3>
           <p className="subcopy">
             A role at a company, with its careers or JD link if you have one.
@@ -745,6 +672,20 @@ export function Roles() {
       )}
     </section>
   );
+}
+
+/** "1,284 open postings in Berlin and Remote EU". Pure. */
+export function scopeLine(scope: MarketScope): string {
+  const count = `${scope.open_posting_count.toLocaleString("en")} open ${
+    scope.open_posting_count === 1 ? "posting" : "postings"
+  }`;
+  const places = scope.target_locations;
+  if (places.length === 0) return `${count} in the platform's baseline.`;
+  const named =
+    places.length === 1
+      ? places[0]
+      : `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}`;
+  return `${count} in ${named}.`;
 }
 
 /**

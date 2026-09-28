@@ -15,7 +15,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from advisor.market import CompanySubscriptionView, Coverage, PostingView, Visibility
+from advisor.market import (
+    CompanySubscriptionView,
+    Coverage,
+    MarketScopeView,
+    PostingView,
+    Visibility,
+)
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import market as market_api
@@ -40,6 +46,16 @@ def _subscription(**overrides: Any) -> CompanySubscriptionView:
 
 
 class FakeMarket:
+    def __init__(self) -> None:
+        self.saved: list[list[str]] = []
+
+    async def set_target_locations(self, owner_id: uuid.UUID, locations: list[str]) -> list[str]:
+        self.saved.append(locations)
+        return sorted(locations)
+
+    async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
+        return MarketScopeView(target_locations=["Berlin", "Remote EU"], open_posting_count=1284)
+
     async def subscriptions(self, owner_id: uuid.UUID) -> list[CompanySubscriptionView]:
         return [_subscription(last_refreshed_at=datetime(2026, 9, 21, tzinfo=UTC))]
 
@@ -71,12 +87,17 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def client(queued: list[dict[str, Any]]) -> TestClient:
+def market() -> FakeMarket:
+    return FakeMarket()
+
+
+@pytest.fixture
+def client(queued: list[dict[str, Any]], market: FakeMarket) -> TestClient:
     app = FastAPI()
     errors.install(app)
     app.include_router(market_api.router)
     app.dependency_overrides[current_user] = lambda: uuid.uuid4()
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(market=FakeMarket())
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(market=market)
     return TestClient(app)
 
 
@@ -129,4 +150,34 @@ def test_a_pasted_jd_comes_back_private(client: TestClient) -> None:
         "title": "Staff Platform Engineer",
         "location": "Remote",
         "visibility": "private",
+    }
+
+
+def test_target_locations_are_saved_as_a_whole_set(client: TestClient) -> None:
+    response = client.put("/target-locations", json={"locations": ["Remote EU", "Berlin"]})
+
+    assert response.status_code == 200
+    assert response.json() == ["Berlin", "Remote EU"]
+
+
+def test_a_fourth_target_location_is_refused_before_the_service(
+    client: TestClient, market: FakeMarket
+) -> None:
+    response = client.put(
+        "/target-locations", json={"locations": ["Berlin", "Lisbon", "Paris", "Remote EU"]}
+    )
+
+    assert response.status_code == 422
+    assert market.saved == []
+
+
+def test_the_market_scope_says_how_many_postings_the_locations_take_in(
+    client: TestClient,
+) -> None:
+    response = client.get("/market-scope")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "target_locations": ["Berlin", "Remote EU"],
+        "open_posting_count": 1284,
     }

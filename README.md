@@ -32,7 +32,7 @@ key**.
 
 | Feature | What you get |
 |---|---|
-| **Profile & evidence** | Connect GitHub and Jira, upload a résumé. Sources are parsed into evidence, with no AI involved. When the evidence is thin, the analyzer asks follow-up questions and adds your answers as evidence. |
+| **Profile & evidence** | Connect GitHub and Jira, upload a résumé, and choose up to three places you want to work. Sources are parsed into evidence, with no AI involved. When the evidence is thin, the analyzer asks follow-up questions and adds your answers as evidence. |
 | **Strength report** | A radar chart of 5–10 skill dimensions derived from *your* profile, not a fixed taxonomy. |
 | **Role map** | A bubble chart of the roles closest to you in the real market. The x axis is the hiring bar, the y axis is salary and the bubble size is fit. You choose how many roles to analyse (3–20, [ADR 0003](docs/decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md)). |
 | **Gap plan** | Pick a **Target** (a matched opening, a watched role or a pasted JD) and get gaps ranked by the fit points each is worth, broken into milestones, tasks and projects. Plans are versioned per Target, and finished work carries forward. |

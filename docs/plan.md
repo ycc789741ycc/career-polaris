@@ -126,10 +126,16 @@ whatever is next when it merges.
 1. **Docs — done.** The v3 diagram, the prototype screens, the domain model,
    the architecture and this phase.
 
-2. **Target locations** — `feature/no-ticket/target-locations`
+2. **Target locations — done.** `feature/no-ticket/target-locations`
    * 1–3 target locations, as a `market` domain rule next to
      `MarketPreference.chosen()`, checked again by the API schema. Served as
      `/target-locations`; the table stays `market_user.market_preference`.
+   * Built as: `PUT /target-locations` saves the whole set, and a change emits
+     `TargetLocationsChanged`, which rebuilds a role map the user already has
+     (ADR 0018 gating). `GET /market-scope` gives the posting count. No ADR:
+     architecture T17 records the decision.
+   * Not yet: public-API crawl sources per location. There is no public job
+     API adapter to materialise them for.
    * The "Where you want to work" panel moves from `Roles.tsx` to 01 Sources
      (`features/Connect.tsx`). The role map drops the market filter pills and
      the band toggle, and says how many postings are in the chosen locations.

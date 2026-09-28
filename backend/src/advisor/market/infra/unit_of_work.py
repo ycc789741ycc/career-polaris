@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.market.domain import (
     MarketEvent,
-    MarketSelected,
     PostingsChanged,
     SubscriptionAdded,
+    TargetLocationsChanged,
 )
 from advisor.market.infra.repositories import (
     SqlAlchemyCompanyRepository,
@@ -112,8 +112,12 @@ def _outbox_entry(event: MarketEvent) -> tuple[EventName, dict[str, Any], uuid.U
                 {"company_id": str(event.company_id), "company_name": event.company_name},
                 event.owner_id,
             )
-        case MarketSelected():
-            return EventName.MARKET_SELECTED, {"market": event.market}, event.owner_id
+        case TargetLocationsChanged():
+            return (
+                EventName.TARGET_LOCATIONS_CHANGED,
+                {"locations": list(event.locations)},
+                event.owner_id,
+            )
         case PostingsChanged():
             return (
                 EventName.POSTINGS_CHANGED,

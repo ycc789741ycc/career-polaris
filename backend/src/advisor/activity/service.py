@@ -146,6 +146,15 @@ class ActivityService:
         )
         return requested
 
+    async def rebuild_role_map(self, owner_id: uuid.UUID) -> BuildRequestView | None:
+        """The user's market scope changed: rebuild a role map they already
+        have, as ``request_role_map`` does. A user with no role map yet gets
+        none from this: the first build follows an analysis whose cost they
+        confirmed (domain decision 24)."""
+        if await self._rolemap.latest_build(owner_id) is None:
+            return None
+        return await self.request_role_map(owner_id)
+
     async def release_waiting_builds(self, owner_id: uuid.UUID) -> BuildRunView | None:
         """An analysis finished: start the build that waited for it, if any.
         The caller queues it."""

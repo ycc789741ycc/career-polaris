@@ -30,7 +30,6 @@ from advisor.market.domain import (
     ManualRefreshFilter,
     MarketPreference,
     MarketPreferenceFilter,
-    MarketSelected,
     NormalizedPosting,
     PostingEmbedding,
     PostingEmbeddingFilter,
@@ -44,6 +43,7 @@ from advisor.market.domain import (
     SourceOrigin,
     SubscriptionAdded,
     SubscriptionFilter,
+    TargetLocationsChanged,
 )
 from advisor.market.infra.unit_of_work import SqlAlchemyMarketUnitOfWork
 from kernel.db import Database
@@ -352,7 +352,7 @@ async def test_owner_events_reach_the_outbox_as_the_dispatcher_reads_them(
 
     async with uow.for_owner(account) as mine:
         mine.record(SubscriptionAdded(owner_id=account, company_id=company_id, company_name="Acme"))
-        mine.record(MarketSelected(owner_id=account, market="Berlin"))
+        mine.record(TargetLocationsChanged(owner_id=account, locations=("Berlin",)))
 
     async with database.shared() as session:
         rows = await session.execute(
@@ -360,8 +360,8 @@ async def test_owner_events_reach_the_outbox_as_the_dispatcher_reads_them(
             {"owner": account},
         )
         assert sorted(rows.all()) == [
-            ("MarketSelected", {"market": "Berlin"}),
             ("SubscriptionAdded", {"company_id": str(company_id), "company_name": "Acme"}),
+            ("TargetLocationsChanged", {"locations": ["Berlin"]}),
         ]
 
 
@@ -371,7 +371,7 @@ async def test_nothing_recorded_in_a_failed_scope_reaches_the_outbox(
     uow = SqlAlchemyMarketUnitOfWork(database)
     with pytest.raises(RuntimeError):
         async with uow.for_owner(account) as mine:
-            mine.record(MarketSelected(owner_id=account, market="Nowhere"))
+            mine.record(TargetLocationsChanged(owner_id=account, locations=("Nowhere",)))
             raise RuntimeError("the use case failed")
 
     async with database.shared() as session:

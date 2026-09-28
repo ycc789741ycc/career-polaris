@@ -10,11 +10,14 @@ from advisor.market.domain import (
     ACCENT_FOLDS,
     MAX_CANONICAL_KEY,
     MAX_LOCATION,
+    MAX_TARGET_LOCATIONS,
     NormalizedPosting,
     SalaryRange,
     SourceKind,
+    TargetLocationError,
     band_from,
     canonical_key,
+    chosen_target_locations,
     clip,
     expired_keys,
     in_market,
@@ -222,3 +225,22 @@ def test_the_database_folds_accents_exactly_as_normalize_does() -> None:
     accented, plain = ACCENT_FOLDS
     assert len(accented) == len(plain) and "ü" in accented and "é" in accented
     assert all(normalize(a) == p for a, p in zip(accented, plain, strict=True))
+
+
+def test_target_locations_are_trimmed_and_each_named_once() -> None:
+    assert chosen_target_locations([" Berlin ", "Remote EU", "BERLIN"]) == ("Berlin", "Remote EU")
+
+
+def test_no_target_location_is_a_valid_choice() -> None:
+    assert chosen_target_locations([]) == ()
+
+
+def test_at_most_three_target_locations_are_chosen() -> None:
+    assert MAX_TARGET_LOCATIONS == 3
+    with pytest.raises(TargetLocationError):
+        chosen_target_locations(["Berlin", "Lisbon", "Paris", "Remote EU"])
+
+
+def test_a_blank_target_location_is_refused() -> None:
+    with pytest.raises(TargetLocationError):
+        chosen_target_locations(["Berlin", "  "])

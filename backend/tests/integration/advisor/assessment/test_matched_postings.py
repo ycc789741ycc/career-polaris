@@ -109,7 +109,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             ids: dict[str, uuid.UUID] = {title: posting_id for title, posting_id in found.all()}
 
         market = create_market_service(database, manual_refresh_per_day=3)
-        await market.add_market(account, market_name)
+        await market.set_target_locations(account, [market_name])
         pasted = await market.paste_job_description(
             account,
             company_name=northwind,

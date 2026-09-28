@@ -25,6 +25,7 @@ import {
 import { sourcesBusy, useActivity } from "../shell/activity";
 import { useShell } from "../shell/ShellContext";
 import { FollowUpQuestions } from "./FollowUpQuestions";
+import { TargetLocations } from "./TargetLocations";
 import { messageOf, useAsync } from "./useAsync";
 
 const LABELS: Record<string, { name: string; kind: string; note: string }> = {
@@ -193,6 +194,10 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
         <ErrorNote
           error={callback && !callback.connected ? callback.message : error}
         />
+
+        <div style={{ marginTop: 18 }}>
+          <TargetLocations />
+        </div>
 
         {connections.loading ? (
           <Loading what="your sources" />
