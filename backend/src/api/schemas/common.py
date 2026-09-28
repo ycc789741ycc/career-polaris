@@ -8,8 +8,9 @@ entities: the view is the component's contract, the schema is the wire's
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
@@ -32,6 +33,51 @@ class RequestModel(BaseModel):
 # ``isoformat()`` rather than Pydantic's default, which writes UTC as ``Z``: the
 # wire has always carried ``+00:00``, and a contract change should be a choice.
 Timestamp = Annotated[datetime, PlainSerializer(lambda d: d.isoformat(), return_type=str)]
+
+
+class PageOf[V](Protocol):
+    """What a list use case hands back (``kernel.paging.Page``), read-only.
+
+    Named structurally so this module stays free of the kernel.
+    """
+
+    @property
+    def items(self) -> Sequence[V]: ...
+    @property
+    def page(self) -> int: ...
+    @property
+    def page_size(self) -> int | None: ...
+    @property
+    def total(self) -> int: ...
+
+
+class Page[ItemT](ApiModel):
+    """Every list endpoint's body: one page and the size of the whole (ADR 0014).
+
+    Each list declares a named subclass (``class RolePage(Page[Role])``), which is
+    the name the OpenAPI document and the client see.
+    """
+
+    items: list[ItemT]
+    # 1-based.
+    page: int
+    # Null when the client asked for the whole list.
+    page_size: int | None
+    # Every item the list holds, not just this page's.
+    total: int
+
+    @classmethod
+    def of[V](cls, page: PageOf[V], convert: Callable[[V], ItemT]) -> Self:
+        return cls(
+            items=[convert(item) for item in page.items],
+            page=page.page,
+            page_size=page.page_size,
+            total=page.total,
+        )
+
+
+class StringPage(Page[str]):
+    pass
 
 
 class Accepted(ApiModel):
@@ -117,8 +163,11 @@ __all__ = [
     "ErrorEnvelope",
     "EvidenceCitation",
     "JobError",
+    "Page",
+    "PageOf",
     "RequestModel",
     "Salary",
+    "StringPage",
     "TargetEstimate",
     "Timestamp",
 ]

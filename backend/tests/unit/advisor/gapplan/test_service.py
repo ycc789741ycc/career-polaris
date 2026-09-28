@@ -80,8 +80,25 @@ async def test_requesting_again_for_a_target_adds_the_next_version() -> None:
 
     assert (first.version, second.version, elsewhere.version) == (1, 2, 1)
     assert second.status is PlanStatus.DRAFTING and second.target == ref
-    history = await plans.history(OWNER)
+    history = (await plans.history(OWNER)).items
     assert [h.id for h in history] == [elsewhere.id, second.id]
+
+
+async def test_history_is_paged_after_each_target_keeps_only_its_latest() -> None:
+    """Three plans, two Targets: paging the raw rows would count the
+    superseded version and show it on page two."""
+    plans = _service(FakeGapPlanUnitOfWork())
+    ref, other = _ref(), _ref()
+    await plans.request(OWNER, ref)
+    latest = await plans.request(OWNER, ref)
+    elsewhere = await plans.request(OWNER, other)
+
+    first_page = await plans.history(OWNER, page=1, page_size=1)
+    second_page = await plans.history(OWNER, page=2, page_size=1)
+
+    assert first_page.total == second_page.total == 2
+    assert [h.id for h in first_page.items] == [elsewhere.id]
+    assert [h.id for h in second_page.items] == [latest.id]
 
 
 async def test_a_plan_shows_every_version_and_its_progress() -> None:

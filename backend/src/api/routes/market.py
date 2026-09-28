@@ -6,23 +6,30 @@ import uuid
 
 from fastapi import APIRouter
 
-from api.dependencies import CurrentUser, Deps
-from api.schemas.common import Accepted
+from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.common import Accepted, StringPage
 from api.schemas.market import (
     JobDescriptionRequest,
     MarketRequest,
     PastedJobDescription,
+    PastedJobDescriptionPage,
     Subscription,
+    SubscriptionPage,
     SubscriptionRequest,
 )
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["market"])
 
 
 @router.get("/role-subscriptions")
-async def list_subscriptions(user: CurrentUser, deps: Deps) -> list[Subscription]:
-    return [Subscription.from_view(s) for s in await deps.market.subscriptions(user)]
+async def list_subscriptions(user: CurrentUser, deps: Deps, paging: Paging) -> SubscriptionPage:
+    """Watched roles, newest first."""
+    # Paged here, not in the service: the crawl fan-out and the Target picker
+    # read the subscriptions whole.
+    found = paginate(await deps.market.subscriptions(user), paging.page, paging.page_size)
+    return SubscriptionPage.of(found, Subscription.from_view)
 
 
 @router.post("/role-subscriptions", status_code=201)
@@ -62,8 +69,11 @@ async def refresh(subscription_id: uuid.UUID, user: CurrentUser, deps: Deps) -> 
 
 
 @router.get("/market-preferences")
-async def list_markets(user: CurrentUser, deps: Deps) -> list[str]:
-    return await deps.market.markets(user)
+async def list_markets(user: CurrentUser, deps: Deps, paging: Paging) -> StringPage:
+    """The markets the user chose. Adding or removing one answers with the
+    whole saved set instead, since that is the result of the change."""
+    found = paginate(await deps.market.markets(user), paging.page, paging.page_size)
+    return StringPage.of(found, str)
 
 
 @router.post("/market-preferences", status_code=201)
@@ -77,8 +87,10 @@ async def remove_market(market: str, user: CurrentUser, deps: Deps) -> list[str]
 
 
 @router.get("/job-descriptions")
-async def list_pasted(user: CurrentUser, deps: Deps) -> list[PastedJobDescription]:
-    return [PastedJobDescription.from_view(p) for p in await deps.market.private_postings(user)]
+async def list_pasted(user: CurrentUser, deps: Deps, paging: Paging) -> PastedJobDescriptionPage:
+    """The user's pasted JDs, newest first."""
+    found = paginate(await deps.market.private_postings(user), paging.page, paging.page_size)
+    return PastedJobDescriptionPage.of(found, PastedJobDescription.from_view)
 
 
 @router.post("/job-descriptions", status_code=201)

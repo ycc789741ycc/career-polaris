@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from advisor.assessment import DEFAULT_MATCHES, MAX_MATCHES, MIN_MATCHES
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.assessment import (
     AnswerRequest,
     Assessment,
+    AssessmentPage,
     Fit,
+    FitPage,
     MatchedPosting,
+    MatchedPostingPage,
     Question,
+    QuestionPage,
     QuestionStatus,
 )
 from api.schemas.common import Accepted, CostEstimate
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["assessment"])
@@ -42,13 +45,17 @@ async def latest(user: CurrentUser, deps: Deps) -> Assessment | None:
 
 
 @router.get("/assessments")
-async def history(user: CurrentUser, deps: Deps) -> list[Assessment]:
-    return [Assessment.from_view(a) for a in await deps.assessment.history(user)]
+async def history(user: CurrentUser, deps: Deps, paging: Paging) -> AssessmentPage:
+    """Every analysis, newest first."""
+    found = await deps.assessment.history(user, page=paging.page, page_size=paging.page_size)
+    return AssessmentPage.of(found, Assessment.from_view)
 
 
 @router.get("/questions")
-async def questions(user: CurrentUser, deps: Deps) -> list[Question]:
-    return [Question.from_view(q) for q in await deps.assessment.questions(user)]
+async def questions(user: CurrentUser, deps: Deps, paging: Paging) -> QuestionPage:
+    """Open follow-up questions, oldest first."""
+    found = await deps.assessment.questions(user, page=paging.page, page_size=paging.page_size)
+    return QuestionPage.of(found, Question.from_view)
 
 
 @router.get("/questions/status")
@@ -71,23 +78,22 @@ async def answer(
 
 
 @router.get("/fits")
-async def fits(user: CurrentUser, deps: Deps) -> list[Fit]:
+async def fits(user: CurrentUser, deps: Deps, paging: Paging) -> FitPage:
     """Bubble sizes. Fit belongs to the User x Role pair, never to the role."""
-    return [Fit.from_view(f) for f in await deps.assessment.fits(user)]
+    # Paged here, not in the service: other components read the fits whole.
+    found = paginate(await deps.assessment.fits(user), paging.page, paging.page_size)
+    return FitPage.of(found, Fit.from_view)
 
 
 @router.get("/matched-postings")
-async def matched_postings(
-    user: CurrentUser,
-    deps: Deps,
-    limit: Annotated[int, Query(ge=MIN_MATCHES, le=MAX_MATCHES)] = DEFAULT_MATCHES,
-) -> list[MatchedPosting]:
-    """The best openings inside the user's roles, for the role map's "Top
-    matched" list. Ranked by the role's fit; no AI runs to produce it."""
-    return [
-        MatchedPosting.from_view(m)
-        for m in await deps.assessment.matched_postings(user, limit=limit)
-    ]
+async def matched_postings(user: CurrentUser, deps: Deps, paging: Paging) -> MatchedPostingPage:
+    """The openings inside the user's roles, best first, for the role map's "Top
+    matched" list: ask for ``page_size=10`` for the top ten. Ranked by the
+    role's fit; no AI runs to produce it."""
+    ranked = await deps.assessment.matched_postings(user, limit=None)
+    return MatchedPostingPage.of(
+        paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
+    )
 
 
 @router.post("/fits/compute", status_code=202)

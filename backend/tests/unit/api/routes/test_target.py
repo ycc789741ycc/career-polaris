@@ -48,7 +48,7 @@ def test_an_option_carries_its_kind_label_and_salary() -> None:
     app.dependency_overrides[current_user] = lambda: uuid.uuid4()
     app.dependency_overrides[get_container] = lambda: SimpleNamespace(target=FakeTargets())
 
-    assert TestClient(app).get("/targets").json() == [
+    assert TestClient(app).get("/targets").json()["items"] == [
         {
             "kind": "matchedPosting",
             "id": str(POSTING_ID),

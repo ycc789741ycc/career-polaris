@@ -173,7 +173,7 @@ def test_ticking_a_task_is_recorded(client: TestClient, plans: FakeGapPlans) -> 
 
 
 def test_targets_say_where_each_one_came_from(client: TestClient) -> None:
-    [option] = client.get("/targets").json()
+    [option] = client.get("/targets").json()["items"]
     assert option["kind"] == "subscription"
     assert option["source_kind"] == "watchlist"
     assert option["label"] == "Senior Backend Engineer · Kestrel Financial"

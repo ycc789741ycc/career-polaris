@@ -73,6 +73,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  /**
+   * The items of a list endpoint, typed by its generated page (`RolePage`, …).
+   * Without a `page_size` in `path` the API sends the whole list (ADR 0014).
+   */
+  items: <P extends { items: unknown[] }>(path: string) =>
+    request<P>(path).then((page) => page.items as P["items"]),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: "POST",

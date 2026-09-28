@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import Field
 
 from advisor.rolemap import MAX_ROLE_COUNT, MIN_ROLE_COUNT, RoleView
-from api.schemas.common import ApiModel, RequestModel
+from api.schemas.common import ApiModel, Page, RequestModel
 
 
 class RoleMapSettings(RequestModel):
@@ -93,3 +93,7 @@ class RoleMapEstimate(ApiModel):
     role_count: int
     # Null when there is nothing to price, so no model was asked.
     rate_is_published: bool | None = None
+
+
+class RolePage(Page[Role]):
+    pass

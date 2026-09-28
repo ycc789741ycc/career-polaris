@@ -68,7 +68,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** History */
+        /**
+         * History
+         * @description Every analysis, newest first.
+         */
         get: operations["history_api_v1_assessments_get"];
         put?: never;
         /** Run Assessment */
@@ -246,7 +249,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Connections */
+        /**
+         * List Connections
+         * @description Every connector, connected or not.
+         */
         get: operations["list_connections_api_v1_connections_get"];
         put?: never;
         post?: never;
@@ -331,7 +337,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Evidence */
+        /**
+         * List Evidence
+         * @description Every fact on the profile, newest first. The list that grows with each sync.
+         */
         get: operations["list_evidence_api_v1_evidence_get"];
         put?: never;
         post?: never;
@@ -463,7 +472,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Pasted */
+        /**
+         * List Pasted
+         * @description The user's pasted JDs, newest first.
+         */
         get: operations["list_pasted_api_v1_job_descriptions_get"];
         put?: never;
         /**
@@ -484,7 +496,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Markets */
+        /**
+         * List Markets
+         * @description The markets the user chose. Adding or removing one answers with the
+         *     whole saved set instead, since that is the result of the change.
+         */
         get: operations["list_markets_api_v1_market_preferences_get"];
         put?: never;
         /** Add Market */
@@ -521,8 +537,9 @@ export interface paths {
         };
         /**
          * Matched Postings
-         * @description The best openings inside the user's roles, for the role map's "Top
-         *     matched" list. Ranked by the role's fit; no AI runs to produce it.
+         * @description The openings inside the user's roles, best first, for the role map's "Top
+         *     matched" list: ask for ``page_size=10`` for the top ten. Ranked by the
+         *     role's fit; no AI runs to produce it.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;
@@ -574,7 +591,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Questions */
+        /**
+         * Questions
+         * @description Open follow-up questions, oldest first.
+         */
         get: operations["questions_api_v1_questions_get"];
         put?: never;
         post?: never;
@@ -650,7 +670,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Resumes */
+        /**
+         * List Resumes
+         * @description Uploaded résumés, newest first.
+         */
         get: operations["list_resumes_api_v1_resumes_get"];
         put?: never;
         /** Upload Resume */
@@ -688,7 +711,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Subscriptions */
+        /**
+         * List Subscriptions
+         * @description Watched roles, newest first.
+         */
         get: operations["list_subscriptions_api_v1_role_subscriptions_get"];
         put?: never;
         /** Subscribe */
@@ -744,7 +770,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Roles */
+        /**
+         * List Roles
+         * @description The analysed roles: at most the user's k (ADR 0003).
+         */
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
         post?: never;
@@ -1046,6 +1075,17 @@ export interface components {
             /** Template Version */
             template_version: string;
         };
+        /** AssessmentPage */
+        AssessmentPage: {
+            /** Items */
+            items: components["schemas"]["Assessment"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** AuthorizationUrl */
         AuthorizationUrl: {
             /** Url */
@@ -1096,6 +1136,17 @@ export interface components {
             scopes: string[];
             /** Status */
             status: string;
+        };
+        /** ConnectionPage */
+        ConnectionPage: {
+            /** Items */
+            items: components["schemas"]["Connection"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /** ConnectionResult */
         ConnectionResult: {
@@ -1244,6 +1295,17 @@ export interface components {
             /** Reference */
             reference: string;
         };
+        /** EvidencePage */
+        EvidencePage: {
+            /** Items */
+            items: components["schemas"]["Evidence"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** ExportRequest */
         ExportRequest: {
             /** Version */
@@ -1281,6 +1343,17 @@ export interface components {
             target_score: number;
             /** User Score */
             user_score: number;
+        };
+        /** FitPage */
+        FitPage: {
+            /** Items */
+            items: components["schemas"]["Fit"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /** JobDescriptionRequest */
         JobDescriptionRequest: {
@@ -1349,6 +1422,17 @@ export interface components {
             /** Url */
             url: string | null;
         };
+        /** MatchedPostingPage */
+        MatchedPostingPage: {
+            /** Items */
+            items: components["schemas"]["MatchedPosting"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** Me */
         Me: {
             /** Background Jobs Paused */
@@ -1412,6 +1496,17 @@ export interface components {
             title: string;
             /** Visibility */
             visibility: string;
+        };
+        /** PastedJobDescriptionPage */
+        PastedJobDescriptionPage: {
+            /** Items */
+            items: components["schemas"]["PastedJobDescription"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /** Plan */
         Plan: {
@@ -1541,6 +1636,17 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** PlanSummaryPage */
+        PlanSummaryPage: {
+            /** Items */
+            items: components["schemas"]["PlanSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** PlanTask */
         PlanTask: {
             /** Closes */
@@ -1604,6 +1710,17 @@ export interface components {
             text: string;
             /** Why */
             why: string;
+        };
+        /** QuestionPage */
+        QuestionPage: {
+            /** Items */
+            items: components["schemas"]["Question"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /**
          * QuestionStatus
@@ -1715,6 +1832,17 @@ export interface components {
             /** Uploaded At */
             uploaded_at: string;
         };
+        /** ResumeFilePage */
+        ResumeFilePage: {
+            /** Items */
+            items: components["schemas"]["ResumeFile"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** ResumeOptions */
         ResumeOptions: {
             /** Metrics */
@@ -1785,6 +1913,17 @@ export interface components {
             target: components["schemas"]["TargetRefBody"];
             /** Updated At */
             updated_at: string;
+        };
+        /** ResumeSummaryPage */
+        ResumeSummaryPage: {
+            /** Items */
+            items: components["schemas"]["ResumeSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /** ResumeUpload */
         ResumeUpload: {
@@ -1908,6 +2047,17 @@ export interface components {
             /** Role Count */
             role_count: number;
         };
+        /** RolePage */
+        RolePage: {
+            /** Items */
+            items: components["schemas"]["Role"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /** RoleRequirement */
         RoleRequirement: {
             /** Expected Level */
@@ -1992,6 +2142,17 @@ export interface components {
             /** Role Id */
             role_id: string;
         };
+        /** StringPage */
+        StringPage: {
+            /** Items */
+            items: string[];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
         /**
          * Subscription
          * @description A watch on one role at one company (domain decision 19).
@@ -2019,6 +2180,17 @@ export interface components {
             role_title: string;
             /** Url */
             url: string | null;
+        };
+        /** SubscriptionPage */
+        SubscriptionPage: {
+            /** Items */
+            items: components["schemas"]["Subscription"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /**
          * SubscriptionRequest
@@ -2131,6 +2303,17 @@ export interface components {
             title: string;
             /** Url */
             url: string | null;
+        };
+        /** TargetOptionPage */
+        TargetOptionPage: {
+            /** Items */
+            items: components["schemas"]["TargetOption"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
         };
         /** TargetRefBody */
         TargetRefBody: {
@@ -2492,7 +2675,12 @@ export interface operations {
     };
     history_api_v1_assessments_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -2507,7 +2695,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Assessment"][];
+                    "application/json": components["schemas"]["AssessmentPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -2976,7 +3164,12 @@ export interface operations {
     };
     list_connections_api_v1_connections_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -2991,7 +3184,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Connection"][];
+                    "application/json": components["schemas"]["ConnectionPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3231,7 +3424,12 @@ export interface operations {
     };
     list_evidence_api_v1_evidence_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -3246,7 +3444,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Evidence"][];
+                    "application/json": components["schemas"]["EvidencePage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3280,7 +3478,12 @@ export interface operations {
     };
     fits_api_v1_fits_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -3295,7 +3498,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Fit"][];
+                    "application/json": components["schemas"]["FitPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3431,7 +3634,12 @@ export interface operations {
     };
     history_api_v1_gap_plans_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -3446,7 +3654,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanSummary"][];
+                    "application/json": components["schemas"]["PlanSummaryPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3636,7 +3844,12 @@ export interface operations {
     };
     list_pasted_api_v1_job_descriptions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -3651,7 +3864,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PastedJobDescription"][];
+                    "application/json": components["schemas"]["PastedJobDescriptionPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3738,7 +3951,12 @@ export interface operations {
     };
     list_markets_api_v1_market_preferences_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -3753,7 +3971,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string[];
+                    "application/json": components["schemas"]["StringPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -3892,7 +4110,10 @@ export interface operations {
     matched_postings_api_v1_matched_postings_get: {
         parameters: {
             query?: {
-                limit?: number;
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
             };
             header?: {
                 authorization?: string | null;
@@ -3908,7 +4129,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MatchedPosting"][];
+                    "application/json": components["schemas"]["MatchedPostingPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -4040,7 +4261,12 @@ export interface operations {
     };
     questions_api_v1_questions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -4055,7 +4281,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Question"][];
+                    "application/json": components["schemas"]["QuestionPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -4244,7 +4470,12 @@ export interface operations {
     };
     list_resumes_api_v1_resumes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -4259,7 +4490,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResumeFile"][];
+                    "application/json": components["schemas"]["ResumeFilePage"];
                 };
             };
             /** @description The request could not be read. */
@@ -4397,7 +4628,12 @@ export interface operations {
     };
     list_subscriptions_api_v1_role_subscriptions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -4412,7 +4648,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Subscription"][];
+                    "application/json": components["schemas"]["SubscriptionPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -4599,7 +4835,12 @@ export interface operations {
     };
     list_roles_api_v1_roles_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -4614,7 +4855,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Role"][];
+                    "application/json": components["schemas"]["RolePage"];
                 };
             };
             /** @description The request could not be read. */
@@ -4850,7 +5091,12 @@ export interface operations {
     };
     saved_api_v1_tailored_resumes_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -4865,7 +5111,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResumeSummary"][];
+                    "application/json": components["schemas"]["ResumeSummaryPage"];
                 };
             };
             /** @description The request could not be read. */
@@ -5327,7 +5573,12 @@ export interface operations {
     };
     list_targets_api_v1_targets_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -5342,7 +5593,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TargetOption"][];
+                    "application/json": components["schemas"]["TargetOptionPage"];
                 };
             };
             /** @description The request could not be read. */

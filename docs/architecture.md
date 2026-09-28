@@ -130,7 +130,7 @@ flowchart TB
 
 | Package | Responsibility | May import |
 |---|---|---|
-| `api/` | HTTP and SSE delivery: routes and request/response schemas per component, request dependencies, the error envelope | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
+| `api/` | HTTP and SSE delivery: routes and request/response schemas per component, request dependencies, the error envelope, and one page envelope for every list ([ADR 0014](decisions/0014-page-every-list-response.md)) | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
 | `worker/` | Queue worker entrypoint, and the outbox dispatcher that fans crawler events out to users | `wiring.container`, `wiring.queue`, `kernel` |
 | `crawler/` | The crawl loop and nothing else; holds no secrets and reads no user data | `advisor.market`, `wiring.crawl`, a secret-free subset of `kernel` |
 | `cli/` | One-off commands: migrate, job-queue schema, baseline seed, OpenAPI export | `advisor.market`, `api.main`, `kernel` |

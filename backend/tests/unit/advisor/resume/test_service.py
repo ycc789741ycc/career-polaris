@@ -84,14 +84,14 @@ async def test_saved_resumes_list_by_last_change_with_their_latest_version() -> 
     await service.save_version(OWNER, older, content=_content())
     await service.save_version(OWNER, older, content=_content("Cut p99 latency by 70%"))
 
-    saved = await service.saved(OWNER)
+    saved = (await service.saved(OWNER)).items
     assert [s.id for s in saved] == [older, newer]
     assert [s.latest_version for s in saved] == [2, None]
     assert uow.store.events == [
         ResumeVersionSaved(owner_id=OWNER, resume_id=older, number=1, source=VersionSource.MANUAL),
         ResumeVersionSaved(owner_id=OWNER, resume_id=older, number=2, source=VersionSource.MANUAL),
     ]
-    assert await service.saved(OTHER) == []
+    assert (await service.saved(OTHER)).items == ()
 
 
 async def test_a_resume_shows_its_versions_newest_first_and_any_one_on_request() -> None:
@@ -171,5 +171,5 @@ async def test_a_failure_is_recorded_on_the_resume_and_generation_skips_it() -> 
     # A résumé no longer drafting is left alone: a retry would spend the key again.
     await service.generate(OWNER, resume_id)
 
-    [summary] = await service.saved(OWNER)
+    [summary] = (await service.saved(OWNER)).items
     assert summary.status == "failed" and summary.error_code == "target_unusable"

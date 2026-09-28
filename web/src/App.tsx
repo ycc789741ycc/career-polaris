@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
-import type { Assessment, Credential, Me, Question } from "./api/types";
+import type {
+  Assessment,
+  Credential,
+  Me,
+  Question,
+  QuestionPage,
+} from "./api/types";
 import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
@@ -58,7 +64,7 @@ export async function loadStatus(): Promise<ShellStatus> {
   const [me, credential, questions, assessment] = await Promise.all([
     api.get<Me>("/me").catch(() => null),
     api.get<Credential | null>("/ai-credential").catch(() => null),
-    api.get<Question[]>("/questions").catch(() => [] as Question[]),
+    api.items<QuestionPage>("/questions").catch(() => [] as Question[]),
     api.get<Assessment | null>("/assessments/latest").catch(() => null),
   ]);
   const dimensions = assessment?.dimensions ?? [];

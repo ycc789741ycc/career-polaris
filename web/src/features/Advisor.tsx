@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type {
   PlanSummary,
+  PlanSummaryPage,
   ResumeSummary,
+  ResumeSummaryPage,
   TargetKind,
   TargetOption,
+  TargetOptionPage,
 } from "../api/types";
 import {
   Button,
@@ -36,10 +39,16 @@ type Ref = { kind: TargetKind; id: string };
 export function Advisor({ tab }: { tab: AdvisorTab }) {
   const { focus, navigate } = useShell();
   const flash = useToast();
-  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
-  const plans = useAsync<PlanSummary[]>(() => api.get("/gap-plans"), []);
+  const targets = useAsync<TargetOption[]>(
+    () => api.items<TargetOptionPage>("/targets"),
+    [],
+  );
+  const plans = useAsync<PlanSummary[]>(
+    () => api.items<PlanSummaryPage>("/gap-plans"),
+    [],
+  );
   const resumes = useAsync<ResumeSummary[]>(
-    () => api.get("/tailored-resumes"),
+    () => api.items<ResumeSummaryPage>("/tailored-resumes"),
     [],
   );
   // An opening a history entry asked for, opened once its focus is showing.

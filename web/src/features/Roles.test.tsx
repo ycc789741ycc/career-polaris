@@ -7,6 +7,7 @@ import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { Roles } from "./Roles";
+import { page } from "../test/page";
 
 function role(id: string, name: string): Role {
   return {
@@ -53,14 +54,17 @@ const pasted: TargetOption = {
 
 function serve() {
   const routes: Record<string, unknown> = {
-    "/roles": [role("r1", "Backend Engineer"), role("r2", "Platform Engineer")],
+    "/roles": page([
+      role("r1", "Backend Engineer"),
+      role("r2", "Platform Engineer"),
+    ]),
     "/roles/settings": { role_count: 8 },
-    "/fits": [fit("r1", 60), fit("r2", 84)],
+    "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
-    "/role-subscriptions": [],
-    "/market-preferences": [],
-    "/matched-postings?limit=10": [],
-    "/targets": [pasted],
+    "/role-subscriptions": page([]),
+    "/market-preferences": page([]),
+    "/matched-postings?page_size=10": page([]),
+    "/targets": page([pasted]),
   };
   vi.stubGlobal(
     "fetch",

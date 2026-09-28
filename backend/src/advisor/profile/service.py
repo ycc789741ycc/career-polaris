@@ -42,6 +42,7 @@ from kernel.crypto import decrypt, encrypt
 from kernel.errors import NotFoundError, UpstreamFailedError, ValidationError
 from kernel.fetch import GuardedClient
 from kernel.logging import get_logger
+from kernel.paging import Page
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
@@ -333,11 +334,29 @@ class ProfileService:
         )
         return parsed.text[:max_chars]
 
-    async def resumes(self, owner_id: uuid.UUID) -> list[ResumeFileView]:
-        """Newest first. One user's uploads: a small set, read whole."""
+    async def resumes(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[ResumeFileView]:
+        """Newest first, paged by the store."""
+        everything = ResumeFileFilter()
         async with self._uow.for_owner(owner_id) as mine:
-            uploaded = await mine.resumes.get_list(ResumeFileFilter())
-        return [_resume_view(r) for r in uploaded]
+            uploaded = await mine.resumes.get_list(everything, page=page, page_size=page_size)
+            total = await mine.resumes.get_count(everything)
+        return Page(tuple(_resume_view(r) for r in uploaded), page, page_size, total)
+
+    async def evidence(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[EvidenceView]:
+        """Every fact on the profile, newest first, paged by the store.
+
+        The one list that grows with every sync. ``snapshot`` still reads it
+        whole, for the assessment, which reasons over all of it.
+        """
+        everything = EvidenceFilter()
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.evidence.get_list(everything, page=page, page_size=page_size)
+            total = await mine.evidence.get_count(everything)
+        return Page(tuple(_evidence_view(e) for e in found), page, page_size, total)
 
     async def resume_download_url(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> str:
         async with self._uow.for_owner(owner_id) as mine:

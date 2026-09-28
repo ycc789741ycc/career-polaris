@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import Field
 
 from advisor.profile import ConnectionView, EvidenceView, ProfileSnapshot, ResumeFileView
-from api.schemas.common import ApiModel, RequestModel, Timestamp
+from api.schemas.common import ApiModel, Page, RequestModel, Timestamp
 
 
 class CallbackRequest(RequestModel):
@@ -154,3 +154,15 @@ class Profile(ApiModel):
                 for p in snapshot.positions
             ],
         )
+
+
+class ConnectionPage(Page[Connection]):
+    pass
+
+
+class ResumeFilePage(Page[ResumeFile]):
+    pass
+
+
+class EvidencePage(Page[Evidence]):
+    pass

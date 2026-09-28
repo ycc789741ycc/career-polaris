@@ -7,7 +7,7 @@ import uuid
 from pydantic import Field
 
 from advisor.market import CompanySubscriptionView, PostingView
-from api.schemas.common import ApiModel, RequestModel, Timestamp
+from api.schemas.common import ApiModel, Page, RequestModel, Timestamp
 
 
 class SubscriptionRequest(RequestModel):
@@ -78,3 +78,11 @@ class PastedJobDescription(ApiModel):
             location=posting.location,
             visibility=str(posting.visibility),
         )
+
+
+class SubscriptionPage(Page[Subscription]):
+    pass
+
+
+class PastedJobDescriptionPage(Page[PastedJobDescription]):
+    pass

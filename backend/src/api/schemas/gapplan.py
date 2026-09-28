@@ -9,7 +9,14 @@ from pydantic import Field
 
 from advisor.gapplan import GapView, MilestoneView, PlanSummaryView, PlanView
 from advisor.target import TargetKind
-from api.schemas.common import ApiModel, EvidenceCitation, JobError, RequestModel, Timestamp
+from api.schemas.common import (
+    ApiModel,
+    EvidenceCitation,
+    JobError,
+    Page,
+    RequestModel,
+    Timestamp,
+)
 from api.schemas.target import TargetRefBody
 
 PlanStatusName = Literal["drafting", "ready", "failed"]
@@ -189,3 +196,7 @@ class Plan(PlanSummary):
             ],
             versions=[PlanSummary.from_view(v) for v in plan.versions],
         )
+
+
+class PlanSummaryPage(Page[PlanSummary]):
+    pass

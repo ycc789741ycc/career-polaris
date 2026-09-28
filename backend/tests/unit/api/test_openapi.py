@@ -70,3 +70,22 @@ def test_the_guard_catches_a_plain_dict() -> None:
     assert _untyped({"type": "object", "additionalProperties": True}, {})
     assert _untyped({"type": "array", "items": {"type": "object"}}, {})
     assert not _untyped({"type": "object", "additionalProperties": {"type": "string"}}, {})
+
+
+def test_every_list_is_a_page_with_the_same_two_parameters(document: dict[str, Any]) -> None:
+    """One envelope and one pair of paging parameters on every list (ADR 0014)."""
+    components = document["components"]["schemas"]
+    for path, operations in document["paths"].items():
+        get = operations.get("get")
+        if not path.startswith("/api/v1") or get is None:
+            continue
+        schema = (
+            get["responses"].get("200", {}).get("content", {}).get("application/json", {})
+        ).get("schema", {})
+        resolved = components[schema["$ref"].rsplit("/", 1)[-1]] if "$ref" in schema else schema
+        is_page = "$ref" in schema and schema["$ref"].endswith("Page")
+        assert resolved.get("type") != "array", f"GET {path} returns a bare array"
+        if is_page:
+            assert set(resolved["required"]) == {"items", "page", "page_size", "total"}
+            names = {p["name"] for p in get.get("parameters", []) if p["in"] == "query"}
+            assert {"page", "page_size"} <= names, f"GET {path} pages without the parameters"

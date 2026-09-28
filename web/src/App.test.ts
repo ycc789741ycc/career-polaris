@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadStatus } from "./App";
+import { page } from "./test/page";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -22,7 +23,9 @@ describe("shell status", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith("/questions"))
-          return json([{ answer: null }, { answer: "yes" }, { answer: null }]);
+          return json(
+            page([{ answer: null }, { answer: "yes" }, { answer: null }]),
+          );
         if (url.endsWith("/assessments/latest"))
           return json({
             dimensions: [{ confidence: 0.8 }, { confidence: 0.9 }],

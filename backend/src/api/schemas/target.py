@@ -6,7 +6,7 @@ import uuid
 from typing import Literal
 
 from advisor.target import TargetOptionView, TargetRef
-from api.schemas.common import ApiModel, Salary
+from api.schemas.common import ApiModel, Page, Salary
 
 TargetKindName = Literal["matchedPosting", "subscription", "privatePosting"]
 
@@ -54,3 +54,7 @@ class TargetOption(ApiModel):
             url=option.url,
             subscription_id=option.subscription_id,
         )
+
+
+class TargetOptionPage(Page[TargetOption]):
+    pass

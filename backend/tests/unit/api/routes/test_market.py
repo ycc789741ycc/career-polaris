@@ -81,7 +81,10 @@ def client(queued: list[dict[str, Any]]) -> TestClient:
 
 
 def test_a_watched_role_says_plainly_when_nothing_updates_it(client: TestClient) -> None:
-    assert client.get("/role-subscriptions").json() == [
+    body = client.get("/role-subscriptions").json()
+
+    assert (body["page"], body["page_size"], body["total"]) == (1, None, 1)
+    assert body["items"] == [
         {
             "id": str(SUBSCRIPTION_ID),
             "company_id": str(COMPANY_ID),

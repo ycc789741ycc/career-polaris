@@ -7,6 +7,7 @@ import type { AdvisorTab, Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { Advisor, firstOpening, openingsFor } from "./Advisor";
+import { page } from "../test/page";
 
 function opening(overrides: Partial<TargetOption>): TargetOption {
   return {
@@ -90,11 +91,11 @@ function serve() {
       const url = String(input).replace("http://api.test/api/v1", "");
       const body =
         url === "/targets"
-          ? targets
+          ? page(targets)
           : url === "/gap-plans"
-            ? [northwindPlan, platformPlan]
+            ? page([northwindPlan, platformPlan])
             : url === "/tailored-resumes"
-              ? []
+              ? page([])
               : null;
       return new Response(JSON.stringify(body), {
         status: 200,

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment, Question, QuestionStatus } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { FollowUpQuestions } from "./FollowUpQuestions";
+import { page } from "../test/page";
 
 const assessment: Assessment = {
   id: "a1",
@@ -56,7 +57,12 @@ function serve(route: Route) {
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input).replace("http://api.test/api/v1", "");
-      const body = route(init?.method ?? "GET", url);
+      const method = init?.method ?? "GET";
+      const answer = route(method, url);
+      // Every list the API sends is a page (ADR 0014); the routes here return
+      // the list itself.
+      const body =
+        method === "GET" && Array.isArray(answer) ? page(answer) : answer;
       return new Response(body === undefined ? null : JSON.stringify(body), {
         status: body === undefined ? 204 : 200,
         headers: { "Content-Type": "application/json" },

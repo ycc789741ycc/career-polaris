@@ -71,3 +71,19 @@ export type ResumeSummary = Schemas["ResumeSummary"];
 export type ResumeVersion = Schemas["ResumeVersion"];
 export type TailoredResume = Schemas["TailoredResume"];
 export type ResumeExport = Schemas["ResumeExport"];
+
+// Pages: every list endpoint answers with one (ADR 0014). `api.items<P>` unwraps it.
+export type AssessmentPage = Schemas["AssessmentPage"];
+export type ConnectionPage = Schemas["ConnectionPage"];
+export type EvidencePage = Schemas["EvidencePage"];
+export type FitPage = Schemas["FitPage"];
+export type MatchedPostingPage = Schemas["MatchedPostingPage"];
+export type PastedJobDescriptionPage = Schemas["PastedJobDescriptionPage"];
+export type PlanSummaryPage = Schemas["PlanSummaryPage"];
+export type QuestionPage = Schemas["QuestionPage"];
+export type ResumeFilePage = Schemas["ResumeFilePage"];
+export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
+export type RolePage = Schemas["RolePage"];
+export type StringPage = Schemas["StringPage"];
+export type SubscriptionPage = Schemas["SubscriptionPage"];
+export type TargetOptionPage = Schemas["TargetOptionPage"];

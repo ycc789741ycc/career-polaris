@@ -19,21 +19,25 @@ from advisor.profile import (
     sign_state,
     verify_state,
 )
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import Accepted
 from api.schemas.profile import (
     AuthorizationUrl,
     CallbackRequest,
     Connection,
+    ConnectionPage,
     ConnectionResult,
     DownloadUrl,
     Evidence,
+    EvidencePage,
     Profile,
     ResumeFile,
+    ResumeFilePage,
     ResumeUpload,
 )
 from kernel.config import Settings, must
 from kernel.fetch import GuardedClient
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["profile"])
@@ -61,12 +65,14 @@ SCOPE_COPY = {
 
 
 @router.get("/connections")
-async def list_connections(user: CurrentUser, deps: Deps) -> list[Connection]:
+async def list_connections(user: CurrentUser, deps: Deps, paging: Paging) -> ConnectionPage:
+    """Every connector, connected or not."""
     connected = {c.kind: c for c in await deps.profile.connections(user)}
-    return [
+    rows = [
         Connection.from_view(kind, connected.get(kind), scopes)
         for kind, scopes in SCOPE_COPY.items()
     ]
+    return ConnectionPage.of(paginate(rows, paging.page, paging.page_size), lambda row: row)
 
 
 @router.get("/connections/{kind}/authorize-url")
@@ -165,8 +171,10 @@ async def upload_resume(
 
 
 @router.get("/resumes")
-async def list_resumes(user: CurrentUser, deps: Deps) -> list[ResumeFile]:
-    return [ResumeFile.from_view(r) for r in await deps.profile.resumes(user)]
+async def list_resumes(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeFilePage:
+    """Uploaded résumés, newest first."""
+    found = await deps.profile.resumes(user, page=paging.page, page_size=paging.page_size)
+    return ResumeFilePage.of(found, ResumeFile.from_view)
 
 
 @router.get("/resumes/{resume_id}/download-url")
@@ -176,9 +184,10 @@ async def resume_url(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> Dow
 
 
 @router.get("/evidence")
-async def list_evidence(user: CurrentUser, deps: Deps) -> list[Evidence]:
-    snapshot = await deps.profile.snapshot(user)
-    return [Evidence.from_view(e) for e in snapshot.evidence]
+async def list_evidence(user: CurrentUser, deps: Deps, paging: Paging) -> EvidencePage:
+    """Every fact on the profile, newest first. The list that grows with each sync."""
+    found = await deps.profile.evidence(user, page=paging.page, page_size=paging.page_size)
+    return EvidencePage.of(found, Evidence.from_view)
 
 
 @router.get("/profile")

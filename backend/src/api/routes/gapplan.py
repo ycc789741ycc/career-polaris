@@ -8,9 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from advisor.target import TargetKind, TargetRef
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import TargetEstimate
-from api.schemas.gapplan import Plan, PlanSummary, TargetRequest, TaskDoneRequest
+from api.schemas.gapplan import Plan, PlanSummary, PlanSummaryPage, TargetRequest, TaskDoneRequest
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["gapplan"])
@@ -38,9 +38,10 @@ async def request_plan(body: TargetRequest, user: CurrentUser, deps: Deps) -> Pl
 
 
 @router.get("/gap-plans")
-async def history(user: CurrentUser, deps: Deps) -> list[PlanSummary]:
+async def history(user: CurrentUser, deps: Deps, paging: Paging) -> PlanSummaryPage:
     """Plan history: each Target's latest version, newest first."""
-    return [PlanSummary.from_view(plan) for plan in await deps.gapplan.history(user)]
+    found = await deps.gapplan.history(user, page=paging.page, page_size=paging.page_size)
+    return PlanSummaryPage.of(found, PlanSummary.from_view)
 
 
 @router.get("/gap-plans/{plan_id}")

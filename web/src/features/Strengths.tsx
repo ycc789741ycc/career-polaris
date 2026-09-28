@@ -4,8 +4,11 @@ import type {
   Assessment,
   CostEstimate,
   Evidence,
+  EvidencePage,
   Fit,
+  FitPage,
   Role,
+  RolePage,
 } from "../api/types";
 import { SkillRadar } from "../charts/SkillRadar";
 import {
@@ -38,9 +41,12 @@ export function Strengths() {
     () => api.get("/assessments/latest"),
     [],
   );
-  const evidence = useAsync<Evidence[]>(() => api.get("/evidence"), []);
-  const fits = useAsync<Fit[]>(() => api.get("/fits"), []);
-  const roles = useAsync<Role[]>(() => api.get("/roles"), []);
+  const evidence = useAsync<Evidence[]>(
+    () => api.items<EvidencePage>("/evidence"),
+    [],
+  );
+  const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
+  const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
   const [layout, setLayout] = useState<Layout>("radar");
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [busy, setBusy] = useState(false);

@@ -171,6 +171,11 @@ from a view, never from an entity, and the SPA's `web/src/api/types.ts` only
 aliases the generated `schema.d.ts`. A new response field therefore goes in the
 view, the schema and its `from_view`, then `make gen-client`.
 
+Every `GET` list answers with a page — `{items, page, page_size, total}` — and
+takes `page` and `page_size` through the shared `Paging` dependency; an omitted
+`page_size` returns the whole list (ADR 0014). Each list has a named schema
+(`RolePage`), and the SPA reads one with `api.items<RolePage>(path)`.
+
 Repository interfaces are defined in each component's `domain/`, in entities and
 value objects — never ORM types — and implemented in `infra/` (ADR 0011). Every
 repository has the same six methods (`create`, `get`, `get_list`, `get_count`,

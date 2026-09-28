@@ -18,7 +18,14 @@ from advisor.resume import (
     VersionView,
 )
 from advisor.target import TargetKind
-from api.schemas.common import ApiModel, EvidenceCitation, JobError, RequestModel, Timestamp
+from api.schemas.common import (
+    ApiModel,
+    EvidenceCitation,
+    JobError,
+    Page,
+    RequestModel,
+    Timestamp,
+)
 from api.schemas.target import TargetRefBody
 
 TemplateName = Literal["warm", "plain", "brief"]
@@ -286,3 +293,7 @@ def revision_event(event: RevisionText | RevisionDone | RevisionFailed) -> dict[
         return {"event": "proposal", "data": body.model_dump_json()}
     detail = JobError(code=event.code, message=event.message)
     return {"event": "error", "data": detail.model_dump_json()}
+
+
+class ResumeSummaryPage(Page[ResumeSummary]):
+    pass

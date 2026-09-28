@@ -7,17 +7,21 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 
 from advisor.rolemap import MAX_ROLE_COUNT, MIN_ROLE_COUNT
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import Accepted
-from api.schemas.rolemap import Role, RoleMapEstimate, RoleMapSettings
+from api.schemas.rolemap import Role, RoleMapEstimate, RoleMapSettings, RolePage
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["rolemap"])
 
 
 @router.get("/roles")
-async def list_roles(user: CurrentUser, deps: Deps) -> list[Role]:
-    return [Role.from_view(role) for role in await deps.rolemap.roles(user)]
+async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
+    """The analysed roles: at most the user's k (ADR 0003)."""
+    # Paged here, not in the service: other components read the roles whole.
+    found = paginate(await deps.rolemap.roles(user), paging.page, paging.page_size)
+    return RolePage.of(found, Role.from_view)
 
 
 @router.get("/roles/settings")

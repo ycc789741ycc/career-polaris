@@ -27,6 +27,7 @@ from advisor.profile.domain.timeline import Position
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import profile as profile_api
+from kernel.paging import Page, paginate
 
 EVIDENCE_ID = uuid.uuid4()
 RESUME_ID = uuid.uuid4()
@@ -57,8 +58,10 @@ class FakeProfile:
             )
         ]
 
-    async def resumes(self, owner_id: uuid.UUID) -> list[ResumeFileView]:
-        return [
+    async def resumes(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[ResumeFileView]:
+        rows = [
             ResumeFileView(
                 id=RESUME_ID,
                 filename="maya.pdf",
@@ -67,6 +70,12 @@ class FakeProfile:
                 uploaded_at=SYNCED,
             )
         ]
+        return paginate(rows, page, page_size)
+
+    async def evidence(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[EvidenceView]:
+        return paginate([EVIDENCE], page, page_size)
 
     async def upload_resume(self, owner_id: uuid.UUID, **_: Any) -> ResumeFileView:
         return ResumeFileView(
@@ -108,7 +117,7 @@ def client(queued: list[dict[str, Any]]) -> TestClient:
 
 
 def test_every_connector_is_listed_whether_or_not_it_is_connected(client: TestClient) -> None:
-    rows = {row["kind"]: row for row in client.get("/connections").json()}
+    rows = {row["kind"]: row for row in client.get("/connections").json()["items"]}
 
     assert rows["github"] == {
         "kind": "github",
@@ -136,7 +145,7 @@ def test_an_upload_is_queued_for_parsing_not_parsed_in_the_request(
 
 
 def test_uploaded_resumes_list_their_parse_state(client: TestClient) -> None:
-    assert client.get("/resumes").json() == [
+    assert client.get("/resumes").json()["items"] == [
         {
             "id": str(RESUME_ID),
             "filename": "maya.pdf",
@@ -148,7 +157,7 @@ def test_uploaded_resumes_list_their_parse_state(client: TestClient) -> None:
 
 
 def test_evidence_goes_out_with_dates_and_enums_as_strings(client: TestClient) -> None:
-    assert client.get("/evidence").json() == [
+    assert client.get("/evidence").json()["items"] == [
         {
             "id": str(EVIDENCE_ID),
             "source": "github",
@@ -177,3 +186,36 @@ def test_the_profile_counts_evidence_and_lists_the_timeline(client: TestClient) 
             }
         ],
     }
+
+
+def test_a_page_holds_its_slice_and_the_size_of_the_whole_list(client: TestClient) -> None:
+    first = client.get("/connections", params={"page": 1, "page_size": 1}).json()
+    second = client.get("/connections", params={"page": 2, "page_size": 1}).json()
+
+    assert (first["page"], first["page_size"], first["total"]) == (1, 1, 2)
+    assert (second["page"], second["page_size"], second["total"]) == (2, 1, 2)
+    assert [r["kind"] for r in first["items"] + second["items"]] == ["github", "jira"]
+
+
+def test_a_page_past_the_end_is_empty_but_still_counts(client: TestClient) -> None:
+    body = client.get("/evidence", params={"page": 3, "page_size": 5}).json()
+    assert body == {"items": [], "page": 3, "page_size": 5, "total": 1}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"page": 0},
+        {"page_size": 0},
+        {"page_size": 101},
+        # Page 2 of the whole list does not exist.
+        {"page": 2},
+    ],
+)
+def test_paging_that_makes_no_sense_is_refused_in_the_envelope(
+    client: TestClient, params: dict[str, int]
+) -> None:
+    response = client.get("/evidence", params=params)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"

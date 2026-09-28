@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment, Connection, Evidence } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { Connect } from "./Connect";
+import { page } from "../test/page";
 
 function connection(overrides: Partial<Connection>): Connection {
   return {
@@ -39,8 +40,12 @@ function serve(route: (call: Call) => unknown) {
       };
       calls.push(call);
       if (call.method === "DELETE") return new Response(null, { status: 204 });
-      const body = route(call);
-      return new Response(JSON.stringify(body ?? noData(call)), {
+      const body = route(call) ?? noData(call);
+      // Every list the API sends is a page (ADR 0014); the routes here return
+      // the list itself.
+      const sent =
+        call.method === "GET" && Array.isArray(body) ? page(body) : body;
+      return new Response(JSON.stringify(sent), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

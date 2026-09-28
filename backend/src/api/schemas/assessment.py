@@ -14,7 +14,7 @@ from advisor.assessment import (
     QuestionRoundView,
     QuestionView,
 )
-from api.schemas.common import ApiModel, JobError, RequestModel, Salary, Timestamp
+from api.schemas.common import ApiModel, JobError, Page, RequestModel, Salary, Timestamp
 
 
 class AnswerRequest(RequestModel):
@@ -183,3 +183,19 @@ class MatchedPosting(ApiModel):
             subscription_id=m.subscription_id,
             source_kind=m.source_kind,
         )
+
+
+class AssessmentPage(Page[Assessment]):
+    pass
+
+
+class QuestionPage(Page[Question]):
+    pass
+
+
+class FitPage(Page[Fit]):
+    pass
+
+
+class MatchedPostingPage(Page[MatchedPosting]):
+    pass

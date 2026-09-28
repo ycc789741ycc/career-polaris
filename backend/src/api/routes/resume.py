@@ -17,13 +17,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from advisor.resume import Options
 from advisor.target import TargetKind, TargetRef
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import TargetEstimate
 from api.schemas.resume import (
     ExportRequest,
     ResumeExport,
     ResumeRequest,
     ResumeSummary,
+    ResumeSummaryPage,
     ResumeVersion,
     RevisionRequest,
     SettingsRequest,
@@ -63,9 +64,10 @@ async def write_resume(body: ResumeRequest, user: CurrentUser, deps: Deps) -> Re
 
 
 @router.get("/tailored-resumes")
-async def saved(user: CurrentUser, deps: Deps) -> list[ResumeSummary]:
+async def saved(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeSummaryPage:
     """Saved résumés, most recently changed first."""
-    return [ResumeSummary.from_view(r) for r in await deps.resume.saved(user)]
+    found = await deps.resume.saved(user, page=paging.page, page_size=paging.page_size)
+    return ResumeSummaryPage.of(found, ResumeSummary.from_view)
 
 
 @router.get("/tailored-resumes/{resume_id}")
