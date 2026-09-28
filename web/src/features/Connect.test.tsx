@@ -230,64 +230,6 @@ describe("Connect", () => {
     expect(within(table).getByText("Closed ACME-1")).toBeInTheDocument();
   });
 
-  it("names the scores each fact backs, and lists the ones none cite", async () => {
-    serve((call) => {
-      if (call.url === "/connections") return [connection({})];
-      if (call.url === "/evidence") return [jiraFact, prFact];
-      if (call.url === "/assessments/latest")
-        return assessment({
-          dimensions: [
-            {
-              key: "delivery",
-              name: "Delivery at scale",
-              short_name: "Delivery",
-              score: 70,
-              confidence: 0.8,
-              read: "",
-              evidence_ids: [prFact.id],
-            },
-          ],
-        });
-      return undefined;
-    });
-    renderConnect();
-    const user = userEvent.setup();
-
-    const table = await screen.findByRole("table", {
-      name: "Evidence gathered",
-    });
-    expect(
-      await screen.findByText(/1 of 2 facts back a score/),
-    ).toBeInTheDocument();
-    const prRow = within(table)
-      .getByText("Split the ledger writer")
-      .closest("tr");
-    expect(prRow).toHaveTextContent("Delivery");
-
-    await user.click(
-      screen.getByRole("button", { name: "Show the 1 not cited" }),
-    );
-
-    expect(within(table).getByText("Closed ACME-1")).toBeInTheDocument();
-    expect(
-      within(table).queryByText("Split the ledger writer"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("says when the evidence changed after the analysis", async () => {
-    serve((call) => {
-      if (call.url === "/evidence") return [prFact];
-      if (call.url === "/assessments/latest")
-        return assessment({ is_out_of_date: true });
-      return undefined;
-    });
-    renderConnect();
-
-    expect(
-      await screen.findByText(/Your evidence has changed since/),
-    ).toBeInTheDocument();
-  });
-
   it("removes a résumé only after confirming, then reloads", async () => {
     let uploaded = true;
     const calls = serve((call) => {
@@ -328,23 +270,115 @@ describe("Connect", () => {
       ).not.toBeInTheDocument(),
     );
     const reloads = calls.filter(
-      (c) => c.method === "GET" && c.url === "/assessments/latest",
+      (c) => c.method === "GET" && c.url === "/evidence",
     );
     expect(reloads.length).toBeGreaterThan(1);
   });
 
-  it("asks for an analysis before it can say what backs a score", async () => {
-    serve((call) => (call.url === "/evidence" ? [prFact] : undefined));
+  // Step 01 shows what was collected; what the analysis made of it is
+  // Strengths' to show.
+  it("lists the facts without anything the analysis made of them", async () => {
+    serve((call) => {
+      if (call.url === "/evidence") return [jiraFact, prFact];
+      if (call.url === "/assessments/latest")
+        return assessment({
+          is_out_of_date: true,
+          dimensions: [
+            {
+              key: "delivery",
+              name: "Delivery at scale",
+              short_name: "Delivery",
+              score: 70,
+              confidence: 0.8,
+              read: "",
+              evidence_ids: [prFact.id],
+              needs_more_evidence: false,
+            },
+          ],
+        });
+      return undefined;
+    });
     renderConnect();
 
+    const table = await screen.findByRole("table", {
+      name: "Evidence gathered",
+    });
     expect(
-      await screen.findByText(
-        "Run an analysis to see which facts back your scores.",
-      ),
+      within(table).getByText("Split the ledger writer"),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("columnheader", { name: "Cited by" }),
     ).not.toBeInTheDocument();
+    expect(within(table).queryByText("Delivery")).not.toBeInTheDocument();
+    expect(screen.queryByText(/back a score/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/evidence has changed since/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("filters the facts by source, and all brings them back", async () => {
+    serve((call) =>
+      call.url === "/evidence" ? [jiraFact, prFact] : undefined,
+    );
+    renderConnect();
+    const user = userEvent.setup();
+
+    const filters = await screen.findByRole("group", {
+      name: "Filter by source",
+    });
+    const table = screen.getByRole("table", { name: "Evidence gathered" });
+    expect(
+      within(filters).getByRole("button", { name: "All · 2" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(within(filters).getByRole("button", { name: "Jira · 1" }));
+    expect(within(table).getByText("Closed ACME-1")).toBeInTheDocument();
+    expect(
+      within(table).queryByText("Split the ledger writer"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("All 1 fact from Jira.")).toBeInTheDocument();
+
+    await user.click(within(filters).getByRole("button", { name: "All · 2" }));
+    expect(
+      within(table).getByText("Split the ledger writer"),
+    ).toBeInTheDocument();
+    expect(within(table).getByText("Closed ACME-1")).toBeInTheDocument();
+  });
+
+  it("drops a picked repository when another source is filtered", async () => {
+    const ledger = {
+      ...prFact,
+      id: "e3",
+      reference: "GitHub · acme/ledger",
+      fact: "12 merged pull requests authored in acme/ledger.",
+      granularity: "summary",
+      tally: 12,
+    } satisfies Evidence;
+    serve((call) =>
+      call.url === "/evidence" ? [jiraFact, prFact, ledger] : undefined,
+    );
+    renderConnect();
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "acme/ledger: 12" }),
+    );
+    const filters = screen.getByRole("group", { name: "Filter by source" });
+
+    // The pick is GitHub's, so filtering to GitHub keeps it.
+    await user.click(
+      within(filters).getByRole("button", { name: "GitHub · 2" }),
+    );
+    expect(
+      screen.getByText("Showing 2 facts: acme/ledger."),
+    ).toBeInTheDocument();
+
+    await user.click(within(filters).getByRole("button", { name: "Jira · 1" }));
+    const table = screen.getByRole("table", { name: "Evidence gathered" });
+    expect(
+      screen.queryByText(/Showing .*acme\/ledger/),
+    ).not.toBeInTheDocument();
+    expect(within(table).getByText("Closed ACME-1")).toBeInTheDocument();
   });
 
   it("splits what it found by source", async () => {
@@ -374,6 +408,7 @@ describe("Connect", () => {
               confidence: 0.35,
               read: "One repository shows it.",
               evidence_ids: [],
+              needs_more_evidence: true,
             },
           ],
         });

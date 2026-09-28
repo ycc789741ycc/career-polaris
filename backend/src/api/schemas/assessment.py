@@ -29,6 +29,9 @@ class Dimension(ApiModel):
     confidence: float
     read: str
     evidence_ids: list[str]
+    # Confidence is below the threshold that opens follow-up questions: the
+    # evidence is not enough to be sure of this score yet.
+    needs_more_evidence: bool
 
 
 class Assessment(ApiModel):
@@ -59,6 +62,7 @@ class Assessment(ApiModel):
                     confidence=d.confidence,
                     read=d.read,
                     evidence_ids=list(d.evidence_ids),
+                    needs_more_evidence=d.needs_more_evidence,
                 )
                 for d in assessment.dimensions
             ],

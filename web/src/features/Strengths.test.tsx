@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
@@ -23,8 +23,25 @@ function assessment(overrides: Partial<Assessment>): Assessment {
         confidence: 0.8,
         read: "Solid",
         evidence_ids: [],
+        needs_more_evidence: false,
       },
     ],
+    ...overrides,
+  };
+}
+
+function dimension(
+  overrides: Partial<Assessment["dimensions"][number]>,
+): Assessment["dimensions"][number] {
+  return {
+    key: "api",
+    name: "API design",
+    short_name: "APIs",
+    score: 70,
+    confidence: 0.8,
+    read: "Solid",
+    evidence_ids: [],
+    needs_more_evidence: false,
     ...overrides,
   };
 }
@@ -91,13 +108,81 @@ describe("Strengths", () => {
     expect(paths.some((path) => /\/(fits|roles)\b/.test(path))).toBe(false);
     expect(screen.queryByText(/Compared against/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ranked ledger" }));
     expect(
-      screen.getByText("Every dimension, weakest first"),
-    ).toBeInTheDocument();
-    // The score alone: no bar borrowed from a role.
+      screen.queryByRole("button", { name: "Ranked ledger" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains a score by its confidence, and says when evidence is thin", async () => {
+    serve(
+      assessment({
+        dimensions: [
+          dimension({
+            key: "api",
+            name: "API design",
+            confidence: 0.8,
+            evidence_ids: ["e1", "e2"],
+          }),
+          dimension({
+            key: "tests",
+            name: "Testing",
+            confidence: 0.3,
+            evidence_ids: ["e1"],
+            needs_more_evidence: true,
+          }),
+        ],
+      }),
+    );
+    renderStrengths();
+
+    // The least certain dimension is the one shown first.
     expect(
-      screen.getByRole("img", { name: "API design: you 70" }),
+      await screen.findByRole("heading", { name: "Testing" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Confidence in Testing" }),
+    ).toHaveAttribute("aria-valuenow", "30");
+    expect(
+      screen.getByText(/Thin evidence: this score rests on 1 fact/),
+    ).toBeInTheDocument();
+
+    const list = screen.getByRole("list", {
+      name: "Dimensions, least certain first",
+    });
+    fireEvent.click(within(list).getByRole("button", { name: /^API design/ }));
+    expect(
+      screen.getByRole("heading", { name: "API design" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Well supported: backed by 2 facts/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Thin evidence/)).not.toBeInTheDocument();
+  });
+
+  it("lists every dimension least certain first", async () => {
+    serve(
+      assessment({
+        dimensions: [
+          dimension({ key: "a", name: "APIs", confidence: 0.9 }),
+          dimension({
+            key: "b",
+            name: "Builds",
+            confidence: 0.2,
+            needs_more_evidence: true,
+          }),
+          dimension({ key: "c", name: "Caching", confidence: 0.6 }),
+        ],
+      }),
+    );
+    renderStrengths();
+
+    const list = await screen.findByRole("list", {
+      name: "Dimensions, least certain first",
+    });
+    expect(
+      within(list)
+        .getAllByRole("button")
+        .map((row) => row.textContent),
+    ).toEqual(["Builds⚠ 20% sure", "Caching60% sure", "APIs90% sure"]);
   });
 });

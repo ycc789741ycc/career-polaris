@@ -195,6 +195,10 @@ contract.
   (01–04): a step reads the ones before it, never the ones after. The role map
   reclusters and rescores as the market moves, so the strength report shows no
   fit, role or bar from it — comparing against a role is the role map's job.
+  Likewise Sources lists the collected facts, filterable by source, and nothing
+  the analysis made of them; its follow-up questions stay there because an
+  answer is how thin evidence gets more. Strengths explains each score by its
+  confidence, and `needs_more_evidence` uses the same threshold as the questions.
 - **The crawler holds no secrets and has no grant on any user schema.** It emits
   events about companies and markets; the worker's dispatcher resolves those to
   users. That fan-out is the only cross-user read, and it has its own narrow

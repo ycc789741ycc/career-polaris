@@ -158,6 +158,9 @@ class DimensionView:
     confidence: float
     read: str
     evidence_ids: tuple[str, ...]
+    # Below the confidence threshold: the evidence is not enough to be sure,
+    # which is also what makes follow-up questions ask about it.
+    needs_more_evidence: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,7 +361,9 @@ class AssessmentService:
         current = await self._profile.version(owner_id)
         async with self._uow.for_owner(owner_id) as mine:
             newest = await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1)
-            return await _view(mine, newest[0], current) if newest else None
+            return (
+                await _view(mine, newest[0], current, threshold=self._threshold) if newest else None
+            )
 
     async def history(
         self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
@@ -372,7 +377,12 @@ class AssessmentService:
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.assessments.get_list(everything, page=page, page_size=page_size)
             total = await mine.assessments.get_count(everything)
-            views = tuple([await _view(mine, assessment, current) for assessment in found])
+            views = tuple(
+                [
+                    await _view(mine, assessment, current, threshold=self._threshold)
+                    for assessment in found
+                ]
+            )
         return Page(views, page, page_size, total)
 
     # -- follow-up questions ------------------------------------------------
@@ -983,14 +993,20 @@ class AssessmentService:
 
 
 async def _view(
-    mine: OwnerAssessment, assessment: SkillAssessment, profile_version: int
+    mine: OwnerAssessment,
+    assessment: SkillAssessment,
+    profile_version: int,
+    *,
+    threshold: float,
 ) -> AssessmentView:
     """An assessment with its scores, named by the user's dimensions.
 
     ``profile_version`` is the profile's version now, to compare against the
-    one the assessment read.
+    one the assessment read. ``threshold`` is the confidence below which a
+    score needs more evidence, the same rule that opens follow-up questions.
     """
     scores = await mine.scores.get_list(AssessedScoreFilter(assessment_id=assessment.id))
+    thin = {s.dimension_key for s in needs_follow_up(scores, threshold=threshold)}
     names = {
         d.key: (d.name, d.short_name)
         for d in await mine.dimensions.get_list(SkillDimensionFilter())
@@ -1013,6 +1029,7 @@ async def _view(
                 confidence=s.confidence,
                 read=s.read,
                 evidence_ids=s.evidence_ids,
+                needs_more_evidence=s.dimension_key in thin,
             )
             for s in sorted(scores, key=lambda s: s.dimension_key)
         ),

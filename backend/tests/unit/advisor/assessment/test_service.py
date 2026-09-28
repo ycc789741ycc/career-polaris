@@ -166,6 +166,25 @@ async def test_any_change_to_the_profile_puts_every_earlier_assessment_out_of_da
     assert latest is not None and latest.is_out_of_date is True
 
 
+async def test_a_score_below_the_threshold_says_it_needs_more_evidence() -> None:
+    # The same rule that opens follow-up questions, so the report and the
+    # questions never disagree about which scores are thin.
+    service = _service(FakeAssessmentUnitOfWork())
+    await _assess(
+        service,
+        [_dimension("api", "APIs", confidence=0.8), _dimension("db", "Data", confidence=0.4)],
+    )
+
+    latest = await service.latest(OWNER)
+    assert latest is not None
+    assert {d.key: d.needs_more_evidence for d in latest.dimensions} == {
+        "api": False,
+        "db": True,
+    }
+    history = (await service.history(OWNER)).items
+    assert [d.needs_more_evidence for d in history[0].dimensions] == [False, True]
+
+
 async def test_a_dimension_that_disappears_is_retired_with_a_record() -> None:
     uow = FakeAssessmentUnitOfWork()
     service = _service(uow)

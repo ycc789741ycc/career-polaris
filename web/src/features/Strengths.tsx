@@ -15,20 +15,23 @@ import {
   ErrorNote,
   Eyebrow,
   Loading,
-  PillToggle,
-  YouVsBar,
+  ProgressBar,
 } from "../components/ui";
 import { modelName, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
 import { messageOf, useAsync } from "./useAsync";
-
-type Layout = "radar" | "ledger";
 
 /**
  * The strength report.
  *
  * Nothing is spent without asking: the first run shows its estimated cost and
  * waits for a yes.
+ *
+ * One layout, the radar and its evidence, and it explains every score by how
+ * sure it is: confidence, whether the evidence is thin (the server's
+ * `needs_more_evidence`, the rule that also opens follow-up questions), and
+ * the facts it cites. The least certain dimensions come first, since they
+ * are the ones more evidence would change.
  *
  * The journey runs Sources → Strengths → Role map → Advisor, and a later step
  * never changes an earlier one's result. So the report reads only the evidence
@@ -46,7 +49,6 @@ export function Strengths() {
     () => api.items<EvidencePage>("/evidence"),
     [],
   );
-  const [layout, setLayout] = useState<Layout>("radar");
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,32 +82,24 @@ export function Strengths() {
   }
 
   const dimensions = assessment.data?.dimensions ?? [];
-  const activeKey = selected ?? dimensions[0]?.key;
+  const leastCertain = [...dimensions].sort(
+    (a, b) => a.confidence - b.confidence || a.name.localeCompare(b.name),
+  );
+  const activeKey = selected ?? leastCertain[0]?.key;
   const active = dimensions.find((d) => d.key === activeKey);
   const byId = new Map((evidence.data ?? []).map((item) => [item.id, item]));
-  const ledger = [...dimensions].sort((a, b) => a.score - b.score);
 
   return (
     <section>
       <div
         className="row-between"
-        style={{ alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}
+        style={{
+          alignItems: "center",
+          flexWrap: "wrap",
+          justifyContent: "flex-end",
+          marginBottom: 18,
+        }}
       >
-        <div className="row">
-          <Eyebrow>Report layout</Eyebrow>
-          <PillToggle
-            pressed={layout === "radar"}
-            onClick={() => setLayout("radar")}
-          >
-            Radar &amp; evidence
-          </PillToggle>
-          <PillToggle
-            pressed={layout === "ledger"}
-            onClick={() => setLayout("ledger")}
-          >
-            Ranked ledger
-          </PillToggle>
-        </div>
         <div className="row">
           {assessment.data && (
             <span className="muted" style={{ fontSize: 12.5 }}>
@@ -161,7 +155,7 @@ export function Strengths() {
           Connect a source or upload a résumé, then run the analysis.
         </EmptyState>
       ) : (
-        <AutoGrid col={layout === "radar" ? 380 : 360} gap={20}>
+        <AutoGrid col={380} gap={20}>
           <div className="panel">
             <h3>Skill strength</h3>
             <SkillRadar
@@ -173,19 +167,52 @@ export function Strengths() {
                 confidence: d.confidence,
                 read: d.read,
               }))}
-              onSelect={(key) => {
-                setSelected(key);
-                setLayout("radar");
-              }}
+              onSelect={setSelected}
               selectedKey={activeKey}
             />
             <p className="subcopy" style={{ fontSize: 12.5, marginTop: 8 }}>
-              Click a dimension to see the work it was scored from.
+              Click a dimension to see how sure its score is, and why.
             </p>
+
+            <Eyebrow style={{ margin: "18px 0 6px" }}>
+              Least certain first
+            </Eyebrow>
+            <ul
+              aria-label="Dimensions, least certain first"
+              style={{ listStyle: "none", margin: 0, padding: 0 }}
+            >
+              {leastCertain.map((dimension) => (
+                <li key={dimension.key}>
+                  <button
+                    type="button"
+                    className="ledger-row"
+                    aria-pressed={dimension.key === activeKey}
+                    onClick={() => setSelected(dimension.key)}
+                  >
+                    <div className="row-between">
+                      <span
+                        style={{
+                          fontSize: 14,
+                          fontWeight: dimension.key === activeKey ? 700 : 500,
+                        }}
+                      >
+                        {dimension.name}
+                      </span>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>
+                        {dimension.needs_more_evidence && (
+                          <span title="Thin evidence">⚠ </span>
+                        )}
+                        {percent(dimension.confidence)} sure
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="panel panel-column">
-            {layout === "radar" && active ? (
+            {active && (
               <div>
                 <Eyebrow>
                   Evidence · cited by {modelName(status.credential)}
@@ -211,10 +238,45 @@ export function Strengths() {
                   >
                     {active.score}
                   </span>
-                  <span className="subcopy">
-                    confidence {Math.round(active.confidence * 100)}%
+                  <span className="subcopy">/ 100</span>
+                </div>
+
+                <div className="row-between" style={{ marginBottom: 6 }}>
+                  <Eyebrow>Confidence</Eyebrow>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>
+                    {percent(active.confidence)}
                   </span>
                 </div>
+                <ProgressBar
+                  percent={active.confidence * 100}
+                  label={`Confidence in ${active.name}`}
+                />
+                {active.needs_more_evidence ? (
+                  <p
+                    role="status"
+                    className="note-warning"
+                    style={{ margin: "10px 0 14px" }}
+                  >
+                    {/* Never colour alone. */}
+                    <span aria-hidden="true">⚠</span> Thin evidence: this score
+                    rests on {factCount(active.evidence_ids.length)}, not enough
+                    to be sure of it.{" "}
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => navigate("sources")}
+                    >
+                      Answer the follow-up questions on Sources
+                    </button>{" "}
+                    to add more.
+                  </p>
+                ) : (
+                  <p className="subcopy" style={{ margin: "10px 0 14px" }}>
+                    Well supported: backed by{" "}
+                    {factCount(active.evidence_ids.length)}.
+                  </p>
+                )}
+
                 <p style={{ fontSize: 14.5, lineHeight: 1.65 }}>
                   {active.read}
                 </p>
@@ -245,46 +307,6 @@ export function Strengths() {
                   );
                 })}
               </div>
-            ) : (
-              <div>
-                <Eyebrow style={{ marginBottom: 10 }}>
-                  Every dimension, weakest first
-                </Eyebrow>
-                {ledger.map((dimension) => (
-                  <button
-                    key={dimension.key}
-                    type="button"
-                    className="ledger-row"
-                    onClick={() => {
-                      setSelected(dimension.key);
-                      setLayout("radar");
-                    }}
-                  >
-                    <div className="row-between">
-                      <span
-                        style={{
-                          fontSize: 14,
-                          fontWeight: dimension.key === activeKey ? 700 : 500,
-                        }}
-                      >
-                        {dimension.name}
-                      </span>
-                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>
-                        {dimension.score}
-                      </span>
-                    </div>
-                    <div style={{ marginTop: 7 }}>
-                      <YouVsBar you={dimension.score} label={dimension.name} />
-                    </div>
-                    <div
-                      className="subcopy"
-                      style={{ fontSize: 12.5, marginTop: 6 }}
-                    >
-                      {firstSentence(dimension.read)}
-                    </div>
-                  </button>
-                ))}
-              </div>
             )}
             <div className="panel-actions">
               <Button onClick={() => navigate("roles")}>
@@ -298,7 +320,10 @@ export function Strengths() {
   );
 }
 
-function firstSentence(text: string): string {
-  const end = text.search(/[.!?](\s|$)/);
-  return end === -1 ? text : text.slice(0, end + 1);
+function percent(confidence: number): string {
+  return `${Math.round(confidence * 100)}%`;
+}
+
+function factCount(count: number): string {
+  return `${count} ${count === 1 ? "fact" : "facts"}`;
 }

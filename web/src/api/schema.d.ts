@@ -1242,6 +1242,8 @@ export interface components {
             key: string;
             /** Name */
             name: string;
+            /** Needs More Evidence */
+            needs_more_evidence: boolean;
             /** Read */
             read: string;
             /** Score */
