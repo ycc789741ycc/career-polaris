@@ -11,6 +11,7 @@ import pytest
 
 from advisor.assessment import AssessmentService
 from advisor.assessment.domain import (
+    AnalysisFinished,
     AssessmentCompleted,
     DimensionsChanged,
     DimensionScore,
@@ -428,3 +429,101 @@ async def test_an_unexpected_failure_is_recorded_and_still_raised() -> None:
 
     latest = await service.latest_round(OWNER)
     assert latest is not None and (latest.status, latest.error_code) == ("failed", "internal")
+
+
+# --- analysis runs (ADR 0006, ADR 0018) ------------------------------------
+
+
+async def test_a_requested_analysis_is_running_before_its_job_starts() -> None:
+    service = _service(FakeAssessmentUnitOfWork())
+
+    requested = await service.request_run(OWNER)
+
+    latest = await service.latest_run(OWNER)
+    assert latest == requested and latest.is_running
+    assert await service.latest_run(OTHER) is None
+
+
+async def test_a_finished_analysis_closes_its_run_and_announces_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeAssessmentUnitOfWork()
+    service = _service(uow)
+    requested = await service.request_run(OWNER)
+    produced = object()
+
+    async def run(owner_id: uuid.UUID) -> object:
+        return produced
+
+    monkeypatch.setattr(service, "run", run)
+
+    assert await service.analyse(OWNER, requested.id) is produced
+
+    latest = await service.latest_run(OWNER)
+    assert latest is not None and latest.status == "ready" and latest.finished_at is not None
+    assert uow.store.events == [
+        AnalysisFinished(owner_id=OWNER, run_id=requested.id, status="ready")
+    ]
+
+
+def _failing_run(
+    service: AssessmentService, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    async def run(owner_id: uuid.UUID) -> object:
+        raise error
+
+    monkeypatch.setattr(service, "run", run)
+
+
+async def test_a_failed_analysis_is_recorded_on_its_run_not_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeAssessmentUnitOfWork()
+    service = _service(uow)
+    _failing_run(service, monkeypatch, BudgetExceededError("this month's budget is spent"))
+    requested = await service.request_run(OWNER)
+
+    assert await service.analyse(OWNER, requested.id) is None
+
+    latest = await service.latest_run(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == (
+        "failed",
+        "ai_budget_exceeded",
+    )
+    assert uow.store.events == [
+        AnalysisFinished(
+            owner_id=OWNER,
+            run_id=requested.id,
+            status="failed",
+            error_code="ai_budget_exceeded",
+        )
+    ]
+
+
+async def test_an_analysis_that_stops_unexpectedly_is_recorded_and_still_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(FakeAssessmentUnitOfWork())
+    _failing_run(service, monkeypatch, RuntimeError("x"))
+    requested = await service.request_run(OWNER)
+
+    with pytest.raises(RuntimeError):
+        await service.analyse(OWNER, requested.id)
+
+    latest = await service.latest_run(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("failed", "internal")
+
+
+async def test_a_run_that_already_ended_does_not_analyse_again() -> None:
+    gateway = FakeGateway()
+    service = _service(FakeAssessmentUnitOfWork(), gateway=gateway)
+    requested = await service.request_run(OWNER)
+    await service.fail_run(OWNER, requested.id, code="stale", message="lost")
+
+    assert await service.analyse(OWNER, requested.id) is None
+    assert gateway.calls == []
+
+
+async def test_an_unknown_run_is_not_found() -> None:
+    with pytest.raises(NotFoundError):
+        await _service(FakeAssessmentUnitOfWork()).analyse(OWNER, uuid.uuid4())

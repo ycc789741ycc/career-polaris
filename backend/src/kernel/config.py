@@ -142,6 +142,12 @@ class Settings(BaseSettings):
         default=0.6, alias="ASSESSMENT_CONFIDENCE_THRESHOLD"
     )
 
+    # --- Background work ----------------------------------------------------
+    # How long a sync, parse, analysis or role-map build may show as running
+    # before it is treated as lost (a worker that died mid-job), so it stops
+    # blocking the stages after it (ADR 0018).
+    job_stale_after_seconds: int = Field(default=900, gt=0, alias="JOB_STALE_AFTER_SECONDS")
+
     @field_validator("log_level")
     @classmethod
     def _known_level(cls, value: str) -> str:

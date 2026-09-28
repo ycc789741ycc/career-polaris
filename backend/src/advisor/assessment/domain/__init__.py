@@ -13,6 +13,8 @@ from advisor.assessment.domain.dimensions import (
     needs_follow_up,
 )
 from advisor.assessment.domain.entities import (
+    AnalysisRun,
+    AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
     FollowUpQuestion,
@@ -24,6 +26,7 @@ from advisor.assessment.domain.entities import (
     SkillDimension,
 )
 from advisor.assessment.domain.events import (
+    AnalysisFinished,
     AssessmentCompleted,
     AssessmentEvent,
     DimensionsChanged,
@@ -48,6 +51,8 @@ from advisor.assessment.domain.matches import (
     rank_matches,
 )
 from advisor.assessment.domain.repositories import (
+    AnalysisRunFilter,
+    AnalysisRunRepository,
     AssessedScoreFilter,
     AssessedScoreRepository,
     AssessmentUnitOfWork,
@@ -73,6 +78,11 @@ __all__ = [
     "MAX_MATCHES",
     "MIN_DIMENSIONS",
     "MIN_MATCHES",
+    "AnalysisFinished",
+    "AnalysisRun",
+    "AnalysisRunFilter",
+    "AnalysisRunRepository",
+    "AnalysisRunStatus",
     "AssessedScore",
     "AssessedScoreFilter",
     "AssessedScoreRepository",

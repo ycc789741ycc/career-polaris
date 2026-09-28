@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -152,6 +153,30 @@ class QuestionRound(Base, OwnedMixin):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnalysisRun(Base, OwnedMixin):
+    """One background analysis (ADR 0006, ADR 0018).
+
+    The row exists before the job runs, so the page can show the analysis
+    running, a role map can wait for it, and a failure has somewhere to go.
+    """
+
+    __tablename__ = "analysis_run"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        Index("ix_analysis_run_owner_started", "owner_id", "started_at"),
+        {"schema": "assessment"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

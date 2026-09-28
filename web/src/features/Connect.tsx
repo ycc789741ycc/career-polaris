@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CallbackOutcome } from "./oauthCallback";
 import { api } from "../api/client";
 import type {
@@ -22,6 +22,7 @@ import {
   Loading,
   PillToggle,
 } from "../components/ui";
+import { sourcesBusy, useActivity } from "../shell/activity";
 import { useShell } from "../shell/ShellContext";
 import { FollowUpQuestions } from "./FollowUpQuestions";
 import { messageOf, useAsync } from "./useAsync";
@@ -47,23 +48,32 @@ const LABELS: Record<string, { name: string; kind: string; note: string }> = {
  * source, and nothing the analysis made of them: which score cites a fact
  * belongs to Strengths. The follow-up questions stay here because answering
  * one is how the user adds evidence where it is too thin to be sure.
+ *
+ * A sync or a parse runs in the background; the card says so while it does,
+ * the lists reload when it is done, and the analysis waits for it (ADR 0018).
  */
 export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const { navigate } = useShell();
+  const { activity, refresh: refreshActivity, settled } = useActivity();
   // Refetched when a callback finishes, so a fresh connection shows as
-  // connected without a reload.
+  // connected without a reload, and when a sync or parse finishes, so what it
+  // wrote shows without one either.
   const connections = useAsync<Connection[]>(
     () => api.items<ConnectionPage>("/connections"),
-    [callback],
+    [callback, settled.sources],
   );
   const resumes = useAsync<ResumeFile[]>(
     () => api.items<ResumeFilePage>("/resumes"),
-    [],
+    [settled.sources],
   );
   const evidence = useAsync<Evidence[]>(
     () => api.items<EvidencePage>("/evidence"),
-    [],
+    [settled.sources],
   );
+  // A fresh connection starts syncing at once.
+  useEffect(() => {
+    if (callback?.connected) void refreshActivity();
+  }, [callback, refreshActivity]);
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +103,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
     setError(null);
     try {
       await api.post(`/connections/${kind}/sync`);
-      await connections.reload();
+      await refreshActivity();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -136,7 +146,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
     setError(null);
     try {
       await api.upload("/resumes", file);
-      await resumes.reload();
+      await Promise.all([resumes.reload(), refreshActivity()]);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -168,6 +178,8 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   }
   const uploaded = resumes.data ?? [];
   const latestResume = uploaded[0];
+  const syncing = new Set((activity?.syncing ?? []).map((work) => work.label));
+  const parsing = new Set((activity?.parsing ?? []).map((work) => work.label));
 
   return (
     <AutoGrid col={340}>
@@ -231,7 +243,11 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                           : "tag tag-outline"
                       }
                     >
-                      {connection.connected ? "Connected" : "Not connected"}
+                      {syncing.has(connection.kind)
+                        ? "Syncing…"
+                        : connection.connected
+                          ? "Connected"
+                          : "Not connected"}
                     </span>
                   </div>
                   <p
@@ -303,6 +319,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                       <Button
                         variant={connection.connected ? "secondary" : "primary"}
                         busy={busy === connection.kind}
+                        disabled={syncing.has(connection.kind)}
                         onClick={() =>
                           connection.connected
                             ? sync(connection.kind)
@@ -350,7 +367,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                 <div className="card-title">Existing résumé</div>
                 <div className="subcopy" style={{ marginTop: 3 }}>
                   {latestResume
-                    ? `${latestResume.filename} — ${latestResume.parse_error ?? latestResume.status}`
+                    ? `${latestResume.filename} — ${resumeState(latestResume, parsing)}`
                     : "PDF or Word. Used as evidence now, and as the base document to revise later."}
                 </div>
               </div>
@@ -374,7 +391,10 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                 >
                   Upload PDF / DOCX
                 </Button>
-                <Button onClick={() => navigate("strengths")}>
+                <Button
+                  onClick={() => navigate("strengths")}
+                  disabled={sourcesBusy(activity)}
+                >
                   Analyze with AI
                 </Button>
               </div>
@@ -599,4 +619,11 @@ function countBy<T>(
   const counts: Record<string, number> = {};
   for (const item of items) counts[key(item)] = (counts[key(item)] ?? 0) + 1;
   return counts;
+}
+
+/** What became of an upload, in words. */
+function resumeState(resume: ResumeFile, parsing: Set<string>): string {
+  if (resume.parse_error) return resume.parse_error;
+  if (resume.status === "parsed") return "parsed";
+  return parsing.has(resume.filename) ? "reading…" : resume.status;
 }

@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
 
     errors.install(application)
 
+    from api.routes.activity import router as activity_router
     from api.routes.assessment import router as assessment_router
     from api.routes.gapplan import router as gapplan_router
     from api.routes.identity import router as identity_router
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         target_router,
         gapplan_router,
         resume_router,
+        activity_router,
     ):
         application.include_router(router, prefix="/api/v1", responses=ERROR_RESPONSES)
 

@@ -1,3 +1,4 @@
+import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
 import type { ShellStatus } from "./ShellContext";
 
@@ -13,6 +14,12 @@ export function Sidebar({
 }) {
   const noKey = !status.credential;
   const keyFailed = status.credential?.status === "failed";
+  const { activity } = useActivity();
+  const running: Partial<Record<Screen, boolean>> = {
+    sources: sourcesBusy(activity),
+    strengths: isBusy(activity?.analysis),
+    roles: isBusy(activity?.role_map),
+  };
 
   return (
     <aside className="sidebar">
@@ -40,6 +47,13 @@ export function Sidebar({
                     {item.num}
                   </span>
                   {item.label}
+                  {running[item.id] && (
+                    <span
+                      className="nav-running"
+                      role="img"
+                      aria-label="running"
+                    />
+                  )}
                   {flag && (
                     <span
                       className="nav-flag"

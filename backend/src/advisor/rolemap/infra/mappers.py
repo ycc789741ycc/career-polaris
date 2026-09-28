@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from advisor.rolemap.domain import (
+    BuildRun,
+    BuildRunStatus,
     LineageEntry,
     Role,
     RoleChange,
@@ -139,3 +141,30 @@ def setting_row(entity: RoleMapSetting) -> models.RoleMapSetting:
 
 def apply_setting(row: models.RoleMapSetting, entity: RoleMapSetting) -> None:
     row.role_count = entity.role_count
+
+
+def build_run(row: models.BuildRun) -> BuildRun:
+    return BuildRun(
+        id=row.id,
+        owner_id=row.owner_id,
+        status=BuildRunStatus(row.status),
+        requested_at=row.requested_at,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        error_code=row.error_code,
+        error_message=row.error_message,
+    )
+
+
+def build_run_row(entity: BuildRun) -> models.BuildRun:
+    row = models.BuildRun(id=entity.id, owner_id=entity.owner_id, requested_at=entity.requested_at)
+    apply_build_run(row, entity)
+    return row
+
+
+def apply_build_run(row: models.BuildRun, entity: BuildRun) -> None:
+    row.status = str(entity.status)
+    row.started_at = entity.started_at
+    row.finished_at = entity.finished_at
+    row.error_code = entity.error_code
+    row.error_message = entity.error_message

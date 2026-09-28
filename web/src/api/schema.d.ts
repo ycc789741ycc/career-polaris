@@ -4,6 +4,27 @@
  */
 
 export interface paths {
+    "/api/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity
+         * @description Syncs and parses still running, and the newest analysis and role-map
+         *     build. The shell polls this while any of it is busy.
+         */
+        get: operations["activity_api_v1_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai-budget": {
         parameters: {
             query?: never;
@@ -74,7 +95,12 @@ export interface paths {
          */
         get: operations["history_api_v1_assessments_get"];
         put?: never;
-        /** Run Assessment */
+        /**
+         * Run Assessment
+         * @description Record the analysis as running and queue it. Refused with
+         *     ``sources_processing`` while a source is still syncing or parsing, and
+         *     ``analysis_running`` while one is already running (ADR 0018).
+         */
         post: operations["run_assessment_api_v1_assessments_post"];
         delete?: never;
         options?: never;
@@ -322,7 +348,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sync Now */
+        /**
+         * Sync Now
+         * @description Marked as syncing before it is queued, so the page shows it at once.
+         */
         post: operations["sync_now_api_v1_connections__kind__sync_post"];
         delete?: never;
         options?: never;
@@ -833,7 +862,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Recluster */
+        /**
+         * Recluster
+         * @description Record a rebuild. ``running`` when it was queued now, ``waiting`` when an
+         *     analysis is running and it starts after (ADR 0018). Asking while one is
+         *     already under way returns that one.
+         */
         post: operations["recluster_api_v1_roles_recluster_post"];
         delete?: never;
         options?: never;
@@ -853,7 +887,10 @@ export interface paths {
         /**
          * Put Settings
          * @description Saved only after the user confirmed the estimate for this k, so a change
-         *     queues a recluster through ``RoleCountChanged``.
+         *     rebuilds the role map, waiting for an analysis that is running (ADR 0018).
+         *
+         *     The build is recorded here rather than from ``RoleCountChanged``, so the
+         *     page sees it the moment this returns.
          */
         put: operations["put_settings_api_v1_roles_settings_put"];
         post?: never;
@@ -1071,6 +1108,19 @@ export interface components {
              * @constant
              */
             status: "queued";
+        };
+        /**
+         * Activity
+         * @description Everything running for this user, which the shell polls while any of it
+         *     is busy (ADR 0006, ADR 0018).
+         */
+        Activity: {
+            analysis: components["schemas"]["RunStatus"] | null;
+            /** Parsing */
+            parsing: components["schemas"]["PendingWork"][];
+            role_map: components["schemas"]["RunStatus"] | null;
+            /** Syncing */
+            syncing: components["schemas"]["PendingWork"][];
         };
         /** AnswerRequest */
         AnswerRequest: {
@@ -1531,6 +1581,16 @@ export interface components {
             page_size: number | null;
             /** Total */
             total: number;
+        };
+        /**
+         * PendingWork
+         * @description One sync or parse still running: the source kind, or the file name.
+         */
+        PendingWork: {
+            /** Label */
+            label: string;
+            /** Started At */
+            started_at: string;
         };
         /** Plan */
         Plan: {
@@ -2091,6 +2151,24 @@ export interface components {
             /** Weight */
             weight: number;
         };
+        /**
+         * RunStatus
+         * @description The newest analysis or role-map build. ``waiting`` is a build asked for
+         *     during an analysis; it starts when the analysis finishes. A run that stopped
+         *     responding reads as ``failed`` with the code ``stale``.
+         */
+        RunStatus: {
+            error: components["schemas"]["JobError"] | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Started At */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "waiting" | "running" | "ready" | "failed";
+        };
         /** Salary */
         Salary: {
             /** Currency */
@@ -2397,6 +2475,55 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    activity_api_v1_activity_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activity"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_budget_api_v1_ai_budget_get: {
         parameters: {
             query?: never;
@@ -2768,7 +2895,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Accepted"];
+                    "application/json": components["schemas"]["RunStatus"];
                 };
             };
             /** @description The request could not be read. */
@@ -5028,7 +5155,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Accepted"];
+                    "application/json": components["schemas"]["RunStatus"];
                 };
             };
             /** @description The request could not be read. */

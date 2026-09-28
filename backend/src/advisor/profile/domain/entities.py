@@ -38,6 +38,9 @@ class SourceConnection:
     last_error: str | None = None
     last_synced_at: datetime | None = None
     token_expires_at: datetime | None = None
+    # Set when a sync is queued and cleared when it ends either way, so the page
+    # can show the sync running and an analysis can wait for it (ADR 0018).
+    sync_started_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -72,12 +75,21 @@ class SourceConnection:
         self.status = ConnectionStatus.CONNECTED
         self.last_error = None
 
+    @property
+    def is_syncing(self) -> bool:
+        return self.sync_started_at is not None
+
+    def sync_requested(self, at: datetime) -> None:
+        self.sync_started_at = at
+
     def sync_failed(self, error: str) -> None:
         self.status = ConnectionStatus.FAILED
         self.last_error = error
+        self.sync_started_at = None
 
     def synced(self, at: datetime, *, account: str) -> None:
         """A sync also refreshes whose account this is, in case it was renamed."""
+        self.sync_started_at = None
         self.last_synced_at = at
         self.external_account = account
         self.status = ConnectionStatus.CONNECTED

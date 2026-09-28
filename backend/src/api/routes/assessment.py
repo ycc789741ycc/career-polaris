@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter
 
 from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.activity import RunStatus
 from api.schemas.assessment import (
     AnswerRequest,
     Assessment,
@@ -33,9 +34,13 @@ async def cost_estimate(user: CurrentUser, deps: Deps) -> CostEstimate:
 
 
 @router.post("/assessments", status_code=202)
-async def run_assessment(user: CurrentUser, deps: Deps) -> Accepted:
-    await enqueue("assessment.run", owner_id=str(user))
-    return Accepted()
+async def run_assessment(user: CurrentUser, deps: Deps) -> RunStatus:
+    """Record the analysis as running and queue it. Refused with
+    ``sources_processing`` while a source is still syncing or parsing, and
+    ``analysis_running`` while one is already running (ADR 0018)."""
+    run = await deps.activity.request_analysis(user)
+    await enqueue("assessment.run", owner_id=str(user), run_id=str(run.id))
+    return RunStatus.from_analysis(run)
 
 
 @router.get("/assessments/latest")
@@ -73,7 +78,8 @@ async def answer(
     """An answer becomes self-reported Evidence, then the analysis re-runs and
     opens a new question round."""
     await deps.assessment.answer(user, question_id, body.answer)
-    await enqueue("assessment.run", owner_id=str(user))
+    run = await deps.activity.request_reanalysis(user)
+    await enqueue("assessment.run", owner_id=str(user), run_id=str(run.id))
     return Accepted()
 
 

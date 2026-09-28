@@ -14,6 +14,8 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.rolemap.domain import (
+    BuildRun,
+    BuildRunFilter,
     LineageEntry,
     LineageEntryFilter,
     Role,
@@ -162,3 +164,28 @@ class SqlAlchemyRoleMapSettingRepository(
 
     def conditions(self, filter: RoleMapSettingFilter) -> list[ColumnElement[bool]]:
         return []
+
+
+class SqlAlchemyBuildRunRepository(SqlAlchemyRepository[BuildRun, models.BuildRun, BuildRunFilter]):
+    model = models.BuildRun
+    id_column = models.BuildRun.id
+    created_column = models.BuildRun.requested_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.BuildRun.owner_id
+    noun = "role map build"
+
+    def to_entity(self, row: models.BuildRun) -> BuildRun:
+        return mappers.build_run(row)
+
+    def to_row(self, entity: BuildRun) -> models.BuildRun:
+        return mappers.build_run_row(entity)
+
+    def apply(self, row: models.BuildRun, entity: BuildRun) -> None:
+        mappers.apply_build_run(row, entity)
+
+    def id_of(self, entity: BuildRun) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: BuildRunFilter) -> list[ColumnElement[bool]]:
+        if filter.statuses is None:
+            return []
+        return [models.BuildRun.status.in_([str(s) for s in filter.statuses])]

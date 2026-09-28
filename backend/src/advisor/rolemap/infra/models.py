@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -128,3 +129,28 @@ class RoleMapSetting(Base, OwnedMixin, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     role_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BuildRun(Base, OwnedMixin):
+    """One background role-map build (ADR 0006, ADR 0018).
+
+    The row exists before the job runs, and before it may start: a build asked
+    for during an analysis waits here until that analysis finishes.
+    """
+
+    __tablename__ = "build_run"
+    __table_args__ = (
+        CheckConstraint("status IN ('waiting', 'running', 'ready', 'failed')", name="status"),
+        Index("ix_build_run_owner_requested", "owner_id", "requested_at"),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

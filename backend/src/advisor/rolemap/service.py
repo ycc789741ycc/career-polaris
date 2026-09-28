@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -20,6 +21,9 @@ from advisor.rolemap.domain import (
     DEFAULT_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
     BarBasis,
+    BuildRun,
+    BuildRunFilter,
+    BuildRunStatus,
     HiringBar,
     LineageEntry,
     Reconciliation,
@@ -48,10 +52,10 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.embeddings import cluster, embed
-from kernel.errors import ValidationError
+from kernel.errors import DomainError, NotFoundError, ValidationError
 from kernel.logging import get_logger
 
-__all__ = ["RequirementView", "RoleMapService", "RoleView"]
+__all__ = ["BuildRequestView", "BuildRunView", "RequirementView", "RoleMapService", "RoleView"]
 
 log = get_logger(__name__)
 
@@ -109,6 +113,33 @@ class RoleView:
     salary_bands: dict[str, Any]
     requirements: tuple[RequirementView, ...]
     is_coherent: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BuildRunView:
+    """Whether a role-map build is waiting or running, and why the last one
+    could not finish."""
+
+    id: uuid.UUID
+    status: str
+    requested_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    error_code: str | None
+    error_message: str | None
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in (BuildRunStatus.WAITING, BuildRunStatus.RUNNING)
+
+
+@dataclass(frozen=True, slots=True)
+class BuildRequestView:
+    """What asking for a build did. ``should_queue`` is true only when this
+    request started a build, so the caller queues it exactly once."""
+
+    build: BuildRunView
+    should_queue: bool
 
 
 class RoleMapService:
@@ -229,6 +260,101 @@ class RoleMapService:
             "model_id": estimate.model_id,
             "rate_is_published": estimate.rate_is_published,
         }
+
+    # -- builds (ADR 0006, ADR 0018) -----------------------------------------
+
+    async def request_build(self, owner_id: uuid.UUID, *, wait: bool) -> BuildRequestView:
+        """Record a build, running now or waiting for an analysis.
+
+        One build is open at a time: asking again while one is running returns
+        it, which is what turns a crawl's stream of ``PostingsChanged`` into a
+        single rebuild. A waiting build is started when ``wait`` is false.
+        Whether to wait is ``advisor.activity``'s rule, not this component's.
+        """
+        now = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            open_builds = await mine.builds.get_list(
+                BuildRunFilter(statuses=(BuildRunStatus.WAITING, BuildRunStatus.RUNNING)),
+                page_size=1,
+            )
+            if open_builds:
+                current = open_builds[0]
+                if current.is_waiting and not wait:
+                    current.start(now)
+                    await mine.builds.update(current)
+                    return BuildRequestView(_build_view(current), should_queue=True)
+                return BuildRequestView(_build_view(current), should_queue=False)
+            created = await mine.builds.create(
+                BuildRun.requested(owner_id=owner_id, at=now, wait=wait)
+            )
+        log.info("rolemap.build_requested", build_id=str(created.id), waiting=wait)
+        return BuildRequestView(_build_view(created), should_queue=not wait)
+
+    async def start_waiting(self, owner_id: uuid.UUID) -> BuildRunView | None:
+        """Start the build that was waiting, if any; the caller queues it."""
+        async with self._uow.for_owner(owner_id) as mine:
+            waiting = await mine.builds.get_list(
+                BuildRunFilter(statuses=(BuildRunStatus.WAITING,)), page_size=1
+            )
+            if not waiting:
+                return None
+            waiting[0].start(utcnow())
+            started = await mine.builds.update(waiting[0])
+        log.info("rolemap.build_started", build_id=str(started.id))
+        return _build_view(started)
+
+    async def latest_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
+        async with self._uow.for_owner(owner_id) as mine:
+            newest = await mine.builds.get_list(BuildRunFilter(), page_size=1)
+        return _build_view(newest[0]) if newest else None
+
+    async def build(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> list[RoleView]:
+        """The worker job for one recorded build.
+
+        An expected failure is recorded on the build with its stable code and
+        not raised: a retry would spend the key again. Anything else is recorded
+        as ``internal`` and re-raised for the log.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            requested = await mine.builds.get(build_id)
+        if requested is None:
+            raise NotFoundError("role map build not found", build_id=str(build_id))
+        if not requested.is_running:
+            return []
+
+        try:
+            roles = await self.recluster(owner_id)
+        except DomainError as exc:
+            log.warning("rolemap.build_failed", build_id=str(build_id), code=str(exc.code))
+            await self.fail_build(owner_id, build_id, code=str(exc.code), message=exc.message)
+            return []
+        except Exception:
+            await self.fail_build(
+                owner_id,
+                build_id,
+                code="internal",
+                message="Building the role map stopped unexpectedly. Try again in a moment.",
+            )
+            raise
+
+        async with self._uow.for_owner(owner_id) as mine:
+            done = await mine.builds.get(build_id)
+            if done is not None and done.is_running:
+                done.ready(utcnow())
+                await mine.builds.update(done)
+        return roles
+
+    async def fail_build(
+        self, owner_id: uuid.UUID, build_id: uuid.UUID, *, code: str, message: str
+    ) -> None:
+        """Close a build without a result. Also how ``advisor.activity`` gives
+        up on a build whose worker never came back."""
+        async with self._uow.for_owner(owner_id) as mine:
+            failed = await mine.builds.get(build_id)
+            if failed is None or not failed.is_open:
+                return
+            failed.failed(code=code, message=message, at=utcnow())
+            await mine.builds.update(failed)
 
     async def recluster(self, owner_id: uuid.UUID) -> list[RoleView]:
         """Rebuild this user's role map.
@@ -581,3 +707,15 @@ def _checked(role_count: int) -> int:
         return validate_role_count(role_count)
     except RoleCountError as exc:
         raise ValidationError(str(exc), role_count=role_count) from exc
+
+
+def _build_view(build: BuildRun) -> BuildRunView:
+    return BuildRunView(
+        id=build.id,
+        status=str(build.status),
+        requested_at=build.requested_at,
+        started_at=build.started_at,
+        finished_at=build.finished_at,
+        error_code=build.error_code,
+        error_message=build.error_message,
+    )

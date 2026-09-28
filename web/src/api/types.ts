@@ -13,6 +13,13 @@ import type { components } from "./schema";
 
 type Schemas = components["schemas"];
 
+// Activity
+/** What background work is running, which the shell polls (ADR 0018). */
+export type Activity = Schemas["Activity"];
+/** The newest analysis or role-map build. */
+export type RunStatus = Schemas["RunStatus"];
+export type PendingWork = Schemas["PendingWork"];
+
 // Identity
 export type Me = Schemas["Me"];
 export type Credential = Schemas["Credential"];

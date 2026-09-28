@@ -85,9 +85,18 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return
 
-    if name == EventName.ROLE_COUNT_CHANGED and owner_id:
-        # The user confirmed the estimate for the new k before saving it.
-        await enqueue("rolemap.recluster", owner_id=str(owner_id))
+    if name == EventName.ANALYSIS_FINISHED and owner_id:
+        # Recorded as the run closed, so it no longer counts as running: a
+        # role map that waited for it starts now, whether or not it succeeded
+        # (ADR 0018).
+        started = await deps.activity.release_waiting_builds(owner_id)
+        if started is not None:
+            await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(started.id))
+        return
+
+    if name == EventName.ROLE_COUNT_CHANGED:
+        # The route that saved the new k already recorded and queued the
+        # rebuild, so the page sees it at once (ADR 0018).
         return
 
     if name == EventName.ROLE_REQUIREMENTS_CHANGED and owner_id:
@@ -100,7 +109,12 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
 
     if name == EventName.POSTINGS_CHANGED:
         for affected in await _users_affected_by(deps, event.payload):
-            await enqueue("rolemap.recluster", owner_id=str(affected))
+            # Joins a build already under way, or waits for a running analysis.
+            requested = await deps.activity.request_role_map(affected)
+            if requested.should_queue:
+                await enqueue(
+                    "rolemap.recluster", owner_id=str(affected), build_id=str(requested.build.id)
+                )
         return
 
 

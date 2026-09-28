@@ -38,6 +38,9 @@ class ErrorCode(StrEnum):
     # Target / gap plan
     TARGET_UNUSABLE = "target_unusable"
     PLAN_INVALID = "plan_invalid"
+    # Journey stages (ADR 0018)
+    SOURCES_PROCESSING = "sources_processing"
+    ANALYSIS_RUNNING = "analysis_running"
 
 
 class DomainError(Exception):
@@ -82,6 +85,9 @@ SourceUnsupportedError = _error("SourceUnsupportedError", ErrorCode.SOURCE_UNSUP
 TargetUnusableError = _error("TargetUnusableError", ErrorCode.TARGET_UNUSABLE)
 PlanInvalidError = _error("PlanInvalidError", ErrorCode.PLAN_INVALID)
 
+SourcesProcessingError = _error("SourcesProcessingError", ErrorCode.SOURCES_PROCESSING)
+AnalysisRunningError = _error("AnalysisRunningError", ErrorCode.ANALYSIS_RUNNING)
+
 
 HTTP_STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.NOT_FOUND: 404,
@@ -104,6 +110,9 @@ HTTP_STATUS_BY_CODE: dict[ErrorCode, int] = {
     # The model's plan broke the rules: the upstream reply was bad, not the
     # request.
     ErrorCode.PLAN_INVALID: 502,
+    # Asked for too early: a stage before this one is still working.
+    ErrorCode.SOURCES_PROCESSING: 409,
+    ErrorCode.ANALYSIS_RUNNING: 409,
 }
 
 

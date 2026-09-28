@@ -15,6 +15,8 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.factory import create_rolemap_service
 from advisor.rolemap.service import (
+    BuildRequestView,
+    BuildRunView,
     RequirementView,
     RoleMapService,
     RoleView,
@@ -23,6 +25,8 @@ from advisor.rolemap.service import (
 __all__ = [
     "MAX_ROLE_COUNT",
     "MIN_ROLE_COUNT",
+    "BuildRequestView",
+    "BuildRunView",
     "RequirementView",
     "RoleMapService",
     "RoleView",

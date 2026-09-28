@@ -30,6 +30,7 @@ import {
   PillToggle,
   StatTile,
 } from "../components/ui";
+import { isBusy, useActivity } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
@@ -52,15 +53,23 @@ const MAX_ROLE_COUNT = 20;
 export function Roles() {
   const flash = useToast();
   const { navigate, focus, setFocus } = useShell();
-  const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
+  const { activity, refresh: refreshActivity, settled } = useActivity();
+  // What a finished build or analysis wrote shows without a reload.
+  const roles = useAsync<Role[]>(
+    () => api.items<RolePage>("/roles"),
+    [settled.roleMap],
+  );
   const settings = useAsync<RoleMapSettings>(
     () => api.get("/roles/settings"),
     [],
   );
-  const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
+  const fits = useAsync<Fit[]>(
+    () => api.items<FitPage>("/fits"),
+    [settled.roleMap, settled.analysis],
+  );
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
-    [],
+    [settled.analysis],
   );
   const subscriptions = useAsync<Subscription[]>(
     () => api.items<SubscriptionPage>("/role-subscriptions"),
@@ -77,7 +86,7 @@ export function Roles() {
   );
   const matched = useAsync<MatchedPosting[]>(
     () => api.items<MatchedPostingPage>("/matched-postings?page_size=10"),
-    [],
+    [settled.roleMap, settled.analysis],
   );
 
   const [company, setCompany] = useState("");
@@ -161,6 +170,9 @@ export function Roles() {
         }
       : null;
 
+  const building = isBusy(activity?.role_map);
+  const analysing = activity?.analysis?.status === "running";
+
   async function act(label: string, run: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
@@ -171,6 +183,7 @@ export function Roles() {
       setError(messageOf(caught));
     } finally {
       setBusy(false);
+      await refreshActivity();
     }
   }
 
@@ -201,22 +214,28 @@ export function Roles() {
           busy={busy}
           onCancel={() => setEstimate(null)}
           onConfirm={() =>
-            act("Role map queued", async () => {
-              if (
-                chosenRoleCount !== undefined &&
-                chosenRoleCount !== savedRoleCount
-              ) {
-                // Saving a new k queues the rebuild itself.
-                await api.put("/roles/settings", {
-                  role_count: chosenRoleCount,
-                });
-                await settings.reload();
-                setRoleCount(null);
-              } else {
-                await api.post("/roles/recluster");
-              }
-              setEstimate(null);
-            })
+            act(
+              // A build asked for during an analysis waits for it (ADR 0018).
+              analysing
+                ? "Role map queued — it starts when your analysis finishes"
+                : "Role map queued",
+              async () => {
+                if (
+                  chosenRoleCount !== undefined &&
+                  chosenRoleCount !== savedRoleCount
+                ) {
+                  // Saving a new k queues the rebuild itself.
+                  await api.put("/roles/settings", {
+                    role_count: chosenRoleCount,
+                  });
+                  await settings.reload();
+                  setRoleCount(null);
+                } else {
+                  await api.post("/roles/recluster");
+                }
+                setEstimate(null);
+              },
+            )
           }
         >
           Your map covers up to {estimate.max_clusters ?? 0} of the{" "}
@@ -689,8 +708,12 @@ export function Roles() {
             }}
           />
           <div className="row" style={{ marginTop: 14 }}>
-            <Button busy={busy} onClick={askForEstimate}>
-              Build role map
+            <Button busy={busy} disabled={building} onClick={askForEstimate}>
+              {activity?.role_map?.status === "waiting"
+                ? "Waiting for analysis…"
+                : building
+                  ? "Building…"
+                  : "Build role map"}
             </Button>
             <Button
               variant="secondary"

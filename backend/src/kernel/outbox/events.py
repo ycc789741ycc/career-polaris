@@ -17,6 +17,7 @@ class EventName(StrEnum):
     # Assessment
     ASSESSMENT_REQUESTED = "AssessmentRequested"
     ASSESSMENT_COMPLETED = "AssessmentCompleted"
+    ANALYSIS_FINISHED = "AnalysisFinished"
     QUESTIONS_RAISED = "QuestionsRaised"
     QUESTION_ANSWERED = "QuestionAnswered"
     DIMENSIONS_CHANGED = "DimensionsChanged"

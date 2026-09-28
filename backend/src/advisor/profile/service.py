@@ -53,9 +53,11 @@ __all__ = [
     "ConnectionView",
     "EvidenceSource",
     "EvidenceView",
+    "PendingSourceView",
     "ProfileService",
     "ProfileSnapshot",
     "ResumeFileView",
+    "SourceProcessingView",
     "assert_citations_exist",
 ]
 
@@ -91,6 +93,23 @@ class ResumeFileView:
     status: str
     parse_error: str | None
     uploaded_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PendingSourceView:
+    """One source still being turned into evidence: a sync or a parse."""
+
+    label: str
+    started_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SourceProcessingView:
+    """What stage 01 is still working on. An analysis waits until both are
+    empty, or it would miss the evidence they are about to write (ADR 0018)."""
+
+    syncing: tuple[PendingSourceView, ...]
+    parsing: tuple[PendingSourceView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,12 +224,42 @@ class ProfileService:
             )
             log.info("connection.disconnected", kind=kind, evidence_removed=removed)
 
+    async def request_sync(self, owner_id: uuid.UUID, kind: str) -> ConnectionView:
+        """Mark a sync as started before it is queued, so the page shows it
+        running from the moment it is asked for (ADR 0006, ADR 0018)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            connection = await _connection(mine, kind)
+            if connection is None:
+                raise NotFoundError(f"{kind} is not connected", kind=kind)
+            connection.sync_requested(utcnow())
+            return _connection_view(await mine.connections.update(connection))
+
     async def sync_connection(self, owner_id: uuid.UUID, kind: str) -> int:
         """Fetch a source and turn it into Evidence. Worker `sync` queue only.
 
         This is the one place besides the AI gateway where a stored secret is
-        opened, and the token never leaves this call.
+        opened, and the token never leaves this call. However it ends, the
+        connection stops showing as syncing.
         """
+        try:
+            return await self._sync_connection(owner_id, kind)
+        except UpstreamFailedError as exc:
+            await self._sync_failed(owner_id, kind, exc.message)
+            raise
+        except Exception:
+            await self._sync_failed(
+                owner_id, kind, "The sync stopped unexpectedly. Try again in a moment."
+            )
+            raise
+
+    async def _sync_failed(self, owner_id: uuid.UUID, kind: str, error: str) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            failed = await _connection(mine, kind)
+            if failed is not None:
+                failed.sync_failed(error)
+                await mine.connections.update(failed)
+
+    async def _sync_connection(self, owner_id: uuid.UUID, kind: str) -> int:
         connector = self._connector(kind)
 
         async with self._uow.for_owner(owner_id) as mine:
@@ -220,19 +269,11 @@ class ProfileService:
             token = decrypt(connection.encrypted_access_token, context=str(owner_id))
             connection_id = connection.id
 
-        try:
-            async with GuardedClient(
-                timeout_seconds=self._http_timeout, user_agent=self._user_agent
-            ) as client:
-                account = await connector.account_name(client, token)
-                drafts = await connector.fetch(client, token)
-        except UpstreamFailedError as exc:
-            async with self._uow.for_owner(owner_id) as mine:
-                failed = await mine.connections.get(connection_id)
-                if failed is not None:
-                    failed.sync_failed(exc.message)
-                    await mine.connections.update(failed)
-            raise
+        async with GuardedClient(
+            timeout_seconds=self._http_timeout, user_agent=self._user_agent
+        ) as client:
+            account = await connector.account_name(client, token)
+            drafts = await connector.fetch(client, token)
 
         written = await self._write_evidence(
             owner_id,
@@ -285,27 +326,44 @@ class ProfileService:
         return _resume_view(stored)
 
     async def parse_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> int:
-        """Worker `sync` queue. Parsing never happens in a request handler."""
+        """Worker `sync` queue. Parsing never happens in a request handler.
+
+        However it ends, the résumé stops showing as parsing: an unexpected
+        failure is recorded too, and re-raised for the log.
+        """
+        try:
+            return await self._parse_resume(owner_id, resume_id)
+        except ValidationError as exc:
+            await self._parse_failed(owner_id, resume_id, exc.message)
+            raise
+        except Exception:
+            await self._parse_failed(
+                owner_id,
+                resume_id,
+                "Reading this file stopped unexpectedly. Try uploading it again.",
+            )
+            raise
+
+    async def _parse_failed(self, owner_id: uuid.UUID, resume_id: uuid.UUID, error: str) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            failed = await mine.resumes.get(resume_id)
+            if failed is not None and failed.status is ResumeStatus.UPLOADED:
+                failed.parse_failed(error)
+                await mine.resumes.update(failed)
+
+    async def _parse_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> int:
         async with self._uow.for_owner(owner_id) as mine:
             resume = await mine.resumes.get(resume_id)
             if resume is None:
                 raise NotFoundError("resume not found", resume_id=str(resume_id))
 
         content = self._store.get(resume.storage_key)
-        try:
-            parsed = parse(
-                content,
-                content_type=resume.content_type,
-                filename=resume.filename,
-                max_pages=self._resume_max_pages,
-            )
-        except ValidationError as exc:
-            async with self._uow.for_owner(owner_id) as mine:
-                failed = await mine.resumes.get(resume_id)
-                if failed is not None:
-                    failed.parse_failed(exc.message)
-                    await mine.resumes.update(failed)
-            raise
+        parsed = parse(
+            content,
+            content_type=resume.content_type,
+            filename=resume.filename,
+            max_pages=self._resume_max_pages,
+        )
 
         written = await self._write_evidence(
             owner_id, EvidenceSource.RESUME, parsed.drafts, resume_file_id=resume_id
@@ -316,6 +374,26 @@ class ProfileService:
                 done.parsed(utcnow())
                 await mine.resumes.update(done)
         return written
+
+    async def processing(self, owner_id: uuid.UUID) -> SourceProcessingView:
+        """The syncs and parses still running, oldest first."""
+        async with self._uow.for_owner(owner_id) as mine:
+            connections = await mine.connections.get_list(SourceConnectionFilter())
+            pending = await mine.resumes.get_list(ResumeFileFilter(status=ResumeStatus.UPLOADED))
+        syncing = [
+            PendingSourceView(label=c.kind, started_at=c.sync_started_at)
+            for c in connections
+            if c.sync_started_at is not None
+        ]
+        parsing = [
+            PendingSourceView(label=r.filename, started_at=r.created_at)
+            for r in pending
+            if r.created_at is not None
+        ]
+        return SourceProcessingView(
+            syncing=tuple(sorted(syncing, key=lambda p: p.started_at)),
+            parsing=tuple(sorted(parsing, key=lambda p: p.started_at)),
+        )
 
     async def base_resume_text(self, owner_id: uuid.UUID, *, max_chars: int = 12_000) -> str | None:
         """The latest parsed résumé's text: what a new résumé revises, not replaces.

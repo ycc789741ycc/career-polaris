@@ -524,3 +524,89 @@ async def test_the_snapshot_groups_evidence_by_source_and_totals_the_timeline() 
     ]
     assert snapshot.version == 2
     assert snapshot.total_experience_months == 24
+
+
+# --- what is still running (ADR 0018) --------------------------------------
+
+
+class _BrokenConnector(FakeConnector):
+    async def fetch(self, client: Any, token: str) -> list[EvidenceDraft]:
+        raise RuntimeError("the connector fell over")
+
+
+async def _connected(profile: ProfileService) -> None:
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+
+
+async def test_a_requested_sync_shows_as_syncing_until_it_finishes() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow, connector=FakeConnector([_draft("pr/1")]))
+    await _connected(profile)
+
+    await profile.request_sync(OWNER, "github")
+    syncing = (await profile.processing(OWNER)).syncing
+
+    assert [p.label for p in syncing] == ["github"]
+    await profile.sync_connection(OWNER, "github")
+    assert (await profile.processing(OWNER)).syncing == ()
+
+
+@pytest.mark.parametrize("connector", [FakeConnector(fails=True), _BrokenConnector()])
+async def test_a_sync_that_fails_in_any_way_stops_showing_as_syncing(
+    connector: FakeConnector,
+) -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow, connector=connector)
+    await _connected(profile)
+    await profile.request_sync(OWNER, "github")
+
+    with pytest.raises((UpstreamFailedError, RuntimeError)):
+        await profile.sync_connection(OWNER, "github")
+
+    (connection,) = uow.store.connections.values()
+    assert connection.status is ConnectionStatus.FAILED and connection.last_error
+    assert (await profile.processing(OWNER)).syncing == ()
+
+
+async def test_a_sync_cannot_be_requested_for_a_source_that_is_not_connected() -> None:
+    with pytest.raises(NotFoundError):
+        await _service(FakeProfileUnitOfWork()).request_sync(OWNER, "github")
+
+
+async def test_an_uploaded_resume_shows_as_parsing_until_it_is_parsed() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow)
+    uploaded = await profile.upload_resume(
+        OWNER, filename="cv.txt", content_type="text/plain", content=RESUME
+    )
+
+    assert [p.label for p in (await profile.processing(OWNER)).parsing] == ["cv.txt"]
+    await profile.parse_resume(OWNER, uploaded.id)
+    assert (await profile.processing(OWNER)).parsing == ()
+
+
+async def test_a_parse_that_stops_unexpectedly_is_recorded_and_still_raised() -> None:
+    uow = FakeProfileUnitOfWork()
+    store = FakeObjectStore()
+    profile = ProfileService(
+        uow,
+        object_store=store,  # type: ignore[arg-type]
+        connectors={},
+        resume_max_bytes=10_000,
+        resume_max_pages=5,
+        http_timeout_seconds=1,
+        user_agent="test",
+    )
+    uploaded = await profile.upload_resume(
+        OWNER, filename="cv.txt", content_type="text/plain", content=RESUME
+    )
+    store.objects.clear()
+
+    with pytest.raises(KeyError):
+        await profile.parse_resume(OWNER, uploaded.id)
+
+    (stored,) = uow.store.resumes.values()
+    assert stored.status is ResumeStatus.FAILED and stored.parse_error
+    assert (await profile.processing(OWNER)).parsing == ()

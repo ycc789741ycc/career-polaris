@@ -144,7 +144,7 @@ backend/src/
   kernel/     technical kernel, no domain: db, outbox, jobs, auth, crypto,
               storage, ai_gateway, fetch, embeddings
   advisor/    the application, one component per capability: identity · profile ·
-              market · rolemap · assessment · target · gapplan · resume
+              market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the component's ONLY importable surface
                 service.py  use cases; stored data only via domain/repositories.py
                 domain/     entities, rules, events, repository interfaces: no I/O,
@@ -185,7 +185,7 @@ with an in-memory twin for unit tests in `tests/unit/kernel/db/fake_repository.p
 A component's `factory.py` builds its services from a `Database`; nothing else
 constructs a repository. Only `infra/` imports SQLAlchemy.
 
-Twenty-one `import-linter` contracts in `backend/.importlinter` enforce those
+Twenty-two `import-linter` contracts in `backend/.importlinter` enforce those
 boundaries, and they run in CI. If one breaks, the design is wrong, not the
 contract.
 
@@ -199,6 +199,14 @@ contract.
   the analysis made of them; its follow-up questions stay there because an
   answer is how thin evidence gets more. Strengths explains each score by its
   confidence, and `needs_more_evidence` uses the same threshold as the questions.
+- **A stage waits for the one before it, and says so while it does.** Every
+  sync, parse, analysis and role-map build is recorded before it is queued
+  (ADR 0006). An analysis is refused while a source still syncs or parses, and
+  a role-map build asked for during an analysis waits and starts when it ends.
+  Those rules live in `advisor/activity`, not in `rolemap`, which sits below
+  `assessment` (ADR 0018). The shell polls `GET /activity` while anything runs,
+  for the running bar. Work still busy after `JOB_STALE_AFTER_SECONDS` counts
+  as lost.
 - **The crawler holds no secrets and has no grant on any user schema.** It emits
   events about companies and markets; the worker's dispatcher resolves those to
   users. That fan-out is the only cross-user read, and it has its own narrow

@@ -66,12 +66,12 @@ def _register(app: App) -> None:
         await market_jobs.materialize_crawl_sources(deps())
 
     @app.task(name="rolemap.recluster", queue=str(Queue.AI))
-    async def recluster(owner_id: str) -> None:
-        await rolemap_jobs.recluster(deps(), owner_id=owner_id)
+    async def recluster(owner_id: str, build_id: str) -> None:
+        await rolemap_jobs.recluster(deps(), owner_id=owner_id, build_id=build_id)
 
     @app.task(name="assessment.run", queue=str(Queue.AI))
-    async def run_assessment(owner_id: str) -> None:
-        round_id = await assessment_jobs.run(deps(), owner_id=owner_id)
+    async def run_assessment(owner_id: str, run_id: str) -> None:
+        round_id = await assessment_jobs.run(deps(), owner_id=owner_id, run_id=run_id)
         if round_id:
             await enqueue("assessment.generate_questions", owner_id=owner_id, round_id=round_id)
 
