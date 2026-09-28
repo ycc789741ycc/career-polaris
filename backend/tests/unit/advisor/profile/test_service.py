@@ -154,7 +154,7 @@ async def test_a_sync_deletes_the_shapes_its_connector_retired_and_keeps_the_res
     await profile.record_answer(OWNER, question_id="q1", question="Led it?", answer="Yes")
 
     connector.drafts = [_draft("github:commit:abc")]
-    connector.retired_refs = ("github:merged:", "github:pr:")
+    connector.retired_refs = ("github:merged:*", "github:pr:*")
     await profile.sync_connection(OWNER, "github")
 
     snapshot = await profile.snapshot(OWNER)
@@ -167,6 +167,24 @@ async def test_a_sync_deletes_the_shapes_its_connector_retired_and_keeps_the_res
     )
 
 
+async def test_a_retired_pattern_can_match_in_the_middle_of_a_ref() -> None:
+    """Jira's old tallies carry the site between the source and the shape."""
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector([_draft("jira:c1:project:PAY"), _draft("jira:c1:epic:PAY-1")])
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+
+    connector.drafts = []
+    connector.retired_refs = ("jira:*:project:*",)
+    await profile.sync_connection(OWNER, "github")
+
+    snapshot = await profile.snapshot(OWNER)
+    assert [e.reference for e in snapshot.evidence] == ["https://github.test/jira:c1:epic:PAY-1"]
+
+
 async def test_a_sync_that_only_retires_facts_still_bumps_the_version() -> None:
     uow = FakeProfileUnitOfWork()
     connector = FakeConnector([_draft("github:pr:1")])
@@ -177,7 +195,7 @@ async def test_a_sync_that_only_retires_facts_still_bumps_the_version() -> None:
     await profile.sync_connection(OWNER, "github")
 
     connector.drafts = []
-    connector.retired_refs = ("github:pr:",)
+    connector.retired_refs = ("github:pr:*",)
     assert await profile.sync_connection(OWNER, "github") == 0
 
     snapshot = await profile.snapshot(OWNER)

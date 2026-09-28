@@ -31,8 +31,9 @@ class EvidenceDraft:
 
 class Connector(Protocol):
     kind: str
-    # ``external_ref`` prefixes an earlier version of this connector wrote and
-    # this one no longer does. A sync deletes the source's facts under them.
+    # ``external_ref`` shapes an earlier version of this connector wrote and
+    # this one no longer does, as glob patterns ("jira:*:project:*"). A sync
+    # deletes the source's facts that match any of them.
     retired_refs: tuple[str, ...]
 
     async def account_name(self, client: GuardedClient, access_token: str) -> str:

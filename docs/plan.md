@@ -95,10 +95,10 @@ later phase — never a market data source.
 * **Source mix — done.** "What it found so far" is one stacked bar of facts by
   source, with counts and whole percents that add up to 100. The note under it
   says the bar shares out facts, not effort.
-* **Where the work lives — done.** One bar per GitHub repository (merged pull
-  requests) and per Jira project (issues), each source on its own scale. Bars
-  come from the connectors' own tallies, now stored as numbers (`tally`), not
-  from the few items a sync keeps. Every fact names its repository or project
+* **Where the work lives — done.** One bar per GitHub repository (commits,
+  ADR 0016) and per Jira epic (issues, ADR 0017), each source on its own scale.
+  Bars come from the connectors' own tallies, now stored as numbers (`tally`),
+  not from the few items a sync keeps. Every fact names its repository or epic
   (`subject`), so clicking a bar lists the tally and its items.
 * **What backs a score — done.** The evidence table has a "Cited by" column
   from the latest analysis, a count of how many facts back a score, a filter

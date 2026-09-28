@@ -1,13 +1,16 @@
 """Jira: cycle time, epic ownership and incident response.
 
 This is the scope evidence a resume usually loses — "shipped the thing" with
-no way to show how big the thing was.
+no way to show how big the thing was. Work is grouped by epic, because an epic
+is the thing that was shipped; a project is only where a team files its tickets.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -24,12 +27,31 @@ SCOPE_DESCRIPTIONS = (
     "Read your Atlassian profile",
 )
 
-_MAX_ISSUES = 100
+_PAGE_SIZE = 100
+_MAX_ISSUES = 1000
+_FIELDS = "summary,status,resolutiondate,updated,issuetype,parent"
+# Jira's hierarchy: an epic is 1, a story or task 0, a subtask -1.
+_EPIC_LEVEL = 1
+# Only a key of this shape is ever written into a JQL query.
+_ISSUE_KEY = re.compile(r"^[A-Z][A-Z0-9_]*-[0-9]+$")
+_SUBJECT_LIMIT = 255
+
+
+@dataclass(frozen=True, slots=True)
+class Epic:
+    key: str
+    summary: str
+
+    @property
+    def label(self) -> str:
+        """How the epic is named on a chart: its key, then what it is called."""
+        return f"{self.key} {self.summary}".strip()[:_SUBJECT_LIMIT]
 
 
 class JiraConnector:
     kind = "jira"
-    retired_refs: tuple[str, ...] = ()
+    # Tallies per project, which epics replaced.
+    retired_refs: tuple[str, ...] = ("jira:*:project:*",)
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")
@@ -71,9 +93,16 @@ class JiraConnector:
             site_name = str(site.get("name") or "jira")
             if not cloud_id:
                 continue
-            issues = await self._search(client, access_token, str(cloud_id))
+            issues = await self._search(
+                client,
+                access_token,
+                str(cloud_id),
+                "assignee = currentUser() ORDER BY updated DESC",
+                _MAX_ISSUES,
+            )
             if not issues:
                 continue
+            epics = await self._epics(client, access_token, str(cloud_id), issues)
 
             statuses = Counter(
                 str(((i.get("fields") or {}).get("status") or {}).get("name") or "unknown")
@@ -85,25 +114,34 @@ class JiraConnector:
                     external_ref=f"jira:{cloud_id}:throughput",
                     reference=f"Jira · {site_name}",
                     fact=f"{len(issues)} assigned issues, {done} of them closed.",
-                    observed_on=_latest_date(issues),
+                    observed_on=_latest(_date_of(i) for i in issues),
                     confidence=0.85,
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=len(issues),
                 )
             )
 
-            projects = Counter(p for p in (_project_of(i) for i in issues) if p)
-            for project, count in projects.most_common(5):
+            by_epic = Counter(e for e in (epics.get(str(i.get("key"))) for i in issues) if e)
+            worked = {
+                epic: _latest(_date_of(i) for i in issues if epics.get(str(i.get("key"))) == epic)
+                for epic in by_epic
+            }
+            # The ten epics worked on most recently, newest first; the busier on a tie.
+            recent = sorted(
+                by_epic, key=lambda e: (worked[e] or date.min, by_epic[e]), reverse=True
+            )[:10]
+            for epic in recent:
+                count = by_epic[epic]
                 drafts.append(
                     EvidenceDraft(
-                        external_ref=f"jira:{cloud_id}:project:{project}",
-                        reference=f"Jira · {site_name} · {project}",
-                        fact=f"{count} issues worked in the {project} project.",
-                        observed_on=_latest_date(i for i in issues if _project_of(i) == project),
+                        external_ref=f"jira:{cloud_id}:epic:{epic.key}",
+                        reference=f"Jira · {site_name} · {epic.key}",
+                        fact=f"{count} issues worked in the epic {epic.key}: {epic.summary}.",
+                        observed_on=worked[epic],
                         confidence=0.8,
                         granularity=EvidenceGranularity.SUMMARY,
                         tally=count,
-                        subject=project,
+                        subject=epic.label,
                     )
                 )
 
@@ -112,6 +150,7 @@ class JiraConnector:
                 summary = str(fields.get("summary") or "").strip()
                 if not summary:
                     continue
+                home = epics.get(str(issue.get("key")))
                 drafts.append(
                     EvidenceDraft(
                         external_ref=f"jira:issue:{issue.get('id')}",
@@ -119,35 +158,95 @@ class JiraConnector:
                         fact=summary,
                         observed_on=_date_of(issue),
                         confidence=0.75,
-                        subject=_project_of(issue),
+                        subject=home.label if home else None,
                     )
                 )
         return drafts
 
+    async def _epics(
+        self, client: GuardedClient, token: str, cloud_id: str, issues: list[dict[str, Any]]
+    ) -> dict[str, Epic]:
+        """The epic each issue belongs to, by issue key; an issue under none is left out.
+
+        An epic assigned to the user counts as work in itself, and a story's
+        epic is its parent. A subtask's parent is a story, so its epic is one
+        level further up: those stories are read in one more search.
+        """
+        found: dict[str, Epic] = {}
+        via_story: dict[str, list[str]] = {}
+        for issue in issues:
+            key = str(issue.get("key") or "")
+            if not key:
+                continue
+            fields = issue.get("fields") or {}
+            parent = fields.get("parent") if isinstance(fields.get("parent"), dict) else None
+            if _is_epic(fields):
+                found[key] = _epic_of(key, fields)
+            elif parent is not None and _is_epic(parent.get("fields") or {}):
+                found[key] = _epic_of(str(parent.get("key") or ""), parent.get("fields") or {})
+            elif parent is not None and _ISSUE_KEY.match(str(parent.get("key") or "")):
+                via_story.setdefault(str(parent["key"]), []).append(key)
+
+        stories = list(via_story)
+        for start in range(0, len(stories), _PAGE_SIZE):
+            chunk = stories[start : start + _PAGE_SIZE]
+            for story in await self._search(
+                client, token, cloud_id, f"key in ({','.join(chunk)})", len(chunk)
+            ):
+                parent = (story.get("fields") or {}).get("parent")
+                if not isinstance(parent, dict) or not _is_epic(parent.get("fields") or {}):
+                    continue
+                epic = _epic_of(str(parent.get("key") or ""), parent.get("fields") or {})
+                for subtask in via_story.get(str(story.get("key")), []):
+                    found[subtask] = epic
+        # One epic per key, however many issues named it: the first summary seen wins.
+        canonical: dict[str, Epic] = {}
+        for epic in found.values():
+            canonical.setdefault(epic.key, epic)
+        return {key: canonical[epic.key] for key, epic in found.items() if epic.key}
+
     async def _search(
-        self, client: GuardedClient, token: str, cloud_id: str
+        self, client: GuardedClient, token: str, cloud_id: str, jql: str, limit: int
     ) -> list[dict[str, Any]]:
-        payload = await client.get_json(
-            f"{self._base}/ex/jira/{cloud_id}/rest/api/3/search/jql",
-            headers=_headers(token),
-            params={
-                "jql": "assignee = currentUser() ORDER BY updated DESC",
-                "maxResults": _MAX_ISSUES,
-                "fields": "summary,status,resolutiondate,updated",
-            },
-        )
-        issues = payload.get("issues") if isinstance(payload, dict) else None
-        return list(issues or [])
+        """Page through a search by ``nextPageToken`` until the last page or ``limit``."""
+        found: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while len(found) < limit:
+            params: dict[str, Any] = {"jql": jql, "maxResults": _PAGE_SIZE, "fields": _FIELDS}
+            if page_token:
+                params["nextPageToken"] = page_token
+            payload = await client.get_json(
+                f"{self._base}/ex/jira/{cloud_id}/rest/api/3/search/jql",
+                headers=_headers(token),
+                params=params,
+            )
+            if not isinstance(payload, dict):
+                break
+            batch = list(payload.get("issues") or [])
+            found.extend(batch)
+            page_token = payload.get("nextPageToken")
+            if not batch or payload.get("isLast", True) or not page_token:
+                break
+        return found[:limit]
 
 
 def _headers(token: str) -> dict[str, str]:
     return {"authorization": f"Bearer {token}", "accept": "application/json"}
 
 
-def _project_of(issue: dict[str, Any]) -> str | None:
-    """The project key, "PAY" for "PAY-12"; None for an issue without a key."""
-    key = issue.get("key")
-    return str(key).split("-", 1)[0] if key else None
+def _is_epic(fields: dict[str, Any]) -> bool:
+    """By hierarchy level where Jira sends it, by the type's name where it does not."""
+    kind = fields.get("issuetype")
+    if not isinstance(kind, dict):
+        return False
+    level = kind.get("hierarchyLevel")
+    if isinstance(level, int):
+        return level == _EPIC_LEVEL
+    return str(kind.get("name") or "").lower() == "epic"
+
+
+def _epic_of(key: str, fields: dict[str, Any]) -> Epic:
+    return Epic(key=key, summary=str(fields.get("summary") or "").strip())
 
 
 def _date_of(issue: dict[str, Any]) -> date | None:
@@ -156,6 +255,6 @@ def _date_of(issue: dict[str, Any]) -> date | None:
     return parse_date(fields.get("resolutiondate") or fields.get("updated"))
 
 
-def _latest_date(issues: Iterable[dict[str, Any]]) -> date | None:
-    dates = [d for d in (_date_of(i) for i in issues) if d is not None]
-    return max(dates) if dates else None
+def _latest(dates: Iterable[date | None]) -> date | None:
+    known = [d for d in dates if d is not None]
+    return max(known) if known else None

@@ -47,6 +47,19 @@ describe("WorkPlaces", () => {
     ]);
   });
 
+  it("lists Jira epics most recently worked on first, however busy", () => {
+    const [jira] = placeGroups([
+      fact({ ...tally("jira", "PAY-1 Ledger", 40), observed_on: "2026-03-01" }),
+      fact({ ...tally("jira", "PAY-7 Refunds", 2), observed_on: "2026-09-20" }),
+      fact({ ...tally("jira", "OPS-3 Alerts", 9), observed_on: null }),
+    ]);
+    expect(jira?.places.map((p) => p.subject)).toEqual([
+      "PAY-7 Refunds",
+      "PAY-1 Ledger",
+      "OPS-3 Alerts",
+    ]);
+  });
+
   it("counts from the tally, not from the few items a sync kept", () => {
     const [github] = placeGroups([
       tally("github", "acme/ledger", 12),
@@ -91,7 +104,7 @@ describe("WorkPlaces", () => {
       <WorkPlaces facts={[tally("jira", "PAY", 4)]} onSelect={() => {}} />,
     );
     const group = screen.getByRole("heading", {
-      name: "Issues by Jira project",
+      name: "Issues by Jira epic",
     });
     expect(
       within(group.parentElement as HTMLElement).getByText("PAY"),

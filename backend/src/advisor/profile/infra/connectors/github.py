@@ -39,7 +39,7 @@ class GitHubConnector:
     # Shapes the pull-request version of this connector wrote. A sync deletes
     # them, so the same work never counts once as merged pull requests and
     # again as commits.
-    retired_refs: tuple[str, ...] = ("github:merged:", "github:pr:")
+    retired_refs: tuple[str, ...] = ("github:merged:*", "github:pr:*")
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")

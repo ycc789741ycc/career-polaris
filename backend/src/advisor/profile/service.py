@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
+from fnmatch import fnmatchcase
 
 from advisor.profile.domain import (
     CareerPositionFilter,
@@ -476,8 +477,8 @@ class ProfileService:
     ) -> int:
         """Upsert by ``external_ref`` so a re-sync updates rather than duplicates.
 
-        Facts under ``retired_refs`` — shapes the source's connector no longer
-        writes — are deleted first, so old and new shapes never both count.
+        Facts matching ``retired_refs`` — shapes the source's connector no
+        longer writes — are deleted first, so old and new shapes never both count.
         Bumps the profile version and records ``ProfileUpdated`` in the same
         transaction. Per domain section 2.9 this does not start an analysis —
         the user asks for that explicitly.
@@ -540,14 +541,14 @@ class ProfileService:
             return len(drafts)
 
 
-async def _retire(mine: OwnerProfile, source: EvidenceSource, prefixes: tuple[str, ...]) -> int:
-    """Delete a source's facts whose ``external_ref`` starts with any of ``prefixes``."""
-    if not prefixes:
+async def _retire(mine: OwnerProfile, source: EvidenceSource, patterns: tuple[str, ...]) -> int:
+    """Delete a source's facts whose ``external_ref`` matches any of the glob ``patterns``."""
+    if not patterns:
         return 0
     stale = [
         e
         for e in await mine.evidence.get_list(EvidenceFilter(source=source))
-        if e.external_ref.startswith(prefixes)
+        if any(fnmatchcase(e.external_ref, pattern) for pattern in patterns)
     ]
     for evidence in stale:
         await mine.evidence.delete(evidence.id)

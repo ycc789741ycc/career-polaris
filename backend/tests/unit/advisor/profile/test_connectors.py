@@ -102,19 +102,129 @@ async def test_jira_dates_each_issue_when_it_was_resolved_or_last_touched() -> N
     assert items == {"Jira · PAY-1": date(2026, 5, 12), "Jira · PAY-2": date(2026, 6, 3)}
 
 
-async def test_jira_tallies_count_their_issues_and_every_fact_names_its_project() -> None:
-    """Counting work over time must not count a tally as one more piece of work."""
-    client = FakeClient(
-        {SITES: [SITE], SEARCH: {"issues": [_issue("PAY-1", resolved="2026-05-12")]}}
+class JqlClient(FakeClient):
+    """Answers Jira's search by its JQL, one page per ``nextPageToken``; records each query."""
+
+    def __init__(self, pages: dict[str, list[list[Any]]]) -> None:
+        super().__init__({SITES: [SITE]})
+        self.pages = pages
+        self.queries: list[dict[str, Any]] = []
+
+    async def get_json(self, url: str, **kwargs: Any) -> Any:
+        if url != SEARCH:
+            return await super().get_json(url, **kwargs)
+        params = kwargs["params"]
+        self.queries.append(params)
+        batches = self.pages.get(params["jql"], [])
+        page = int(params.get("nextPageToken") or 0)
+        is_last = page + 1 >= len(batches)
+        return {
+            "issues": batches[page] if page < len(batches) else [],
+            "isLast": is_last,
+            **({} if is_last else {"nextPageToken": str(page + 1)}),
+        }
+
+
+MINE = "assignee = currentUser() ORDER BY updated DESC"
+EPIC_TYPE = {"name": "Epic", "hierarchyLevel": 1}
+STORY_TYPE = {"name": "Story", "hierarchyLevel": 0}
+SUBTASK_TYPE = {"name": "Subtask", "hierarchyLevel": -1}
+LEDGER = {"key": "PAY-1", "fields": {"summary": "Ledger rewrite", "issuetype": EPIC_TYPE}}
+
+
+def _work(key: str, *, kind: Any = STORY_TYPE, parent: Any = None) -> Any:
+    issue = _issue(key, resolved="2026-05-12")
+    issue["fields"]["issuetype"] = kind
+    if parent is not None:
+        issue["fields"]["parent"] = parent
+    return issue
+
+
+async def test_jira_tallies_issues_by_their_epic_and_every_fact_names_it() -> None:
+    """A story counts toward its parent epic, and an epic you own toward itself.
+
+    The owned epic's own summary differs from the copy its stories carry, as a
+    rename between reads would leave it: it is still one epic.
+    """
+    client = JqlClient(
+        {
+            MINE: [
+                [
+                    _work("PAY-2", parent=LEDGER),
+                    _work("OPS-9", parent=LEDGER),
+                    _work("PAY-1", kind=EPIC_TYPE),
+                    _work("PAY-3"),
+                ]
+            ]
+        }
     )
     drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
 
     shapes = {d.external_ref: (d.granularity, d.tally, d.subject) for d in drafts}
     assert shapes == {
-        "jira:cloud-1:throughput": (EvidenceGranularity.SUMMARY, 1, None),
-        "jira:cloud-1:project:PAY": (EvidenceGranularity.SUMMARY, 1, "PAY"),
-        "jira:issue:PAY-1": (EvidenceGranularity.ITEM, None, "PAY"),
+        "jira:cloud-1:throughput": (EvidenceGranularity.SUMMARY, 4, None),
+        "jira:cloud-1:epic:PAY-1": (EvidenceGranularity.SUMMARY, 3, "PAY-1 Ledger rewrite"),
+        "jira:issue:PAY-2": (EvidenceGranularity.ITEM, None, "PAY-1 Ledger rewrite"),
+        "jira:issue:OPS-9": (EvidenceGranularity.ITEM, None, "PAY-1 Ledger rewrite"),
+        "jira:issue:PAY-1": (EvidenceGranularity.ITEM, None, "PAY-1 Ledger rewrite"),
+        "jira:issue:PAY-3": (EvidenceGranularity.ITEM, None, None),
     }
+    tally = next(d for d in drafts if d.external_ref == "jira:cloud-1:epic:PAY-1")
+    assert (tally.reference, tally.fact) == (
+        "Jira · acme · PAY-1",
+        "3 issues worked in the epic PAY-1: Ledger rewrite.",
+    )
+
+
+def _under(epic: str, n: int, *, resolved: str) -> Any:
+    parent = {"key": epic, "fields": {"summary": epic, "issuetype": EPIC_TYPE}}
+    issue = _work(f"W-{epic}-{n}", parent=parent)
+    issue["fields"]["resolutiondate"] = resolved
+    return issue
+
+
+async def test_jira_keeps_the_ten_epics_worked_on_most_recently_newest_first() -> None:
+    """A busy epic from last year gives way to a small one from this month."""
+    old_and_busy = [_under("OLD-1", n, resolved="2025-01-10") for n in range(30)]
+    recent = [_under(f"NEW-{m}", 0, resolved=f"2026-09-{m:02d}") for m in range(1, 11)]
+    client = JqlClient({MINE: [old_and_busy + recent]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    epics = [d.external_ref for d in drafts if ":epic:" in d.external_ref]
+    assert epics == [f"jira:cloud-1:epic:NEW-{m}" for m in range(10, 0, -1)]
+
+
+async def test_a_subtask_counts_toward_the_epic_of_its_story() -> None:
+    story = {"key": "PAY-2", "fields": {"summary": "Story", "issuetype": STORY_TYPE}}
+    client = JqlClient(
+        {
+            MINE: [[_work("PAY-5", kind=SUBTASK_TYPE, parent=story)]],
+            "key in (PAY-2)": [[_work("PAY-2", parent=LEDGER)]],
+        }
+    )
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    assert [d.subject for d in drafts if d.external_ref == "jira:issue:PAY-5"] == [
+        "PAY-1 Ledger rewrite"
+    ]
+
+
+async def test_a_parent_key_that_is_not_a_jira_key_never_reaches_a_query() -> None:
+    odd = {"key": "PAY-2) OR (project = X", "fields": {"issuetype": STORY_TYPE}}
+    client = JqlClient({MINE: [[_work("PAY-5", kind=SUBTASK_TYPE, parent=odd)]]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    assert [q["jql"] for q in client.queries] == [MINE]
+    assert not any(":epic:" in d.external_ref for d in drafts)
+
+
+async def test_jira_pages_through_the_users_issues() -> None:
+    client = JqlClient({MINE: [[_work(f"PAY-{n}") for n in range(100)], [_work("PAY-100")]]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    assert [q.get("nextPageToken") for q in client.queries] == [None, "1"]
+    throughput = next(d for d in drafts if d.external_ref == "jira:cloud-1:throughput")
+    assert throughput.tally == 101
 
 
 class SearchClient(FakeClient):
@@ -207,14 +317,17 @@ async def test_github_pages_through_commits_until_a_short_page() -> None:
 
 
 async def test_github_retires_the_pull_request_shapes_it_used_to_write() -> None:
-    assert GitHubConnector(API).retired_refs == ("github:merged:", "github:pr:")
-    assert JiraConnector(API).retired_refs == ()
+    assert GitHubConnector(API).retired_refs == ("github:merged:*", "github:pr:*")
 
 
-async def test_a_jira_issue_without_a_key_names_no_project() -> None:
+async def test_a_jira_issue_without_a_key_names_no_epic() -> None:
     keyless = {"id": "9", "fields": {"summary": "Orphan", "status": {"name": "Done"}}}
     client = FakeClient({SITES: [SITE], SEARCH: {"issues": [keyless]}})
     drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
 
     assert [d.subject for d in drafts if d.external_ref == "jira:issue:9"] == [None]
-    assert not any(":project:" in d.external_ref for d in drafts)
+    assert not any(":epic:" in d.external_ref for d in drafts)
+
+
+async def test_jira_retires_the_project_tallies_epics_replaced() -> None:
+    assert JiraConnector(API).retired_refs == ("jira:*:project:*",)
