@@ -11,6 +11,7 @@ import type {
 } from "../api/types";
 import type { FactSelection } from "../charts/selection";
 import { SourceMix } from "../charts/SourceMix";
+import { SourceIcon } from "../components/SourceIcon";
 import { WorkPlaces } from "../charts/WorkPlaces";
 import {
   AutoGrid,
@@ -168,7 +169,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                       style={{ gap: 14, flexWrap: "nowrap" }}
                     >
                       <SourceGlyph
-                        name={label.name}
+                        kind={connection.kind}
                         on={connection.connected}
                       />
                       <div>
@@ -463,7 +464,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   );
 }
 
-function SourceGlyph({ name, on }: { name: string; on: boolean }) {
+function SourceGlyph({ kind, on }: { kind: string; on: boolean }) {
   return (
     <div
       aria-hidden="true"
@@ -479,11 +480,9 @@ function SourceGlyph({ name, on }: { name: string; on: boolean }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: "var(--font-heading)",
-        fontSize: 15,
       }}
     >
-      {name.slice(0, 2)}
+      <SourceIcon source={kind} size={22} />
     </div>
   );
 }

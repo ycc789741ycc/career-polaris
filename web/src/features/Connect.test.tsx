@@ -126,6 +126,24 @@ describe("Connect", () => {
     );
   });
 
+  it("marks each source with its own logo, not letters from its name", async () => {
+    serve((call) => {
+      if (call.url === "/connections")
+        return [
+          connection({}),
+          connection({ kind: "github", account: null, connected: false }),
+        ];
+      return undefined;
+    });
+    renderConnect();
+
+    await screen.findByText("Ada Lovelace (ada@acme.io) · acme");
+    expect(document.querySelector('svg[data-source="jira"]')).not.toBeNull();
+    expect(document.querySelector('svg[data-source="github"]')).not.toBeNull();
+    expect(screen.queryByText("Ji")).toBeNull();
+    expect(screen.queryByText("Gi")).toBeNull();
+  });
+
   it("disconnects only after confirming, then reloads", async () => {
     let connected = true;
     const calls = serve((call) => {
