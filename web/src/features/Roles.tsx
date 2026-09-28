@@ -2,14 +2,20 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import type {
   Assessment,
-  CostEstimate,
   Fit,
+  FitPage,
   MatchedPosting,
+  MatchedPostingPage,
   Role,
+  RoleMapEstimate,
   RoleMapSettings,
+  RolePage,
   SalaryBand,
+  StringPage,
   Subscription,
+  SubscriptionPage,
   TargetOption,
+  TargetOptionPage,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
@@ -46,25 +52,31 @@ const MAX_ROLE_COUNT = 20;
 export function Roles() {
   const flash = useToast();
   const { navigate, focus, setFocus } = useShell();
-  const roles = useAsync<Role[]>(() => api.get("/roles"), []);
+  const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
   const settings = useAsync<RoleMapSettings>(
     () => api.get("/roles/settings"),
     [],
   );
-  const fits = useAsync<Fit[]>(() => api.get("/fits"), []);
+  const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [],
   );
   const subscriptions = useAsync<Subscription[]>(
-    () => api.get("/role-subscriptions"),
+    () => api.items<SubscriptionPage>("/role-subscriptions"),
     [],
   );
-  const markets = useAsync<string[]>(() => api.get("/market-preferences"), []);
+  const markets = useAsync<string[]>(
+    () => api.items<StringPage>("/market-preferences"),
+    [],
+  );
   // For the pasted JDs: the only Targets that are not a role on the map.
-  const targets = useAsync<TargetOption[]>(() => api.get("/targets"), []);
+  const targets = useAsync<TargetOption[]>(
+    () => api.items<TargetOptionPage>("/targets"),
+    [],
+  );
   const matched = useAsync<MatchedPosting[]>(
-    () => api.get("/matched-postings?limit=10"),
+    () => api.items<MatchedPostingPage>("/matched-postings?page_size=10"),
     [],
   );
 
@@ -73,7 +85,7 @@ export function Roles() {
   const [watchUrl, setWatchUrl] = useState("");
   const [market, setMarket] = useState("");
   const [bandMarket, setBandMarket] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   // The k being considered; saved only once its estimate is confirmed.
   const [roleCount, setRoleCount] = useState<number | null>(null);
   const savedRoleCount = settings.data?.role_count;
@@ -167,7 +179,7 @@ export function Roles() {
     setError(null);
     try {
       setEstimate(
-        await api.get<CostEstimate>(
+        await api.get<RoleMapEstimate>(
           chosenRoleCount === undefined
             ? "/roles/cost-estimate"
             : `/roles/cost-estimate?role_count=${chosenRoleCount}`,

@@ -4,10 +4,13 @@ import { api } from "../api/client";
 import type {
   Assessment,
   Connection,
+  ConnectionPage,
   Dimension,
   Evidence,
+  EvidencePage,
   ProfileSummary,
   ResumeFile,
+  ResumeFilePage,
 } from "../api/types";
 import type { FactSelection } from "../charts/selection";
 import { SourceMix } from "../charts/SourceMix";
@@ -46,11 +49,17 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   // Refetched when a callback finishes, so a fresh connection shows as
   // connected without a reload.
   const connections = useAsync<Connection[]>(
-    () => api.get("/connections"),
+    () => api.items<ConnectionPage>("/connections"),
     [callback],
   );
-  const resumes = useAsync<ResumeFile[]>(() => api.get("/resumes"), []);
-  const evidence = useAsync<Evidence[]>(() => api.get("/evidence"), []);
+  const resumes = useAsync<ResumeFile[]>(
+    () => api.items<ResumeFilePage>("/resumes"),
+    [],
+  );
+  const evidence = useAsync<Evidence[]>(
+    () => api.items<EvidencePage>("/evidence"),
+    [],
+  );
   // Which facts the latest analysis cites, and whether it predates them.
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),

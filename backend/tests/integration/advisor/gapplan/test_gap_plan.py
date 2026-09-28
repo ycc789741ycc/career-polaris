@@ -308,7 +308,7 @@ async def test_regenerating_keeps_the_history_and_carries_finished_work(
     assert regenerated.summary.progress == 25
     assert [v.version for v in regenerated.versions] == [2, 1]
 
-    history = await world.gapplan.history(account)
+    history = (await world.gapplan.history(account)).items
     assert [(p.id, p.version) for p in history] == [(second.id, 2)]
 
 
@@ -367,4 +367,4 @@ async def test_another_user_cannot_read_the_plan(
 
     with pytest.raises(NotFoundError):
         await world.gapplan.get(other_account, requested.id)
-    assert await world.gapplan.history(other_account) == []
+    assert (await world.gapplan.history(other_account)).items == ()

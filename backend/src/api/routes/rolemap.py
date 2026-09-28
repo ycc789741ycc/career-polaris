@@ -5,48 +5,23 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, Field
 
 from advisor.rolemap import MAX_ROLE_COUNT, MIN_ROLE_COUNT
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.common import Accepted
+from api.schemas.rolemap import Role, RoleMapEstimate, RoleMapSettings, RolePage
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["rolemap"])
 
 
-class RoleMapSettings(BaseModel):
-    """How many roles the role map analyses on the user's key (ADR 0003)."""
-
-    role_count: int = Field(ge=MIN_ROLE_COUNT, le=MAX_ROLE_COUNT)
-
-
 @router.get("/roles")
-async def list_roles(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
-    return [
-        {
-            "id": str(role.id),
-            "name": role.name,
-            # X axis. `estimated` bubbles are drawn with a dashed outline,
-            # because no real interview reports back them yet.
-            "hiring_bar": role.hiring_bar,
-            "bar_basis": role.bar_basis,
-            "bar_confidence": role.bar_confidence,
-            "bar_reasoning": role.bar_reasoning,
-            "opening_count": role.opening_count,
-            # Y axis, one band per market the user selected.
-            "salary_bands": role.salary_bands,
-            "is_coherent": role.is_coherent,
-            "requirements": [
-                {
-                    "statement": r.statement,
-                    "weight": r.weight,
-                    "expected_level": r.expected_level,
-                }
-                for r in role.requirements
-            ],
-        }
-        for role in await deps.rolemap.roles(user)
-    ]
+async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
+    """The analysed roles: at most the user's k (ADR 0003)."""
+    # Paged here, not in the service: other components read the roles whole.
+    found = paginate(await deps.rolemap.roles(user), paging.page, paging.page_size)
+    return RolePage.of(found, Role.from_view)
 
 
 @router.get("/roles/settings")
@@ -66,16 +41,18 @@ async def cost_estimate(
     user: CurrentUser,
     deps: Deps,
     role_count: Annotated[int | None, Query(ge=MIN_ROLE_COUNT, le=MAX_ROLE_COUNT)] = None,
-) -> dict[str, object]:
+) -> RoleMapEstimate:
     """Shown before a role map runs, so nothing is spent unasked. Pass
     ``role_count`` to price a k before saving it; omit it for the saved k."""
-    return await deps.rolemap.estimate_cost(user, role_count=role_count)
+    return RoleMapEstimate.model_validate(
+        await deps.rolemap.estimate_cost(user, role_count=role_count)
+    )
 
 
 @router.post("/roles/recluster", status_code=202)
-async def recluster(user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def recluster(user: CurrentUser, deps: Deps) -> Accepted:
     await enqueue("rolemap.recluster", owner_id=str(user))
-    return {"status": "queued"}
+    return Accepted()
 
 
 __all__ = ["router"]

@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Assessment, Question, QuestionStatus } from "../api/types";
+import type {
+  Assessment,
+  Question,
+  QuestionPage,
+  QuestionStatus,
+} from "../api/types";
 import {
   Button,
   Done,
@@ -49,7 +54,10 @@ export function FollowUpQuestions({
 }) {
   const { status, navigate, refresh } = useShell();
   const model = modelName(status.credential);
-  const questions = useAsync<Question[]>(() => api.get("/questions"), []);
+  const questions = useAsync<Question[]>(
+    () => api.items<QuestionPage>("/questions"),
+    [],
+  );
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [],

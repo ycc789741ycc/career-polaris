@@ -36,7 +36,8 @@ class FakeRoleMap:
         self, owner_id: uuid.UUID, *, role_count: int | None = None
     ) -> dict[str, Any]:
         self.estimated_for.append(role_count)
-        return {"max_clusters": role_count or self.stored, "cost_usd": "0"}
+        k = role_count or self.stored
+        return {"max_clusters": k, "role_count": k, "cost_usd": "0", "model_id": None}
 
 
 @pytest.fixture

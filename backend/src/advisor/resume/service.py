@@ -85,6 +85,7 @@ from kernel.errors import (
     ValidationError,
 )
 from kernel.logging import get_logger
+from kernel.paging import Page, paginate
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
@@ -338,16 +339,20 @@ class ResumeService:
 
     # -- reading ------------------------------------------------------------
 
-    async def saved(self, owner_id: uuid.UUID) -> list[ResumeSummaryView]:
+    async def saved(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[ResumeSummaryView]:
         """Saved résumés, most recently changed first. One user's résumés, read
-        whole, so the change order is applied here rather than by the store."""
+        whole, so the change order is applied here — and the page cut after it —
+        rather than by the store, which orders by creation."""
         async with self._uow.for_owner(owner_id) as mine:
             resumes = await mine.resumes.get_list(TailoredResumeFilter())
             numbers = await mine.versions.latest_numbers()
-        return [
+        views = [
             _summary(r, latest_version=numbers.get(r.id))
             for r in sorted(resumes, key=lambda r: (r.updated_at, r.id), reverse=True)
         ]
+        return paginate(views, page, page_size)
 
     async def get(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int | None = None

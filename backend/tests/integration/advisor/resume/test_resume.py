@@ -423,4 +423,4 @@ async def test_another_user_cannot_read_the_resume_or_its_export(
         await world.resume.get(other_account, resume_id)
     with pytest.raises(NotFoundError):
         await world.resume.get_export(other_account, export.id)
-    assert await world.resume.saved(other_account) == []
+    assert (await world.resume.saved(other_account)).items == ()

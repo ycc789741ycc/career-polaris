@@ -73,6 +73,7 @@ from kernel.errors import (
     TargetUnusableError,
 )
 from kernel.logging import get_logger
+from kernel.paging import Page, paginate
 
 __all__ = [
     "EvidenceCite",
@@ -351,10 +352,13 @@ class GapPlanService:
             template_version=plan.template_version,
         )
 
-    async def history(self, owner_id: uuid.UUID) -> list[PlanSummaryView]:
+    async def history(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[PlanSummaryView]:
         """Each Target's latest version, newest first. Every plan is kept.
 
-        One user's plans: one per Target per regeneration, read whole.
+        One user's plans: one per Target per regeneration, read whole, because
+        the page is cut after keeping only each Target's latest.
         """
         async with self._uow.for_owner(owner_id) as mine:
             plans = await mine.plans.get_list(GapPlanFilter())
@@ -368,7 +372,7 @@ class GapPlanService:
                 continue
             seen.add(ref)
             latest.append(_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)))
-        return latest
+        return paginate(latest, page, page_size)
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
         async with self._uow.for_owner(owner_id) as mine:

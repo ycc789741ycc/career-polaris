@@ -134,7 +134,8 @@ variables.
 
 ```
 backend/src/
-  api/        FastAPI: main.py, dependencies, error envelope, routes/<component>.py
+  api/        FastAPI: main.py, dependencies, error envelope, routes/<component>.py,
+              schemas/<component>.py (every request and response body)
   worker/     queue worker entrypoint and the outbox dispatcher
   crawler/    its own deployable: the crawl loop only — no secrets, no user data
   cli/        migrate, job-queue schema, baseline seed, OpenAPI export
@@ -163,6 +164,18 @@ routes and the composition root use only its `__init__.py`. Routes, task
 registration and entrypoints never live inside `advisor/`. `kernel/` stays
 outside the application on purpose (ADR 0009).
 
+Data crosses three shapes on its way out (ADR 0013). Entities stay inside a
+component. `service.py` returns frozen `*View` dataclasses, the component's
+contract with its callers. `api/schemas/<component>.py` builds the wire body
+from a view, never from an entity, and the SPA's `web/src/api/types.ts` only
+aliases the generated `schema.d.ts`. A new response field therefore goes in the
+view, the schema and its `from_view`, then `make gen-client`.
+
+Every `GET` list answers with a page — `{items, page, page_size, total}` — and
+takes `page` and `page_size` through the shared `Paging` dependency; an omitted
+`page_size` returns the whole list (ADR 0014). Each list has a named schema
+(`RolePage`), and the SPA reads one with `api.items<RolePage>(path)`.
+
 Repository interfaces are defined in each component's `domain/`, in entities and
 value objects — never ORM types — and implemented in `infra/` (ADR 0011). Every
 repository has the same six methods (`create`, `get`, `get_list`, `get_count`,
@@ -172,7 +185,7 @@ with an in-memory twin for unit tests in `tests/unit/kernel/db/fake_repository.p
 A component's `factory.py` builds its services from a `Database`; nothing else
 constructs a repository. Only `infra/` imports SQLAlchemy.
 
-Nineteen `import-linter` contracts in `backend/.importlinter` enforce those
+Twenty-one `import-linter` contracts in `backend/.importlinter` enforce those
 boundaries, and they run in CI. If one breaks, the design is wrong, not the
 contract.
 

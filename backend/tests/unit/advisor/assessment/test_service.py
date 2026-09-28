@@ -150,8 +150,19 @@ async def test_a_dimension_that_disappears_is_retired_with_a_record() -> None:
     assert dimensions["api"].name == "API design" and dimensions["api"].retired_at is None
     merged = [c for c in uow.store.changes.values() if c.assessment_id == second]
     assert any(c.kind is LineageKind.MERGED and c.dimension_key == "db" for c in merged)
-    history = await service.history(OWNER)
+    history = (await service.history(OWNER)).items
     assert [h.profile_version for h in history] == [2, 1]
+
+
+async def test_history_is_paged_by_the_store_and_counts_every_run() -> None:
+    service = _service(FakeAssessmentUnitOfWork())
+    for version in (1, 2, 3):
+        await _assess(service, [_dimension("api", "APIs")], version=version)
+
+    page = await service.history(OWNER, page=2, page_size=2)
+
+    assert (page.page, page.page_size, page.total) == (2, 2, 3)
+    assert [a.profile_version for a in page.items] == [1]
 
 
 async def test_questions_come_oldest_first_and_an_answer_becomes_evidence() -> None:
@@ -174,13 +185,13 @@ async def test_questions_come_oldest_first_and_an_answer_becomes_evidence() -> N
             )
     uow.store.events.clear()
 
-    first, second = await service.questions(OWNER)
+    first, second = (await service.questions(OWNER)).items
     assert (first.text, second.text) == ("First?", "Second?")
 
     await service.answer(OWNER, first.id, "yes")
 
-    assert [q.text for q in await service.questions(OWNER)] == ["Second?"]
-    assert len(await service.questions(OWNER, unanswered_only=False)) == 2
+    assert [q.text for q in (await service.questions(OWNER)).items] == ["Second?"]
+    assert (await service.questions(OWNER, unanswered_only=False)).total == 2
     assert profile.answers == [("First?", "yes")]
     assert uow.store.events == [
         QuestionAnswered(owner_id=OWNER, question_id=first.id, dimension_key="api")
@@ -312,8 +323,8 @@ async def test_a_round_replaces_open_questions_and_keeps_answered_ones() -> None
     assert round_id is not None
     await service.generate_questions(OWNER, round_id)
 
-    assert [q.text for q in await service.questions(OWNER)] == ["About api?"]
-    every = [q.text for q in await service.questions(OWNER, unanswered_only=False)]
+    assert [q.text for q in (await service.questions(OWNER)).items] == ["About api?"]
+    every = [q.text for q in (await service.questions(OWNER, unanswered_only=False)).items]
     assert sorted(every) == ["About api?", "Old answered?"]
     asked = gateway.calls[0]["low_confidence_dimensions"]
     assert "- api (APIs): scored 60, confidence 0.30" in asked and "db" not in asked
@@ -337,7 +348,7 @@ async def test_a_superseded_round_never_calls_the_model() -> None:
 
     await service.generate_questions(OWNER, stale)
 
-    assert gateway.calls == [] and await service.questions(OWNER) == []
+    assert gateway.calls == [] and (await service.questions(OWNER)).items == ()
 
 
 async def test_a_budget_failure_is_recorded_on_the_round_not_raised() -> None:

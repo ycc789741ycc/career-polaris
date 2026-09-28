@@ -4,38 +4,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.target import TargetOption, TargetOptionPage
+from kernel.paging import paginate
 
 router = APIRouter(tags=["target"])
 
 
 @router.get("/targets")
-async def list_targets(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
+async def list_targets(user: CurrentUser, deps: Deps, paging: Paging) -> TargetOptionPage:
     """Matched openings, then watched roles, then pasted JDs. No AI runs."""
-    return [
-        {
-            "kind": str(option.kind),
-            "id": str(option.id),
-            "title": option.title,
-            "role_name": option.role_name,
-            "role_id": str(option.role_id) if option.role_id else None,
-            "company_name": option.company_name,
-            "label": option.label,
-            "fit": option.fit,
-            "salary": (
-                {
-                    "min": option.salary.min_amount,
-                    "max": option.salary.max_amount,
-                    "currency": option.salary.currency,
-                }
-                if option.salary
-                else None
-            ),
-            # atsBoard / jsonLd / publicApi for a crawled opening, "watchlist"
-            # for a subscribed role, "pasted" for the user's own JD.
-            "source_kind": option.source_kind,
-            "url": option.url,
-            "subscription_id": str(option.subscription_id) if option.subscription_id else None,
-        }
-        for option in await deps.target.options(user)
-    ]
+    # Merged from three components, so paged after the merge.
+    found = paginate(await deps.target.options(user), paging.page, paging.page_size)
+    return TargetOptionPage.of(found, TargetOption.from_view)

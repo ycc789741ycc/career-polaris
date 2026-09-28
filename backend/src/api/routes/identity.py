@@ -11,12 +11,10 @@ key (docs/architecture.md section 4).
 
 from __future__ import annotations
 
-from decimal import Decimal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, EmailStr, Field
 
 from advisor.identity import (
     GOOGLE_ATTEMPT_TTL_SECONDS,
@@ -27,6 +25,17 @@ from advisor.identity import (
     SignInFailure,
 )
 from api.dependencies import REFRESH_COOKIE, CurrentUser, Deps, refresh_token_from
+from api.schemas.identity import (
+    Budget,
+    BudgetRequest,
+    Credential,
+    CredentialRequest,
+    Me,
+    RegisterRequest,
+    SessionResponse,
+    SignInMethods,
+    SignInRequest,
+)
 from kernel.config import Settings, must
 from kernel.logging import get_logger
 
@@ -36,30 +45,6 @@ log = get_logger(__name__)
 # The one record of a Google sign-in in progress (the identity component's Google sign-in).
 GOOGLE_ATTEMPT_COOKIE = "jsa_google_attempt"
 _GOOGLE_PATH = "/api/v1/auth/google"
-
-
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1)
-
-
-class SignInRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1)
-
-
-class SessionResponse(BaseModel):
-    """What the client keeps.
-
-    The access token is returned in the body and held in memory. The refresh
-    token is NOT here — it goes back as an httpOnly cookie, so a cross-site
-    scripting bug cannot read it.
-    """
-
-    account_id: str
-    email: str
-    access_token: str
-    expires_in: int
 
 
 def _respond_with(session: Session, response: Response, deps: Deps) -> SessionResponse:
@@ -140,11 +125,6 @@ async def sign_out_everywhere(response: Response, user: CurrentUser, deps: Deps)
     """Revokes every session for this account. The control after a scare."""
     await deps.auth.sign_out_everywhere(user)
     response.delete_cookie(REFRESH_COOKIE, path="/api/v1/auth")
-
-
-class SignInMethods(BaseModel):
-    password: bool
-    google: bool
 
 
 @router.get("/auth/methods")
@@ -230,35 +210,9 @@ def _back_to_app(settings: Settings, *, failure: SignInFailure | None) -> Redire
     return RedirectResponse(f"{base}/{query}", status_code=302)
 
 
-class CredentialRequest(BaseModel):
-    provider: str
-    model: str = Field(min_length=1, max_length=128)
-    api_key: str = Field(min_length=1)
-    base_url: str | None = None
-
-
-class CredentialResponse(BaseModel):
-    provider: str
-    model: str
-    base_url: str | None
-    last_four: str
-    status: str
-    last_error: str | None
-
-
-class BudgetRequest(BaseModel):
-    monthly_cap_usd: Decimal = Field(ge=0)
-
-
 @router.get("/me")
-async def me(user: CurrentUser, deps: Deps) -> dict[str, object]:
-    account = await deps.identity.account(user)
-    return {
-        "id": str(account.id),
-        "email": account.email,
-        "background_jobs_paused": account.background_jobs_paused,
-        "paused_reason": account.paused_reason,
-    }
+async def me(user: CurrentUser, deps: Deps) -> Me:
+    return Me.from_view(await deps.identity.account(user))
 
 
 @router.get("/ai-providers")
@@ -268,24 +222,13 @@ async def providers() -> dict[str, list[str]]:
 
 
 @router.get("/ai-credential")
-async def read_credential(user: CurrentUser, deps: Deps) -> CredentialResponse | None:
+async def read_credential(user: CurrentUser, deps: Deps) -> Credential | None:
     credential = await deps.identity.credential(user)
-    if credential is None:
-        return None
-    return CredentialResponse(
-        provider=str(credential.provider),
-        model=credential.model,
-        base_url=credential.base_url,
-        last_four=credential.last_four,
-        status=str(credential.status),
-        last_error=credential.last_error,
-    )
+    return Credential.from_view(credential) if credential is not None else None
 
 
 @router.put("/ai-credential")
-async def set_credential(
-    body: CredentialRequest, user: CurrentUser, deps: Deps
-) -> CredentialResponse:
+async def set_credential(body: CredentialRequest, user: CurrentUser, deps: Deps) -> Credential:
     credential = await deps.identity.set_credential(
         user,
         provider=body.provider,
@@ -293,14 +236,7 @@ async def set_credential(
         api_key=body.api_key,
         base_url=body.base_url,
     )
-    return CredentialResponse(
-        provider=str(credential.provider),
-        model=credential.model,
-        base_url=credential.base_url,
-        last_four=credential.last_four,
-        status=str(credential.status),
-        last_error=credential.last_error,
-    )
+    return Credential.from_view(credential)
 
 
 @router.delete("/ai-credential", status_code=204)
@@ -309,23 +245,15 @@ async def delete_credential(user: CurrentUser, deps: Deps) -> None:
 
 
 @router.get("/ai-budget")
-async def read_budget(user: CurrentUser, deps: Deps) -> dict[str, str]:
-    budget = await deps.identity.budget(user)
-    return {
-        "monthly_cap_usd": str(budget.monthly_cap_usd),
-        "spent_this_month_usd": str(budget.spent_this_month_usd),
-        "remaining_usd": str(budget.remaining_usd),
-    }
+async def read_budget(user: CurrentUser, deps: Deps) -> Budget:
+    return Budget.from_view(await deps.identity.budget(user))
 
 
 @router.put("/ai-budget")
-async def set_budget(body: BudgetRequest, user: CurrentUser, deps: Deps) -> dict[str, str]:
-    budget = await deps.identity.set_budget(user, monthly_cap_usd=body.monthly_cap_usd)
-    return {
-        "monthly_cap_usd": str(budget.monthly_cap_usd),
-        "spent_this_month_usd": str(budget.spent_this_month_usd),
-        "remaining_usd": str(budget.remaining_usd),
-    }
+async def set_budget(body: BudgetRequest, user: CurrentUser, deps: Deps) -> Budget:
+    return Budget.from_view(
+        await deps.identity.set_budget(user, monthly_cap_usd=body.monthly_cap_usd)
+    )
 
 
 __all__ = ["Provider", "router"]

@@ -77,6 +77,7 @@ from kernel.clock import utcnow
 from kernel.errors import DimensionCountError as DimensionCountFailure
 from kernel.errors import DomainError, EvidenceNotOwnedError, NotFoundError, ValidationError
 from kernel.logging import get_logger
+from kernel.paging import Page, paginate
 
 __all__ = [
     "AssessmentService",
@@ -350,30 +351,42 @@ class AssessmentService:
             newest = await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1)
             return await _view(mine, newest[0]) if newest else None
 
-    async def history(self, owner_id: uuid.UUID) -> list[AssessmentView]:
+    async def history(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[AssessmentView]:
         """Comparing assessments is how progress is shown; stable ids make it work.
 
-        Newest first. One user's assessments: one per analysis they paid for.
+        Newest first, paged by the store: one per analysis the user paid for.
         """
+        everything = SkillAssessmentFilter()
         async with self._uow.for_owner(owner_id) as mine:
-            return [
-                await _view(mine, assessment)
-                for assessment in await mine.assessments.get_list(SkillAssessmentFilter())
-            ]
+            found = await mine.assessments.get_list(everything, page=page, page_size=page_size)
+            total = await mine.assessments.get_count(everything)
+            views = tuple([await _view(mine, assessment) for assessment in found])
+        return Page(views, page, page_size, total)
 
     # -- follow-up questions ------------------------------------------------
 
     async def questions(
-        self, owner_id: uuid.UUID, *, unanswered_only: bool = True
-    ) -> list[QuestionView]:
-        """Oldest first, the order they were raised in."""
+        self,
+        owner_id: uuid.UUID,
+        *,
+        unanswered_only: bool = True,
+        page: int = 1,
+        page_size: int | None = None,
+    ) -> Page[QuestionView]:
+        """Oldest first, the order they were raised in.
+
+        The store lists newest first, so the order is turned here and the page
+        cut after it: one user's open questions, a handful per round.
+        """
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.questions.get_list(
                 FollowUpQuestionFilter(
                     is_answered=False if unanswered_only else None, is_retired=False
                 )
             )
-        return [
+        views = [
             QuestionView(
                 id=q.id,
                 dimension_key=q.dimension_key,
@@ -384,6 +397,7 @@ class AssessmentService:
             )
             for q in reversed(found)
         ]
+        return paginate(views, page, page_size)
 
     async def answer(self, owner_id: uuid.UUID, question_id: uuid.UUID, answer: str) -> None:
         """An answer becomes self-reported Evidence and bumps the profile."""
@@ -654,7 +668,7 @@ class AssessmentService:
         )
 
     async def matched_postings(
-        self, owner_id: uuid.UUID, *, limit: int = DEFAULT_MATCHES
+        self, owner_id: uuid.UUID, *, limit: int | None = DEFAULT_MATCHES
     ) -> list[MatchedPostingView]:
         """The best openings inside the user's analysed roles.
 

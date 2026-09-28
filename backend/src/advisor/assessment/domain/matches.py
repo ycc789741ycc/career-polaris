@@ -26,14 +26,15 @@ class MatchCandidate:
 
 
 def rank_matches(
-    candidates: Iterable[MatchCandidate], *, limit: int = DEFAULT_MATCHES
+    candidates: Iterable[MatchCandidate], *, limit: int | None = DEFAULT_MATCHES
 ) -> list[MatchCandidate]:
-    """The ``limit`` best openings: highest role fit first, unscored last.
+    """The ``limit`` best openings, or all of them ranked when ``limit`` is
+    None: highest role fit first, unscored last.
 
     Ties are broken by role, company, then title, so the same inputs always
     give the same list.
     """
-    if not MIN_MATCHES <= limit <= MAX_MATCHES:
+    if limit is not None and not MIN_MATCHES <= limit <= MAX_MATCHES:
         raise ValueError(f"limit must be between {MIN_MATCHES} and {MAX_MATCHES}, got {limit}")
     return sorted(
         candidates,

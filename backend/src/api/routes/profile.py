@@ -10,7 +10,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, File, UploadFile
-from pydantic import BaseModel, Field
 
 from advisor.profile import (
     GITHUB_SCOPE_DESCRIPTIONS,
@@ -20,9 +19,25 @@ from advisor.profile import (
     sign_state,
     verify_state,
 )
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.common import Accepted
+from api.schemas.profile import (
+    AuthorizationUrl,
+    CallbackRequest,
+    Connection,
+    ConnectionPage,
+    ConnectionResult,
+    DownloadUrl,
+    Evidence,
+    EvidencePage,
+    Profile,
+    ResumeFile,
+    ResumeFilePage,
+    ResumeUpload,
+)
 from kernel.config import Settings, must
 from kernel.fetch import GuardedClient
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["profile"])
@@ -49,38 +64,19 @@ SCOPE_COPY = {
 }
 
 
-class CallbackRequest(BaseModel):
-    code: str = Field(min_length=1)
-    state: str = Field(min_length=1)
-
-
-class AnswerRequest(BaseModel):
-    answer: str = Field(min_length=1)
-
-
 @router.get("/connections")
-async def list_connections(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
+async def list_connections(user: CurrentUser, deps: Deps, paging: Paging) -> ConnectionPage:
+    """Every connector, connected or not."""
     connected = {c.kind: c for c in await deps.profile.connections(user)}
-    rows: list[dict[str, object]] = []
-    for kind, scopes in SCOPE_COPY.items():
-        connection = connected.get(kind)
-        synced = connection.last_synced_at if connection is not None else None
-        rows.append(
-            {
-                "kind": kind,
-                "connected": connection is not None,
-                "account": connection.account if connection is not None else None,
-                "status": connection.status if connection is not None else "disconnected",
-                "last_synced_at": synced.isoformat() if synced is not None else None,
-                "last_error": connection.last_error if connection is not None else None,
-                "scopes": list(scopes),
-            }
-        )
-    return rows
+    rows = [
+        Connection.from_view(kind, connected.get(kind), scopes)
+        for kind, scopes in SCOPE_COPY.items()
+    ]
+    return ConnectionPage.of(paginate(rows, paging.page, paging.page_size), lambda row: row)
 
 
 @router.get("/connections/{kind}/authorize-url")
-async def start_authorization(kind: str, user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def start_authorization(kind: str, user: CurrentUser, deps: Deps) -> AuthorizationUrl:
     settings = deps.settings
     secret = settings.require_master_key().get_secret_value()
     client_id = (
@@ -88,21 +84,21 @@ async def start_authorization(kind: str, user: CurrentUser, deps: Deps) -> dict[
         if kind == "github"
         else must(settings.jira_oauth_client_id, "JIRA_OAUTH_CLIENT_ID")
     )
-    return {
-        "url": authorize_url(
+    return AuthorizationUrl(
+        url=authorize_url(
             kind,
             jira_oauth_base=must(settings.jira_oauth_base_url, "JIRA_OAUTH_BASE_URL"),
             client_id=client_id,
             redirect_uri=_redirect_uri(settings, kind),
             state=sign_state(user, kind, secret=secret),
         )
-    }
+    )
 
 
 @router.post("/connections/{kind}/callback", status_code=201)
 async def complete_authorization(
     kind: str, body: CallbackRequest, user: CurrentUser, deps: Deps
-) -> dict[str, object]:
+) -> ConnectionResult:
     settings = deps.settings
     secret = settings.require_master_key().get_secret_value()
     owner_id, state_kind = verify_state(body.state, secret=secret)
@@ -145,13 +141,13 @@ async def complete_authorization(
         expires_at=None,
     )
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
-    return {"kind": connection.kind, "status": connection.status}
+    return ConnectionResult.from_view(connection)
 
 
 @router.post("/connections/{kind}/sync", status_code=202)
-async def sync_now(kind: str, user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def sync_now(kind: str, user: CurrentUser, deps: Deps) -> Accepted:
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
-    return {"status": "queued"}
+    return Accepted()
 
 
 @router.delete("/connections/{kind}", status_code=204)
@@ -162,7 +158,7 @@ async def disconnect(kind: str, user: CurrentUser, deps: Deps) -> None:
 @router.post("/resumes", status_code=202)
 async def upload_resume(
     user: CurrentUser, deps: Deps, file: UploadFile = File(...)
-) -> dict[str, object]:
+) -> ResumeUpload:
     content = await file.read()
     resume = await deps.profile.upload_resume(
         user,
@@ -171,65 +167,32 @@ async def upload_resume(
         content=content,
     )
     await enqueue("profile.parse_resume", owner_id=str(user), resume_id=str(resume.id))
-    return {"id": str(resume.id), "filename": resume.filename, "status": "parsing"}
+    return ResumeUpload.from_view(resume)
 
 
 @router.get("/resumes")
-async def list_resumes(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
-    return [
-        {
-            "id": str(r.id),
-            "filename": r.filename,
-            "status": r.status,
-            "parse_error": r.parse_error,
-            "uploaded_at": r.uploaded_at.isoformat(),
-        }
-        for r in await deps.profile.resumes(user)
-    ]
+async def list_resumes(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeFilePage:
+    """Uploaded résumés, newest first."""
+    found = await deps.profile.resumes(user, page=paging.page, page_size=paging.page_size)
+    return ResumeFilePage.of(found, ResumeFile.from_view)
 
 
 @router.get("/resumes/{resume_id}/download-url")
-async def resume_url(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def resume_url(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> DownloadUrl:
     """Uploads are never publicly addressable; this is short-lived."""
-    return {"url": await deps.profile.resume_download_url(user, resume_id)}
+    return DownloadUrl(url=await deps.profile.resume_download_url(user, resume_id))
 
 
 @router.get("/evidence")
-async def list_evidence(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
-    snapshot = await deps.profile.snapshot(user)
-    return [
-        {
-            "id": str(e.id),
-            "source": str(e.source),
-            "reference": e.reference,
-            "fact": e.fact,
-            "observed_on": e.observed_on.isoformat() if e.observed_on else None,
-            "confidence": e.confidence,
-            "granularity": str(e.granularity),
-            "tally": e.tally,
-            "subject": e.subject,
-        }
-        for e in snapshot.evidence
-    ]
+async def list_evidence(user: CurrentUser, deps: Deps, paging: Paging) -> EvidencePage:
+    """Every fact on the profile, newest first. The list that grows with each sync."""
+    found = await deps.profile.evidence(user, page=paging.page, page_size=paging.page_size)
+    return EvidencePage.of(found, Evidence.from_view)
 
 
 @router.get("/profile")
-async def read_profile(user: CurrentUser, deps: Deps) -> dict[str, object]:
-    snapshot = await deps.profile.snapshot(user)
-    return {
-        "version": snapshot.version,
-        "evidence_count": len(snapshot.evidence),
-        "total_experience_months": snapshot.total_experience_months,
-        "positions": [
-            {
-                "title": p.title,
-                "company": p.company,
-                "started_on": p.started_on.isoformat(),
-                "ended_on": p.ended_on.isoformat() if p.ended_on else None,
-            }
-            for p in snapshot.positions
-        ],
-    }
+async def read_profile(user: CurrentUser, deps: Deps) -> Profile:
+    return Profile.from_view(await deps.profile.snapshot(user))
 
 
-__all__ = ["AnswerRequest", "router"]
+__all__ = ["router"]

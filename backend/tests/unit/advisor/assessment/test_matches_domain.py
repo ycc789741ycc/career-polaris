@@ -47,6 +47,15 @@ def test_the_list_is_cut_at_the_limit() -> None:
     assert [c.fit for c in rank_matches(many, limit=3)] == [29, 28, 27]
 
 
+def test_without_a_limit_every_opening_is_ranked() -> None:
+    """The HTTP list pages the whole ranking, so it asks for all of it,
+    past the bound on an explicit limit."""
+    many = [candidate(str(i), fit=i) for i in range(MAX_MATCHES + 5)]
+    ranked = rank_matches(many, limit=None)
+    assert len(ranked) == MAX_MATCHES + 5
+    assert ranked[0].fit == MAX_MATCHES + 4
+
+
 @pytest.mark.parametrize("limit", [0, MAX_MATCHES + 1])
 def test_a_limit_outside_the_bound_is_refused(limit: int) -> None:
     with pytest.raises(ValueError, match="between"):

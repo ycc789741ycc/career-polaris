@@ -3,175 +3,103 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter
 
-from advisor.assessment import DEFAULT_MATCHES, MAX_MATCHES, MIN_MATCHES
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, Paging
+from api.schemas.assessment import (
+    AnswerRequest,
+    Assessment,
+    AssessmentPage,
+    Fit,
+    FitPage,
+    MatchedPosting,
+    MatchedPostingPage,
+    Question,
+    QuestionPage,
+    QuestionStatus,
+)
+from api.schemas.common import Accepted, CostEstimate
+from kernel.paging import paginate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["assessment"])
 
 
-class AnswerRequest(BaseModel):
-    answer: str = Field(min_length=1)
-
-
 @router.get("/assessments/cost-estimate")
-async def cost_estimate(user: CurrentUser, deps: Deps) -> dict[str, object]:
+async def cost_estimate(user: CurrentUser, deps: Deps) -> CostEstimate:
     """The first analysis is priced and confirmed before it runs."""
-    return await deps.assessment.estimate_cost(user)
+    return CostEstimate.model_validate(await deps.assessment.estimate_cost(user))
 
 
 @router.post("/assessments", status_code=202)
-async def run_assessment(user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def run_assessment(user: CurrentUser, deps: Deps) -> Accepted:
     await enqueue("assessment.run", owner_id=str(user))
-    return {"status": "queued"}
+    return Accepted()
 
 
 @router.get("/assessments/latest")
-async def latest(user: CurrentUser, deps: Deps) -> dict[str, object] | None:
+async def latest(user: CurrentUser, deps: Deps) -> Assessment | None:
     assessment = await deps.assessment.latest(user)
-    return _assessment_body(assessment) if assessment is not None else None
+    return Assessment.from_view(assessment) if assessment is not None else None
 
 
 @router.get("/assessments")
-async def history(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
-    return [_assessment_body(a) for a in await deps.assessment.history(user)]
+async def history(user: CurrentUser, deps: Deps, paging: Paging) -> AssessmentPage:
+    """Every analysis, newest first."""
+    found = await deps.assessment.history(user, page=paging.page, page_size=paging.page_size)
+    return AssessmentPage.of(found, Assessment.from_view)
 
 
 @router.get("/questions")
-async def questions(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
-    return [
-        {
-            "id": str(q.id),
-            "dimension_key": q.dimension_key,
-            "text": q.text,
-            # Every question says what it is for and which dimension it moves.
-            "why": q.why,
-            "options": list(q.options),
-            "answer": q.answer,
-        }
-        for q in await deps.assessment.questions(user)
-    ]
+async def questions(user: CurrentUser, deps: Deps, paging: Paging) -> QuestionPage:
+    """Open follow-up questions, oldest first."""
+    found = await deps.assessment.questions(user, page=paging.page, page_size=paging.page_size)
+    return QuestionPage.of(found, Question.from_view)
 
 
 @router.get("/questions/status")
-async def question_status(user: CurrentUser, deps: Deps) -> dict[str, object] | None:
+async def question_status(user: CurrentUser, deps: Deps) -> QuestionStatus | None:
     """The newest question round, which the page polls while it is
     ``generating`` (ADR 0006, ADR 0012). ``null`` before the first one."""
     found = await deps.assessment.latest_round(user)
-    if found is None:
-        return None
-    return {
-        "id": str(found.id),
-        "status": found.status,
-        # `evidence` after a sync or upload, `assessment` after an analysis.
-        "trigger": found.trigger,
-        "question_count": found.question_count,
-        "created_at": found.created_at.isoformat(),
-        "finished_at": found.finished_at.isoformat() if found.finished_at else None,
-        "error": (
-            {"code": found.error_code, "message": found.error_message} if found.error_code else None
-        ),
-    }
+    return QuestionStatus.from_view(found) if found is not None else None
 
 
 @router.post("/questions/{question_id}/answer", status_code=202)
 async def answer(
     question_id: uuid.UUID, body: AnswerRequest, user: CurrentUser, deps: Deps
-) -> dict[str, str]:
+) -> Accepted:
     """An answer becomes self-reported Evidence, then the analysis re-runs and
     opens a new question round."""
     await deps.assessment.answer(user, question_id, body.answer)
     await enqueue("assessment.run", owner_id=str(user))
-    return {"status": "queued"}
+    return Accepted()
 
 
 @router.get("/fits")
-async def fits(user: CurrentUser, deps: Deps) -> list[dict[str, object]]:
+async def fits(user: CurrentUser, deps: Deps, paging: Paging) -> FitPage:
     """Bubble sizes. Fit belongs to the User x Role pair, never to the role."""
-    return [
-        {
-            "role_id": str(f.role_id) if f.role_id else None,
-            "private_posting_id": str(f.private_posting_id) if f.private_posting_id else None,
-            "score": f.score,
-            "reasoning": f.reasoning,
-            "gaps": list(f.gaps),
-            # Requirements with no matching dimension: no evidence at all,
-            # which is different from a low score.
-            "uncovered": list(f.uncovered),
-            "model_id": f.model_id,
-            "computed_at": f.created_at.isoformat(),
-        }
-        for f in await deps.assessment.fits(user)
-    ]
+    # Paged here, not in the service: other components read the fits whole.
+    found = paginate(await deps.assessment.fits(user), paging.page, paging.page_size)
+    return FitPage.of(found, Fit.from_view)
 
 
 @router.get("/matched-postings")
-async def matched_postings(
-    user: CurrentUser,
-    deps: Deps,
-    limit: Annotated[int, Query(ge=MIN_MATCHES, le=MAX_MATCHES)] = DEFAULT_MATCHES,
-) -> list[dict[str, object]]:
-    """The best openings inside the user's roles, for the role map's "Top
-    matched" list. Ranked by the role's fit; no AI runs to produce it."""
-    return [
-        {
-            "posting_id": str(m.posting_id),
-            "role_id": str(m.role_id),
-            "role_name": m.role_name,
-            "title": m.title,
-            "company_name": m.company_name,
-            "location": m.location,
-            "url": m.url,
-            "salary": (
-                {
-                    "min": m.salary.min_amount,
-                    "max": m.salary.max_amount,
-                    "currency": m.salary.currency,
-                }
-                if m.salary
-                else None
-            ),
-            # The role's fit: a posting's own requirements do not move it yet.
-            "fit": m.fit,
-            "fit_basis": "role",
-            "subscription_id": str(m.subscription_id) if m.subscription_id else None,
-            "source_kind": m.source_kind,
-        }
-        for m in await deps.assessment.matched_postings(user, limit=limit)
-    ]
+async def matched_postings(user: CurrentUser, deps: Deps, paging: Paging) -> MatchedPostingPage:
+    """The openings inside the user's roles, best first, for the role map's "Top
+    matched" list: ask for ``page_size=10`` for the top ten. Ranked by the
+    role's fit; no AI runs to produce it."""
+    ranked = await deps.assessment.matched_postings(user, limit=None)
+    return MatchedPostingPage.of(
+        paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
+    )
 
 
 @router.post("/fits/compute", status_code=202)
-async def compute_fits(user: CurrentUser, deps: Deps) -> dict[str, str]:
+async def compute_fits(user: CurrentUser, deps: Deps) -> Accepted:
     await enqueue("assessment.compute_fits", owner_id=str(user))
-    return {"status": "queued"}
-
-
-def _assessment_body(assessment: object) -> dict[str, object]:
-    return {
-        "id": str(assessment.id),  # type: ignore[attr-defined]
-        "profile_version": assessment.profile_version,  # type: ignore[attr-defined]
-        "model_id": assessment.model_id,  # type: ignore[attr-defined]
-        "template_version": assessment.template_version,  # type: ignore[attr-defined]
-        "created_at": assessment.created_at.isoformat(),  # type: ignore[attr-defined]
-        "dimensions": [
-            {
-                "key": d.key,
-                "name": d.name,
-                "short_name": d.short_name,
-                "score": d.score,
-                "confidence": d.confidence,
-                "read": d.read,
-                "evidence_ids": list(d.evidence_ids),
-            }
-            for d in assessment.dimensions  # type: ignore[attr-defined]
-        ],
-    }
+    return Accepted()
 
 
 __all__ = ["router"]

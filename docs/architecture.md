@@ -57,14 +57,14 @@ The worker queues share one image for the MVP. Split them later by giving each q
 | Jobs | Procrastinate (Postgres-backed, periodic tasks) | No Redis at MVP scale |
 | Documents | WeasyPrint (PDF export, [ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)), pypdf / python-docx (parsing) | No browser in the image; the export fetches nothing |
 | Local ML | sentence-transformers + HDBSCAN | Works with every LLM provider, including Anthropic, which has no embeddings API |
-| Client | React + Vite, `openapi-typescript` client generated from FastAPI's OpenAPI | The API contract is the client/server boundary, checked in CI |
+| Client | React + Vite, `openapi-typescript` client generated from FastAPI's OpenAPI; the SPA's response types alias it | The API contract is the client/server boundary, checked in CI down to the SPA's typecheck ([ADR 0013](decisions/0013-type-every-http-response-with-a-schema-model.md)) |
 | Auth | Own sign-in in `identity`: Argon2id, 15-minute HS256 access tokens, rotating refresh cookie; optional Google through our own OpenID Connect exchange | No external account needed to run the app; see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md) and [ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md) |
 
 ## 2. Code boundaries inside the monolith
 
 ```
 backend/src/
-  api/                      # FastAPI: main.py, dependencies, error envelope, routes/<component>.py
+  api/                      # FastAPI: main.py, dependencies, error envelope, routes/<c>.py, schemas/<c>.py
   worker/                   # queue worker entrypoint + the outbox dispatcher
   crawler/                  # separate deployable: the crawl loop only
   cli/                      # migrate, job-queue schema, baseline seed, OpenAPI export
@@ -73,7 +73,7 @@ backend/src/
     db/ outbox/ jobs/ auth/ crypto/ storage/ ai_gateway/ fetch/ embeddings/
   advisor/                  # the application: one package per component, no framework code
     identity/  profile/  market/  rolemap/  assessment/  target/  gapplan/  resume/
-      __init__.py           # the ONLY importable surface: service interface, DTOs, job functions
+      __init__.py           # the ONLY importable surface: service interface, views, job functions
       service.py           # use cases: data only through domain/repositories.py (ADR 0011)
       domain/              # entities, rules, events and repository interfaces; pure Python, no I/O
       infra/               # ORM models, mappers, SqlAlchemy* repositories + unit of work, adapters
@@ -130,7 +130,7 @@ flowchart TB
 
 | Package | Responsibility | May import |
 |---|---|---|
-| `api/` | HTTP and SSE delivery: routes per component, request dependencies, the error envelope | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
+| `api/` | HTTP and SSE delivery: routes and request/response schemas per component, request dependencies, the error envelope, and one page envelope for every list ([ADR 0014](decisions/0014-page-every-list-response.md)) | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
 | `worker/` | Queue worker entrypoint, and the outbox dispatcher that fans crawler events out to users | `wiring.container`, `wiring.queue`, `kernel` |
 | `crawler/` | The crawl loop and nothing else; holds no secrets and reads no user data | `advisor.market`, `wiring.crawl`, a secret-free subset of `kernel` |
 | `cli/` | One-off commands: migrate, job-queue schema, baseline seed, OpenAPI export | `advisor.market`, `api.main`, `kernel` |
