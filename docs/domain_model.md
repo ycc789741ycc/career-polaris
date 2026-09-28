@@ -1,193 +1,273 @@
 # Domain Model: Job Searching Advisor
 
-A review of the domain concepts in `job_searching_advisor_domain_concepts_v2.excalidraw`, checked against the system intent (`intent.md`) and the prototype (`../prototype/Career Advisor.dc.html`).
+A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.excalidraw`, checked against the system intent (`intent.md`) and the prototype in [`../prototype/`](../prototype/README.md): one screen per file under `screens/`, and its spec, `career-advisor-domain-spec.md`.
 
-The first review covered `job_searching_advisor_domain_concepts.excalidraw` (v1). Its 14 decisions still stand unless section 6 says one was superseded. v2 took up most of its findings, so this version reviews v2 and keeps the settled material the model still depends on.
+Earlier reviews covered v1 (`job_searching_advisor_domain_concepts.excalidraw`) and v2 (`…_v2.excalidraw`). Their decisions still stand unless section 6 marks them superseded. This version reviews v3 and keeps the settled material the model still depends on.
 
-## 1. What the v2 model says
+The code has not caught up with v3 yet. [`plan.md`](plan.md) Phase 5 lists the refactoring steps, in order.
+
+## 1. What the v3 model says
 
 ```mermaid
 flowchart LR
   User -->|OAuth| Jira & GitHub
   Jira & GitHub --> Connector --> Ingester
   User -->|uploads| ResumeIn[Résumé] --> Ingester
-  Questions --> Ingester
-  Ingester -->|1. create once data connected| Profile --> Evidence
-  Analyzer -->|2a. evidence enough?| Profile
-  Analyzer -->|2b. ask for more evidence| Questions
-  Analyzer -->|3a. read| Profile
-  Analyzer -->|4a. generate| Assessment
-  Analyzer -->|4b / 5. top k| RelRole[Relative roles]
+  Ingester -->|1a. create once data connected| Profile
+  Profile -->|1b. create evidences| Evidence
+  User -->|2a. start assessment| Analyzer
+  Analyzer -->|2b. read evidences| Profile
+  Analyzer -->|2c. generate| Assessment
+  Analyzer -->|2d. recommend best-fit roles| Candidate[Candidate roles]
+  Analyzer -->|2e. search roles on the market| BW[Background worker]
+  Analyzer -->|2f. build role map| BW
   Analyzer -.-> LLM
-  BW[Background worker] -->|scheduled crawl| JP[Job platforms]
-  BW -->|read| UJD[User-uploaded JD / company]
-  BW -->|dump| Role
-  Role --> RelRole
-  User -->|6. pick a role| GP[Gap Planner]
-  GP -->|7a / 7b. read| Profile & Assessment
-  GP -->|8. generate| Milestone
+  BW -->|crawl| JP[Job platforms]
+  BW -->|dump| Crawled[Crawled roles]
+  BW -->|2g. read| Crawled
+  BW -->|2h. create| RoleMap[Role map]
+  User -->|3a. add own role, optional| UJD[Own role: title, company, JD]
+  UJD -->|3b. add as candidate| Analyzer
+  User -->|4. read the result| RoleMap
+  User -->|6a. pick target role, find the gap| GP[Gap Planner]
+  GP -->|6b. read| Assessment
+  GP -->|6c. follow-up questions per gap| Questions
+  Questions -->|6d/6e. answers fed back| Profile
+  GP -->|generate| Milestone
   Task --> Milestone
-  User -->|9. résumé for a role| RA[Resume Advisor]
-  RA -->|10a-c. read| Profile & Assessment & Template
-  RA -->|11. generate| ResumeOut[Résumé]
+  GP -.-> LLM
+  User -->|7a. résumé for target role| RW[Resume Writer]
+  RW -->|read| Profile
+  RW -->|7b. read| Template
+  RW -->|7c. generate| ResumeOut[Résumé]
+  RW -.-> LLM
 ```
 
-**What v2 fixed from the first review:**
-- *Uploader mixed three things* → the **Ingester** turns connectors and files into **Evidence**, and **Questions come from the Analyzer** (2b) after it checks whether the evidence is enough (2a). The feedback loop is now visible.
-- *Goal and gap plan missing* → **Gap Planner → Milestone → Task** are back.
-- *Evidence should be first-class* → the Profile holds **Evidence**.
-- *Report is three things* → the Analyzer produces an **Assessment** (radar) and a separate list of **relative roles** (role map). Gaps belong to the Gap Planner.
-- *"Advisor" was vague* → it is now **Resume Advisor**, one of three consumers next to the Gap Planner. The model uses this name. The earlier "ResumeTailor" suggestion is dropped.
-- The flow reads left to right, and every step is numbered.
+**What v3 changed from v2**
+- **Questions follow the target role, not the radar.** In v2 the Analyzer asked for more evidence when it judged the profile thin (2a/2b). In v3 the Gap Planner writes follow-up questions **per gap between the user and the role they picked** (6c). The answers go back into the Profile as evidence (6d/6e). The Analyzer asks nothing.
+- **The role map is built, not picked.** After an assessment, the Analyzer recommends the roles that best fit the user's strengths (2d). The Background worker then searches the market for them and builds the role map (2e–2h). There is no "top k" step for the user to size.
+- **The user can add a role of their own** (3a–3e): a title, optionally a company and a JD. It becomes a candidate next to the recommended ones and goes through the same search and build.
+- **The Gap Planner and the Resume Writer now have LLM arrows.** This was a v2 finding (2.11).
+- **"Resume Advisor" is now "Resume Writer".** In the prototype, "Advisor" names the whole 04 screen: Fill the gap, Gap plan and Résumé.
+
+**What the prototype adds that v3 does not draw**
+- **Target locations.** The profile holds 1–3 places the user wants to work. They scope the market search and the salary bands.
+- **Profile confidence** moves to 02 Strengths, next to the per-dimension confidence.
+- **One target role aims the whole Advisor**, chosen with the role map's single "Advisor target" bar. The Advisor has no picker of its own.
+- **The watchlist is gone.** There are no Subscribe buttons, no "Roles to watch", no "Roles to analyse" count and no market filter pills.
 
 ## 2. Findings (ordered by impact)
 
-### 2.1 Plans aim at a Target, not a goal
-The prototype no longer has a goal. Its gap plan screen says "Plan a route to" and offers three kinds of target: one of the top matched roles (a role **at a company**), a role the user subscribed to, or a pasted JD ("My own JD"). Past plans are listed under **Plan history**, one per role and company, and can be reopened "to pick the milestones back up where you left them". The intent says the same: *"The gap plan is generated by the given role selected by user. The history of the gap plan list can be revisited again."*
+### 2.1 The Advisor aims at one target role
+The prototype's Advisor opens every page with a **"Your target role" banner**: the role's title, "at {company} · {location} · {posting}", today's fit, the salary band, and *"Everything on this page is measured against this one role."* The banner has a "Change role" link back to the role map, and there is no other picker. The role map has exactly one control that aims the Advisor, the sticky "Advisor target" bar.
 
-**Decision 16: a GapPlan belongs to a Target, and there is no CareerGoal.** This supersedes decision 4 (several active goals).
-- **`Target`** is what a plan or a résumé is aimed at. It has three kinds:
-  - `matchedPosting`: a shared `JobPosting` inside one of the user's top-k Roles (the prototype's `TARGETS`)
-  - `subscription`: a `RoleSubscription` (2.4)
-  - `privatePosting`: a JD the user pasted, private to them (decision 12)
-- A Target carries a **frozen snapshot of its requirements** when it is chosen. Postings expire and Roles re-cluster, but the plan still says what it was planned against.
-- **`GapPlan`** belongs to one Target. It holds the `SkillGap`s and `UncoveredRequirement`s it addresses, Milestones and Tasks, and the model and template version that drafted it.
-  - **Regenerating** makes a new GapPlan version for the same Target. Task completion carries over to the new version by matching tasks.
-  - **Plan history** is the list of GapPlans across Targets, newest first. Reopening one resumes it; nothing is lost when the user plans for a different Target.
-  - **Task ↔ SkillGap stays many-to-many**. Across plans, a completed task counts wherever it closes the same gap.
-- **Removed with CareerGoal:** goal status and priority, and the check on combined plan load across goals. With no "active goal", one plan is simply the one the user is looking at.
-- **The core loop is unchanged, and it is still the point of the product.** Tasks produce real work → the next connector sync brings new Evidence → re-assessment → the plan shows progress.
-- **Role drift** (decision 10 amended by decision 20): when a Role splits or merges, a plan whose Target came from that Role keeps its snapshot. The app suggests the successor Role with the most requirement overlap, and the user decides.
-- **Where a Target is chosen (UI, 2026-09-27):** the gap plan and the résumé share one **Advisor** screen, with a tab for each. What it aims at is the role map's selection: a Role, whose matched postings and subscriptions are then offered as Targets, or a pasted JD, which the role map now also holds. The model is unchanged. This only moves the choice out of the two screens that used to make it separately.
+**Decision 26: a Target is one Role, and optionally one opening in it.** This amends decision 16, which allowed three kinds of Target.
+- **`Target { role, posting? }`.**
+  - `role` is one of the user's Roles, either recommended or custom (2.4).
+  - `posting` is an optional shared `JobPosting` inside that Role: a row of the "Top matched openings" list.
+  - A subscribed role is no longer a kind of Target, because subscriptions are gone (decision 22).
+  - A pasted JD is not a Target of its own either. It belongs to the custom Role it came with.
+- **Its requirements come from the most specific thing it has.** This is the `RequirementBasis`, in order:
+  1. The posting's own requirements, when the Target has a posting.
+  2. The custom Role's private JD, when the Role has one.
+  3. Otherwise, the Role's requirements across all its openings.
+- **The rest of decision 16 stands.**
+  - A Target carries a **frozen snapshot of its requirements** from the moment it is chosen.
+  - A **GapPlan** is versioned per Target, and finished tasks carry over to the next version.
+  - **Plan history** lists plans across Targets. The prototype shows "Staff Backend Engineer · Northwind Pay — v2" next to "Principal Engineer · Halden Labs — v1 · pasted JD".
+  - Task ↔ SkillGap stays many-to-many.
+- **The core loop is unchanged, and it is still the point of the product.** Tasks produce real work, the next connector sync brings new Evidence, the user re-assesses, and the plan shows progress. Gap fill (2.8) adds a shorter loop: answering a question is new Evidence today.
+- **Role drift** (decision 20): when a Role splits or merges, a Target keeps its snapshot, and the app suggests the successor Role with the most requirement overlap.
+- **Where the Target is chosen:** only on the role map. The selection travels to the Advisor as the Role, plus the opening when one was picked.
 
-### 2.2 The role map shows the top k roles, and the user picks k
-v2 step 5, "Get top k relative roles", and the intent (*"Select the top k similar role… User can decide the number of k"*) match what was built. ADR 0002 already limits the analysis to the ten roles closest to the profile.
+### 2.2 The role map is ten roles the system picks, plus the user's own
+The prototype's role map reads: *"The 10 best-fit roles on the market, plus the ones you add"* and *"Built after your strength analysis."* The "Roles to analyse" input is gone.
 
-- **`RoleSelection`** picks the k Roles whose posting centroid is closest to the profile's embedding. The ranking runs locally with no AI, so it costs the user nothing (ADR 0002). It happens before any Role has requirements, so it cannot use RoleFit.
-- **Decision 17: the user picks k within a bound**, recorded in [ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md) (proposed 3–20, default 10). Each analysed Role costs calls on the user's key, so raising k shows a new cost estimate before the run (2.7).
-- **Two lists from one selection:**
-  - The **bubble chart** plots the k **Roles** (hiring bar, salary band, fit).
-  - The **Top matched list** ranks **postings** inside those Roles: RoleFit plus a per-posting adjustment from the posting's own requirements (the prototype's `fitAdj` and `why`). Subscribed roles are listed next to it. Each row can be subscribed to, planned for, or written for.
-- Lowering k retires Roles through the usual reconciliation. A plan or résumé whose Target came from a retired Role keeps its snapshot.
+**Decision 23: the system decides how many roles to analyse: ten.** This supersedes decision 17, and will supersede [ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md) in the PR that changes the code (Phase 5).
+- **`RoleSelection`** still picks the Roles whose posting centroid is closest to the profile's embedding. It runs locally with no AI and costs the user nothing (ADR 0002's reasoning). Only the cut-off changes: it is a fixed 10 instead of a user setting.
+- **Why ten, and why fixed:**
+  - Every analysed Role costs calls on the user's key, and a fixed number gives a cost the user can predict.
+  - A user who wants further afield now adds the role they have in mind (2.4). That targets the spend better than raising k did.
+- **What it costs:** a user on a tight budget can no longer analyse fewer than ten, and a user thinking about a career change can't widen the automatic net. Their only option is to add roles one at a time.
 
-### 2.3 The background worker must not produce shared Roles
-v2 has one Background worker that crawls job platforms, reads user-uploaded JDs and companies, and **dumps Roles**. The Analyzer then reads those Roles. Two decisions conflict with that:
+**Decision 24: the role map is built after every analysis.** v3's 2d–2h are a single flow: an assessment finishes, and the user's role map is rebuilt from it.
+- Pressing Analyze estimates the cost of the analysis **and** of the build together, and asks the user to confirm once. A separate "build the role map" step would have made the user confirm twice for one outcome.
+- Market changes still rebuild the map as before (`PostingsChanged`). The rebuild stays within the user's budget, and needs no confirmation after the first build (2.10).
+- The rules from ADR 0018 hold: an analysis waits for syncs and parses to finish, and a build waits for a running analysis.
 
-- **Roles are per user** (decisions 2 and 7). Postings are shared, but grouping them into Roles, naming them and extracting requirements happens per user, on that user's key and only over their markets. The worker's shared output is **`JobPosting`**. Each user's **role-map job** builds their Roles from those postings.
-- **Pasted JDs are private** (decision 12). A user's JD must never feed a shared crawl or someone else's Roles. It stays in the owner's private store, gets placed on the nearest of *their* Roles, and keeps its own requirements.
+**Two lists from one map** (unchanged):
+- The **bubble chart** plots the Roles: hiring bar, salary band and fit, with custom Roles drawn in green and labelled "yours".
+- The **Top matched openings** list ranks postings inside those Roles, using RoleFit plus a per-posting adjustment. It has no actions of its own: rows are no longer subscribed to or written for from the list. Picking one only selects it, and the Advisor target bar aims the Advisor at it.
+- Role-level and opening-level fit differ on purpose. The prototype's Staff Backend role shows 81%, while its Northwind Pay opening shows 86%.
 
-Redraw the worker as two things: the **crawler** (shared, no AI, no user data) → JobPosting, and the per-user **role-map job** → Role.
+### 2.3 The background worker must still not produce shared Roles
+v3 draws one Background worker that crawls job platforms, dumps "Crawled Roles", and builds the Role Map (2e–2h). The v2 finding still applies:
+- **What the crawler produces is `JobPosting`.** The v3 "Crawled Role" is a posting. Postings are shared, and they involve no AI and no user data.
+- **Roles are per user** (decisions 2 and 7). A per-user **role-map job** groups the postings in that user's scope into Roles, names them, extracts their requirements and builds the map. It runs on the user's key.
+- **A custom Role's JD is private** (decision 12). It never feeds the shared crawl or anyone else's Roles.
 
-### 2.4 Subscriptions are to a role at a company, with a URL
-The prototype's watchlist now takes a **role, a company and a "Careers or JD URL"**. The entry appears in the gap plan and résumé targets ("Subscribed to Senior Backend at Kestrel Financial — it now appears in your gap plan and résumé targets"). A company-only subscription was the earlier model.
+Draw the worker as two units: the crawler (shared) → JobPosting, and the role-map job (per user) → Role → Role map.
 
-**Decision 19:** `CompanySubscription` becomes **`RoleSubscription { company, roleTitle, roleId?, url?, coverage: crawled | manual }`**.
-- `roleTitle` is the Role's name when the user subscribed. `roleId` points at the user's Role while it exists; Roles are per user and can retire, so the title is what persists.
-- **The URL seeds board discovery.** A careers page or JD link tells the crawler where to look for a supported ATS board or JSON-LD. With no URL and no board found, coverage is `manual`: nothing updates automatically, and "paste a JD" is offered (decision 13).
-- A subscription is a Target (2.1) whether or not a matching posting is open. With no open posting, its requirements come from the Role's requirements, labelled as such (the prototype: "…at this role's bar of 81/100").
-- The weekly `MatchDigest` covers subscribed roles as well as markets.
+### 2.4 Custom roles
+The prototype's role map asks *"Not seeing a role you want?"* It takes a **job title (required)**, a **company name (optional)** and a **job description (optional, "sharpens the analysis")**. "Add to Role Map" analyses the role against the user's strengths and places it on the map. *"A pasted JD stays private to you."*
 
-### 2.5 Market data: permitted sources, crawled on demand and from a baseline
-The intent's Background worker still lists Glassdoor, LinkedIn and Indeed, and adds *"Fetched system wide"*. **Decision 6 stands:** those three are not crawled. Their terms forbid it, LinkedIn has litigated it, and their anti-bot defenses make it fragile. LinkedIn stays a Profile connector for the user's own data.
+**Decision 25: a user can add their own Roles, which sit beside the ten.**
+- A **`Role` has `origin: recommended | custom`.**
+  - The top-10 reconciliation never retires a custom Role, and custom Roles don't count toward the ten.
+  - The user removes a custom Role explicitly.
+- **Finding it on the market (v3 3c):**
+  - The role-map job searches the postings in the user's scope for the title, and for the company when one is given.
+  - Those postings become the Role's openings, and its hiring bar and salary band come from them, exactly as for a recommended Role.
+  - If nothing matches, the Role still appears, with its requirements taken from the JD alone. Its band is marked low-confidence, and its opening count is zero.
+- **A named company seeds board discovery.** The crawler looks for a supported ATS board or JSON-LD on that company's careers site (decision 13's discovery, which subscription URLs used to drive). If it finds one, the company becomes a `demand` crawl source with no user id attached. Otherwise nothing is crawled for it, and the JD is all there is.
+- **The JD is a `JobPosting` with `visibility: private`**, as before. It belongs to the custom Role it came with and is that Role's requirement basis (2.1).
+- **Cost:** adding a Role names nothing, because the user named it. It still extracts requirements and scores fit on the user's key, so "Add to Role Map" shows a cost estimate first.
+
+### 2.5 Market data: permitted sources, target locations, no watchlist
+**Decision 21: a user has 1–3 target locations.** This supersedes decision 9. 01 Sources asks *"Where you want to work"*. It has chips, an input and a counter ("2 of 3 chosen"). Once three are chosen, the user must remove one before adding another.
+- A **`TargetLocation`** is a city, a country or a remote region ("Remote EU").
+- It replaces **MarketPreference**, the "Markets you are looking in" panel and the role map's filter pills.
+- Target locations scope everything market-facing:
+  - which postings the role map groups (*"1,284 open postings in Berlin and Remote EU"*)
+  - the salary band shown per location
+  - which markets' public job APIs are crawled on demand
+- With no location chosen, the scope is the baseline alone, as before. The cap of three keeps a first build affordable and the map legible.
+- The UI puts target locations in the profile, because the user states them about themselves. The Market context still owns them, because what they decide is market scope (section 3).
+
+**Decision 22: there are no role subscriptions and no match digest.** This supersedes decision 19 and amends decisions 13 and 14. The prototype has no Subscribe button, no watchlist and no "Roles to watch".
+- **Removed:**
+  - `RoleSubscription`, and the `subscription` kind of Target.
+  - The weekly **MatchDigest** and the rate-limited manual re-crawl of a subscribed company.
+- **What stays:**
+  - The weekly crawl, posting expiry and board discovery. Discovery is now driven by companies named on custom Roles (2.4) instead of subscription URLs.
+  - Decision 13's manual fallback is now: a custom Role whose company has no crawlable board runs on its JD.
+- **Why:** a watchlist was a second way to aim the Advisor, next to the role map's selection. With exactly one control, the watched role had nothing left to do. A digest with no watchlist would only repeat the role map.
+- **What it costs:** nothing tells the user when a company they care about opens a role. They find out by opening the role map.
+
+**Unchanged:**
 
 | Source | Use? | Why |
 |---|---|---|
-| **Company career pages on public ATS job-board APIs** (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) | **Yes, primary** | Public JSON endpoints meant for syndication; structured fields (title, location, description, often pay range); fits `RoleSubscription` directly |
+| **Company career pages on public ATS job-board APIs** (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) | **Yes, primary** | Public JSON endpoints meant for syndication; structured fields |
 | **Career pages with schema.org `JobPosting` JSON-LD** | **Yes** | Companies publish this markup so search engines index their jobs |
-| **Public job APIs / open data** (e.g. Adzuna, Germany's Bundesagentur für Arbeit job search, national job boards) | **Yes, for market breadth** | Wide coverage per market and some salary statistics, under published terms |
-| **LinkedIn, Indeed, Glassdoor pages** | **No** | Terms of service forbid scraping. LinkedIn has taken scrapers to court (hiQ v. LinkedIn ended with hiQ found in breach of contract). Glassdoor interview reviews sit behind a login. |
+| **Public job APIs / open data** (e.g. Adzuna, Bundesagentur für Arbeit) | **Yes, for market breadth** | Wide coverage per market under published terms |
+| **LinkedIn, Indeed, Glassdoor pages** | **No** (decision 6) | Terms of service forbid scraping; LinkedIn has litigated it |
 
-**Decision 15: "system wide" means a baseline crawl alongside demand-driven crawling.**
-- **Demand-driven** (as before): every crawled `RoleSubscription` adds its company's board, and every `MarketPreference` adds that market's public APIs.
-- **Baseline:** a platform-curated list of permitted sources (ATS boards of well-known employers, public job APIs for common markets) is crawled every week whatever users ask for. A new user's first role map then has postings to cluster before they subscribe to anything.
-- Both feed the same shared `JobPosting` pool. `CrawlSource.origin: baseline | demand` records why a source is crawled. It never says who asked.
-- The baseline is plain data work with no AI, so it is paid by the platform (decision 7's rule: generative AI on the user's key, plain computation on the platform).
-- This replaces the earlier rule that "nothing is crawled just in case". What it costs: platform crawl volume grows with the baseline list, not only with users, and someone has to curate that list.
+- **Baseline plus demand** (decision 15). `CrawlSource.origin: baseline | demand`. Demand sources now come from target locations and custom-role companies. A source never records who asked for it.
+- `CrawlSource { kind: atsBoard | jsonLd | publicApi, origin, company?, market?, endpoint, lastFetchedAt, status }`. Each kind is one adapter behind the anti-corruption layer.
+- **Crawler hygiene:**
+  - Respect `robots.txt` and rate limits, and identify the user agent.
+  - Deduplicate on `JobPosting.canonicalKey`: company + normalized title + location.
+- **Weekly crawl** (decision 14, without the digest): `firstSeenAt`, `lastSeenAt` and `status: open | expired`. An expired posting is kept for salary history.
+- **Fit is a relationship, not an attribute.** Hiring bar (X) and salary (Y) belong to the Role. Fit (bubble size) belongs to a *User × Role* pair and comes from one `FitEvaluator`.
 
-**Unchanged model rules:**
-- `CrawlSource { kind: atsBoard | jsonLd | publicApi, origin: baseline | demand, company?, market?, endpoint, lastFetchedAt, status }`. Each kind is one adapter behind the anti-corruption layer and outputs normalized `JobPosting`s.
-- **Crawler hygiene:** respect `robots.txt` and rate limits, identify the user agent, and deduplicate the same job across sources (`JobPosting.canonicalKey` = company + normalized title + location).
-- **Weekly crawl** (decision 14): one weekly run; `JobPosting` has `firstSeenAt`, `lastSeenAt` and `status: open | expired`. A posting missing from a crawl is marked expired, not deleted, and still counts toward salary history. Alerts are a weekly `MatchDigest`. A user can re-crawl one subscribed company on demand, rate-limited per day.
-- **Pasted JDs are private** (decision 12): `visibility: shared | private`. If one matches a crawled posting's `canonicalKey`, the private copy links to the shared one so it gets updates. Nothing flows back.
-- **Uncrawlable companies fall back to manual** (decision 13), and each weekly crawl re-checks them for a supported board.
+#### Hiring bar = interview difficulty (decisions 5 and 11), unchanged
+- **`InterviewReport`** comes from the app's own users, about two weeks after they tailor a résumé.
+  - Its shared, anonymized part is aggregated once **at least 3 distinct users** have reported.
+  - Its private part becomes the reporter's Evidence and calibrates their fit.
+- **`EstimatedDifficulty`** is an AI estimate from postings, run on the user's key and always labelled as an estimate. The dashed outline on the role map marks it.
+- **`Role.hiringBar`** blends estimate and reports: `sampleSize`, `confidence`, and `basis: estimated | reported | blended`. Only `estimated` is built so far.
 
-**Fit is a relationship, not an attribute.** Hiring bar (X) and salary (Y) belong to the Role; fit (bubble size) belongs to a *User × Role* pair. All fit, whether for a Role, a posting or a pasted JD, comes from one `FitEvaluator`.
+#### Roles are grouped by AI, per user, on the user's key (decisions 2 and 7), unchanged
+- **Shared, platform-owned, no AI:** `CrawlSource`, `JobPosting`, `Company`, and aggregated `InterviewReport`s.
+- **Per user, on the user's key:** `Role`, `RoleRequirement`, `EstimatedDifficulty` and `RoleFit`.
+- Requirements are free text (statement, weight, expected level).
+- Role identity survives re-clustering: stable ids, `RoleRenamed` / `RoleSplit` / `RoleMerged`, and lineage.
+- Salary bands are per target location. A thin location shows a low-confidence band rather than hiding the Role.
 
-#### Hiring bar = interview difficulty (decisions 5 and 11)
-Glassdoor can't be crawled, so difficulty is built from first-party data, with an estimate until there is enough:
-- **`InterviewReport`** comes from the app's own users, asked about two weeks after they tailor a résumé for a posting. Fields: company, job title, stages reached, difficulty 1–5, outcome, date, per-stage notes.
-- **The incentive is sharper analysis for the reporter.** Stage outcomes become the reporter's Evidence, and real results calibrate their RoleFit ("rejected at a 90% fit" means the TargetProfile was too generous).
-- **Two parts, two visibilities.** Shared and anonymized: company, title, stages, difficulty, aggregated only when **at least 3 distinct users** reported. Private: outcome and stage notes.
-- **`EstimatedDifficulty`** covers the cold start. It is an AI estimate from the posting, run on the user's key and always labelled as an estimate.
-- **`Role.hiringBar`** blends the estimate and reports as `sampleSize` grows, with `confidence` and `basis: estimated | reported | blended`. Estimated bubbles are drawn differently. Phase 1 ships `estimated` only.
+### 2.6 Ingestion stays AI-free, answers included
+**Decision 18 stands:** ingestion never calls a model. Connectors, the résumé parser and answers all become Evidence by deterministic rules. Judging what the evidence *means* starts with the Analyzer.
 
-#### Roles are grouped by AI, per user, on the user's key (decisions 2 and 7)
-- **Shared, platform-owned, no AI:** `CrawlSource`, `JobPosting`, `Company`, aggregated `InterviewReport`s.
-- **Per user, on the user's key:** `Role`, `RoleRequirement`, `EstimatedDifficulty`, `RoleFit`, computed only over postings in *that user's* scope.
-- Requirements are free text (`RoleRequirement`: statement, weight, expected level), not scores.
-- Only new or changed postings are processed; the monthly budget caps the spend; the first run shows a cost estimate.
-- Two users can get different names for the same postings. That's acceptable, since nothing compares users.
-- **Role identity survives re-clustering:** stable ids, with `RoleRenamed`, `RoleSplit` and `RoleMerged` events and lineage.
-- **Salary bands are per selected market.** A market with too few postings shows a low-confidence band rather than hiding the role.
+v3 draws the answers going **straight from Questions to the Profile** ("Feedback with answer"). v2 routed them through the Ingester. Keep v2's reading: an answer is one more source (`user_answer`) that the ingestion path turns into Evidence, citing the question it answered. That keeps one way into the Profile, one set of rules about what Evidence looks like, and no AI on the write path.
 
-### 2.6 Ingestion stays AI-free
-The first v2 draft had the Ingester calling the LLM. **Decision 18: ingestion never calls a model.**
-- Connectors and the résumé parser turn source data into Evidence with deterministic rules: counts, links, dates, parsed sections. Judging what the evidence *means* starts with the Analyzer. The Gap Planner and Resume Advisor use AI too, but only on Evidence and Assessments that already exist.
-- **Why:** a sync runs whenever a connector refreshes. With AI in ingestion, every sync would spend the user's key without a cost estimate or a confirmation. Ingestion also handles the most hostile input (repositories, tickets, uploaded files). Keeping it away from the model keeps prompt injection to the one place that already treats input as data.
-- **What it costs:** Evidence facts are plainer ("38 merged PRs on payments-svc") than an LLM summary would be. The Analyzer does the interpreting, and cites the Evidence ids behind each score.
-- The diagram now reflects this: the Ingester → LLM arrow is gone. It still needs LLM arrows from the Gap Planner and Resume Advisor (2.11).
+### 2.7 Evidence, snapshots and confidence
+- **Evidence** is `{ source, reference, fact, observedAt }`.
+  - `source` is `github | jira | resume | user_answer`. The prototype shows the last as "Your answers" / "Your answer" (it was `self_reported` in the code).
+  - **CareerProfile** is the career timeline plus the Evidence set: facts only. Evidence carries no confidence of its own.
+- **The Assessment and RoleFit are immutable snapshots.** Each references the profile version and market snapshot it came from, and records the model used.
+- **Confidence per dimension** says how sure a score is, as a separate value from the score itself. 02 Strengths lists dimensions "least certain first". It marks thin evidence and points to Sources: *"Connect more sources, like Jira, to add more."*
+- **Decision 28: profile confidence belongs to the analysis.** It is one number on the `SkillAssessment` for how well the evidence backs the scores overall, shown next to Re-analyse. It left the shared sidebar, which is not part of any stage.
+- **Low confidence no longer raises follow-up questions** (decision 27). It only drives the "thin evidence" hint. More evidence comes from connecting sources, or from answering the questions a target role raises (2.8).
 
-### 2.7 Evidence, snapshots and follow-up questions
-- **Evidence** `{ source, reference, fact, observedAt }` makes every score explainable and lets résumé bullets be traced to real work. **CareerProfile** = career timeline + Evidence set, facts only. Evidence carries no confidence of its own: confidence belongs to a dimension, and says how much evidence its score rests on.
-- **The Assessment and RoleFit are immutable snapshots** that reference the profile version and market snapshot they came from, and record the model used. Saved résumés and plans can say what they were based on, and stale results can be detected.
-- **Confidence per dimension.** v2's step 2a ("check evidences in profile are enough or not") is this rule: when a dimension's confidence is below a threshold, the Analyzer raises **FollowUpQuestions** (2b). Answers come back as self-reported Evidence, not as an upload, so in the diagram the Questions → Ingester arrow means "answers are ingested as Evidence".
+### 2.8 Gap fill: questions come from the target role's gaps
+04 Advisor opens on **Fill the gap**, before the Gap plan or the Résumé: *"First: Fill the gap → Then, either: Gap plan | Résumé."* The screen says: *"{model} compared your sources with what this role asks for and wrote a few questions for each gap. Answer what you can, then submit. Anything you skip stays a gap."*
 
-### 2.8 Skill dimensions are per user, so fit needs a projection step (decisions 1 and 8)
-- **`SkillDimension` belongs to one user's assessment**: 5–10 per user, with no global taxonomy. Above 10 the Analyzer merges; below 5 it asks follow-up questions instead of inventing thin dimensions.
-- **`FitEvaluator` projects requirements onto the user's dimensions.** For each User × Role or User × Target, it maps every RoleRequirement to the user's dimensions and produces a `TargetProfile`. Fit and gaps come from that. The projection is an AI judgment, stored with its reasoning inside the RoleFit.
-- **Unmapped requirements are the most important gaps.** A requirement that matches none of the user's dimensions means there is no evidence at all. Show it as an `UncoveredRequirement`, never drop it.
-- **Dimensions stay stable over time.** Re-assessment reuses dimension ids and records merges and renames as lineage, so radar history and plan progress line up.
-- Users can't be compared with each other. Benchmarks come from role requirements, not other users' scores.
-- Recompute projections only when the user's dimensions or a Role's requirements change materially.
+**Decision 27: follow-up questions are written per gap of the Target, and submitted together.** This moves them out of the Analyzer.
+- A **`QuestionSet`** belongs to one Target. It is written from the Target's gaps:
+  - each `SkillGap` the user is short on (status `partial`)
+  - each `UncoveredRequirement` (status `no_evidence`)
+  - with each gap's potential fit points, from the fit's own arithmetic
+- Each **`GapQuestion`** has:
+  - its gap and its text
+  - an **"Asked because"** reason
+  - an answer type: `choice` (with options), `free_text`, or both
+- **Answers are submitted once, together.** A single "Submit answers" button shows how many are answered ("4 of 5 answered") and a cost estimate. Nothing is saved per question, and nothing propagates until the user submits. An unanswered question stays a gap.
+- **On submit:**
+  1. Each answer becomes Evidence with source `user_answer` (2.6). It appears on Sources under "Your answers" and in "What it found so far".
+  2. The Target's gap plan and résumé are regenerated as new versions, if they exist, from the updated evidence and on the user's key.
+  3. The plan's provenance says so: *"uses your 4 answers from Fill the gap"*.
+- A new Target, or a new analysis that changes the Target's gaps, gets a new QuestionSet. Evidence already submitted stays.
+- **Why per gap:** a question about a gap the user is actually trying to close is worth answering, and its answer counts directly toward the plan and the résumé. Questions from a low-confidence radar asked about dimensions the user might not care about, and cost a call on every sync (ADR 0012).
+- **What it costs:**
+  - Evidence gathered this way is tied to one role's vocabulary.
+  - A user who never targets a role is never asked anything.
+  - Answering needs a Target first, so the journey's forward-only rule holds: Sources never asks a question.
 
-### 2.9 Resume Advisor
-v2's Resume Advisor reads Profile, Assessment and Template (10a–c). Writing *for a role* also needs:
-- the **Target** (2.1) and its requirements snapshot. The prototype's résumé screen says "Write for" and offers the same two modes as the plan: top matched roles or "My own JD".
-- the **base ResumeFile** when one was uploaded ("revised rather than replaced").
+### 2.9 Resume Writer
+v3's Resume Writer reads the Profile and the Template (7a–7c). Writing *for a role* also needs:
+- **The Target** (2.1) and its requirements snapshot. v3 draws the user's choice (7a) but no box holds it.
+- **The Assessment.** `RequirementCoverage` is decided from the user's scores against the Target, not by the model, so the Writer reads scores as well as Evidence. Add the arrow.
+- **The base ResumeFile** when one was uploaded ("revised rather than replaced").
+- **The answers from Fill the gap**, which arrive as Evidence: *"Drafted from your sources, including the 4 answers you gave in Fill the gap."*
 
-The model should include:
-- **`RequirementCoverage { requirement, verdict: covered | partial | gap, evidenceRefs }`**: the prototype's "Their requirements → your evidence" panel. It is computed from the Target's TargetProfile and the user's scores, and it tells the writer what to lead with and what not to hide.
-- **Structured content:** sections and bullets. **Every generated bullet cites Evidence**, shown as the grey source note under the line. A bullet with no Evidence behind it is rejected (the guard against invented claims).
-- **Versions:** `ResumeVersion` history ("Save this version", reopen a saved résumé). The first version is written for the chosen Target (intent: *"The first edition … is customized by the role user selected"*).
-- **Edit sources:** manual edits and AI chat (`RevisionThread`) both produce versions.
-- **Export is presentation:** the template, white background and PDF output are rendering concerns, not domain rules.
+The rest is unchanged:
+- **`RequirementCoverage { requirement, verdict: covered | partial | gap, evidenceRefs }`**, shown as "Their requirements → your evidence".
+- **Every generated bullet cites Evidence.** A bullet with none is rejected.
+- **Versions:** `ResumeVersion`, listed as "Saved résumés" per Target and company. Manual edits and the `RevisionThread` chat both produce versions, and a chat proposal applies only when the user says so.
+- **Export is presentation:** the Template (the prototype shows Organic and Plain), a white page, and PDF.
 
 ### 2.10 Cross-cutting concerns to keep out of the core
-- **`Account` vs `SourceConnection`**: login and connector OAuth use different tokens, scopes and revoke rules. Keep them as separate models even though both say "OAuth". Sign-in is our own email and password ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)), or Google through our own OpenID Connect exchange ([ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md)).
-- **`ProviderCredential` is stored encrypted on the server** (decision 3) and is write-only: set, test, replace, delete; reads show provider, model and the last 4 characters.
-- **Background jobs spend the user's money.** `AIUsageBudget` (monthly cap) and `AIUsageLedger` (per call). A job that would exceed the cap pauses and notifies instead of running.
-- **Keys fail.** On revoke, expiry or rate limit, emit `ProviderCredentialFailed`, pause that user's scheduled jobs and say so.
-- **Record the model on every AI-derived snapshot** (SkillAssessment, RoleFit, GapPlan, ResumeVersion).
-- **Show cost before spending:** the first analysis, the first role map and any increase of k estimate their cost and ask for confirmation. Later incremental runs happen automatically within the budget.
+- **`Account` vs `SourceConnection`**: login and connector OAuth use different tokens, scopes and revoke rules.
+  - Sign-in is our own email and password ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)), or Google ([ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md)).
+- **`ProviderCredential` is stored encrypted on the server** (decision 3) and is write-only.
+- **Background jobs spend the user's money.**
+  - `AIUsageBudget` (monthly cap) and `AIUsageLedger` (per call).
+  - A job that would exceed the cap pauses instead of running.
+- **Keys fail.** Emit `ProviderCredentialFailed`, pause that user's scheduled jobs, and say so.
+- **Record the model on every AI-derived snapshot:** SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion.
+- **Show cost before spending.** Every AI action the user starts shows an estimate on their key first:
+  - Analyze, which now includes the role-map build
+  - Add to Role Map
+  - Submit answers
+  - Generate gap plan
+  - writing a résumé
+  - Later automatic runs (a market-driven rebuild) happen within the budget.
 
 ### 2.11 Smaller diagram issues
-- **"1. create once data connected"** still makes every sync start an analysis. Keep a `ProfileUpdated` event and an explicit "Analyze" request (the prototype's button), with cost confirmation. `ProfileUpdated` does refresh the follow-up questions against the latest analysis, without re-scoring it ([ADR 0012](decisions/0012-generate-follow-up-questions-when-evidence-changes.md)).
-- **Task → Milestone** points from task to milestone. A Milestone contains Tasks; draw Milestone → Task, and link Task to the SkillGaps it closes.
-- **The Gap Planner and Resume Advisor don't read the Target** (6 and 9 come from the user, but no box holds what was picked). Add Target between the relative roles and both of them.
-- **Missing:** LLM arrows from the Gap Planner (plans are drafted by AI) and the Resume Advisor (writing and chat), ProviderCredential and budget (every LLM arrow depends on them), MarketPreference, RoleSubscription, LinkedIn and the personal site as sources.
-- **Job platform boxes** should be labelled ATS boards / JSON-LD pages / public job APIs, not the three unscrapable sites.
-- **"Analyzor"** → Analyzer.
+- **Spelling:** "Analyzor" → Analyzer, and "Resume Writter" → Resume Writer.
+- **Duplicate and stale labels:**
+  - "6e" is used twice: once for feeding answers back, once for Gap Planner → Milestone.
+  - "3c" labels two steps.
+  - "Resume Writer → Profile" still carries v2's "10a".
+  - "2g read / 3d …" and "2h create / 3e …" leave the custom-role branch unfinished.
+- **Task → Milestone** still points from task to milestone. A Milestone contains Tasks, and a Task links to the SkillGaps it closes.
+- **The Target is drawn as a user action (6a, 7a), not a box.** Add a Target box between the Role map and both the Gap Planner and the Resume Writer. The QuestionSet hangs off it.
+- **Missing:**
+  - Target locations on the Profile, which feed the Background worker's search.
+  - ProviderCredential and budget, which every LLM arrow depends on.
+  - Resume Writer → Assessment (2.9).
+- **The Job Platform boxes** should read ATS boards / JSON-LD pages / public job APIs.
 
 ### 2.12 Where the intent and prototype drift from the model
 | Where | Says | Model |
 |---|---|---|
-| `intent.md` Background worker | Glassdoor, LinkedIn, Indeed | Not crawled (decision 6). Permitted sources, demand plus baseline (decision 15). |
-| `intent.md` Profile Analysis | The résumé upload bullet was removed | Phase 1 and the prototype keep résumé upload as an Evidence source and revision base. |
-| `intent.md` User Login | Google OAuth or own account | Both: own account (ADR 0001) and Google (ADR 0008). |
-| prototype `subsNote` | "checked nightly against the URL you gave plus LinkedIn, Glassdoor and Indeed" | Weekly, against the company's supported board; manual when none is found. |
-| prototype `testKey` | "key saved in this browser" | Stored encrypted on the server (decision 3). |
-| prototype `jobFilters` | LinkedIn / Glassdoor / Indeed | Filter by `CrawlSource.kind` or company. |
-| prototype `TARGETS[].source` | LinkedIn, Indeed | The crawl source kind (ATS board, JSON-LD, public API). |
+| `intent.md` Role Map | "User can decide the number of k by themself" | Ten, chosen by the system, plus the user's custom Roles (decisions 23, 25) |
+| `intent.md` Follow Up Questions, AI | Questions after profile analysis when the context isn't enough | Questions per gap of the Target, in the Advisor (decision 27) |
+| `intent.md` Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
+| `intent.md` User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
+| prototype `Model.dc.html` "What runs on your key" | Follow-up questions are "written when the evidence leaves a score uncertain" | Written per gap of the target role (decision 27) |
+| prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google and any OpenAI-compatible base URL |
+| prototype `Roles.dc.html` vs `Gaps.dc.html` | 81% fit and 160–196k on the role; 86% and 165–190k in the Advisor | Correct: role fit versus opening fit (2.2). The Advisor shows the opening's, because the Target has one. |
 
 ## 3. Proposed bounded contexts
 
@@ -206,49 +286,61 @@ flowchart LR
   end
   subgraph Market["Market (shared data, no AI)"]
     CrawlSource -->|crawl| JobPosting
-    Company --- RoleSubscription
-    MarketPreference
+    Company
+    TargetLocation
     InterviewReport
   end
   subgraph RoleMap["Role map (per user, user's key)"]
-    RoleSelection -->|top k| Role
+    RoleSelection -->|top 10| Role
+    CustomRole[Role, origin custom] --> Role
     Role --> RoleRequirement
     EstimatedDifficulty
   end
   subgraph Assessment["Assessment (Analyzer)"]
     SkillAssessment --> SkillDimension
-    FollowUpQuestion
+    SkillAssessment --> ProfileConfidence
     FitEvaluator --> RoleFit
     RoleFit --> TargetProfile
     RoleFit --> SkillGap
     RoleFit --> UncoveredRequirement
   end
-  subgraph GapPlanCtx["Gap plan (Gap Planner)"]
-    Target --> GapPlan --> Milestone --> Task
+  subgraph TargetCtx["Target (no storage)"]
+    Target
   end
-  subgraph ResumeCtx["Resume (Resume Advisor)"]
+  subgraph GapFill["Gap fill"]
+    QuestionSet --> GapQuestion
+  end
+  subgraph GapPlanCtx["Gap plan (Gap Planner)"]
+    GapPlan --> Milestone --> Task
+  end
+  subgraph ResumeCtx["Resume (Resume Writer)"]
     Resume --> ResumeVersion
     RequirementCoverage
     Template
     RevisionThread
   end
 
-  RoleSubscription -. adds board to .-> CrawlSource
-  MarketPreference -. adds APIs to .-> CrawlSource
+  TargetLocation -. adds APIs to .-> CrawlSource
+  CustomRole -. company seeds board discovery .-> CrawlSource
+  TargetLocation -->|scope| RoleSelection
   JobPosting -->|user's scope| RoleSelection
   CareerProfile -->|embedding, no AI| RoleSelection
+  SkillAssessment -. built after analysis .-> RoleSelection
   EstimatedDifficulty -->|hiring bar, cold start| Role
   InterviewReport -->|hiring bar, aggregated| Role
   InterviewReport -. private outcome as .-> Evidence
 
   CareerProfile --> SkillAssessment
-  SkillAssessment -. low confidence .-> FollowUpQuestion
-  FollowUpQuestion -. user answers .-> Answer
   SkillDimension --> FitEvaluator
   RoleRequirement --> FitEvaluator
-  JobPosting -. matched posting .-> Target
-  RoleSubscription -. subscribed role .-> Target
+  Role --> Target
+  JobPosting -. optional opening .-> Target
   RoleFit --> Target
+  Target --> QuestionSet
+  SkillGap --> GapQuestion
+  UncoveredRequirement --> GapQuestion
+  GapQuestion -. submitted answers .-> Answer
+  Target --> GapPlan
   SkillGap --> GapPlan
   UncoveredRequirement --> GapPlan
   Task -. closes, many-to-many .-> SkillGap
@@ -257,25 +349,28 @@ flowchart LR
   RoleFit --> RequirementCoverage
   Evidence -. cited by bullets .-> Resume
   Resume -. later prompt .-> InterviewReport
-  RoleSubscription -. match digest .-> RoleFit
   ProviderCredential -. runs all AI .-> RoleMap
   ProviderCredential -. runs all AI .-> Assessment
+  ProviderCredential -. runs all AI .-> GapFill
   ProviderCredential -. runs all AI .-> GapPlanCtx
   ProviderCredential -. runs all AI .-> ResumeCtx
 ```
 
-`Target` is a value, not a table of its own: a kind plus a reference to a shared posting, a subscription or a private posting, and the frozen requirements snapshot. It is drawn inside the Gap plan context because the plan is what keys on it; the Resume context uses the same value.
+- **`Target`** is a value, not a table: a Role, an optional opening, and the frozen requirements snapshot. It has its own context because the question set, the plan and the résumé all aim at one, and none of them may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)).
+- **Gap fill** is its own context too. The plan and the résumé both regenerate from its answers, and its questions depend on the Target and the fit, not on either consumer.
+- **`TargetLocation`** is shown in the profile but owned by Market, because what it decides is market scope.
 
 **Cardinality at a glance**
 - Account 1 — 1 CareerProfile, 1 — 1 ProviderCredential, 1 — * SkillAssessment (history)
-- SkillAssessment 1 — 5..10 SkillDimension (per user; ids stable across assessments)
-- Account 1 — * MarketPreference, 1 — * RoleSubscription
+- SkillAssessment 1 — 5..10 SkillDimension (per user; ids stable across assessments), 1 — 1 profile confidence
+- Account 1 — 0..3 TargetLocation
 - CrawlSource 1 — * JobPosting; JobPosting is shared by all users (except private ones)
-- Account 1 — 1 RoleSelection setting (k); Account 1 — k Role (analysed); Role * — * JobPosting, Role 1 — * RoleRequirement
+- Account 1 — ≤10 recommended Role + * custom Role; Role * — * JobPosting; Role 1 — * RoleRequirement; custom Role 1 — 0..1 private JobPosting
 - Account × Role → 0..1 current RoleFit (plus history)
+- Target 1 — * QuestionSet (one current); QuestionSet 1 — * GapQuestion; GapQuestion 1 — 0..1 Answer
 - Target 1 — * GapPlan (versions); Account 1 — * GapPlan (plan history across Targets)
 - Task * — * SkillGap
-- Account 1 — * Resume, Resume 1 — * ResumeVersion, Account 1 — * InterviewReport
+- Target 1 — * Resume; Resume 1 — * ResumeVersion; Account 1 — * InterviewReport
 
 ### Key domain events
 
@@ -283,20 +378,23 @@ flowchart LR
 flowchart LR
   SourceSynced --> ProfileUpdated
   ProfileUpdated -. explicit Analyze .-> AnalysisCostEstimated --> AnalysisCostConfirmed --> AssessmentRequested
-  AssessmentRequested --> QuestionsRaised --> QuestionAnswered --> ProfileUpdated
-  ProfileUpdated -. ADR 0012 .-> QuestionsRaised
   AssessmentRequested --> AssessmentCompleted --> DimensionsChanged --> RoleFitsComputed
-  SubscriptionAdded --> CrawlCompleted
-  MarketSelected --> CrawlCompleted
+  AssessmentCompleted --> AnalysisFinished --> RoleMapBuildRequested
+  TargetLocationsChanged --> CrawlCompleted
+  CustomRoleAdded --> CrawlCompleted
+  CustomRoleAdded --> RoleMapBuildRequested
   WeeklyCrawlScheduled --> CrawlCompleted
   BaselineCrawlScheduled --> CrawlCompleted
   CrawlCompleted --> PostingsExpired
-  CrawlCompleted --> PostingsChanged --> RolesReclustered
-  RoleCountChanged --> RolesReclustered
+  CrawlCompleted --> PostingsChanged --> RoleMapBuildRequested
+  RoleMapBuildRequested --> RolesReclustered
   RolesReclustered --> RoleRequirementsChanged --> RoleFitsComputed
   RolesReclustered --> RoleSplitOrMerged --> SuccessorRoleSuggested --> TargetRetargeted
-  RoleFitsComputed --> MatchDigestSent
   RoleFitsComputed --> TargetSelected
+  TargetSelected --> GapQuestionsWritten --> GapAnswersSubmitted
+  GapAnswersSubmitted --> ProfileUpdated
+  GapAnswersSubmitted --> PlanRegenerated
+  GapAnswersSubmitted --> ResumeRegenerated
   TargetSelected --> PlanDrafted --> TaskCompleted -. next sync .-> SourceSynced
   PlanReopened --> TaskCompleted
   TargetSelected --> ResumeTailored --> ResumeVersionSaved
@@ -315,43 +413,49 @@ flowchart LR
 | Account | A person using the app; signs in with their own email and password, with Google, or both | Identity |
 | ProviderCredential | The user's AI provider, model, base URL and API key; stored encrypted on the server, never readable by the client; the only AI credential in the system | Identity |
 | AIUsageBudget / AIUsageLedger | User-set monthly spending cap for AI on their key, and the per-call record checked against it | Identity |
-| Ingester | The process that turns connector data, uploaded résumés and answers into Evidence, with deterministic rules and no AI | Profile |
+| Ingester | The process that turns connector data, uploaded résumés and submitted answers into Evidence, with deterministic rules and no AI | Profile |
 | SourceConnection | An authorized link to GitHub, Jira, LinkedIn, or a personal-site URL; has scopes and sync state | Profile |
 | ResumeFile | An uploaded résumé (PDF/DOCX); parsed into Evidence and usable as a revision base | Profile |
-| Evidence | One cited fact about the user's work (source, reference, fact, date) | Profile |
-| Answer | A user's reply to a FollowUpQuestion, stored as self-reported Evidence | Profile |
+| Evidence | One cited fact about the user's work (source, reference, fact, date); source is `github`, `jira`, `resume` or `user_answer` | Profile |
+| Answer | The user's submitted reply to a GapQuestion, stored as Evidence with source `user_answer` ("Your answers") | Profile |
 | CareerProfile | Career timeline plus all Evidence for one user; facts only, one per user | Profile |
-| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or public job API); `origin` is `baseline` (platform-curated) or `demand` (a subscription or market asked for it), never who asked | Market |
-| JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; pasted JDs are private to their owner. Tracks first/last seen and open/expired | Market |
+| TargetLocation | One of the user's 1–3 places to work (city, country or remote region); scopes the role map, the salary bands and demand crawling. Shown in the profile, owned by Market. Replaces MarketPreference | Market |
+| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or public job API); `origin` is `baseline` (platform-curated) or `demand` (a target location or a custom Role's company asked for it), never who asked | Market |
+| JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a custom Role's JD is private to its owner. Tracks first/last seen and open/expired | Market |
 | Company | An employer seen in the market | Market |
-| RoleSubscription | A user's watch on a role at a company, with an optional careers or JD URL. `crawled` coverage adds the company's board to the weekly crawl and the digest; `manual` coverage relies on pasted JDs. Replaces CompanySubscription | Market |
-| MarketPreference | A location or remote region the user selects; adds that market's public job APIs to crawling | Market |
 | InterviewReport | A user's report of an interview. The shared part is aggregated for the hiring bar when ≥3 users reported; the private part becomes the reporter's Evidence and calibrates their fit | Market |
-| MatchDigest | Weekly message listing new open postings above the user's fit threshold, for subscribed roles and selected markets | Market |
-| RoleSelection | The local, no-AI ranking that keeps the k Roles closest to the user's profile; k is the user's choice within a bound | Role map |
-| Role | An AI-grouped cluster of postings in *one user's* scope, with a stable id and lineage, hiring bar, salary bands per market and opening count | Role map |
-| RoleRequirement | A skill requirement pulled from a Role's postings (statement, weight, expected level); has no dimension | Role map |
+| RoleSelection | The local, no-AI ranking that keeps the ten recommended Roles closest to the user's profile | Role map |
+| Role | An AI-grouped cluster of postings in *one user's* scope (`origin: recommended`), or a role the user added (`origin: custom`); stable id and lineage, hiring bar, salary bands per target location, opening count | Role map |
+| Custom role | A Role the user added by title, with an optional company and optional private JD; placed on the map beside the ten and never retired by reclustering | Role map |
+| Candidate role | v3's term for the recommended and custom Roles before the role map is built from them | Role map |
+| RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |
 | EstimatedDifficulty | AI estimate of interview difficulty from posting content, used until enough InterviewReports exist | Role map |
 | Hiring bar | A Role's interview difficulty (bubble chart X axis); blends estimate and reports, with sample size, confidence and basis | Role map |
-| Analyzer | The process that checks evidence coverage, raises follow-up questions, and produces the SkillAssessment and RoleFits; the first step after ingestion that calls the LLM | Assessment |
+| Analyzer | The process that produces the SkillAssessment and RoleFits from Evidence, and triggers the role-map build; the first step after ingestion that calls the LLM | Assessment |
 | SkillDimension | One axis of *this user's* skills (5–10 per user), defined by their profile analysis; its id stays stable across re-assessments | Assessment |
-| SkillAssessment | Snapshot of per-dimension scores and confidence for a Profile version (radar); records the model used | Assessment |
-| FollowUpQuestion | A question the AI generates when a dimension's confidence is below threshold | Assessment |
-| FitEvaluator | Domain service that maps requirements onto a user's dimensions and scores fit, for a Role, a posting or a pasted JD | Assessment |
+| SkillAssessment | Snapshot of per-dimension scores and confidence for a Profile version (radar), plus profile confidence; records the model used | Assessment |
+| Profile confidence | How well the evidence backs the scores overall; one number on the SkillAssessment, shown on 02 Strengths | Assessment |
+| FitEvaluator | Domain service that maps requirements onto a user's dimensions and scores fit, for a Role, a posting or a private JD | Assessment |
 | TargetProfile | Target score per user dimension for one Role or Target, produced by that mapping | Assessment |
 | RoleFit | Snapshot of fit between a user and a Role or posting (bubble size, list rank), with TargetProfile and reasoning | Assessment |
 | SkillGap | User's score minus the target score on one dimension | Assessment |
 | UncoveredRequirement | A requirement that matches none of the user's dimensions, meaning there is no evidence at all | Assessment |
-| Target | What a plan or résumé aims at: a matched posting, a subscribed role, or a private pasted JD, with a frozen snapshot of its requirements | Gap plan / Resume |
+| Target | What the Advisor aims at: one Role and optionally one opening in it, with a frozen snapshot of its requirements | Target |
+| Advisor | The 04 screen: Fill the gap first, then either the Gap plan or the Résumé, all measured against one Target | (UI) |
+| Gap fill | The Advisor's first step: questions per gap of the Target, answered and submitted together | Gap fill |
+| QuestionSet | The follow-up questions written for one Target's gaps; records the model used | Gap fill |
+| GapQuestion | One question about one gap, with an "asked because" reason and a choice and/or free-text answer | Gap fill |
 | Gap Planner | The process that drafts a GapPlan for a Target from the user's gaps | Gap plan |
 | GapPlan | A plan to close one Target's gaps, with Milestones and Tasks; regenerating makes a new version; plans across Targets form the plan history | Gap plan |
 | Milestone / Task | A time-boxed outcome and the concrete actions under it; a Task can close gaps in several plans | Gap plan |
-| Resume Advisor | The process that writes and revises a résumé for a Target from the user's Evidence | Resume |
+| Resume Writer | The process that writes and revises a résumé for a Target from the user's Evidence. v2 called it the Resume Advisor | Resume |
 | RequirementCoverage | For each of a Target's requirements: covered, partial or gap, with the Evidence that backs it | Resume |
 | Resume | A structured, editable résumé aimed at one Target; each bullet cites Evidence | Resume |
 | ResumeVersion | A saved state of a Resume that can be reopened; records the model used | Resume |
-| Template | Visual layout used when exporting (white background by default) | Resume |
-| RevisionThread | The AI chat that proposes and applies edits to a Resume | Resume |
+| Template | Visual layout used when exporting (white page) | Resume |
+| RevisionThread | The AI chat that proposes edits to a Resume, applied only on the user's say-so | Resume |
+
+**Removed in this version:** RoleSubscription (decision 22), MarketPreference (replaced by TargetLocation, decision 21), MatchDigest (decision 22), FollowUpQuestion in its v2 sense (replaced by GapQuestion, decision 27), and the user's k (decision 23).
 
 ## 5. Traceability
 
@@ -360,57 +464,46 @@ flowchart LR
 | Intent requirement | Concepts |
 |---|---|
 | **Profile Analysis:** Jira, GitHub, LinkedIn (OAuth), personal website | SourceConnection → Ingester → Evidence |
-| Follow-up questions to complete the evidence | SkillAssessment confidence → FollowUpQuestion → Answer → Evidence |
+| Follow-up questions to complete the evidence | **Changed:** GapQuestion per gap of the Target → Answer → Evidence (decision 27) |
 | Analyze experience and career trajectory | CareerProfile (timeline + Evidence) |
-| **Assessment:** skill strength radar; dimensions decided by profile analysis | SkillAssessment over the user's own 5–10 SkillDimensions |
+| **Assessment:** skill strength radar; dimensions decided by profile analysis | SkillAssessment over the user's own 5–10 SkillDimensions, with per-dimension and profile confidence |
 | Bubble chart: size = fit, X = hiring bar, Y = salary, one bubble per role | Role (hiring bar, salary band) + RoleFit |
 | **Background worker:** Glassdoor / LinkedIn / Indeed | **Changed:** not crawled (decision 6). Permitted sources only. LinkedIn stays a Profile connector. |
-| User subscribes to company jobs | RoleSubscription (role + company + URL; crawled or manual) → CrawlSource → weekly MatchDigest |
-| Fetched system wide | Shared JobPosting pool from a baseline crawl plus demand-driven sources (decision 15) |
-| User-uploaded JD | JobPosting (private, owner only), placed on the nearest of the owner's Roles; a Target of kind `privatePosting` |
-| **Role Map:** top k similar roles from assessment and profile | RoleSelection (k closest Roles) → RoleFit; Top matched list of postings in those Roles |
-| User decides k | RoleSelection setting, bounded (decision 17, ADR 0003) |
-| **Gap Plan:** generated for the role the user selected | Target → GapPlan → Milestone → Task, from SkillGap + UncoveredRequirement |
-| Gap plan history can be revisited | GapPlan versions per Target; plan history across Targets (decision 16) |
-| **Resume Advisor:** generate for a role from the bubble chart or typed in | Resume for a Target (matched posting, subscription or pasted JD) |
+| User subscribes to company jobs | **Changed:** removed (decision 22). A custom Role naming a company seeds that company's board. |
+| Fetched system wide | Shared JobPosting pool from a baseline crawl plus demand sources (decision 15) |
+| User-uploaded JD | The optional JD of a custom Role: a private JobPosting, the Role's requirement basis (decision 25) |
+| **Role Map:** top k similar roles from assessment and profile | RoleSelection (the ten closest Roles), built after each analysis → RoleFit; Top matched openings in those Roles |
+| User decides k | **Changed:** ten, decided by the system; the user adds custom Roles instead (decisions 23, 25) |
+| **Gap Plan:** generated for the role the user selected | Target → GapPlan → Milestone → Task, from SkillGap + UncoveredRequirement and the submitted answers |
+| Gap plan history can be revisited | GapPlan versions per Target; plan history across Targets |
+| **Resume Advisor:** generate for a role from the bubble chart or typed in | Resume for a Target: a Role on the map, including a custom Role the user typed in |
 | AI writes from evidence to fit the role; first version customized to the role | RequirementCoverage + Evidence-cited bullets; first ResumeVersion written for the Target |
 | Manual edit; chat with AI to improve | ResumeVersion, RevisionThread |
-| Save / reopen résumés | ResumeVersion |
+| Save / reopen résumés | ResumeVersion, "Saved résumés" per Target |
 | Default white background | Template (rendering, not domain) |
 | **User Login:** Google OAuth or own account | Account, with a PasswordCredential and/or a FederatedIdentity |
 | **AI:** user configures provider and key | ProviderCredential, AIUsageBudget |
-| AI for questions, profile and market analysis, résumé, gap plan | FollowUpQuestion, SkillAssessment, Role clustering, FitEvaluator, GapPlan, RevisionThread — all on the user's key. Ingestion does not use AI (decision 18). |
+| AI for questions, profile and market analysis, résumé, gap plan | GapQuestion, SkillAssessment, Role clustering, FitEvaluator, GapPlan, RevisionThread — all on the user's key. Ingestion does not use AI (decision 18). |
 
-### 5.2 Prototype data → concepts
+### 5.2 Prototype screens → concepts
 
-| Prototype structure | Concepts | Note |
+| Screen | What it shows | Concepts |
 |---|---|---|
-| `SKILLS[]` (score, read, evidence) | SkillDimension + SkillAssessment + Evidence | Split per-user dimensions, score snapshot, and cited facts |
-| `ROLES[]` (bar, salary, band, openings) | Role (per user) | `bar` is interview difficulty (estimated, reported or blended) |
-| `ROLES[].profile` | RoleRequirement → TargetProfile | Roles hold requirements; per-dimension targets are computed per user |
-| `ROLES[].fit`, `.read` | RoleFit | Per user, not a Role attribute |
-| `TARGETS[]` (role, company, comp, source, `fitAdj`, `why`, `reqs`) | Target of kind `matchedPosting`: a JobPosting in one of the k Roles, with its requirements and RoleFit | `source` should be the crawl source kind, not LinkedIn / Indeed |
-| `allTargets` (matched + subscribed, ranked) | RoleSelection → Top matched list, with subscriptions appended | Rank comes from RoleFit plus the posting's own requirements |
-| `watch[]` (roleId, company, url, on), `addWatch`, `subscribe` | RoleSubscription | `on` = active; the URL seeds board discovery |
-| `subsNote` | RoleSubscription coverage, MatchDigest | Copy should say weekly, and crawled vs manual coverage |
-| `planMode` (`matched` / `custom`), `planTargetId`, `planJd` | Target (matched or subscribed, or `privatePosting`) | |
-| `plans[]`, `planHistory`, `generatePlan`, `regenPlan` | GapPlan versions per Target, plan history | Keeps six in the prototype; the retention limit is an open question |
-| `MILESTONES[]`, `state.done`, `PROJECTS[]` | GapPlan, Milestone, Task | Projects are suggested Tasks with no due date |
-| stepping stones | RoleFit (higher-fit Roles near the Target's Role) | Derived; a natural second Target |
-| `mode` (`matched` / `custom`), `targetId`, `targetLine` on the résumé screen | The résumé's Target | Same three kinds as the plan |
-| `reqMap` (verdict, req, evidence) | RequirementCoverage | Covered / Partial / Gap per requirement |
-| `resumeJobs[].bullets[].cite` | Evidence cited by a bullet | The grey source note under each line |
-| `SOURCES[]`, `state.sources`, consent | SourceConnection | |
-| `QUESTIONS[]`, `state.answers`, effects | FollowUpQuestion, Answer | |
-| `state.resumeUploaded` | ResumeFile | |
-| `marketFilters` (Berlin, Remote EU) | MarketPreference | User-selected, not a fixed list |
-| `state.jd`, `jdFit`, `jdPoints`, `parseJd` | JobPosting (private) + RoleFit + SkillGap | |
-| `TEMPLATES[]`, `state.tpl` | Template | |
-| `state.saved`, `state.edits`, `state.opts` | Resume, ResumeVersion | Options are generation parameters for the Resume Advisor |
-| `state.chat` | RevisionThread | |
-| `PROVIDERS`, provider/model/apiKey/baseUrl | ProviderCredential | The prototype says "saved in this browser"; the decision is server-side and encrypted |
-| `confidence` | SkillAssessment confidence | Should be per dimension, not one global number |
-| `loggedIn`, `email`, `authMode` | Account | |
+| `Sidebar.dc.html` | 01 Sources · 02 Strengths · 03 Role map · 04 Advisor, then System configuration → AI & model; no badges, no confidence meter | The forward-only journey; profile confidence moved to Strengths (decision 28) |
+| `Main.dc.html` — 01 Sources | "Where you want to work" (up to 3, "2 of 3 chosen") | TargetLocation (decision 21) |
+| | GitHub and Jira cards (connect, sync, disconnect), résumé upload and "Analyze with AI" | SourceConnection, ResumeFile, the explicit Analyze request |
+| | "What it found so far" (GitHub / Résumé / Your answers), "Where the work lives", evidence table filterable by source | Evidence by source, including `user_answer`; tallies by repository and epic (ADRs 0016, 0017) |
+| `Strengths.dc.html` — 02 Strengths | Radar, "Least certain first" list with per-dimension confidence, thin-evidence note pointing to Sources, cited facts, Profile confidence next to Re-analyse | SkillAssessment, SkillDimension, confidence per dimension, profile confidence; no role fit |
+| `Roles.dc.html` — 03 Role map | "The 10 best-fit roles on the market, plus the ones you add", "Built after your strength analysis", postings counted in the target locations | RoleSelection (decisions 23, 24), TargetLocation scope |
+| | Bubble chart; dashed = estimated bar; green "yours" = custom | Role, RoleFit, EstimatedDifficulty, `Role.origin` |
+| | Selected role: fit, band, openings, where you clear it or don't, "No evidence at all for these", what the role asks for | RoleFit, SkillGap, UncoveredRequirement, RoleRequirement |
+| | Top matched openings (rank, fit, title · company, band, posting, location) | JobPosting inside a Role, per-posting fit |
+| | "Add a role of your own": title (required), company, JD (private), "Add to Role Map" | Custom Role, private JobPosting (decision 25) |
+| | Sticky "Advisor target" bar, "Target this role" | The only way a Target is chosen (decision 26) |
+| `Gaps.dc.html` — Fill the gap | Target banner; gap cards (Partial / No evidence, "up to +N fit pts"); questions with "Asked because" and choice / free text; "4 of 5 answered", cost, one "Submit answers" | Target, QuestionSet, GapQuestion, SkillGap / UncoveredRequirement, Answer → `user_answer` Evidence (decision 27) |
+| `Plan.dc.html` — Gap plan | "Generate gap plan", Plan history (per role · company, version), provenance "uses your 4 answers", ranked gaps with citations, stepping stones, milestones and tasks with progress, projects that prove it | GapPlan versions per Target, plan history, Milestone, Task; stepping stones are higher-fit Roles near the Target's |
+| `Resume.dc.html` — Résumé | "Write for" the Target; Saved résumés per company; Template (Organic, Plain); Export PDF; résumé with cited lines; "Save as v4"; "Their requirements → your evidence"; "Revise with {model}" (Apply / Discard) | Resume, ResumeVersion, Template, RequirementCoverage, RevisionThread |
+| `Model.dc.html` — AI & model | Provider, model, write-only key ("····a91f"), what runs on your key, monthly budget | ProviderCredential, AIUsageBudget / AIUsageLedger |
 
 ## 6. Decisions and remaining questions
 
@@ -420,38 +513,47 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 
 | # | Date | Question | Decision | Where it changed the model |
 |---|---|---|---|---|
-| 1 | 2026-09-14 | Skill taxonomy | **Different per user** | 2.8: FitEvaluator mapping, TargetProfile, UncoveredRequirement, stable dimension ids |
+| 1 | 2026-09-14 | Skill taxonomy | **Different per user** | FitEvaluator mapping, TargetProfile, UncoveredRequirement, stable dimension ids |
 | 2 | 2026-09-14 | Role catalog | **Grouped by AI from postings** | 2.5: RoleRequirement, stable Role ids with lineage |
 | 3 | 2026-09-14 | API key location | **Stored encrypted on the server** | 2.10: write-only ProviderCredential, usage budget and ledger, failure handling |
 | 4 | 2026-09-14 | Multiple goals | **Yes** — *Superseded by 16* | CareerGoal with status and priority; removed |
 | 5 | 2026-09-14 | Hiring bar source | **Interview difficulty** | 2.5: InterviewReport + EstimatedDifficulty blend |
 | 6 | 2026-09-14 | Market data source | **In-house crawler**, limited to sources that permit it; no scraping of LinkedIn, Indeed or Glassdoor | 2.5: CrawlSource, dedup key |
 | 7 | 2026-09-14 | Who pays for shared AI work | **The user** | 2.5 / 2.10: Role clustering per user on the user's key; no platform AI credential |
-| 8 | 2026-09-14 | Dimension count | **Bounded, 5–10** | 2.8: merge above 10, ask follow-up questions below 5 |
-| 9 | 2026-09-14 | Launch markets | **User selects** | 2.5: MarketPreference drives crawling and salary bands |
+| 8 | 2026-09-14 | Dimension count | **Bounded, 5–10** | Merge above 10; below 5, say the evidence is thin rather than invent dimensions |
+| 9 | 2026-09-14 | Launch markets | **User selects** — *Superseded by 21* | MarketPreference; replaced by TargetLocation |
 | 10 | 2026-09-14 | Goal when its role splits | **App suggests a successor** — *amended by 20* | 2.1 |
 | 11 | 2026-09-14 | Interview-report incentive | **More accurate analysis for the reporter** | 2.5: private outcome becomes Evidence; shared part aggregated at ≥ 3 reporters |
-| 12 | 2026-09-14 | Pasted JDs | **Private to their owner** | 2.5: `JobPosting.visibility`, one-way link to a matching shared posting |
-| 13 | 2026-09-14 | Uncrawlable companies | **Manual fallback (paste JDs)** | 2.4 / 2.5: `coverage`, weekly re-check |
-| 14 | 2026-09-14 | Crawl frequency | **Weekly** | 2.5: MatchDigest, posting expiry, rate-limited manual refresh |
+| 12 | 2026-09-14 | Pasted JDs | **Private to their owner** | 2.4 / 2.5: `JobPosting.visibility`; now a custom Role's JD |
+| 13 | 2026-09-14 | Uncrawlable companies | **Manual fallback (paste JDs)** — *amended by 22* | 2.4: a custom Role whose company has no crawlable board runs on its JD |
+| 14 | 2026-09-14 | Crawl frequency | **Weekly** — *amended by 22* (no digest, no manual re-crawl) | 2.5: posting expiry |
 | 15 | 2026-09-22 | What "fetched system wide" means | **A platform-curated baseline crawl alongside demand-driven crawling** | 2.5: `CrawlSource.origin`; platform pays for the baseline |
-| 16 | 2026-09-22 | What a gap plan aims at | **A Target (matched posting, subscribed role or pasted JD); no CareerGoal; plan history per Target** | 2.1: Target, GapPlan versions; supersedes 4 |
-| 17 | 2026-09-22 | Who sets k on the role map | **The user, within a bound** | 2.2: RoleSelection; [ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md) supersedes ADR 0002 |
-| 18 | 2026-09-22 | Does ingestion use AI | **No** | 2.6: the Ingester is deterministic; only the Analyzer, Gap Planner and Resume Advisor call the LLM |
-| 19 | 2026-09-22 | What a subscription is to | **A role at a company, with an optional careers or JD URL** | 2.4: RoleSubscription replaces CompanySubscription |
+| 16 | 2026-09-22 | What a gap plan aims at | **A Target (matched posting, subscribed role or pasted JD); no CareerGoal; plan history per Target** — *amended by 26* | 2.1: Target, GapPlan versions; supersedes 4 |
+| 17 | 2026-09-22 | Who sets k on the role map | **The user, within a bound** — *Superseded by 23* | RoleSelection setting; removed |
+| 18 | 2026-09-22 | Does ingestion use AI | **No** | 2.6: the Ingester is deterministic, answers included |
+| 19 | 2026-09-22 | What a subscription is to | **A role at a company, with an optional careers or JD URL** — *Superseded by 22* | RoleSubscription; removed |
 | 20 | 2026-09-22 | Target when its role splits | **App suggests a successor; the Target keeps its snapshot until the user accepts** | 2.1: amends 10 now that goals are gone |
+| 21 | 2026-09-29 | Where the user wants to work | **1–3 target locations, set in the profile; they scope the role map, salary bands and demand crawling** | 2.5: TargetLocation replaces MarketPreference; supersedes 9 |
+| 22 | 2026-09-29 | Watching roles and companies | **No subscriptions and no match digest; a custom Role's company seeds board discovery** | 2.4 / 2.5: RoleSubscription and MatchDigest removed; supersedes 19, amends 13 and 14 |
+| 23 | 2026-09-29 | How many roles the map analyses | **Ten, decided by the system** | 2.2: RoleSelection has a fixed cut-off; supersedes 17 (and ADR 0003 when built) |
+| 24 | 2026-09-29 | When the role map is built | **After every analysis, confirmed with the analysis's cost estimate; market changes still rebuild it** | 2.2 |
+| 25 | 2026-09-29 | Roles the recommendation misses | **The user adds a custom Role (title required; company and a private JD optional), searched on the market and placed beside the ten** | 2.4: `Role.origin`; the JD is the Role's requirement basis |
+| 26 | 2026-09-29 | What the Advisor aims at | **One Target: a Role (recommended or custom) and optionally an opening in it, chosen only on the role map** | 2.1: amends 16; the subscription and pasted-JD kinds are gone |
+| 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** | 2.8: Gap fill; the Analyzer no longer asks questions |
+| 28 | 2026-09-29 | Where profile confidence lives | **On the SkillAssessment, shown on 02 Strengths** | 2.7 |
 
 ### 6.2 Remaining questions
 
-Defaults chosen during the update; change them if they don't fit:
-- **Bound on k:** 3–20, default 10 (ADR 0003).
-- **Baseline list:** who curates it and how large it is. The default is a short list kept in the repo, reviewed like code.
-- **Plan history retention:** the prototype keeps six. The default is to keep every plan and only list the most recent first.
+These are the defaults chosen for this update. Change them if they don't fit.
+- **Profile confidence:** the mean of the dimensions' confidence, unweighted. Weighting by how much each dimension matters would need a role, and Strengths shows none.
+- **Resubmitting answers:** submitting again adds new Evidence and keeps the old. An answer is a fact the user stated at a point in time, like any other.
+- **Custom-role search:** matching is on title words (the same accent-folded word rule as locations), narrowed to the company when one is given. Clustering the matches with the recommended Roles is not needed.
+- **Removing a custom Role:** its plans and résumés keep their snapshots, like a Target whose Role retired.
+- **Baseline list:** a short list kept in the repo, reviewed like code.
+- **Plan history retention:** keep every plan, most recent first.
 - **Minimum group size for shared difficulty:** 3 distinct reporters.
-- **Manual refresh limit:** a small per-day cap for re-crawling one subscribed company.
 - **Expired postings:** kept for salary-band history, hidden from lists.
-- **Digest threshold:** the prototype's 70% fit, adjustable per user.
 
-**Suggested next step:** apply 2.11 to the v2 diagram (split the Background worker into crawler and per-user role-map job, add Target, draw the Gap Planner and Resume Advisor LLM arrows), and update the prototype copy listed in 2.12.
+**Suggested next step:** apply 2.11 to the v3 diagram: add a Target box, add Resume Writer → Assessment, route answers through the Ingester, and fix the labels. Update the prototype copy listed in 2.12. The code changes are [`plan.md`](plan.md) Phase 5.
 
 **Architecture:** deployable units, module dependencies, data and trust boundaries are in [`architecture.md`](architecture.md).

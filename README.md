@@ -15,11 +15,13 @@ Jira and your résumé, measured against real job openings.
 
 ```mermaid
 flowchart LR
-  WORK["📂 Your real work<br/>GitHub · Jira · résumé"] --> STAND["📊 Where you stand<br/>your skill strengths"]
-  JOBS["🌐 Real job openings"] --> FIT["🎯 Which roles fit you<br/>fit · hiring bar · salary"]
+  WORK["📂 01 Your real work<br/>GitHub · Jira · résumé<br/>where you want to work"] --> STAND["📊 02 Where you stand<br/>your skill strengths"]
+  JOBS["🌐 Real job openings<br/>in your locations"] --> FIT["🎯 03 Which roles fit you<br/>the ten best, plus yours"]
   STAND --> FIT
-  FIT -->|"you pick a target"| PLAN["🧭 How to get there<br/>a plan to close the gaps"]
-  FIT -->|"you pick a target"| CV["📝 How to apply<br/>a résumé tailored to the role"]
+  FIT -->|"you pick one target role"| GAP["❓ 04 Fill the gap<br/>questions about what it asks for"]
+  GAP -->|"then"| PLAN["🧭 How to get there<br/>a plan to close the gaps"]
+  GAP -->|"or"| CV["📝 How to apply<br/>a résumé tailored to the role"]
+  GAP -. "your answers become evidence" .-> WORK
   PLAN -. "new work makes you stronger" .-> WORK
 ```
 
@@ -36,6 +38,11 @@ key**.
 | **Gap plan** | Pick a **Target** (a matched opening, a watched role or a pasted JD) and get gaps ranked by the fit points each is worth, broken into milestones, tasks and projects. Plans are versioned per Target, and finished work carries forward. |
 | **Resume Advisor** | A résumé written for a Target from cited evidence, with requirement coverage, in-place editing saved as versions, a streamed revision chat whose proposals apply only when you accept them, and PDF export. |
 | **Accounts** | Email and password sign-in, or optional sign-in with Google. A write-only AI credential, plus a usage budget and ledger. |
+
+A redesign of the journey is under way (Phase 5 in [`docs/plan.md`](docs/plan.md)):
+target locations, ten roles plus your own, one target role for the Advisor, and
+follow-up questions per gap of that role. The rows above describe what is built
+today.
 
 Not built yet: suggesting a successor Target when a role splits, interview
 reports (the hiring bar is estimated for now), email verification and password
@@ -137,18 +144,18 @@ backend/
     wiring/   composition root shared by every deployable
     kernel/   technical kernel with no domain logic: db, outbox, jobs, auth, crypto,
               storage, ai_gateway, fetch, embeddings
-    advisor/  identity · profile · market · rolemap · assessment · target · gapplan · resume
+    advisor/  identity · profile · market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the only importable surface; submodules are private
                 service.py use cases · domain/ pure rules · infra/ models and adapters
   migrations/ Alembic
   tests/      unit/ and integration/, each mirroring src/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
 infra/        infra compose project, DB role bootstrap, health wait
-prototype/    the original clickable prototype
+prototype/    design reference screens for the v3 journey (prototype/README.md)
 docs/         intent, domain model, architecture, plan, decisions
 ```
 
-Sixteen `import-linter` contracts in `backend/.importlinter` enforce the module
+Twenty-two `import-linter` contracts in `backend/.importlinter` enforce the module
 boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 
 ## Documentation
@@ -158,5 +165,6 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 | [`docs/intent.md`](docs/intent.md) | What the product is for |
 | [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
 | [`docs/architecture.md`](docs/architecture.md) | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
-| [`docs/plan.md`](docs/plan.md) | Scope for phases 1, 2 and 3 |
+| [`docs/plan.md`](docs/plan.md) | Scope for phases 1–4, and the Phase 5 refactoring steps |
+| [`prototype/`](prototype/README.md) | The design reference: one screen per file, and the domain spec it was reviewed with |
 | [`docs/decisions/`](docs/decisions/README.md) | Decision records for choices that are costly to reverse |

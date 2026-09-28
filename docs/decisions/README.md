@@ -31,3 +31,8 @@ sections 7 and 8.
 
 Records accepted before 2026-09-27 cite `docs/technical_boundaries.md`. That is
 now `docs/architecture.md`, with the same section numbers.
+
+Records accepted before 2026-09-29 cite `prototype/Career Advisor.dc.html` and
+`prototype/_ds/organic-*`. The prototype is now one screen per file under
+`prototype/screens/`, described in `prototype/README.md`, and the Organic
+stylesheet it was built on lives on as `web/src/styles/organic.css`.
