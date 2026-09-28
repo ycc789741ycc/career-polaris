@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
@@ -33,19 +33,16 @@ function serve(latest: Assessment) {
   const routes: Record<string, unknown> = {
     "/assessments/latest": latest,
     "/evidence": page([]),
-    "/fits": page([]),
-    "/roles": page([]),
   };
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input).replace("http://api.test/api/v1", "");
-      return new Response(JSON.stringify(routes[url] ?? null), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }),
-  );
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input).replace("http://api.test/api/v1", "");
+    return new Response(JSON.stringify(routes[url] ?? null), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
 }
 
 function renderStrengths() {
@@ -81,5 +78,26 @@ describe("Strengths", () => {
 
     expect(await screen.findByText(/Profile v2/)).toBeInTheDocument();
     expect(screen.queryByText(/Out of date/)).not.toBeInTheDocument();
+  });
+
+  // The journey runs 01 → 04; the role map reclusters and rescores as the
+  // market moves, so it must not reach back and reshape this report.
+  it("reads nothing from the role map", async () => {
+    const fetch = serve(assessment({}));
+    renderStrengths();
+
+    expect(await screen.findByText(/Profile v2/)).toBeInTheDocument();
+    const paths = fetch.mock.calls.map(([input]) => String(input));
+    expect(paths.some((path) => /\/(fits|roles)\b/.test(path))).toBe(false);
+    expect(screen.queryByText(/Compared against/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ranked ledger" }));
+    expect(
+      screen.getByText("Every dimension, weakest first"),
+    ).toBeInTheDocument();
+    // The score alone: no bar borrowed from a role.
+    expect(
+      screen.getByRole("img", { name: "API design: you 70" }),
+    ).toBeInTheDocument();
   });
 });

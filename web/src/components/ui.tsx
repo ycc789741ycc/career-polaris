@@ -302,14 +302,17 @@ export function RoundCheck({
   );
 }
 
-/** A score against a bar, both on 0–100: the fill is you, the mark is the bar. */
+/**
+ * A score against a bar, both on 0–100: the fill is you, the mark is the bar.
+ * Without a bar it is the score alone, with no mark.
+ */
 export function YouVsBar({
   you,
   bar,
   label,
 }: {
   you: number;
-  bar: number;
+  bar?: number | undefined;
   label: string;
 }) {
   const clamp = (value: number) => Math.max(0, Math.min(100, value));
@@ -317,10 +320,16 @@ export function YouVsBar({
     <div
       className="you-vs-bar"
       role="img"
-      aria-label={`${label}: you ${you}, the bar is ${bar}`}
+      aria-label={
+        bar === undefined
+          ? `${label}: you ${you}`
+          : `${label}: you ${you}, the bar is ${bar}`
+      }
     >
       <div className="you-vs-bar-fill" style={{ width: `${clamp(you)}%` }} />
-      <div className="you-vs-bar-mark" style={{ left: `${clamp(bar)}%` }} />
+      {bar !== undefined && (
+        <div className="you-vs-bar-mark" style={{ left: `${clamp(bar)}%` }} />
+      )}
     </div>
   );
 }
