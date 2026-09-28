@@ -10,6 +10,7 @@ import { page } from "../test/page";
 const assessment: Assessment = {
   id: "a1",
   profile_version: 3,
+  is_out_of_date: false,
   model_id: "claude-opus-5",
   template_version: "skill_assessment@v1",
   created_at: "2026-09-27T09:00:00Z",

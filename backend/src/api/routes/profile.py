@@ -183,6 +183,12 @@ async def resume_url(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> Dow
     return DownloadUrl(url=await deps.profile.resume_download_url(user, resume_id))
 
 
+@router.delete("/resumes/{resume_id}", status_code=204)
+async def delete_resume(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """The file, and every fact taken from it, leave the profile."""
+    await deps.profile.delete_resume(user, resume_id)
+
+
 @router.get("/evidence")
 async def list_evidence(user: CurrentUser, deps: Deps, paging: Paging) -> EvidencePage:
     """Every fact on the profile, newest first. The list that grows with each sync."""

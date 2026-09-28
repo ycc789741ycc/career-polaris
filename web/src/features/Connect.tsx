@@ -8,7 +8,6 @@ import type {
   Dimension,
   Evidence,
   EvidencePage,
-  ProfileSummary,
   ResumeFile,
   ResumeFilePage,
 } from "../api/types";
@@ -65,11 +64,10 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
     () => api.get("/assessments/latest"),
     [],
   );
-  const profile = useAsync<ProfileSummary>(() => api.get("/profile"), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The connector whose card is asking "are you sure?", if any.
+  // The connector, or résumé id, whose card is asking "are you sure?".
   const [confirming, setConfirming] = useState<string | null>(null);
   // Facts picked on a chart or filter; the table lists only these while set.
   const [selection, setSelection] = useState<FactSelection | null>(null);
@@ -108,7 +106,30 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
       await api.del(`/connections/${kind}`);
       setConfirming(null);
       setSelection(null);
-      await Promise.all([connections.reload(), evidence.reload()]);
+      await Promise.all([
+        connections.reload(),
+        evidence.reload(),
+        assessment.reload(),
+      ]);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeResume(id: string) {
+    setBusy(id);
+    setError(null);
+    try {
+      await api.del(`/resumes/${id}`);
+      setConfirming(null);
+      setSelection(null);
+      await Promise.all([
+        resumes.reload(),
+        evidence.reload(),
+        assessment.reload(),
+      ]);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -133,15 +154,13 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const bySource = countBy(facts, (item) => item.source);
   const citedBy = citations(assessment.data);
   const uncited = facts.filter((item) => !citedBy.has(item.id));
-  const isAnalysisBehind =
-    assessment.data !== null &&
-    profile.data !== null &&
-    profile.data.version > assessment.data.profile_version;
+  const isAnalysisBehind = assessment.data?.is_out_of_date ?? false;
   const picked = selection ? new Set(selection.ids) : null;
   const listed = picked
     ? facts.filter((item) => picked.has(item.id))
     : facts.slice(0, 50);
-  const latestResume = (resumes.data ?? [])[0];
+  const uploaded = resumes.data ?? [];
+  const latestResume = uploaded[0];
 
   return (
     <AutoGrid col={340}>
@@ -354,13 +373,71 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
               </div>
             </div>
 
+            {uploaded.length > 0 && (
+              <ul className="stack" style={{ gap: 10, margin: 0, padding: 0 }}>
+                {uploaded.map((resume) => (
+                  <li
+                    key={resume.id}
+                    className="panel panel-tight"
+                    style={{ listStyle: "none" }}
+                  >
+                    {confirming === resume.id ? (
+                      <div
+                        role="group"
+                        aria-label={`Remove ${resume.filename}`}
+                        className="stack"
+                        style={{ gap: 10 }}
+                      >
+                        <p style={{ margin: 0, fontSize: 13.5 }}>
+                          Remove {resume.filename}? This deletes the file and
+                          the facts taken from it. Your analysis will be out of
+                          date until you re-analyse.
+                        </p>
+                        <div className="row">
+                          <Button
+                            variant="danger"
+                            busy={busy === resume.id}
+                            onClick={() => void removeResume(resume.id)}
+                          >
+                            Remove
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={busy === resume.id}
+                            onClick={() => setConfirming(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="row-between"
+                        style={{ alignItems: "center" }}
+                      >
+                        <span style={{ fontSize: 13.5 }}>
+                          {resume.filename}{" "}
+                          <span className="muted">
+                            · uploaded{" "}
+                            {new Date(resume.uploaded_at).toLocaleDateString()}
+                          </span>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          onClick={() => setConfirming(resume.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
             <FollowUpQuestions
               onAnswered={() =>
-                void Promise.all([
-                  evidence.reload(),
-                  assessment.reload(),
-                  profile.reload(),
-                ])
+                void Promise.all([evidence.reload(), assessment.reload()])
               }
             />
           </div>
@@ -566,7 +643,7 @@ function CitationNote({
       {total - uncited} of {factCount(total)} back a score in your latest
       analysis ({new Date(assessment.created_at).toLocaleDateString()}).
       {isBehind &&
-        " Your sources have changed since, so newer facts are not scored yet."}
+        " Your evidence has changed since, so it is out of date — re-analyse to catch up."}
       {uncited > 0 && !isShowingUncited && (
         <>
           {" "}

@@ -75,6 +75,7 @@ class ResumeFileRepository(Repository[ResumeFile, ResumeFileFilter], Protocol):
 class EvidenceFilter:
     source: EvidenceSource | None = None
     external_refs: tuple[str, ...] | None = None
+    resume_file_id: uuid.UUID | None = None
 
 
 class EvidenceRepository(Repository[Evidence, EvidenceFilter], Protocol): ...

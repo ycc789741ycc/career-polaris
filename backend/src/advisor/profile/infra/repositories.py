@@ -120,6 +120,8 @@ class SqlAlchemyEvidenceRepository(SqlAlchemyRepository[Evidence, models.Evidenc
             found.append(models.Evidence.source == str(filter.source))
         if filter.external_refs is not None:
             found.append(models.Evidence.external_ref.in_(filter.external_refs))
+        if filter.resume_file_id is not None:
+            found.append(models.Evidence.resume_file_id == filter.resume_file_id)
         return found
 
 

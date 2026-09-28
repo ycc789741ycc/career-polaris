@@ -125,6 +125,15 @@ class Evidence:
         self.tally = tally
         self.subject = subject
 
+    def found_in_resume(self, resume_file_id: uuid.UUID) -> None:
+        """A newer upload restated this line, so the line is that upload's now.
+
+        Removing a résumé removes the lines it owns. Moving a line to the
+        newest file that states it means removing an older copy keeps it, and
+        removing the newest takes it away.
+        """
+        self.resume_file_id = resume_file_id
+
 
 def _check_confidence(confidence: float) -> None:
     if not 0.0 <= confidence <= 1.0:

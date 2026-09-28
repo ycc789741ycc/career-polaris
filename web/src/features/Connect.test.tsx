@@ -69,6 +69,7 @@ function assessment(overrides: Partial<Assessment>): Assessment {
   return {
     id: "a1",
     profile_version: 1,
+    is_out_of_date: false,
     model_id: "m",
     template_version: "t",
     created_at: "2026-09-20T10:00:00Z",
@@ -255,21 +256,63 @@ describe("Connect", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("says when sources changed after the analysis", async () => {
+  it("says when the evidence changed after the analysis", async () => {
     serve((call) => {
       if (call.url === "/evidence") return [prFact];
       if (call.url === "/assessments/latest")
-        return assessment({ profile_version: 2 });
-      if (call.url === "/profile") return { version: 3, evidence_count: 1 };
+        return assessment({ is_out_of_date: true });
       return undefined;
     });
     renderConnect();
 
     expect(
-      await screen.findByText(
-        /Your sources have changed since, so newer facts are not scored yet/,
-      ),
+      await screen.findByText(/Your evidence has changed since/),
     ).toBeInTheDocument();
+  });
+
+  it("removes a résumé only after confirming, then reloads", async () => {
+    let uploaded = true;
+    const calls = serve((call) => {
+      if (call.url === "/resumes")
+        return uploaded
+          ? [
+              {
+                id: "r1",
+                filename: "cv.pdf",
+                status: "parsed",
+                parse_error: null,
+                uploaded_at: "2026-09-20T10:00:00Z",
+              },
+            ]
+          : [];
+      return undefined;
+    });
+    renderConnect();
+    const user = userEvent.setup();
+
+    const listed = (await screen.findAllByText(/cv\.pdf/)).find((node) =>
+      node.closest("li"),
+    );
+    await user.click(
+      within(listed!.closest("li")!).getByRole("button", { name: "Remove" }),
+    );
+    const confirm = screen.getByRole("group", { name: "Remove cv.pdf" });
+    expect(confirm).toHaveTextContent("the facts taken from it");
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+
+    uploaded = false;
+    await user.click(within(confirm).getByRole("button", { name: "Remove" }));
+
+    expect(calls).toContainEqual({ method: "DELETE", url: "/resumes/r1" });
+    await vi.waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Remove" }),
+      ).not.toBeInTheDocument(),
+    );
+    const reloads = calls.filter(
+      (c) => c.method === "GET" && c.url === "/assessments/latest",
+    );
+    expect(reloads.length).toBeGreaterThan(1);
   });
 
   it("asks for an analysis before it can say what backs a score", async () => {
