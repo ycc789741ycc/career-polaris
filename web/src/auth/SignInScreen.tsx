@@ -234,7 +234,7 @@ export function SignInScreen() {
 const PITCH = [
   {
     title: "Evidence, not self-assessment",
-    note: "Every score cites the pull request, ticket or résumé line it came from.",
+    note: "Every score cites the commit, ticket or résumé line it came from.",
   },
   {
     title: "Roles from real openings",

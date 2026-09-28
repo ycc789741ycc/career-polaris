@@ -28,9 +28,9 @@ class EvidenceSource(StrEnum):
 class EvidenceGranularity(StrEnum):
     """Whether a fact is one piece of work or a tally over many.
 
-    An ``item`` is one pull request, one issue or one résumé line; its
+    An ``item`` is one commit, one issue or one résumé line; its
     ``observed_on`` is when that work happened. A ``summary`` counts many items
-    ("12 merged pull requests in x") and its date is only the latest of them,
+    ("12 commits authored in x") and its date is only the latest of them,
     so anything that counts work over time must count items alone.
     """
 

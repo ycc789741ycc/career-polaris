@@ -36,8 +36,10 @@ class FakeConnector:
         *,
         fails: bool = False,
         account: str | None = "octo",
+        retired_refs: tuple[str, ...] = (),
     ) -> None:
         self.drafts = drafts or []
+        self.retired_refs = retired_refs
         self.fails = fails
         self.account = account
         self.tokens: list[str] = []
@@ -139,6 +141,47 @@ async def test_a_sync_turns_a_source_into_evidence_and_bumps_the_version() -> No
     ]
     (connection,) = uow.store.connections.values()
     assert connection.last_synced_at is not None
+
+
+async def test_a_sync_deletes_the_shapes_its_connector_retired_and_keeps_the_rest() -> None:
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector([_draft("github:pr:1"), _draft("github:merged:acme/ledger")])
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+    await profile.record_answer(OWNER, question_id="q1", question="Led it?", answer="Yes")
+
+    connector.drafts = [_draft("github:commit:abc")]
+    connector.retired_refs = ("github:merged:", "github:pr:")
+    await profile.sync_connection(OWNER, "github")
+
+    snapshot = await profile.snapshot(OWNER)
+    assert {(str(e.source), e.reference) for e in snapshot.evidence} == {
+        ("github", "https://github.test/github:commit:abc"),
+        ("self_reported", "Your answer"),
+    }
+    assert uow.store.events[-2] == ProfileUpdated(
+        owner_id=OWNER, source=EvidenceSource.GITHUB, version=snapshot.version, count=3
+    )
+
+
+async def test_a_sync_that_only_retires_facts_still_bumps_the_version() -> None:
+    uow = FakeProfileUnitOfWork()
+    connector = FakeConnector([_draft("github:pr:1")])
+    profile = _service(uow, connector=connector)
+    await profile.store_connection(
+        OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
+    )
+    await profile.sync_connection(OWNER, "github")
+
+    connector.drafts = []
+    connector.retired_refs = ("github:pr:",)
+    assert await profile.sync_connection(OWNER, "github") == 0
+
+    snapshot = await profile.snapshot(OWNER)
+    assert snapshot.evidence == () and snapshot.version == 2
 
 
 async def test_a_resync_restates_facts_rather_than_duplicating_them() -> None:

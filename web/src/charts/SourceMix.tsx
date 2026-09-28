@@ -43,7 +43,7 @@ export function sourceShares(facts: Evidence[]): SourceShare[] {
 /**
  * How the evidence splits by source, as one stacked bar.
  *
- * It shares out facts, not work: one fact can be a single pull request or a
+ * It shares out facts, not work: one fact can be a single commit or a
  * total of a hundred, so the note under the bar says so rather than let the
  * widths be read as effort.
  */

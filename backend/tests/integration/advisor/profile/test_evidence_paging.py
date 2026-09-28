@@ -25,6 +25,7 @@ FACTS = 5
 
 class FakeJira:
     kind = "jira"
+    retired_refs: tuple[str, ...] = ()
 
     async def account_name(self, client: Any, token: str) -> str:
         return token

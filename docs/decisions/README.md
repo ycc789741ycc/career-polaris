@@ -21,6 +21,7 @@ new record that supersedes the old one.
 | [0013](0013-type-every-http-response-with-a-schema-model.md) | Type every HTTP response with a schema model built from a component's view | Accepted |
 | [0014](0014-page-every-list-response.md) | Page every list response, with `page`, `page_size` and `total` | Accepted |
 | [0015](0015-remove-a-resumes-evidence-with-it-and-flag-reports-it-outdates.md) | Remove a résumé's evidence with it, and mark every report the profile has moved past as out of date | Accepted |
+| [0016](0016-count-github-work-by-commit-not-pull-request.md) | Count GitHub work by commit, not by pull request | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
