@@ -1,0 +1,123 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "h": 1560,
+      "is_interactive": true,
+      "title": "01 Sources",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Model.dc.html": {
+      "h": 1080,
+      "is_interactive": true,
+      "title": "AI & model",
+      "w": 1440,
+      "x": 4560,
+      "y": 2180
+    },
+    "Plan.dc.html": {
+      "h": 1480,
+      "is_interactive": true,
+      "title": "04 Advisor — Gap plan",
+      "w": 1440,
+      "x": 1520,
+      "y": 2180
+    },
+    "Resume.dc.html": {
+      "h": 1560,
+      "is_interactive": true,
+      "title": "04 Advisor — Résumé",
+      "w": 1440,
+      "x": 3040,
+      "y": 2180
+    },
+    "Roles.dc.html": {
+      "h": 1720,
+      "is_interactive": true,
+      "title": "03 Role map",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "Sidebar.dc.html": {
+      "h": 900,
+      "title": "Shared sidebar",
+      "w": 246,
+      "x": 4560,
+      "y": 0
+    },
+    "Strengths.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "title": "02 Strengths",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Gaps.dc.html": {
+      "h": 1500,
+      "is_interactive": true,
+      "title": "04 Advisor — Fill the gap",
+      "w": 1440,
+      "x": 0,
+      "y": 2180
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-28T09:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "data": {
+      "fill": "gray",
+      "maxH": 300,
+      "text": "Sample data only — the person, companies, scores and facts are illustrative, drawn to show the layout, not taken from any account.",
+      "w": 360,
+      "x": 4560,
+      "y": 1560
+    },
+    "row1": {
+      "kind": "title1",
+      "maxW": 4480,
+      "text": "The journey — 01 Sources · 02 Strengths · 03 Role map",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "04 Advisor (Fill the gap · Gap plan · Résumé) · System configuration",
+      "w": 240,
+      "x": 0,
+      "y": 1880
+    },
+    "rules": {
+      "fill": "orange",
+      "maxH": 520,
+      "text": "Rules the current build holds to\n\n• The journey only runs forward: a step reads the ones before it, never after. Strengths shows no role fit; comparing to a role is the role map's job.\n• Sources lists collected facts only. Follow-up questions live in the Advisor's Fill the gap step; each answer comes back to Sources as a Your answer fact.\n• The role map has exactly ONE control that aims the Advisor: the sticky \"Advisor target\" bar.\n• Every AI action shows a cost estimate on the user's own key first.\n• Light-only; Organic design system (Caprasimo + Figtree).",
+      "w": 360,
+      "x": 4560,
+      "y": 980
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Strengths.dc.html",
+    "Roles.dc.html",
+    "Gaps.dc.html",
+    "Plan.dc.html",
+    "Resume.dc.html",
+    "Model.dc.html",
+    "Sidebar.dc.html"
+  ],
+  "pages": [],
+  "title": "Career Advisor — current layout"
+}
