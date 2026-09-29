@@ -26,6 +26,7 @@ new record that supersedes the old one.
 | [0018](0018-gate-journey-stages-on-recorded-run-status.md) | Gate the journey's stages on the status each stage records while it runs | Accepted |
 | [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted |
 | [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted |
+| [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

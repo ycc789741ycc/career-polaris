@@ -49,11 +49,14 @@ class SqlAlchemyRoleRepository(SqlAlchemyRepository[Role, models.Role, RoleFilte
         return entity.id
 
     def conditions(self, filter: RoleFilter) -> list[ColumnElement[bool]]:
+        found: list[ColumnElement[bool]] = []
         if filter.is_retired is True:
-            return [models.Role.retired_at.is_not(None)]
+            found.append(models.Role.retired_at.is_not(None))
         if filter.is_retired is False:
-            return [models.Role.retired_at.is_(None)]
-        return []
+            found.append(models.Role.retired_at.is_(None))
+        if filter.origin is not None:
+            found.append(models.Role.origin == str(filter.origin))
+        return found
 
 
 class SqlAlchemyRoleMemberRepository(

@@ -7,10 +7,12 @@ the ledger, not the model.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import date
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import text
 
 from advisor.identity import IdentityService, create_identity_service
@@ -59,11 +61,55 @@ def stub_provider(monkeypatch: pytest.MonkeyPatch) -> StubProvider:
     return provider
 
 
-async def _own_market_only(market, account: uuid.UUID) -> None:
-    """Choosing a market keeps the platform's baseline postings out of scope, so
-    a test sees only the postings it pasted, whatever the crawler has stored in
-    this database (domain decision 15)."""
-    await market.set_target_locations(account, [f"Test market {uuid.uuid4().hex[:8]}"])
+Crawl = Callable[[list[tuple[str, str, str]]], Awaitable[str]]
+
+
+@pytest_asyncio.fixture
+async def crawled(crawler_database: Database) -> AsyncIterator[Crawl]:
+    """Crawl postings into a place of their own, and return that place for a
+    user to choose as their only target location. The postings go through the
+    crawler role, as real ones do; a role map groups nothing else (ADR 0021)."""
+    from advisor.market import NormalizedPosting, SourceKind, create_crawl_ingest
+    from advisor.market.infra.models import CrawlSource
+
+    sources: list[uuid.UUID] = []
+
+    async def crawl(postings: list[tuple[str, str, str]]) -> str:
+        place = f"Testplace{uuid.uuid4().hex[:10]}"
+        async with crawler_database.shared() as session:
+            row = CrawlSource(kind="greenhouse", endpoint=f"https://boards.test/{uuid.uuid4()}")
+            session.add(row)
+            await session.flush()
+            sources.append(row.id)
+        await create_crawl_ingest(crawler_database).record_crawl(
+            sources[-1],
+            [
+                NormalizedPosting(
+                    external_id=f"{company}-{title}",
+                    company_name=company,
+                    title=title,
+                    location=place,
+                    description=description,
+                    url=f"https://boards.test/{uuid.uuid4().hex}",
+                    source_kind=SourceKind.ATS_BOARD,
+                    posted_on=date(2026, 9, 1),
+                    salary=None,
+                )
+                for company, title, description in postings
+            ],
+        )
+        return place
+
+    yield crawl
+    async with crawler_database.shared() as session:
+        for source_id in sources:
+            await session.execute(
+                text("DELETE FROM market.job_posting WHERE crawl_source_id = :id"),
+                {"id": source_id},
+            )
+            await session.execute(
+                text("DELETE FROM market.crawl_source WHERE id = :id"), {"id": source_id}
+            )
 
 
 @pytest.fixture
@@ -312,6 +358,7 @@ async def test_the_role_map_estimate_runs_no_local_ml(
     profile: ProfileService,
     settings: Settings,
     account: uuid.UUID,
+    crawled: Crawl,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The api prices a role map without embeddings or clustering — it has no
@@ -329,15 +376,13 @@ async def test_the_role_map_estimate_runs_no_local_ml(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
     market = create_market_service(database)
-    await _own_market_only(market, account)
-    for i in range(7):
-        await market.paste_job_description(
-            account,
-            company_name=f"Company {i}",
-            title="Backend engineer",
-            location=None,
-            description="Python, Postgres and queues. " * (i + 1),
-        )
+    place = await crawled(
+        [
+            (f"Company {i}", "Backend engineer", "Python, Postgres and queues. " * (i + 1))
+            for i in range(7)
+        ]
+    )
+    await market.set_target_locations(account, [place])
     rolemap = create_rolemap_service(
         database,
         market=market,
@@ -360,6 +405,7 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
     profile: ProfileService,
     settings: Settings,
     account: uuid.UUID,
+    crawled: Crawl,
     stub_provider: StubProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -391,16 +437,14 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
     market = create_market_service(database)
-    await _own_market_only(market, account)
-    for group in range(12):
-        for copy in range(3):
-            await market.paste_job_description(
-                account,
-                company_name=f"Company {group}-{copy}",
-                title=f"Role group-{group}",
-                location=None,
-                description="What the job involves.",
-            )
+    place = await crawled(
+        [
+            (f"Company {group}-{copy}", f"Role group-{group}", "What the job involves.")
+            for group in range(12)
+            for copy in range(3)
+        ]
+    )
+    await market.set_target_locations(account, [place])
     # Closer to higher-numbered groups, and nowhere near groups 0 and 1.
     await profile.record_answer(
         account,
@@ -457,6 +501,7 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
     profile: ProfileService,
     settings: Settings,
     account: uuid.UUID,
+    crawled: Crawl,
 ) -> None:
     from advisor.market import create_market_service
 
@@ -464,15 +509,10 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
     market = create_market_service(database)
-    await _own_market_only(market, account)
-    for i in range(60):
-        await market.paste_job_description(
-            account,
-            company_name=f"Company {i}",
-            title="Backend engineer",
-            location=None,
-            description="Python, Postgres and queues.",
-        )
+    place = await crawled(
+        [(f"Company {i}", "Backend engineer", "Python, Postgres and queues.") for i in range(60)]
+    )
+    await market.set_target_locations(account, [place])
     rolemap = create_rolemap_service(
         database,
         market=market,

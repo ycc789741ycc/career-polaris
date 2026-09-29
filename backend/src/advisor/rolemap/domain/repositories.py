@@ -24,6 +24,7 @@ from advisor.rolemap.domain.entities import (
     LineageEntry,
     Role,
     RoleMember,
+    RoleOrigin,
     RoleRequirement,
 )
 from advisor.rolemap.domain.events import RoleMapEvent
@@ -50,6 +51,7 @@ class Repository[Entity, Filter](Protocol):
 @dataclass(frozen=True, slots=True)
 class RoleFilter:
     is_retired: bool | None = None
+    origin: RoleOrigin | None = None
 
 
 class RoleRepository(Repository[Role, RoleFilter], Protocol): ...

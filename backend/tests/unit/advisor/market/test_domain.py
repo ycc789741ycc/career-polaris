@@ -22,6 +22,7 @@ from advisor.market.domain import (
     expired_keys,
     in_market,
     market_words,
+    names_every_word,
     normalize,
     normalize_title,
 )
@@ -244,3 +245,10 @@ def test_at_most_three_target_locations_are_chosen() -> None:
 def test_a_blank_target_location_is_refused() -> None:
     with pytest.raises(TargetLocationError):
         chosen_target_locations(["Berlin", "  "])
+
+
+def test_a_role_title_takes_in_a_posting_naming_each_of_its_words_in_any_order() -> None:
+    assert names_every_word("Backend Engineer, Staff", "Staff Backend")
+    assert names_every_word("Ingénieur Backend", "ingenieur")
+    assert not names_every_word("Staff Designer", "Staff Backend")
+    assert not names_every_word("Anything", "  ")

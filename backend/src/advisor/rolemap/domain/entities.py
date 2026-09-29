@@ -16,18 +16,46 @@ from typing import Any
 from advisor.rolemap.domain.hiring_bar import HiringBar
 from advisor.rolemap.domain.identity import RoleChange
 
+MAX_ROLE_TITLE = 255
+MAX_COMPANY_NAME = 255
+
+
+class RoleOrigin(StrEnum):
+    """Where a role came from (domain decision 25).
+
+    ``recommended`` is one of the ten clusters closest to the profile, retired
+    by reconciliation when it falls out. ``custom`` is one the user added by
+    title; it is never retired by reconciliation, does not count toward the
+    ten, and stays until the user removes it.
+    """
+
+    RECOMMENDED = "recommended"
+    CUSTOM = "custom"
+
+
+class CustomRoleError(ValueError):
+    """A custom role the user cannot add as asked."""
+
 
 @dataclass(slots=True)
 class Role:
-    """A cluster of postings in one user's markets.
+    """A cluster of postings in one user's target locations, or a role the
+    user added themselves.
 
-    ``id`` is stable across re-clustering: goals and fits point at it, so
+    ``id`` is stable across re-clustering: plans and fits point at it, so
     renumbering on every crawl would break them.
     """
 
     id: uuid.UUID
     owner_id: uuid.UUID
     name: str
+    origin: RoleOrigin = RoleOrigin.RECOMMENDED
+    # A custom role's company, if the user named one; its postings are searched
+    # for at that company only.
+    company_name: str | None = None
+    # A custom role's private JD in market_user, if the user pasted one. It is
+    # the role's requirement basis (domain decision 26).
+    private_posting_id: uuid.UUID | None = None
     is_coherent: bool = True
     opening_count: int = 0
     hiring_bar: int = 50
@@ -41,6 +69,38 @@ class Role:
     retired_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @classmethod
+    def custom(
+        cls,
+        *,
+        owner_id: uuid.UUID,
+        title: str,
+        company_name: str | None,
+        private_posting_id: uuid.UUID | None,
+    ) -> Role:
+        """A role the user named. Its title is theirs and stays theirs: an
+        analysis reads its requirements but never renames it."""
+        name = title.strip()
+        if not name:
+            raise CustomRoleError("a custom role needs a job title")
+        if len(name) > MAX_ROLE_TITLE:
+            raise CustomRoleError(f"a job title is at most {MAX_ROLE_TITLE} characters")
+        company = (company_name or "").strip() or None
+        if company is not None and len(company) > MAX_COMPANY_NAME:
+            raise CustomRoleError(f"a company name is at most {MAX_COMPANY_NAME} characters")
+        return cls(
+            id=uuid.uuid4(),
+            owner_id=owner_id,
+            name=name,
+            origin=RoleOrigin.CUSTOM,
+            company_name=company,
+            private_posting_id=private_posting_id,
+        )
+
+    @property
+    def is_custom(self) -> bool:
+        return self.origin is RoleOrigin.CUSTOM
 
     def refresh_market(self, *, opening_count: int, salary_bands: dict[str, Any]) -> None:
         """Keep an analysed role, refreshing only what needs no AI."""
@@ -60,7 +120,9 @@ class Role:
         model_id: str,
         template_version: str,
     ) -> None:
-        self.name = name
+        # A custom role keeps the title the user gave it.
+        if not self.is_custom:
+            self.name = name
         self.is_coherent = is_coherent
         self.opening_count = opening_count
         self.hiring_bar = bar.value

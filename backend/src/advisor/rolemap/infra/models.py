@@ -30,7 +30,8 @@ from kernel.db.base import Base, OwnedMixin, TimestampMixin, new_id
 
 
 class Role(Base, OwnedMixin, TimestampMixin):
-    """A cluster of postings in one user's markets.
+    """A cluster of postings in one user's target locations, or a role the user
+    added.
 
     ``id`` is stable across re-clustering: goals and fits point at it, so
     renumbering on every crawl would break them.
@@ -39,11 +40,17 @@ class Role(Base, OwnedMixin, TimestampMixin):
     __tablename__ = "role"
     __table_args__ = (
         Index("ix_role_owner_name", "owner_id", "name"),
+        CheckConstraint("origin IN ('recommended', 'custom')", name="origin"),
         {"schema": "rolemap"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # `recommended` (one of the ten) or `custom` (added by the user, ADR 0021).
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="recommended")
+    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The custom role's pasted JD, in market_user.private_job_posting.
+    private_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     is_coherent: Mapped[bool] = mapped_column(nullable=False, server_default="true")
     opening_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 

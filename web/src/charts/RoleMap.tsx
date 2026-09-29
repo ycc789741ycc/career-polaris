@@ -11,6 +11,8 @@ export interface RoleBubble {
   openings: number;
   fit: number | null;
   reasoning: string | null;
+  /** A role the user added: drawn green and labelled "yours" (ADR 0021). */
+  isCustom?: boolean;
 }
 
 interface Props {
@@ -29,8 +31,9 @@ const MARGIN = { top: 24, right: 40, bottom: 52, left: 72 };
  * X is the hiring bar, Y is salary, bubble size is fit — and fit belongs to the
  * User x Role pair, not to the role, which is why it arrives separately.
  *
- * Every bubble is the same kind of thing, so they share one hue and identity is
- * carried by direct labels. A bar that is only an AI estimate gets a dashed
+ * Recommended roles share one hue and identity is carried by direct labels. A
+ * role the user added is green and labelled "yours", so the two kinds read
+ * apart without a legend lookup. A bar that is only an AI estimate gets a dashed
  * outline: a second, non-colour channel, since "we guessed this" must survive a
  * greyscale print and a colour-blind reader.
  */
@@ -160,15 +163,16 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
               const r = bubbleRadius(role.fit ?? 0);
               const isEstimate = role.barBasis === "estimated";
               const isSelected = role.id === selectedId;
+              const hue = role.isCustom ? "var(--series-2)" : "var(--series-1)";
               return (
                 <g key={role.id}>
                   <circle
                     cx={cx}
                     cy={cy}
                     r={r}
-                    fill="var(--series-1)"
+                    fill={hue}
                     fillOpacity={isSelected ? 0.4 : 0.22}
-                    stroke="var(--series-1)"
+                    stroke={hue}
                     strokeWidth={isSelected ? 3 : 2}
                     strokeDasharray={isEstimate ? "5 4" : undefined}
                   />
@@ -209,9 +213,13 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
                       y={cy - r - 7}
                       textAnchor="middle"
                       fontSize="12"
-                      fill="var(--text-secondary)"
+                      fill={
+                        role.isCustom
+                          ? "var(--color-accent-2-800)"
+                          : "var(--text-secondary)"
+                      }
                     >
-                      {role.name}
+                      {role.isCustom ? `${role.name} · yours` : role.name}
                     </text>
                   )}
                 </g>
@@ -270,6 +278,20 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
           Difficulty estimated from the postings
         </span>
         <span className="legend-item">
+          <svg width="26" height="14" aria-hidden="true">
+            <circle
+              cx="13"
+              cy="7"
+              r="6"
+              fill="var(--series-2)"
+              fillOpacity="0.22"
+              stroke="var(--series-2)"
+              strokeWidth="2"
+            />
+          </svg>
+          A role you added
+        </span>
+        <span className="legend-item">
           Bubble size is how well the role fits you
         </span>
       </div>
@@ -277,7 +299,7 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
       {withoutSalary > 0 && (
         <p className="muted" style={{ fontSize: 13 }}>
           {withoutSalary} role{withoutSalary === 1 ? "" : "s"} had no published
-          pay in your markets, so {withoutSalary === 1 ? "it is" : "they are"}{" "}
+          pay in your locations, so {withoutSalary === 1 ? "it is" : "they are"}{" "}
           listed in the table below rather than plotted.
         </p>
       )}
@@ -300,7 +322,7 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
           <tbody>
             {roles.map((role) => (
               <tr key={role.id}>
-                <td>{role.name}</td>
+                <td>{role.isCustom ? `${role.name} (yours)` : role.name}</td>
                 <td>{role.fit ?? "—"}</td>
                 <td>{role.hiringBar}</td>
                 <td>{role.barBasis}</td>
@@ -317,7 +339,7 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
 
 function ariaFor(role: RoleBubble): string {
   return (
-    `${role.name}: fit ${role.fit ?? "not scored"}, hiring bar ${role.hiringBar}` +
+    `${role.name}${role.isCustom ? " (yours)" : ""}: fit ${role.fit ?? "not scored"}, hiring bar ${role.hiringBar}` +
     `${role.barBasis === "estimated" ? " estimated" : ""}` +
     `${role.salaryLabel ? `, ${role.salaryLabel}` : ""}`
   );

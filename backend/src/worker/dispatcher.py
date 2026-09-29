@@ -97,6 +97,18 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
             await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(build.id))
         return
 
+    if name == EventName.CUSTOM_ROLE_ADDED:
+        # A company named on a custom role seeds board discovery. Only the
+        # company crosses over: the crawl source it may leave has no owner
+        # (domain decision 25). The route already recorded the build.
+        company_name = event.payload.get("company_name")
+        if company_name:
+            company_id = await deps.market.company_named(company_name)
+            await enqueue(
+                "market.discover_board", company_id=str(company_id), company_name=company_name
+            )
+        return
+
     if name == EventName.ROLE_REQUIREMENTS_CHANGED and owner_id:
         await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return

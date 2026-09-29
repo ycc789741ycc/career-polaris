@@ -39,14 +39,6 @@ class MarketScope(ApiModel):
         )
 
 
-class JobDescriptionRequest(RequestModel):
-    company_name: str = Field(min_length=1, max_length=255)
-    title: str = Field(min_length=1, max_length=512)
-    location: str | None = None
-    description: str = Field(min_length=1)
-    url: str | None = None
-
-
 class PastedJobDescription(ApiModel):
     """A pasted JD. It is private to its owner and never enters shared data."""
 

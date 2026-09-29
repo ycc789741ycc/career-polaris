@@ -1,4 +1,4 @@
-"""Role map HTTP surface: the bubble chart's roles."""
+"""Role map HTTP surface: the bubble chart's roles, and the ones the user adds."""
 
 from __future__ import annotations
 
@@ -9,7 +9,13 @@ from fastapi import APIRouter
 from advisor.rolemap import BuildRunView
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
-from api.schemas.rolemap import Role, RoleMapEstimate, RolePage
+from api.schemas.rolemap import (
+    CustomRoleEstimate,
+    CustomRoleRequest,
+    Role,
+    RoleMapEstimate,
+    RolePage,
+)
 from kernel.paging import paginate
 from wiring.container import Container
 from wiring.queue import enqueue
@@ -37,6 +43,53 @@ async def recluster(user: CurrentUser, deps: Deps) -> RunStatus:
     analysis is running and it starts after (ADR 0018). Asking while one is
     already under way returns that one."""
     return RunStatus.from_build(await _request_build(user, deps))
+
+
+@router.post("/roles/custom/cost-estimate")
+async def custom_role_estimate(
+    body: CustomRoleRequest, user: CurrentUser, deps: Deps
+) -> CustomRoleEstimate:
+    """Priced before "Add to Role Map", so nothing is spent unasked. A POST,
+    because a pasted JD does not fit in a query string."""
+    return CustomRoleEstimate.model_validate(
+        await deps.rolemap.estimate_custom_role(
+            user,
+            title=body.title,
+            company_name=body.company_name,
+            job_description=body.job_description,
+        )
+    )
+
+
+@router.post("/roles/custom", status_code=201)
+async def add_custom_role(body: CustomRoleRequest, user: CurrentUser, deps: Deps) -> Role:
+    """Place a role the user named beside the ten (ADR 0021). Its JD, if any,
+    is stored privately; the build that analyses it is recorded here, so the
+    page sees it at once, and waits for a running analysis (ADR 0018)."""
+    jd = (body.job_description or "").strip()
+    private_posting_id = None
+    if jd:
+        pasted = await deps.market.paste_job_description(
+            user,
+            company_name=body.company_name or "",
+            title=body.title,
+            location=None,
+            description=jd,
+        )
+        private_posting_id = pasted.id
+    role = await deps.rolemap.add_custom_role(
+        user,
+        title=body.title,
+        company_name=body.company_name,
+        private_posting_id=private_posting_id,
+    )
+    await _request_build(user, deps)
+    return Role.from_view(role)
+
+
+@router.delete("/roles/custom/{role_id}", status_code=204)
+async def remove_custom_role(role_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    await deps.rolemap.remove_custom_role(user, role_id)
 
 
 async def _request_build(user: uuid.UUID, deps: Container) -> BuildRunView:

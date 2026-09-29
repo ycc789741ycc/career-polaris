@@ -38,7 +38,9 @@ class FakeRoles(FakeRepository[Role, RoleFilter]):
     noun = "role"
 
     def matches(self, entity: Role, filter: RoleFilter) -> bool:
-        return filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired
+        return (
+            filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired
+        ) and (filter.origin is None or entity.origin is filter.origin)
 
 
 class FakeMembers(FakeRepository[RoleMember, RoleMemberFilter]):

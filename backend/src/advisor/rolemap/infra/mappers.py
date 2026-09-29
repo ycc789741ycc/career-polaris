@@ -9,6 +9,7 @@ from advisor.rolemap.domain import (
     Role,
     RoleChange,
     RoleMember,
+    RoleOrigin,
     RoleRequirement,
 )
 from advisor.rolemap.infra import models
@@ -19,6 +20,9 @@ def role(row: models.Role) -> Role:
         id=row.id,
         owner_id=row.owner_id,
         name=row.name,
+        origin=RoleOrigin(row.origin),
+        company_name=row.company_name,
+        private_posting_id=row.private_posting_id,
         is_coherent=row.is_coherent,
         opening_count=row.opening_count,
         hiring_bar=row.hiring_bar,
@@ -43,6 +47,9 @@ def role_row(entity: Role) -> models.Role:
 
 def apply_role(row: models.Role, entity: Role) -> None:
     row.name = entity.name
+    row.origin = str(entity.origin)
+    row.company_name = entity.company_name
+    row.private_posting_id = entity.private_posting_id
     row.is_coherent = entity.is_coherent
     row.opening_count = entity.opening_count
     row.hiring_bar = entity.hiring_bar

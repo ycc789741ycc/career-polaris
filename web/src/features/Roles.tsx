@@ -11,8 +11,6 @@ import type {
   RolePage,
   SalaryBand,
   MarketScope,
-  TargetOption,
-  TargetOptionPage,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
@@ -30,7 +28,7 @@ import { isBusy, useActivity } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
-import { OwnJdPanel } from "./OwnJd";
+import { CustomRoleForm } from "./CustomRole";
 import { messageOf, useAsync } from "./useAsync";
 
 /**
@@ -57,11 +55,6 @@ export function Roles() {
     [settled.analysis],
   );
   const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
-  // For the pasted JDs: the only Targets that are not a role on the map.
-  const targets = useAsync<TargetOption[]>(
-    () => api.items<TargetOptionPage>("/targets"),
-    [],
-  );
   const matched = useAsync<MatchedPosting[]>(
     () => api.items<MatchedPostingPage>("/matched-postings?page_size=10"),
     [settled.roleMap, settled.analysis],
@@ -95,43 +88,39 @@ export function Roles() {
       openings: role.opening_count,
       fit: fit?.score ?? null,
       reasoning: fit?.reasoning ?? role.bar_reasoning,
+      isCustom: role.origin === "custom",
     };
   });
 
   // With nothing picked, the role that fits best is the one worth reading. A
-  // picked role no longer on the map falls back to it too; a picked JD means
-  // no role is selected.
+  // picked role no longer on the map falls back to it too. A pasted JD in the
+  // hash is the custom role it came with (ADR 0021).
   const bestId = [...bubbles].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1))[0]
     ?.id;
   const pickedId =
-    focus?.kind === "role" && bubbles.some((b) => b.id === focus.id)
-      ? focus.id
-      : undefined;
-  const activeId = pickedId ?? (focus?.kind === "jd" ? undefined : bestId);
+    focus?.kind === "role"
+      ? bubbles.find((b) => b.id === focus.id)?.id
+      : focus?.kind === "jd"
+        ? (roles.data ?? []).find((r) => r.private_posting_id === focus.id)?.id
+        : undefined;
+  const activeId = pickedId ?? bestId;
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
   const activeBand = activeRole ? pickBand(activeRole.salary_bands) : null;
 
-  const pastedJds = (targets.data ?? []).filter(
-    (o) => o.kind === "privatePosting",
-  );
-  const pickedJd =
-    focus?.kind === "jd" ? pastedJds.find((o) => o.id === focus.id) : undefined;
-  // The one thing the Advisor will be aimed at: the picked JD, or the role
-  // shown as selected — which is the best fit until the user picks one.
-  const aim: { focus: Focus; label: string; what: string } | null = pickedJd
+  // The one thing the Advisor will be aimed at: the role shown as selected,
+  // which is the best fit until the user picks one. A custom role with a JD is
+  // aimed at through its JD, whose requirements are its own.
+  const aim: { focus: Focus; label: string } | null = activeRole
     ? {
-        focus: { kind: "jd", id: pickedJd.id },
-        label: pickedJd.label,
-        what: "JD",
+        focus: activeRole.private_posting_id
+          ? { kind: "jd", id: activeRole.private_posting_id }
+          : { kind: "role", id: activeRole.id },
+        label: activeRole.company_name
+          ? `${activeRole.name} · ${activeRole.company_name}`
+          : activeRole.name,
       }
-    : activeRole
-      ? {
-          focus: { kind: "role", id: activeRole.id },
-          label: activeRole.name,
-          what: "role",
-        }
-      : null;
+    : null;
 
   const building = isBusy(activity?.role_map);
   const analysing = activity?.analysis?.status === "running";
@@ -220,9 +209,19 @@ export function Roles() {
 
           {activeRole && (
             <div className="panel panel-column">
-              <Eyebrow>Selected role</Eyebrow>
+              <Eyebrow>
+                {activeRole.origin === "custom"
+                  ? "Selected role · yours"
+                  : "Selected role"}
+              </Eyebrow>
               <h3 style={{ fontSize: 27, margin: "8px 0 6px" }}>
                 {activeRole.name}
+                {activeRole.company_name && (
+                  <span className="muted" style={{ fontSize: 17 }}>
+                    {" "}
+                    · {activeRole.company_name}
+                  </span>
+                )}
               </h3>
               <AutoGrid col={110} gap={10} style={{ margin: "10px 0 16px" }}>
                 <StatTile
@@ -241,8 +240,27 @@ export function Roles() {
               <p style={{ fontSize: 14.5, lineHeight: 1.65 }}>
                 {activeFit?.reasoning ??
                   activeRole.bar_reasoning ??
-                  "Not scored yet — run an analysis, then re-score fit."}
+                  (activeRole.origin === "custom"
+                    ? "Not placed yet — it is read at the next build."
+                    : "Not scored yet — run an analysis, then re-score fit.")}
               </p>
+              {activeRole.origin === "custom" && (
+                <div style={{ marginBottom: 12 }}>
+                  <Button
+                    variant="ghost"
+                    busy={busy}
+                    onClick={() =>
+                      void act("Role removed from your map", async () => {
+                        await api.del(`/roles/custom/${activeRole.id}`);
+                        setFocus(null);
+                        await roles.reload();
+                      })
+                    }
+                  >
+                    Remove from my map
+                  </Button>
+                </div>
+              )}
 
               {activeFit && activeFit.gaps.length > 0 && (
                 <>
@@ -401,14 +419,10 @@ export function Roles() {
         </div>
       )}
 
-      <OwnJdPanel
-        pasted={pastedJds}
-        selectedId={focus?.kind === "jd" ? focus.id : null}
-        error={targets.error}
-        onSelect={(id) => setFocus({ kind: "jd", id })}
-        onAdded={async (id) => {
-          await targets.reload();
-          setFocus({ kind: "jd", id });
+      <CustomRoleForm
+        onAdded={async (role) => {
+          await Promise.all([roles.reload(), refreshActivity()]);
+          setFocus({ kind: "role", id: role.id });
         }}
       />
 
@@ -452,7 +466,7 @@ export function Roles() {
             <div className="ellipsis target-bar-label">{aim.label}</div>
           </div>
           <Button onClick={() => navigate("advisor", { focus: aim.focus })}>
-            Target this {aim.what}
+            Target this role
           </Button>
         </div>
       )}

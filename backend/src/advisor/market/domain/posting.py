@@ -87,8 +87,16 @@ def in_market(location: str | None, market: str) -> bool:
     never write a location the way a user names a market, so equal strings
     almost never happen.
     """
-    wanted = set(market_words(market))
-    return bool(wanted) and wanted <= set(normalize(location or "").split())
+    return names_every_word(location, market)
+
+
+def names_every_word(text: str | None, phrase: str) -> bool:
+    """Whether ``text`` contains every word of ``phrase``, accent-folded and in
+    any order. The one word rule for a location in a market and for a posting
+    matching a role the user named ("Staff Backend" takes in "Backend Engineer,
+    Staff")."""
+    wanted = set(market_words(phrase))
+    return bool(wanted) and wanted <= set(normalize(text or "").split())
 
 
 def market_words(market: str) -> tuple[str, ...]:

@@ -504,15 +504,12 @@ export interface paths {
         };
         /**
          * List Pasted
-         * @description The user's pasted JDs, newest first.
+         * @description The user's pasted JDs, newest first. Each came with a custom role, which
+         *     is where one is added (``POST /roles/custom``).
          */
         get: operations["list_pasted_api_v1_job_descriptions_get"];
         put?: never;
-        /**
-         * Paste
-         * @description A pasted JD is private to its owner and never enters shared data.
-         */
-        post: operations["paste_api_v1_job_descriptions_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -767,6 +764,66 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Custom Role
+         * @description Place a role the user named beside the ten (ADR 0021). Its JD, if any,
+         *     is stored privately; the build that analyses it is recorded here, so the
+         *     page sees it at once, and waits for a running analysis (ADR 0018).
+         */
+        post: operations["add_custom_role_api_v1_roles_custom_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/custom/cost-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Custom Role Estimate
+         * @description Priced before "Add to Role Map", so nothing is spent unasked. A POST,
+         *     because a pasted JD does not fit in a query string.
+         */
+        post: operations["custom_role_estimate_api_v1_roles_custom_cost_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/custom/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Custom Role */
+        delete: operations["remove_custom_role_api_v1_roles_custom__role_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1208,6 +1265,33 @@ export interface components {
             /** Provider */
             provider: string;
         };
+        /**
+         * CustomRoleEstimate
+         * @description What adding a custom role will cost, shown before "Add to Role Map".
+         */
+        CustomRoleEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Matches */
+            matches: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published?: boolean | null;
+        };
+        /**
+         * CustomRoleRequest
+         * @description A role of the user's own (domain decision 25): a title, and optionally a
+         *     company and a job description, which stays private to the user.
+         */
+        CustomRoleRequest: {
+            /** Company Name */
+            company_name?: string | null;
+            /** Job Description */
+            job_description?: string | null;
+            /** Title */
+            title: string;
+        };
         /** Dimension */
         Dimension: {
             /** Confidence */
@@ -1352,19 +1436,6 @@ export interface components {
             page_size: number | null;
             /** Total */
             total: number;
-        };
-        /** JobDescriptionRequest */
-        JobDescriptionRequest: {
-            /** Company Name */
-            company_name: string;
-            /** Description */
-            description: string;
-            /** Location */
-            location?: string | null;
-            /** Title */
-            title: string;
-            /** Url */
-            url?: string | null;
         };
         /**
          * JobError
@@ -2012,6 +2083,8 @@ export interface components {
             bar_confidence: number;
             /** Bar Reasoning */
             bar_reasoning: string | null;
+            /** Company Name */
+            company_name: string | null;
             /** Hiring Bar */
             hiring_bar: number;
             /**
@@ -2025,6 +2098,13 @@ export interface components {
             name: string;
             /** Opening Count */
             opening_count: number;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "recommended" | "custom";
+            /** Private Posting Id */
+            private_posting_id: string | null;
             /** Requirements */
             requirements: components["schemas"]["RoleRequirement"][];
             /** Salary Bands */
@@ -3916,59 +3996,6 @@ export interface operations {
             };
         };
     };
-    paste_api_v1_job_descriptions_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["JobDescriptionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PastedJobDescription"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
     market_scope_api_v1_market_scope_get: {
         parameters: {
             query?: never;
@@ -4659,6 +4686,161 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RoleMapEstimate"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_custom_role_api_v1_roles_custom_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Role"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    custom_role_estimate_api_v1_roles_custom_cost_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleEstimate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    remove_custom_role_api_v1_roles_custom__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

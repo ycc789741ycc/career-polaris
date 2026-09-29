@@ -302,3 +302,12 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   goes to `activity.build_after_analysis`: a successful analysis always builds
   the map, a failed one only releases a build that waited. Analyze's estimate
   (`AnalysisEstimate`) includes the build's, so it is confirmed once.
+- **Custom roles** (ADR 0021). `rolemap.role.origin` is `recommended` or
+  `custom`; a custom role has an optional company and private JD, is never
+  retired by reconciliation, and is removed by the user (retired, not deleted).
+  Each build matches it to postings by title words (and company) through
+  `market.names_every_word`, and reads requirements from its JD, else its
+  matches. `POST /roles/custom` (priced by `/roles/custom/cost-estimate`) stores
+  the JD and records the build; `CustomRoleAdded` sends the company to board
+  discovery. Pasted JDs are no longer clustered, and every one belongs to a
+  custom role.
