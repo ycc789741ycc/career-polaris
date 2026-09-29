@@ -20,7 +20,7 @@ from advisor.market.crawling.adapters import ATS_ADAPTERS, BY_NAME, BoardAdapter
 from advisor.market.crawling.politeness import RateLimiter, RobotsCache
 from advisor.market.crawling.run import fetch_source
 from advisor.market.service import CrawlSourceView
-from kernel.errors import UpstreamFailedError
+from kernel.errors import BlockedAddressError, UpstreamFailedError
 from kernel.fetch import GuardedClient
 
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -120,7 +120,7 @@ async def _probe(
     endpoint = adapter.endpoint_for(slug)
     try:
         payload = await client.get_json(endpoint)
-    except UpstreamFailedError:
+    except (UpstreamFailedError, BlockedAddressError):
         return None
     postings = adapter.parse(payload, company_name=company_name)
     if not postings:
@@ -150,7 +150,7 @@ async def _json_ld_page(
         postings = await fetch_source(
             client, source, robots=RobotsCache(user_agent), limiter=RateLimiter(per_second=0)
         )
-    except UpstreamFailedError:
+    except (UpstreamFailedError, BlockedAddressError):
         return None
     if not postings:
         return None
