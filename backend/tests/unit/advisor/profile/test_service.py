@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from advisor.profile import EvidenceSource, ProfileService
+from advisor.profile import AnswerRecord, EvidenceSource, ProfileService
 from advisor.profile.domain import (
     CareerPosition,
     ConnectionStatus,
@@ -161,7 +161,7 @@ async def test_a_sync_deletes_the_shapes_its_connector_retired_and_keeps_the_res
     snapshot = await profile.snapshot(OWNER)
     assert {(str(e.source), e.reference) for e in snapshot.evidence} == {
         ("github", "https://github.test/github:commit:abc"),
-        ("self_reported", "Your answer"),
+        ("user_answer", "Your answer"),
     }
     assert uow.store.events[-2] == ProfileUpdated(
         owner_id=OWNER, source=EvidenceSource.GITHUB, version=snapshot.version, count=3
@@ -504,7 +504,7 @@ async def test_a_resume_that_is_not_yours_cannot_be_deleted() -> None:
 # --- answers and the snapshot ----------------------------------------------
 
 
-async def test_an_answer_becomes_self_reported_evidence() -> None:
+async def test_an_answer_becomes_user_answer_evidence() -> None:
     uow = FakeProfileUnitOfWork()
     profile = _service(uow)
 
@@ -512,10 +512,35 @@ async def test_an_answer_becomes_self_reported_evidence() -> None:
         OWNER, question_id="q1", question="Led a team?", answer=" Yes, six people. "
     )
 
-    assert evidence.source is EvidenceSource.SELF_REPORTED
+    assert evidence.source is EvidenceSource.USER_ANSWER
     assert evidence.fact == "Led a team? — Yes, six people."
     assert await profile.evidence_ids(OWNER) == {str(evidence.id)}
     assert await profile.evidence_ids(OTHER) == set()
+
+
+async def test_a_submit_of_answers_is_one_profile_update() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow)
+
+    stored = await profile.record_answers(
+        OWNER,
+        [
+            AnswerRecord(question_id="q1", fact="On call? Yes, as primary"),
+            AnswerRecord(question_id="q2", fact="Largest design? 4 to 10 engineers"),
+        ],
+    )
+
+    assert [e.fact for e in stored] == [
+        "On call? Yes, as primary",
+        "Largest design? 4 to 10 engineers",
+    ]
+    assert {e.source for e in stored} == {EvidenceSource.USER_ANSWER}
+    assert len([e for e in uow.store.events if type(e).__name__ == "ProfileUpdated"]) == 1
+
+
+async def test_a_submit_with_no_answers_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        await _service(FakeProfileUnitOfWork()).record_answers(OWNER, [])
 
 
 async def test_an_empty_answer_is_rejected() -> None:
@@ -549,7 +574,7 @@ async def test_the_snapshot_groups_evidence_by_source_and_totals_the_timeline() 
 
     assert [e.source for e in snapshot.evidence] == [
         EvidenceSource.GITHUB,
-        EvidenceSource.SELF_REPORTED,
+        EvidenceSource.USER_ANSWER,
     ]
     assert snapshot.version == 2
     assert snapshot.total_experience_months == 24

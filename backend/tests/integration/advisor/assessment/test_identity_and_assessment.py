@@ -287,7 +287,7 @@ async def test_an_answer_becomes_evidence_and_bumps_the_profile_version(
 
     assert after.version == before.version + 1
     assert any("I designed it" in item.fact for item in after.evidence)
-    assert any(item.source == "self_reported" for item in after.evidence)
+    assert any(item.source == "user_answer" for item in after.evidence)
 
 
 async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(

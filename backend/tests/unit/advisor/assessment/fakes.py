@@ -15,10 +15,6 @@ from advisor.assessment.domain import (
     AssessmentEvent,
     DimensionChange,
     DimensionChangeFilter,
-    FollowUpQuestion,
-    FollowUpQuestionFilter,
-    QuestionRound,
-    QuestionRoundFilter,
     RoleFit,
     RoleFitFilter,
     SkillAssessment,
@@ -35,8 +31,6 @@ class Store:
     assessments: dict[uuid.UUID, SkillAssessment] = field(default_factory=dict)
     scores: dict[uuid.UUID, AssessedScore] = field(default_factory=dict)
     changes: dict[uuid.UUID, DimensionChange] = field(default_factory=dict)
-    questions: dict[uuid.UUID, FollowUpQuestion] = field(default_factory=dict)
-    rounds: dict[uuid.UUID, QuestionRound] = field(default_factory=dict)
     runs: dict[uuid.UUID, AnalysisRun] = field(default_factory=dict)
     fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
     events: list[AssessmentEvent] = field(default_factory=list)
@@ -79,26 +73,6 @@ class FakeChanges(FakeRepository[DimensionChange, DimensionChangeFilter]):
         return filter.assessment_id is None or entity.assessment_id == filter.assessment_id
 
 
-class FakeQuestions(FakeRepository[FollowUpQuestion, FollowUpQuestionFilter]):
-    updated_field = None
-    owner_field = "owner_id"
-    noun = "question"
-
-    def matches(self, entity: FollowUpQuestion, filter: FollowUpQuestionFilter) -> bool:
-        return (
-            filter.is_answered is None or (entity.answered_at is not None) == filter.is_answered
-        ) and (filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired)
-
-
-class FakeRounds(FakeRepository[QuestionRound, QuestionRoundFilter]):
-    updated_field = None
-    owner_field = "owner_id"
-    noun = "question round"
-
-    def matches(self, entity: QuestionRound, filter: QuestionRoundFilter) -> bool:
-        return filter.status is None or entity.status is filter.status
-
-
 class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter]):
     created_field = "started_at"
     updated_field = None
@@ -131,8 +105,6 @@ class FakeOwner:
         self.assessments = FakeAssessments(store.assessments, owner_id=owner_id)
         self.scores = FakeScores(store.scores, owner_id=owner_id)
         self.changes = FakeChanges(store.changes, owner_id=owner_id)
-        self.questions = FakeQuestions(store.questions, owner_id=owner_id)
-        self.rounds = FakeRounds(store.rounds, owner_id=owner_id)
         self.runs = FakeRuns(store.runs, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []

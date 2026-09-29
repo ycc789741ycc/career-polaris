@@ -15,7 +15,7 @@ from advisor.assessment.domain import (
     derive_lineage,
     dropped_ids,
     evaluate,
-    needs_follow_up,
+    thin_evidence,
 )
 
 
@@ -43,8 +43,8 @@ def test_a_count_within_bounds_is_accepted(count: int) -> None:
     assert_within_bounds(dims(count))
 
 
-def test_too_few_dimensions_asks_for_questions_rather_than_invention() -> None:
-    with pytest.raises(DimensionCountError, match="follow-up questions"):
+def test_too_few_dimensions_asks_for_more_sources_rather_than_invention() -> None:
+    with pytest.raises(DimensionCountError, match="connect more sources"):
         assert_within_bounds(dims(4))
 
 
@@ -95,15 +95,15 @@ def test_an_id_that_disappears_is_reported_so_history_is_not_orphaned() -> None:
 
 def test_low_confidence_dimensions_trigger_follow_up_questions() -> None:
     dimensions = [dim("a", confidence=0.9), dim("b", confidence=0.3), dim("c", confidence=0.55)]
-    assert [d.dimension_id for d in needs_follow_up(dimensions, threshold=0.6)] == ["b", "c"]
+    assert [d.dimension_id for d in thin_evidence(dimensions, threshold=0.6)] == ["b", "c"]
 
 
 def test_a_confident_assessment_asks_nothing() -> None:
-    assert needs_follow_up([dim("a", confidence=0.9)], threshold=0.6) == []
+    assert thin_evidence([dim("a", confidence=0.9)], threshold=0.6) == []
 
 
 def test_confidence_exactly_at_the_threshold_is_confident_enough() -> None:
-    assert needs_follow_up([dim("a", confidence=0.6)], threshold=0.6) == []
+    assert thin_evidence([dim("a", confidence=0.6)], threshold=0.6) == []
 
 
 # -- fit --------------------------------------------------------------------

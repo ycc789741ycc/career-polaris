@@ -1,5 +1,5 @@
-"""The outbox dispatcher turning evidence changes into question rounds (ADR 0012),
-and finished analyses into the role-map builds that waited for them (ADR 0018).
+"""The outbox dispatcher: submitted answers into regenerations (ADR 0023), and
+finished analyses into the role-map builds that follow them (ADR 0018, 0020).
 
 Calls the dispatcher's handler directly with stand-in services and a recorded
 queue — no database, no job runner.
@@ -13,23 +13,10 @@ from typing import Any
 
 import pytest
 
-from advisor.assessment import QuestionRoundTrigger
 from kernel.outbox import EventName, OutboxEvent
 from worker import dispatcher
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
-
-class FakeAssessment:
-    def __init__(self, round_id: uuid.UUID | None) -> None:
-        self.round_id = round_id
-        self.requests: list[tuple[uuid.UUID, QuestionRoundTrigger]] = []
-
-    async def request_questions(
-        self, owner_id: uuid.UUID, *, trigger: QuestionRoundTrigger
-    ) -> uuid.UUID | None:
-        self.requests.append((owner_id, trigger))
-        return self.round_id
 
 
 @pytest.fixture
@@ -43,10 +30,6 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return calls
 
 
-def _deps(assessment: FakeAssessment) -> Any:
-    return SimpleNamespace(assessment=assessment)
-
-
 def _profile_updated(source: str) -> OutboxEvent:
     return OutboxEvent(
         name=str(EventName.PROFILE_UPDATED),
@@ -55,41 +38,39 @@ def _profile_updated(source: str) -> OutboxEvent:
     )
 
 
-@pytest.mark.parametrize("source", ["github", "jira", "resume"])
-async def test_new_evidence_opens_a_question_round_and_queues_it(
-    source: str, queued: list[dict[str, Any]]
+@pytest.mark.parametrize("source", ["github", "jira", "resume", "user_answer"])
+async def test_new_evidence_spends_nothing(source: str, queued: list[dict[str, Any]]) -> None:
+    """Questions come from a Target's gaps now, not from new evidence (ADR 0023)."""
+    await dispatcher._handle(_container(), _profile_updated(source))
+
+    assert queued == []
+
+
+# --- Fill the gap (ADR 0023) -----------------------------------------------
+
+
+@pytest.mark.parametrize("opening", [None, "p1"])
+async def test_submitted_answers_regenerate_the_targets_plan_and_resume(
+    opening: str | None, queued: list[dict[str, Any]]
 ) -> None:
-    round_id = uuid.uuid4()
-    assessment = FakeAssessment(round_id)
+    event = OutboxEvent(
+        name=str(EventName.GAP_ANSWERS_SUBMITTED),
+        owner_id=OWNER,
+        payload={
+            "set_id": str(uuid.uuid4()),
+            "role_id": "r1",
+            "job_posting_id": opening,
+            "evidence_ids": ["e1"],
+        },
+    )
 
-    await dispatcher._handle(_deps(assessment), _profile_updated(source))
+    await dispatcher._handle(_container(), event)
 
-    assert assessment.requests == [(OWNER, QuestionRoundTrigger.EVIDENCE)]
+    target = {"owner_id": str(OWNER), "role_id": "r1", "job_posting_id": opening}
     assert queued == [
-        {
-            "name": "assessment.generate_questions",
-            "owner_id": str(OWNER),
-            "round_id": str(round_id),
-        }
+        {"name": "gapplan.regenerate", **target},
+        {"name": "resume.regenerate", **target},
     ]
-
-
-async def test_an_answer_does_not_open_a_second_round(queued: list[dict[str, Any]]) -> None:
-    assessment = FakeAssessment(uuid.uuid4())
-
-    await dispatcher._handle(_deps(assessment), _profile_updated("self_reported"))
-
-    assert assessment.requests == [] and queued == []
-
-
-async def test_nothing_is_queued_when_there_is_nothing_to_ask(
-    queued: list[dict[str, Any]],
-) -> None:
-    assessment = FakeAssessment(None)
-
-    await dispatcher._handle(_deps(assessment), _profile_updated("github"))
-
-    assert len(assessment.requests) == 1 and queued == []
 
 
 # --- role maps waiting on an analysis (ADR 0018) ---------------------------

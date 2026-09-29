@@ -5,9 +5,9 @@ export const SOURCES: Record<string, { name: string; colour: string }> = {
   github: { name: "GitHub", colour: "var(--source-github)" },
   jira: { name: "Jira", colour: "var(--source-jira)" },
   resume: { name: "Résumé", colour: "var(--source-resume)" },
-  self_reported: {
+  user_answer: {
     name: "Your answers",
-    colour: "var(--source-self-reported)",
+    colour: "var(--source-user-answer)",
   },
 };
 

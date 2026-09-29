@@ -1,4 +1,4 @@
-"""Assessment HTTP surface: the radar, the follow-up questions and the fits."""
+"""Assessment HTTP surface: the radar and the fits."""
 
 from __future__ import annotations
 
@@ -10,16 +10,12 @@ from fastapi import APIRouter, Query
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
 from api.schemas.assessment import (
-    AnswerRequest,
     Assessment,
     AssessmentPage,
     Fit,
     FitPage,
     MatchedPosting,
     MatchedPostingPage,
-    Question,
-    QuestionPage,
-    QuestionStatus,
 )
 from api.schemas.common import Accepted, AnalysisEstimate
 from kernel.paging import paginate
@@ -56,33 +52,6 @@ async def history(user: CurrentUser, deps: Deps, paging: Paging) -> AssessmentPa
     """Every analysis, newest first."""
     found = await deps.assessment.history(user, page=paging.page, page_size=paging.page_size)
     return AssessmentPage.of(found, Assessment.from_view)
-
-
-@router.get("/questions")
-async def questions(user: CurrentUser, deps: Deps, paging: Paging) -> QuestionPage:
-    """Open follow-up questions, oldest first."""
-    found = await deps.assessment.questions(user, page=paging.page, page_size=paging.page_size)
-    return QuestionPage.of(found, Question.from_view)
-
-
-@router.get("/questions/status")
-async def question_status(user: CurrentUser, deps: Deps) -> QuestionStatus | None:
-    """The newest question round, which the page polls while it is
-    ``generating`` (ADR 0006, ADR 0012). ``null`` before the first one."""
-    found = await deps.assessment.latest_round(user)
-    return QuestionStatus.from_view(found) if found is not None else None
-
-
-@router.post("/questions/{question_id}/answer", status_code=202)
-async def answer(
-    question_id: uuid.UUID, body: AnswerRequest, user: CurrentUser, deps: Deps
-) -> Accepted:
-    """An answer becomes self-reported Evidence, then the analysis re-runs and
-    opens a new question round."""
-    await deps.assessment.answer(user, question_id, body.answer)
-    run = await deps.activity.request_reanalysis(user)
-    await enqueue("assessment.run", owner_id=str(user), run_id=str(run.id))
-    return Accepted()
 
 
 @router.get("/fits")

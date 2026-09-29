@@ -19,16 +19,12 @@ from advisor.assessment.domain import (
     AssessmentCompleted,
     AssessmentEvent,
     DimensionsChanged,
-    QuestionAnswered,
-    QuestionsRaised,
     RoleFitsComputed,
 )
 from advisor.assessment.infra.repositories import (
     SqlAlchemyAnalysisRunRepository,
     SqlAlchemyAssessedScoreRepository,
     SqlAlchemyDimensionChangeRepository,
-    SqlAlchemyFollowUpQuestionRepository,
-    SqlAlchemyQuestionRoundRepository,
     SqlAlchemyRoleFitRepository,
     SqlAlchemySkillAssessmentRepository,
     SqlAlchemySkillDimensionRepository,
@@ -43,8 +39,6 @@ class SqlAlchemyOwnerAssessment:
         self.assessments = SqlAlchemySkillAssessmentRepository(session, owner_id=owner_id)
         self.scores = SqlAlchemyAssessedScoreRepository(session, owner_id=owner_id)
         self.changes = SqlAlchemyDimensionChangeRepository(session, owner_id=owner_id)
-        self.questions = SqlAlchemyFollowUpQuestionRepository(session, owner_id=owner_id)
-        self.rounds = SqlAlchemyQuestionRoundRepository(session, owner_id=owner_id)
         self.runs = SqlAlchemyAnalysisRunRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
@@ -97,18 +91,6 @@ def _outbox_entry(event: AssessmentEvent) -> tuple[EventName, dict[str, Any], uu
             return (
                 EventName.DIMENSIONS_CHANGED,
                 {"added_or_renamed": event.added_or_renamed, "retired": event.retired},
-                event.owner_id,
-            )
-        case QuestionsRaised():
-            return (
-                EventName.QUESTIONS_RAISED,
-                {"count": event.count, "assessment_id": str(event.assessment_id)},
-                event.owner_id,
-            )
-        case QuestionAnswered():
-            return (
-                EventName.QUESTION_ANSWERED,
-                {"question_id": str(event.question_id), "dimension": event.dimension_key},
                 event.owner_id,
             )
         case RoleFitsComputed():

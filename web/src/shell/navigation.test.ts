@@ -47,10 +47,10 @@ describe("screen navigation", () => {
     expect(placeFromHash("#/plan").screen).toBe(DEFAULT_SCREEN);
   });
 
-  it("opens the plan tab, with nothing selected, when the hash says neither", () => {
+  it("opens Fill the gap first, with nothing selected, when the hash says neither", () => {
     expect(placeFromHash("#/advisor")).toEqual({
       screen: "advisor",
-      tab: "plan",
+      tab: "gaps",
       focus: null,
     });
     expect(placeFromHash("#/advisor/elsewhere?who=x").focus).toBeNull();
@@ -66,5 +66,13 @@ describe("screen navigation", () => {
       kicker: "System configuration",
     });
     expect(metaOf("model").num).toBeUndefined();
+  });
+});
+
+describe("the Advisor's tabs", () => {
+  it("reads each tab back from the hash it wrote", () => {
+    for (const tab of ["gaps", "plan", "resume"] as const) {
+      expect(placeFromHash(hashFor({ screen: "advisor", tab })).tab).toBe(tab);
+    }
   });
 });

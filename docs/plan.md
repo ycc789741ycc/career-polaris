@@ -210,8 +210,12 @@ whatever is next when it merges.
      are listed by role and company.
    * README rows: Gap plan, and "Resume Advisor" becomes "Résumé".
 
-7. **Fill the gap** — `feature/no-ticket/gap-fill`, ADR 0023, superseding
+7. **Fill the gap — done.** `feature/no-ticket/gap-fill`, ADR 0023, superseding
    ADR 0012
+   * Built as: up to four gaps asked about, 1–3 questions each; a résumé
+     regenerated after answers is saved as an `answers` version. Not yet: the
+     plan's provenance line ("uses your 4 answers"), and `activity` gating
+     questions on the Target's fit.
    * A new `advisor/gapfill` component (domain, service, infra, factory,
      jobs), its `gapfill` schema with RLS, routes and schemas, a
      public-surface contract in `backend/.importlinter`, and the layering

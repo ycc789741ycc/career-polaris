@@ -21,8 +21,8 @@ class EvidenceSource(StrEnum):
     GITHUB = "github"
     JIRA = "jira"
     RESUME = "resume"
-    # A user's answer to a follow-up question, stored as self-reported evidence.
-    SELF_REPORTED = "self_reported"
+    # The user's answer to a question from Fill the gap ("Your answers").
+    USER_ANSWER = "user_answer"
 
 
 class EvidenceGranularity(StrEnum):

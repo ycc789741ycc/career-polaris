@@ -1,6 +1,6 @@
 """The assessment component.
 
-The strength report: skill dimensions, role fits and follow-up questions.
+The strength report: skill dimensions and role fits.
 
 This file is the component's public API. Everything else in the package is
 private: other components, the delivery mechanisms and the composition root
@@ -13,7 +13,6 @@ from advisor.assessment.domain import (
     DEFAULT_MATCHES,
     MAX_MATCHES,
     MIN_MATCHES,
-    QuestionRoundTrigger,
 )
 from advisor.assessment.factory import create_assessment_service
 from advisor.assessment.service import (
@@ -23,8 +22,6 @@ from advisor.assessment.service import (
     DimensionView,
     FitView,
     MatchedPostingView,
-    QuestionRoundView,
-    QuestionView,
 )
 
 __all__ = [
@@ -37,9 +34,6 @@ __all__ = [
     "DimensionView",
     "FitView",
     "MatchedPostingView",
-    "QuestionRoundTrigger",
-    "QuestionRoundView",
-    "QuestionView",
     "create_assessment_service",
     "jobs",
 ]

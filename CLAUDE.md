@@ -195,10 +195,10 @@ contract.
   (01–04): a step reads the ones before it, never the ones after. The role map
   reclusters and rescores as the market moves, so the strength report shows no
   fit, role or bar from it — comparing against a role is the role map's job.
-  Likewise Sources lists the collected facts, filterable by source, and nothing
-  the analysis made of them; its follow-up questions stay there because an
-  answer is how thin evidence gets more. Strengths explains each score by its
-  confidence, and `needs_more_evidence` uses the same threshold as the questions.
+  Likewise Sources lists the collected facts, filterable by source — "Your
+  answers" among them — and nothing the analysis made of them, and asks
+  nothing: questions come from a target role's gaps, in the Advisor's Fill
+  the gap (ADR 0023). Strengths explains each score by its confidence.
 - **A stage waits for the one before it, and says so while it does.** Every
   sync, parse, analysis and role-map build is recorded before it is queued
   (ADR 0006). An analysis is refused while a source still syncs or parses, and
@@ -318,3 +318,12 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   role's, so resolving a Target spends nothing. `/targets` and the private-JD
   scoring path are gone; `GET /matched-postings?role_id=` lists a role's
   openings.
+- **Fill the gap** (ADR 0023). A new `advisor/gapfill` component
+  (`gapplan | resume | activity → gapfill → target`, schema `gapfill`) writes
+  questions per gap of the Target on the user's key, polled while `writing`.
+  One submit checks the whole batch, records every answer through
+  `profile.record_answers` as `user_answer` evidence, and emits
+  `GapAnswersSubmitted`; the dispatcher queues `gapplan.regenerate` and
+  `resume.regenerate`, each a no-op without a plan or résumé. The old
+  follow-up questions, `/questions` and their tables are gone. The Advisor
+  opens on `#/advisor/gaps`.

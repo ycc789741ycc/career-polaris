@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadStatus } from "./App";
-import { page } from "./test/page";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -17,15 +16,12 @@ describe("shell status", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("counts open questions and averages confidence across dimensions", async () => {
+  it("averages confidence across dimensions and asks nothing about questions", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith("/questions"))
-          return json(
-            page([{ answer: null }, { answer: "yes" }, { answer: null }]),
-          );
+        if (url.endsWith("/questions")) throw new Error("no questions route");
         if (url.endsWith("/assessments/latest"))
           return json({
             dimensions: [{ confidence: 0.8 }, { confidence: 0.9 }],
@@ -37,7 +33,6 @@ describe("shell status", () => {
 
     const status = await loadStatus();
 
-    expect(status.openQuestions).toBe(2);
     expect(status.confidence).toBe(85);
     expect(status.credential).toBeNull();
   });
@@ -46,7 +41,7 @@ describe("shell status", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) =>
-        String(input).endsWith("/questions")
+        String(input).endsWith("/ai-credential")
           ? json({ error: { code: "internal", message: "boom" } }, 500)
           : String(input).endsWith("/me")
             ? json({ id: "u1", email: "maya@example.com" })
@@ -56,7 +51,7 @@ describe("shell status", () => {
 
     const status = await loadStatus();
 
-    expect(status.openQuestions).toBe(0);
+    expect(status.credential).toBeNull();
     expect(status.confidence).toBeNull();
     expect(status.me?.email).toBe("maya@example.com");
   });

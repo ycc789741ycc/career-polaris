@@ -21,9 +21,6 @@ from advisor.assessment.domain.entities import (
     AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
-    FollowUpQuestion,
-    QuestionRound,
-    QuestionRoundStatus,
     RoleFit,
     SkillAssessment,
     SkillDimension,
@@ -83,25 +80,6 @@ class DimensionChangeRepository(Repository[DimensionChange, DimensionChangeFilte
 
 
 @dataclass(frozen=True, slots=True)
-class FollowUpQuestionFilter:
-    is_answered: bool | None = None
-    is_retired: bool | None = None
-
-
-class FollowUpQuestionRepository(
-    Repository[FollowUpQuestion, FollowUpQuestionFilter], Protocol
-): ...
-
-
-@dataclass(frozen=True, slots=True)
-class QuestionRoundFilter:
-    status: QuestionRoundStatus | None = None
-
-
-class QuestionRoundRepository(Repository[QuestionRound, QuestionRoundFilter], Protocol): ...
-
-
-@dataclass(frozen=True, slots=True)
 class AnalysisRunFilter:
     status: AnalysisRunStatus | None = None
 
@@ -131,12 +109,6 @@ class OwnerAssessment(Protocol):
 
     @property
     def changes(self) -> DimensionChangeRepository: ...
-
-    @property
-    def questions(self) -> FollowUpQuestionRepository: ...
-
-    @property
-    def rounds(self) -> QuestionRoundRepository: ...
 
     @property
     def runs(self) -> AnalysisRunRepository: ...

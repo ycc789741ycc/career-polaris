@@ -31,10 +31,6 @@ export function Sidebar({
       <nav aria-label="Screens">
         <ul className="nav-list">
           {JOURNEY.map((item) => {
-            const flag =
-              item.id === "sources" && status.openQuestions > 0
-                ? String(status.openQuestions)
-                : null;
             return (
               <li key={item.id}>
                 <button
@@ -53,14 +49,6 @@ export function Sidebar({
                       role="img"
                       aria-label="running"
                     />
-                  )}
-                  {flag && (
-                    <span
-                      className="nav-flag"
-                      aria-label={`${flag} unanswered`}
-                    >
-                      {flag}
-                    </span>
                   )}
                 </button>
               </li>
@@ -124,9 +112,7 @@ export function Sidebar({
             <p className="confidence-note">
               {status.confidence > 85
                 ? "Enough to trust the salary bands."
-                : status.openQuestions > 0
-                  ? "Answer the open questions to tighten the report."
-                  : "Connect another source to tighten the report."}
+                : "Connect another source to tighten the report."}
             </p>
           </>
         )}

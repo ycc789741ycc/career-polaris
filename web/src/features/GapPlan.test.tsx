@@ -158,7 +158,6 @@ function renderPlan(
         status: "active",
         last_error: null,
       },
-      openQuestions: 0,
       confidence: 80,
     },
     navigate: vi.fn(),
@@ -326,7 +325,6 @@ describe("gap plan screen", () => {
       status: {
         me: null,
         credential: null,
-        openQuestions: 0,
         confidence: null,
       },
     });

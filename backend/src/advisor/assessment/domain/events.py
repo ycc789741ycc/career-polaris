@@ -39,30 +39,9 @@ class DimensionsChanged:
 
 
 @dataclass(frozen=True, slots=True)
-class QuestionsRaised:
-    owner_id: uuid.UUID
-    assessment_id: uuid.UUID
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
-class QuestionAnswered:
-    owner_id: uuid.UUID
-    question_id: uuid.UUID
-    dimension_key: str
-
-
-@dataclass(frozen=True, slots=True)
 class RoleFitsComputed:
     owner_id: uuid.UUID
     roles: int
 
 
-AssessmentEvent = (
-    AssessmentCompleted
-    | AnalysisFinished
-    | DimensionsChanged
-    | QuestionsRaised
-    | QuestionAnswered
-    | RoleFitsComputed
-)
+AssessmentEvent = AssessmentCompleted | AnalysisFinished | DimensionsChanged | RoleFitsComputed

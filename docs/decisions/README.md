@@ -17,7 +17,7 @@ new record that supersedes the old one.
 | [0009](0009-package-the-backend-by-component.md) | Package the backend by component, keeping `kernel/` outside the application | Accepted |
 | [0010](0010-define-repositories-in-the-domain-in-domain-types.md) | Define repositories in the domain, in domain types | Superseded by 0011 |
 | [0011](0011-give-every-repository-the-same-six-methods.md) | Give every repository the same six methods, a filter and a factory | Accepted |
-| [0012](0012-generate-follow-up-questions-when-evidence-changes.md) | Generate follow-up questions in the background when evidence changes | Accepted |
+| [0012](0012-generate-follow-up-questions-when-evidence-changes.md) | Generate follow-up questions in the background when evidence changes | Superseded by 0023 |
 | [0013](0013-type-every-http-response-with-a-schema-model.md) | Type every HTTP response with a schema model built from a component's view | Accepted |
 | [0014](0014-page-every-list-response.md) | Page every list response, with `page`, `page_size` and `total` | Accepted |
 | [0015](0015-remove-a-resumes-evidence-with-it-and-flag-reports-it-outdates.md) | Remove a résumé's evidence with it, and mark every report the profile has moved past as out of date | Accepted |
@@ -28,6 +28,7 @@ new record that supersedes the old one.
 | [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted |
 | [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Accepted |
 | [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted |
+| [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

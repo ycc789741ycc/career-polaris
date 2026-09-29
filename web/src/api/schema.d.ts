@@ -495,6 +495,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gap-question-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Set
+         * @description Records the set as writing and queues it; poll ``GET /gap-question-sets/{id}``.
+         */
+        post: operations["request_set_api_v1_gap_question_sets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/cost-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cost Estimate
+         * @description Writing the questions runs on the user's key, so it is priced first.
+         */
+        get: operations["cost_estimate_api_v1_gap_question_sets_cost_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current Set
+         * @description The Target's current questions; ``null`` before any were written.
+         */
+        get: operations["current_set_api_v1_gap_question_sets_current_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Set */
+        get: operations["get_set_api_v1_gap_question_sets__set_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit
+         * @description Every answer at once: checked as a batch, stored as ``user_answer``
+         *     evidence, then the Target's plan and résumé are written again.
+         */
+        post: operations["submit_api_v1_gap_question_sets__set_id__answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}/submit-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Submit Estimate
+         * @description Submitting writes the Target's plan and résumé again, each only if the
+         *     user has one; that is what it costs.
+         */
+        get: operations["submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/job-descriptions": {
         parameters: {
             query?: never;
@@ -584,68 +703,6 @@ export interface paths {
         get: operations["read_profile_api_v1_profile_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/questions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Questions
-         * @description Open follow-up questions, oldest first.
-         */
-        get: operations["questions_api_v1_questions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/questions/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Question Status
-         * @description The newest question round, which the page polls while it is
-         *     ``generating`` (ADR 0006, ADR 0012). ``null`` before the first one.
-         */
-        get: operations["question_status_api_v1_questions_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/questions/{question_id}/answer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Answer
-         * @description An answer becomes self-reported Evidence, then the analysis re-runs and
-         *     opens a new question round.
-         */
-        post: operations["answer_api_v1_questions__question_id__answer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1100,10 +1157,25 @@ export interface components {
             /** Role Map Cost Usd */
             role_map_cost_usd: string;
         };
-        /** AnswerRequest */
-        AnswerRequest: {
-            /** Answer */
-            answer: string;
+        /** AnswerBody */
+        AnswerBody: {
+            /** Choice */
+            choice?: string | null;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * AnswersRequest
+         * @description Every answer at once; a question left out stays a gap.
+         */
+        AnswersRequest: {
+            /** Answers */
+            answers: components["schemas"]["AnswerBody"][];
         };
         /** Assessment */
         Assessment: {
@@ -1417,6 +1489,43 @@ export interface components {
             page_size: number | null;
             /** Total */
             total: number;
+        };
+        /** Gap */
+        Gap: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Lift */
+            lift: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "partial" | "no_evidence";
+        };
+        /** GapQuestion */
+        GapQuestion: {
+            /**
+             * Answer Type
+             * @enum {string}
+             */
+            answer_type: "choice" | "free_text" | "both";
+            /** Asked Because */
+            asked_because: string;
+            /** Choices */
+            choices: string[];
+            /** Evidence Id */
+            evidence_id: string | null;
+            /** Gap Key */
+            gap_key: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Text */
+            text: string;
         };
         /**
          * JobError
@@ -1757,63 +1866,49 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** Question */
-        Question: {
-            /** Answer */
-            answer: string | null;
-            /** Dimension Key */
-            dimension_key: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Options */
-            options: string[];
-            /** Text */
-            text: string;
-            /** Why */
-            why: string;
-        };
-        /** QuestionPage */
-        QuestionPage: {
-            /** Items */
-            items: components["schemas"]["Question"][];
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number | null;
-            /** Total */
-            total: number;
-        };
         /**
-         * QuestionStatus
-         * @description The newest question round, which the page polls while it is
-         *     ``generating`` (ADR 0006, ADR 0012).
+         * QuestionSet
+         * @description The questions for one Target's gaps; the page polls it while it is
+         *     ``writing`` (ADR 0006).
          */
-        QuestionStatus: {
+        QuestionSet: {
             /** Created At */
             created_at: string;
             error: components["schemas"]["JobError"] | null;
-            /** Finished At */
-            finished_at: string | null;
+            /** Gaps */
+            gaps: components["schemas"]["Gap"][];
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Question Count */
-            question_count: number;
+            /** Label */
+            label: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Questions */
+            questions: components["schemas"]["GapQuestion"][];
             /**
              * Status
              * @enum {string}
              */
-            status: "generating" | "ready" | "failed" | "superseded";
+            status: "writing" | "ready" | "failed" | "superseded";
+            /** Submitted At */
+            submitted_at: string | null;
+            target: components["schemas"]["TargetRefBody"];
+        };
+        /**
+         * QuestionSetRequest
+         * @description A role, and optionally one opening in it (ADR 0022).
+         */
+        QuestionSetRequest: {
+            /** Job Posting Id */
+            job_posting_id?: string | null;
             /**
-             * Trigger
-             * @enum {string}
+             * Role Id
+             * Format: uuid
              */
-            trigger: "evidence" | "assessment";
+            role_id: string;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -2231,6 +2326,33 @@ export interface components {
             page_size: number | null;
             /** Total */
             total: number;
+        };
+        /**
+         * SubmitEstimate
+         * @description What submitting costs: the Target's plan and résumé are written again
+         *     from the new evidence, each only if the user has one.
+         */
+        SubmitEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Model Id */
+            model_id: string | null;
+            /** Regenerates Plan */
+            regenerates_plan: boolean;
+            /** Regenerates Resume */
+            regenerates_resume: boolean;
+        };
+        /** Submitted */
+        Submitted: {
+            /** Answered */
+            answered: number;
+            /**
+             * Set Id
+             * Format: uuid
+             */
+            set_id: string;
+            /** Skipped */
+            skipped: number;
         };
         /** TailoredResume */
         TailoredResume: {
@@ -3880,6 +4002,320 @@ export interface operations {
             };
         };
     };
+    request_set_api_v1_gap_question_sets_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cost_estimate_api_v1_gap_question_sets_cost_estimate_get: {
+        parameters: {
+            query: {
+                role_id: string;
+                job_posting_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetEstimate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    current_set_api_v1_gap_question_sets_current_get: {
+        parameters: {
+            query: {
+                role_id: string;
+                job_posting_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"] | null;
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_set_api_v1_gap_question_sets__set_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    submit_api_v1_gap_question_sets__set_id__answers_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Submitted"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitEstimate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_pasted_api_v1_job_descriptions_get: {
         parameters: {
             query?: {
@@ -4105,164 +4541,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Profile"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    questions_api_v1_questions_get: {
-        parameters: {
-            query?: {
-                /** @description 1-based. */
-                page?: number;
-                /** @description Omit it for the whole list, on page 1. */
-                page_size?: number | null;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuestionPage"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    question_status_api_v1_questions_status_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuestionStatus"] | null;
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    answer_api_v1_questions__question_id__answer_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                question_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AnswerRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Accepted"];
                 };
             };
             /** @description The request could not be read. */

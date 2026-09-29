@@ -9,6 +9,9 @@
 Written to be idempotent: the baseline migration builds tables from the live
 ORM metadata, so on a fresh database these already exist, with their policy,
 by the time this revision runs.
+
+Since migration 0017 the question tables are gone, so on a fresh database the
+first statement finds no table and does nothing.
 """
 
 from __future__ import annotations
@@ -26,7 +29,8 @@ _TABLE = "assessment.question_round"
 
 def upgrade() -> None:
     op.execute(
-        "ALTER TABLE assessment.follow_up_question ADD COLUMN IF NOT EXISTS retired_at timestamptz"
+        "ALTER TABLE IF EXISTS assessment.follow_up_question "
+        "ADD COLUMN IF NOT EXISTS retired_at timestamptz"
     )
 
     op.execute(

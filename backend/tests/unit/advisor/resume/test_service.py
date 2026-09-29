@@ -16,6 +16,7 @@ from advisor.resume.domain import (
     Bullet,
     Position,
     ResumeContent,
+    ResumeStatus,
     ResumeVersionSaved,
     Revision,
     VersionSource,
@@ -173,3 +174,33 @@ async def test_a_failure_is_recorded_on_the_resume_and_generation_skips_it() -> 
 
     [summary] = (await service.saved(OWNER)).items
     assert summary.status == "failed" and summary.error_code == "target_unusable"
+
+
+# --- after Fill the gap (ADR 0023) -------------------------------------------
+
+
+async def test_regenerating_a_target_with_no_resume_does_nothing() -> None:
+    service = _service(FakeResumeUnitOfWork())
+
+    assert await service.regenerate(OWNER, TargetRef(str(uuid.uuid4()))) is None
+
+
+async def test_regenerating_writes_the_targets_resume_again_as_an_answers_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    ref = next(iter(uow.store.resumes.values()))
+    target = TargetRef(str(ref.role_id), str(ref.job_posting_id))
+    uow.store.resumes[resume_id].status = ResumeStatus.READY
+    written: list[tuple[uuid.UUID, VersionSource]] = []
+
+    async def generate(owner_id: uuid.UUID, resume_id: uuid.UUID, *, source: VersionSource) -> None:
+        written.append((resume_id, source))
+
+    monkeypatch.setattr(service, "generate", generate)
+
+    assert await service.regenerate(OWNER, target) == resume_id
+    assert written == [(resume_id, VersionSource.ANSWERS)]
+    assert uow.store.resumes[resume_id].status is ResumeStatus.DRAFTING

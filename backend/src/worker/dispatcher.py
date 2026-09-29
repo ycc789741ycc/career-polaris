@@ -13,7 +13,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from advisor.assessment import QuestionRoundTrigger
 from kernel.db.base import utcnow
 from kernel.logging import get_logger
 from kernel.outbox import EventName, OutboxEvent
@@ -66,19 +65,10 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # explicitly, and every sync would otherwise spend their money.
         return
 
-    if name == EventName.PROFILE_UPDATED and owner_id:
-        # New evidence gets fresh follow-up questions, but not a re-analysis
-        # (ADR 0012). An answer is skipped: its route already re-runs the
-        # analysis, which opens its own round.
-        if event.payload.get("source") == "self_reported":
-            return
-        round_id = await deps.assessment.request_questions(
-            owner_id, trigger=QuestionRoundTrigger.EVIDENCE
-        )
-        if round_id is not None:
-            await enqueue(
-                "assessment.generate_questions", owner_id=str(owner_id), round_id=str(round_id)
-            )
+    if name == EventName.PROFILE_UPDATED:
+        # Nothing that spends: the strength report marks itself out of date
+        # (ADR 0015). Evidence no longer opens questions — those come from a
+        # Target's gaps, in Fill the gap (ADR 0023).
         return
 
     if name in (EventName.ASSESSMENT_COMPLETED, EventName.DIMENSIONS_CHANGED) and owner_id:
@@ -95,6 +85,19 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         )
         if build is not None:
             await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(build.id))
+        return
+
+    if name == EventName.GAP_ANSWERS_SUBMITTED and owner_id:
+        # The Target's plan and résumé are written again from the new
+        # evidence, each only if the user has one. Two jobs, so gapplan and
+        # resume never import each other (ADR 0023).
+        target = {
+            "owner_id": str(owner_id),
+            "role_id": event.payload["role_id"],
+            "job_posting_id": event.payload.get("job_posting_id"),
+        }
+        await enqueue("gapplan.regenerate", **target)
+        await enqueue("resume.regenerate", **target)
         return
 
     if name == EventName.CUSTOM_ROLE_ADDED:

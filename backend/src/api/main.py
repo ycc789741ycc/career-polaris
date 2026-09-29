@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
 
     from api.routes.activity import router as activity_router
     from api.routes.assessment import router as assessment_router
+    from api.routes.gapfill import router as gapfill_router
     from api.routes.gapplan import router as gapplan_router
     from api.routes.identity import router as identity_router
     from api.routes.market import router as market_router
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
         market_router,
         rolemap_router,
         assessment_router,
+        gapfill_router,
         gapplan_router,
         resume_router,
         activity_router,

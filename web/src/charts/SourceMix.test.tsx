@@ -21,7 +21,7 @@ describe("SourceMix", () => {
   it("orders sources the same way on every chart", () => {
     const shares = sourceShares([
       ...facts("resume", 2),
-      ...facts("self_reported", 1),
+      ...facts("user_answer", 1),
       ...facts("jira", 3),
       ...facts("github", 4),
     ]);
@@ -29,7 +29,7 @@ describe("SourceMix", () => {
       "github",
       "jira",
       "resume",
-      "self_reported",
+      "user_answer",
     ]);
   });
 

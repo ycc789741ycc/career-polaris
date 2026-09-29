@@ -25,6 +25,7 @@ import {
 import type { AdvisorTab, Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
+import { FillTheGap } from "./FillTheGap";
 import { GapPlan } from "./GapPlan";
 import { Resume } from "./Resume";
 import { pickBand } from "./Roles";
@@ -32,8 +33,8 @@ import type { AdvisorTarget } from "./target";
 import { useAsync } from "./useAsync";
 
 /**
- * The Advisor: the gap plan and the tailored résumé for one Target, as two
- * tabs of one screen.
+ * The Advisor: Fill the gap first, then either the gap plan or the tailored
+ * résumé, for one Target (ADR 0023).
  *
  * The Target is what the role map selected — one role, and optionally one
  * opening in it (ADR 0022) — carried in the hash. There is no picker here:
@@ -159,11 +160,22 @@ function Aimed({
       <TargetBanner target={target} onChange={() => navigate("roles")} />
 
       <div
-        className="row"
+        className="row advisor-steps"
         role="group"
         aria-label="Advisor tabs"
-        style={{ marginBottom: 20 }}
+        style={{ marginBottom: 20, alignItems: "center" }}
       >
+        <span className="eyebrow">First</span>
+        <PillToggle
+          pressed={tab === "gaps"}
+          onClick={() => navigate("advisor", { tab: "gaps" })}
+        >
+          Fill the gap
+        </PillToggle>
+        <span className="muted" aria-hidden="true">
+          →
+        </span>
+        <span className="eyebrow">Then, either</span>
         <PillToggle
           pressed={tab === "plan"}
           onClick={() => navigate("advisor", { tab: "plan" })}
@@ -177,7 +189,15 @@ function Aimed({
           Résumé
         </PillToggle>
       </div>
-      {tab === "plan" ? (
+      {tab === "gaps" ? (
+        <FillTheGap
+          target={target}
+          onSubmitted={() => {
+            onPlansChanged();
+            onResumesChanged();
+          }}
+        />
+      ) : tab === "plan" ? (
         <GapPlan
           target={target}
           history={plans}

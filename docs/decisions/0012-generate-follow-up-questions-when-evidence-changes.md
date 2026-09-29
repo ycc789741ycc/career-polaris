@@ -1,6 +1,6 @@
 # 0012. Generate follow-up questions in the background when evidence changes
 
-**Status:** Accepted — 2026-09-27.
+**Status:** Superseded by [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) — 2026-09-29.
 
 ## Context
 

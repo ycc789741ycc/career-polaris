@@ -21,7 +21,6 @@ function status(overrides: Partial<ShellStatus> = {}): ShellStatus {
   return {
     me: null,
     credential,
-    openQuestions: 0,
     confidence: null,
     ...overrides,
   };
@@ -41,18 +40,6 @@ describe("sidebar", () => {
 
     await userEvent.click(within(nav).getByRole("button", { name: /Advisor/ }));
     expect(onNavigate).toHaveBeenCalledWith("advisor");
-  });
-
-  it("flags on Sources how many questions are still unanswered", () => {
-    render(
-      <Sidebar
-        current="sources"
-        status={status({ openQuestions: 3 })}
-        onNavigate={() => {}}
-      />,
-    );
-    const sources = screen.getByRole("button", { name: /Sources/ });
-    expect(within(sources).getByLabelText("3 unanswered")).toBeInTheDocument();
   });
 
   it("flags the model when no key is set, and names the model once it is", () => {

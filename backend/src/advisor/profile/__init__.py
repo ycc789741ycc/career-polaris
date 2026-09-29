@@ -29,6 +29,7 @@ from advisor.profile.infra.oauth import (
 )
 from advisor.profile.service import (
     ACCEPTED_TYPES,
+    AnswerRecord,
     CitationError,
     CitationHandles,
     ConnectionView,
@@ -46,6 +47,7 @@ __all__ = [
     "ACCEPTED_TYPES",
     "GITHUB_SCOPE_DESCRIPTIONS",
     "JIRA_SCOPE_DESCRIPTIONS",
+    "AnswerRecord",
     "CitationError",
     "CitationHandles",
     "ConnectionView",

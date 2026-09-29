@@ -41,7 +41,7 @@
   --source-github: var(--color-accent-600);
   --source-jira: var(--color-accent-2-800);
   --source-resume: var(--color-neutral-600);
-  --source-self-reported: var(--color-neutral-900);
+  --source-user-answer: var(--color-neutral-900);
 
   /* Status — reserved, never reused as a series. Organic has no red, so
      critical is the one colour defined here; it clears 5:1 on the surface. */
