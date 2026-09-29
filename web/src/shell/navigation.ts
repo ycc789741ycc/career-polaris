@@ -14,8 +14,8 @@
 
 export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
 
-/** The Advisor's two tabs. */
-export type AdvisorTab = "plan" | "resume";
+/** The Advisor's tabs: first Fill the gap, then either the plan or the résumé. */
+export type AdvisorTab = "gaps" | "plan" | "resume";
 
 /** What the role map has selected: a role, and optionally one opening in it. */
 export interface Focus {
@@ -87,7 +87,7 @@ export function metaOf(screen: Screen): ScreenMeta {
   return ALL.find((item) => item.id === screen) ?? JOURNEY[0]!;
 }
 
-export const DEFAULT_TAB: AdvisorTab = "plan";
+export const DEFAULT_TAB: AdvisorTab = "gaps";
 
 /** What a hash names; the defaults for anything it does not. Pure. */
 export function placeFromHash(hash: string): Place {
@@ -96,7 +96,8 @@ export function placeFromHash(hash: string): Place {
   const screen = ALL.some((item) => item.id === id)
     ? (id as Screen)
     : DEFAULT_SCREEN;
-  const tab: AdvisorTab = tabPart === "resume" ? "resume" : DEFAULT_TAB;
+  const tab: AdvisorTab =
+    tabPart === "plan" || tabPart === "resume" ? tabPart : DEFAULT_TAB;
   const params = new URLSearchParams(query);
   const role = params.get("role");
   const opening = params.get("opening");

@@ -75,7 +75,7 @@ function serve(latest: Assessment) {
 
 function renderStrengths(activity: Activity | null = null) {
   const shell = {
-    status: { me: null, credential: null, openQuestions: 0, confidence: 0 },
+    status: { me: null, credential: null, confidence: 0 },
     navigate: vi.fn(),
   } as unknown as Shell;
   render(

@@ -40,6 +40,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -66,6 +67,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -90,6 +92,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -116,6 +119,7 @@ source_modules =
     advisor.market
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -146,6 +150,7 @@ source_modules =
     advisor.market
     advisor.rolemap
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -175,12 +180,38 @@ source_modules =
     advisor.market
     advisor.rolemap
     advisor.assessment
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
 forbidden_modules =
     advisor.target.service
     advisor.target.domain
+allow_indirect_imports = True
+
+[importlinter:contract:gapfill-public-surface]
+name = Only advisor.gapfill itself is importable from outside the component
+type = forbidden
+source_modules =
+    api
+    worker
+    crawler
+    cli
+    wiring
+    kernel
+    advisor.identity
+    advisor.profile
+    advisor.market
+    advisor.rolemap
+    advisor.assessment
+    advisor.target
+    advisor.gapplan
+    advisor.resume
+    advisor.activity
+forbidden_modules =
+    advisor.gapfill.service
+    advisor.gapfill.domain
+    advisor.gapfill.infra
 allow_indirect_imports = True
 
 [importlinter:contract:gapplan-public-surface]
@@ -199,6 +230,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.resume
     advisor.activity
 forbidden_modules =
@@ -227,6 +259,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.activity
 forbidden_modules =
@@ -251,6 +284,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
 forbidden_modules =
@@ -271,6 +305,7 @@ source_modules =
     advisor.rolemap.domain
     advisor.assessment.domain
     advisor.target.domain
+    advisor.gapfill.domain
     advisor.gapplan.domain
     advisor.resume.domain
     advisor.activity.domain
@@ -303,6 +338,7 @@ modules =
     advisor.rolemap.domain
     advisor.assessment.domain
     advisor.target.domain
+    advisor.gapfill.domain
     advisor.gapplan.domain
     advisor.resume.domain
     advisor.activity.domain
@@ -335,6 +371,7 @@ containers =
     advisor
 layers =
     gapplan | resume | activity
+    gapfill
     target
     assessment
     rolemap
@@ -364,6 +401,7 @@ forbidden_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity
@@ -406,6 +444,7 @@ source_modules =
     advisor.rolemap
     advisor.assessment
     advisor.target
+    advisor.gapfill
     advisor.gapplan
     advisor.resume
     advisor.activity

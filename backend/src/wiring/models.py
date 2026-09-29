@@ -9,6 +9,7 @@ from __future__ import annotations
 # Importing a component registers its ORM models on Base.metadata. The models
 # stay private to their component; this module never names one.
 import advisor.assessment
+import advisor.gapfill
 import advisor.gapplan
 import advisor.identity
 import advisor.market
@@ -26,6 +27,7 @@ SCHEMAS = (
     "market_user",
     "rolemap",
     "assessment",
+    "gapfill",
     "gapplan",
     "resume",
     "outbox",

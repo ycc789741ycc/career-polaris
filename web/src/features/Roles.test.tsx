@@ -98,7 +98,7 @@ function serve() {
 
 function renderRoles(focus: Focus | null, activity: Activity | null = null) {
   const shell: Shell = {
-    status: { me: null, credential: null, openQuestions: 0, confidence: null },
+    status: { me: null, credential: null, confidence: null },
     navigate: vi.fn(),
     focus,
     setFocus: vi.fn(),

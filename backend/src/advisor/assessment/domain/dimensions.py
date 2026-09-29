@@ -60,7 +60,7 @@ def assert_within_bounds(dimensions: list[DimensionScore]) -> None:
     if count < MIN_DIMENSIONS:
         raise DimensionCountError(
             f"an assessment needs at least {MIN_DIMENSIONS} dimensions, got {count}; "
-            "ask follow-up questions rather than inventing thin ones"
+            "connect more sources rather than inventing thin ones"
         )
     if count > MAX_DIMENSIONS:
         raise DimensionCountError(
@@ -115,10 +115,11 @@ class Scored(Protocol):
     def confidence(self) -> float: ...
 
 
-def needs_follow_up[T: Scored](dimensions: Sequence[T], *, threshold: float) -> list[T]:
-    """The domain rule for "the context is not enough".
+def thin_evidence[T: Scored](dimensions: Sequence[T], *, threshold: float) -> list[T]:
+    """The domain rule for "the evidence is not enough to be sure".
 
-    A dimension below the confidence threshold is what triggers follow-up
-    questions (domain section 2.4).
+    A dimension below the confidence threshold is marked as needing more
+    evidence, and Strengths points to Sources for it. It no longer raises
+    questions: those come from a Target's gaps (domain decision 27).
     """
     return [d for d in dimensions if d.confidence < threshold]

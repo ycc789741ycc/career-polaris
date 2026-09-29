@@ -24,7 +24,6 @@ import {
 } from "../components/ui";
 import { sourcesBusy, useActivity } from "../shell/activity";
 import { useShell } from "../shell/ShellContext";
-import { FollowUpQuestions } from "./FollowUpQuestions";
 import { TargetLocations } from "./TargetLocations";
 import { messageOf, useAsync } from "./useAsync";
 
@@ -43,12 +42,12 @@ const LABELS: Record<string, { name: string; kind: string; note: string }> = {
 
 /**
  * Where evidence comes from: authorised sources, an uploaded resume, and the
- * user's answers to follow-up questions.
+ * answers the user gave in Fill the gap ("Your answers").
  *
  * Step 01 of the journey shows the collected facts themselves, filterable by
  * source, and nothing the analysis made of them: which score cites a fact
- * belongs to Strengths. The follow-up questions stay here because answering
- * one is how the user adds evidence where it is too thin to be sure.
+ * belongs to Strengths. It asks nothing: questions come from a target role's
+ * gaps, in the Advisor (ADR 0023).
  *
  * A sync or a parse runs in the background; the card says so while it does,
  * the lists reload when it is done, and the analysis waits for it (ADR 0018).
@@ -466,8 +465,6 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                 ))}
               </ul>
             )}
-
-            <FollowUpQuestions onAnswered={() => void evidence.reload()} />
           </div>
         )}
       </div>

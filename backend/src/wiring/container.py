@@ -12,6 +12,7 @@ from functools import lru_cache
 
 from advisor.activity import ActivityService
 from advisor.assessment import AssessmentService, create_assessment_service
+from advisor.gapfill import GapFillService, create_gapfill_service
 from advisor.gapplan import GapPlanService, create_gapplan_service
 from advisor.identity import (
     AuthService,
@@ -54,6 +55,7 @@ class Container:
     rolemap: RoleMapService
     assessment: AssessmentService
     target: TargetService
+    gapfill: GapFillService
     gapplan: GapPlanService
     resume: ResumeService
     activity: ActivityService
@@ -169,6 +171,7 @@ def build(settings: Settings | None = None) -> Container:
         confidence_threshold=settings.assessment_confidence_threshold,
     )
     target = TargetService(assessment=assessment, rolemap=rolemap)
+    gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     gapplan = create_gapplan_service(
         database,
         target=target,
@@ -203,6 +206,7 @@ def build(settings: Settings | None = None) -> Container:
         rolemap=rolemap,
         assessment=assessment,
         target=target,
+        gapfill=gapfill,
         gapplan=gapplan,
         resume=resume,
         activity=activity,

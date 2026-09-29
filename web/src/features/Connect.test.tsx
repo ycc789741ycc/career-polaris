@@ -60,7 +60,6 @@ function serve(route: (call: Call) => unknown) {
  */
 function noData(call: Call): unknown {
   if (call.url === "/assessments/latest") return null;
-  if (call.url === "/questions/status") return null;
   if (call.url === "/profile") return { version: 1, evidence_count: 0 };
   return [];
 }
@@ -91,7 +90,7 @@ const prFact = {
 
 function renderConnect() {
   const shell = {
-    status: { me: null, credential: null, openQuestions: 0, confidence: 0 },
+    status: { me: null, credential: null, confidence: 0 },
     navigate: vi.fn(),
     focus: null,
     setFocus: vi.fn(),
@@ -391,67 +390,5 @@ describe("Connect", () => {
         name: /^Facts by source: GitHub 1 \(50%\), Jira 1/,
       }),
     ).toBeInTheDocument();
-  });
-
-  it("asks open follow-up questions as one more source of evidence", async () => {
-    let answered = false;
-    const calls = serve((call) => {
-      if (call.url === "/assessments/latest")
-        return assessment({
-          dimensions: [
-            {
-              key: "api",
-              name: "API design",
-              short_name: "APIs",
-              score: 62,
-              confidence: 0.35,
-              read: "One repository shows it.",
-              evidence_ids: [],
-              needs_more_evidence: true,
-            },
-          ],
-        });
-      if (call.url === "/questions")
-        return [
-          {
-            id: "q1",
-            dimension_key: "api",
-            text: "Did you design the public API, or extend one?",
-            why: "Only one repository shows it.",
-            options: ["Designed it", "Extended it"],
-            answer: answered ? "Designed it" : null,
-          },
-        ];
-      if (call.url === "/questions/q1/answer") {
-        answered = true;
-        return {};
-      }
-      return undefined;
-    });
-    const user = userEvent.setup();
-    renderConnect();
-
-    const card = await screen.findByRole("region", { name: "Fill the gaps" });
-    expect(
-      await within(card).findByText(
-        "Did you design the public API, or extend one?",
-      ),
-    ).toBeInTheDocument();
-    expect(within(card).getByText("API design")).toBeInTheDocument();
-    expect(within(card).getByText("1 gap")).toBeInTheDocument();
-
-    const before = calls.filter((c) => c.url === "/evidence").length;
-    await user.click(within(card).getByRole("button", { name: "Designed it" }));
-
-    expect(calls).toContainEqual({
-      method: "POST",
-      url: "/questions/q1/answer",
-    });
-    // The answer is evidence now, so the table and source mix read again.
-    await vi.waitFor(() =>
-      expect(calls.filter((c) => c.url === "/evidence").length).toBeGreaterThan(
-        before,
-      ),
-    );
   });
 });

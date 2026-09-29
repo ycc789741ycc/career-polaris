@@ -310,7 +310,39 @@ class ResumeService:
             )
         return _summary(resume, latest_version=None)
 
-    async def generate(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
+    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> ResumeSummaryView | None:
+        """The most recently changed résumé for this Target, if there is one."""
+        async with self._uow.for_owner(owner_id) as mine:
+            resumes = [
+                r for r in await mine.resumes.get_list(TailoredResumeFilter()) if _ref_of(r) == ref
+            ]
+            if not resumes:
+                return None
+            newest = max(resumes, key=lambda r: (r.updated_at, r.id))
+            numbers = await mine.versions.latest_numbers()
+        return _summary(newest, latest_version=numbers.get(newest.id))
+
+    async def regenerate(self, owner_id: uuid.UUID, ref: TargetRef) -> uuid.UUID | None:
+        """The worker job after answers are submitted in Fill the gap: write the
+        Target's latest résumé again, as a new version from the updated
+        evidence. Nothing happens for a Target with no résumé."""
+        latest = await self.latest_for(owner_id, ref)
+        if latest is None:
+            return None
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, latest.id)
+            resume.redraft(utcnow())
+            await mine.resumes.update(resume)
+        await self.generate(owner_id, latest.id, source=VersionSource.ANSWERS)
+        return latest.id
+
+    async def generate(
+        self,
+        owner_id: uuid.UUID,
+        resume_id: uuid.UUID,
+        *,
+        source: VersionSource = VersionSource.GENERATED,
+    ) -> None:
         """The worker job. An expected failure is recorded on the résumé, with
         its stable code, and not retried on the user's key."""
         async with self._uow.for_owner(owner_id) as mine:
@@ -321,7 +353,7 @@ class ResumeService:
         options = resume.options
 
         try:
-            await self._generate(owner_id, resume_id, ref, options)
+            await self._generate(owner_id, resume_id, ref, options, source=source)
         except DomainError as exc:
             log.warning("resume.generate_failed", resume_id=str(resume_id), code=str(exc.code))
             await self._fail(owner_id, resume_id, code=str(exc.code), message=exc.message)
@@ -649,7 +681,13 @@ class ResumeService:
     # -- internals ----------------------------------------------------------
 
     async def _generate(
-        self, owner_id: uuid.UUID, resume_id: uuid.UUID, ref: TargetRef, options: Options
+        self,
+        owner_id: uuid.UUID,
+        resume_id: uuid.UUID,
+        ref: TargetRef,
+        options: Options,
+        *,
+        source: VersionSource,
     ) -> None:
         snapshot = await self._target.snapshot(owner_id, ref)
         coverage_rows = await self._coverage(owner_id, snapshot)
@@ -698,7 +736,7 @@ class ResumeService:
             owner_id,
             resume_id,
             content=content,
-            source=VersionSource.GENERATED,
+            source=source,
             label=label,
             model_id=result.model_id,
             template_version=result.template_version,

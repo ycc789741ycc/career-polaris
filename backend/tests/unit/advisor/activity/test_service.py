@@ -145,12 +145,6 @@ async def test_a_lost_analysis_reads_as_failed_and_is_closed_when_the_next_is_as
     assert (str(stored.status), stored.error_code) == ("failed", "stale")
 
 
-async def test_an_answer_reruns_the_analysis_without_the_gate(world: World) -> None:
-    world.profile.syncing.append(_pending("github"))
-
-    assert (await world.activity.request_reanalysis(OWNER)).is_running
-
-
 # --- 03 waits for 02 -------------------------------------------------------
 
 

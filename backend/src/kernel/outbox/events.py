@@ -18,8 +18,6 @@ class EventName(StrEnum):
     ASSESSMENT_REQUESTED = "AssessmentRequested"
     ASSESSMENT_COMPLETED = "AssessmentCompleted"
     ANALYSIS_FINISHED = "AnalysisFinished"
-    QUESTIONS_RAISED = "QuestionsRaised"
-    QUESTION_ANSWERED = "QuestionAnswered"
     DIMENSIONS_CHANGED = "DimensionsChanged"
     ROLE_FITS_COMPUTED = "RoleFitsComputed"
     # Market / crawler
@@ -30,6 +28,7 @@ class EventName(StrEnum):
     # Role map
     ROLES_RECLUSTERED = "RolesReclustered"
     CUSTOM_ROLE_ADDED = "CustomRoleAdded"
+    GAP_ANSWERS_SUBMITTED = "GapAnswersSubmitted"
     ROLE_REQUIREMENTS_CHANGED = "RoleRequirementsChanged"
     ROLE_SPLIT_OR_MERGED = "RoleSplitOrMerged"
     # Gap plan

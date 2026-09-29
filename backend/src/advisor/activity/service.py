@@ -118,14 +118,6 @@ class ActivityService:
             raise AnalysisRunningError("an analysis is already running")
         return await self._assessment.request_run(owner_id)
 
-    async def request_reanalysis(self, owner_id: uuid.UUID) -> AnalysisRunView:
-        """Record the analysis an answered question starts.
-
-        Not gated: the answer is already stored as evidence, and a run already
-        under way would not include it.
-        """
-        return await self._assessment.request_run(owner_id)
-
     async def request_role_map(self, owner_id: uuid.UUID) -> BuildRequestView:
         """Record a role-map build, waiting if an analysis is running.
 

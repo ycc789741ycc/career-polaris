@@ -35,10 +35,6 @@ export type ProfileSummary = Schemas["Profile"];
 // Assessment
 export type Dimension = Schemas["Dimension"];
 export type Assessment = Schemas["Assessment"];
-export type Question = Schemas["Question"];
-/** A round of follow-up questions, generated in the background (ADR 0012). */
-export type QuestionStatus = Schemas["QuestionStatus"];
-export type QuestionRoundStatus = QuestionStatus["status"];
 export type Fit = Schemas["Fit"];
 /** An opening inside one of the user's roles, ranked by that role's fit. */
 export type MatchedPosting = Schemas["MatchedPosting"];
@@ -59,6 +55,14 @@ export type MarketScope = Schemas["MarketScope"];
 
 // Targets: a role, and optionally one opening in it (ADR 0022)
 export type TargetRef = Schemas["TargetRefBody"];
+
+// Fill the gap (ADR 0023)
+/** The questions for one Target's gaps; polled while `writing`. */
+export type QuestionSet = Schemas["QuestionSet"];
+export type GapQuestion = Schemas["GapQuestion"];
+/** What submitting costs: the plan and résumé written again, if they exist. */
+export type SubmitEstimate = Schemas["SubmitEstimate"];
+export type Submitted = Schemas["Submitted"];
 
 // Gap plan
 export type PlanSummary = Schemas["PlanSummary"];
@@ -87,7 +91,6 @@ export type FitPage = Schemas["FitPage"];
 export type MatchedPostingPage = Schemas["MatchedPostingPage"];
 export type PastedJobDescriptionPage = Schemas["PastedJobDescriptionPage"];
 export type PlanSummaryPage = Schemas["PlanSummaryPage"];
-export type QuestionPage = Schemas["QuestionPage"];
 export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
 export type RolePage = Schemas["RolePage"];

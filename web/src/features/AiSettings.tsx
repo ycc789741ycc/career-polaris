@@ -17,10 +17,6 @@ import { messageOf, useAsync } from "./useAsync";
 
 const USES = [
   {
-    title: "Follow-up questions",
-    note: "Written when the evidence leaves a score uncertain.",
-  },
-  {
     title: "Skill analysis",
     note: "Reads your evidence into your own dimensions, citing each fact.",
   },
@@ -30,7 +26,7 @@ const USES = [
   },
   {
     title: "Advisor",
-    note: "Drafts a gap plan for the role you select on the map, and writes a résumé for it from cited work.",
+    note: "Writes the questions for the gaps of the role you target, drafts a gap plan for it, and writes a résumé for it from cited work.",
   },
 ];
 
@@ -228,8 +224,8 @@ export function AiSettings() {
             style={{ fontSize: 12.5, lineHeight: 1.55, margin: "14px 0 0" }}
           >
             Without a key, the app still charts what the connectors return — but
-            no follow-up questions, gap plan or résumé revision is generated.
-            Reading your sources never calls a model.
+            no questions, gap plan or résumé revision is generated. Reading your
+            sources never calls a model.
           </p>
         </div>
 

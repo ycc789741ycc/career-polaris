@@ -274,6 +274,23 @@ class GapPlanService:
             )
         return _summary(plan, progress_percent=0)
 
+    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> PlanSummaryView | None:
+        """The Target's latest plan version, if it has one."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.plans.get_list(_same_target(ref), page_size=1)
+        return _summary(found[0], progress_percent=0) if found else None
+
+    async def regenerate(self, owner_id: uuid.UUID, ref: TargetRef) -> uuid.UUID | None:
+        """The worker job after answers are submitted in Fill the gap: draft the
+        Target's next plan version from the updated evidence. Finished tasks
+        carry over as for any new version. Nothing happens for a Target with
+        no plan."""
+        if await self.latest_for(owner_id, ref) is None:
+            return None
+        requested = await self.request(owner_id, ref)
+        await self.draft(owner_id, requested.id)
+        return requested.id
+
     async def draft(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
         """The worker job. Any expected failure is recorded on the plan, with
         its stable code, and not retried: a retry would spend the key again."""

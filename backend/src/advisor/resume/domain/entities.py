@@ -87,6 +87,13 @@ class TailoredResume:
         self.status = ResumeStatus.READY
         self.updated_at = at
 
+    def redraft(self, at: datetime) -> None:
+        """Write it again for the same Target, as its next version."""
+        self.status = ResumeStatus.DRAFTING
+        self.error_code = None
+        self.error_message = None
+        self.updated_at = at
+
     def restyle(self, *, template: Template, options: Options, at: datetime) -> None:
         self.template = template
         self.options = options

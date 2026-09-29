@@ -7,6 +7,7 @@ one user. Facts only — a score never lives here.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from fnmatch import fnmatchcase
@@ -48,6 +49,7 @@ from kernel.storage import ObjectStore, object_key
 
 __all__ = [
     "ACCEPTED_TYPES",
+    "AnswerRecord",
     "CitationError",
     "CitationHandles",
     "ConnectionView",
@@ -83,6 +85,15 @@ class EvidenceView:
     granularity: EvidenceGranularity
     tally: int | None
     subject: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerRecord:
+    """An answer to store as evidence: the question it answers and the fact,
+    written as the question with the user's reply."""
+
+    question_id: str
+    fact: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -484,27 +495,45 @@ class ProfileService:
     async def record_answer(
         self, owner_id: uuid.UUID, *, question_id: str, question: str, answer: str
     ) -> EvidenceView:
-        """A reply to a follow-up question, stored as self-reported Evidence."""
+        """One answer, stored as ``user_answer`` evidence."""
         if not answer.strip():
             raise ValidationError("an answer is required")
-        reference = f"answer:{question_id}"
+        [stored] = await self.record_answers(
+            owner_id,
+            [AnswerRecord(question_id=question_id, fact=f"{question} — {answer.strip()}")],
+        )
+        return stored
+
+    async def record_answers(
+        self, owner_id: uuid.UUID, answers: Sequence[AnswerRecord]
+    ) -> list[EvidenceView]:
+        """Answers from one submit of Fill the gap, stored as ``user_answer``
+        evidence in one transaction, with one ``ProfileUpdated`` (domain
+        decision 27). Ingestion stays deterministic: the fact is the question
+        and the answer as the user gave it, and nothing reads it with a model."""
+        if not answers:
+            raise ValidationError("there are no answers to record")
+        if any(not a.fact.strip() for a in answers):
+            raise ValidationError("an answer is required")
         drafts = [
             EvidenceDraft(
-                external_ref=reference,
+                external_ref=_answer_ref(a.question_id),
                 reference="Your answer",
-                fact=f"{question} — {answer.strip()}",
+                fact=a.fact.strip(),
                 observed_on=utcnow().date(),
             )
+            for a in answers
         ]
-        await self._write_evidence(owner_id, EvidenceSource.SELF_REPORTED, drafts)
+        await self._write_evidence(owner_id, EvidenceSource.USER_ANSWER, drafts)
+        refs = tuple(d.external_ref for d in drafts)
         async with self._uow.for_owner(owner_id) as mine:
             stored = await mine.evidence.get_list(
-                EvidenceFilter(source=EvidenceSource.SELF_REPORTED, external_refs=(reference,)),
-                page_size=1,
+                EvidenceFilter(source=EvidenceSource.USER_ANSWER, external_refs=refs)
             )
-        if not stored:
-            raise NotFoundError("the answer was not stored", question_id=question_id)
-        return _evidence_view(stored[0])
+        by_ref = {e.external_ref: e for e in stored}
+        if set(by_ref) != set(refs):
+            raise NotFoundError("an answer was not stored", count=len(refs) - len(by_ref))
+        return [_evidence_view(by_ref[ref]) for ref in refs]
 
     # -- reading the profile ------------------------------------------------
 
@@ -695,3 +724,7 @@ def _resume_view(resume: ResumeFile) -> ResumeFileView:
         parse_error=resume.parse_error,
         uploaded_at=resume.created_at,
     )
+
+
+def _answer_ref(question_id: str) -> str:
+    return f"answer:{question_id}"

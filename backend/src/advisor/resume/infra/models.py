@@ -65,7 +65,7 @@ class Resume(Base, OwnedMixin):
 class ResumeVersion(Base, OwnedMixin):
     __tablename__ = "version"
     __table_args__ = (
-        CheckConstraint("source IN ('generated', 'manual', 'chat')", name="source"),
+        CheckConstraint("source IN ('generated', 'manual', 'chat', 'answers')", name="source"),
         Index("ix_version_resume_number", "resume_id", "number", unique=True),
         {"schema": "resume"},
     )

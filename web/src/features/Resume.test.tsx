@@ -155,7 +155,6 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
         status: "active",
         last_error: null,
       },
-      openQuestions: 0,
       confidence: 80,
     },
     navigate: vi.fn(),

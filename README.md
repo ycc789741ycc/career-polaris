@@ -32,9 +32,10 @@ key**.
 
 | Feature | What you get |
 |---|---|
-| **Profile & evidence** | Connect GitHub and Jira, upload a résumé, and choose up to three places you want to work. Sources are parsed into evidence, with no AI involved. When the evidence is thin, the analyzer asks follow-up questions and adds your answers as evidence. |
+| **Profile & evidence** | Connect GitHub and Jira, upload a résumé, and choose up to three places you want to work. Sources are parsed into evidence, with no AI involved, and your answers from Fill the gap join them as "Your answers". |
 | **Strength report** | A radar chart of 5–10 skill dimensions derived from *your* profile, not a fixed taxonomy. |
 | **Role map** | A bubble chart of the roles closest to you in the real market. The x axis is the hiring bar, the y axis is salary and the bubble size is fit. It shows the ten best-fit roles in your target locations, plus roles you add yourself by title, with an optional company and a private JD ([ADR 0021](docs/decisions/0021-let-users-add-custom-roles-beside-the-ten.md)), and is rebuilt after every analysis, confirmed with the analysis's cost ([ADR 0020](docs/decisions/0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md)). |
+| **Fill the gap** | The Advisor's first step: a few questions for each gap between your evidence and your target role, each saying why it is asked and what closing the gap is worth. Submit them together; your answers become evidence and your gap plan and résumé are written again ([ADR 0023](docs/decisions/0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md)). |
 | **Gap plan** | Aim at one **Target** from the role map — a role, and optionally one opening in it ([ADR 0022](docs/decisions/0022-make-a-target-a-role-and-an-optional-opening.md)) — and get gaps ranked by the fit points each is worth, broken into milestones, tasks and projects. Plans are versioned per Target, and finished work carries forward. |
 | **Résumé** | A résumé written for the Target from cited evidence, with requirement coverage, in-place editing saved as versions, a streamed revision chat whose proposals apply only when you accept them, and PDF export. |
 | **Accounts** | Email and password sign-in, or optional sign-in with Google. A write-only AI credential, plus a usage budget and ledger. |

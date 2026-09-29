@@ -166,3 +166,35 @@ async def test_a_failure_is_recorded_on_the_plan_and_drafting_skips_it() -> None
     assert view.summary.error_code == "target_unusable"
     with pytest.raises(NotFoundError):
         await plans.draft(OTHER, plan.id)
+
+
+# --- after Fill the gap (ADR 0023) -------------------------------------------
+
+
+async def test_regenerating_a_target_with_no_plan_does_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plans = _service(FakeGapPlanUnitOfWork())
+
+    assert await plans.regenerate(OWNER, _ref()) is None
+
+
+async def test_regenerating_drafts_the_targets_next_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow)
+    ref = _ref()
+    await plans.request(OWNER, ref)
+    drafted: list[uuid.UUID] = []
+
+    async def draft(owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
+        drafted.append(plan_id)
+
+    monkeypatch.setattr(plans, "draft", draft)
+
+    regenerated = await plans.regenerate(OWNER, ref)
+
+    assert regenerated is not None and drafted == [regenerated]
+    latest = await plans.latest_for(OWNER, ref)
+    assert latest is not None and (latest.id, latest.version) == (regenerated, 2)

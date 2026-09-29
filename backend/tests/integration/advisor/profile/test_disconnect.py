@@ -75,7 +75,7 @@ async def test_disconnect_removes_only_the_callers_facts_from_that_source(
 
     after = await profile.snapshot(account)
     assert await profile.connections(account) == []
-    assert {e.source for e in after.evidence} == {EvidenceSource.SELF_REPORTED}
+    assert {e.source for e in after.evidence} == {EvidenceSource.USER_ANSWER}
     assert after.version == before.version + 1
 
     theirs = await profile.snapshot(other_account)

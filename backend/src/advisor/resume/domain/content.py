@@ -44,6 +44,8 @@ class VersionSource(StrEnum):
     GENERATED = "generated"
     MANUAL = "manual"
     CHAT = "chat"
+    # Rewritten after the user submitted answers in Fill the gap (ADR 0023).
+    ANSWERS = "answers"
 
 
 class Template(StrEnum):

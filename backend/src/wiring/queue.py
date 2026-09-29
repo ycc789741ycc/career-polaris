@@ -34,6 +34,7 @@ async def enqueue(name: str, **kwargs: Any) -> None:
 
 def _register(app: App) -> None:
     from advisor.assessment import jobs as assessment_jobs
+    from advisor.gapfill import jobs as gapfill_jobs
     from advisor.gapplan import jobs as gapplan_jobs
     from advisor.market import jobs as market_jobs
     from advisor.profile import jobs as profile_jobs
@@ -61,13 +62,7 @@ def _register(app: App) -> None:
 
     @app.task(name="assessment.run", queue=str(Queue.AI))
     async def run_assessment(owner_id: str, run_id: str) -> None:
-        round_id = await assessment_jobs.run(deps(), owner_id=owner_id, run_id=run_id)
-        if round_id:
-            await enqueue("assessment.generate_questions", owner_id=owner_id, round_id=round_id)
-
-    @app.task(name="assessment.generate_questions", queue=str(Queue.AI))
-    async def generate_questions(owner_id: str, round_id: str) -> None:
-        await assessment_jobs.generate_questions(deps(), owner_id=owner_id, round_id=round_id)
+        await assessment_jobs.run(deps(), owner_id=owner_id, run_id=run_id)
 
     @app.task(name="assessment.compute_fits", queue=str(Queue.AI))
     async def compute_fits(owner_id: str) -> None:
@@ -76,6 +71,22 @@ def _register(app: App) -> None:
     @app.task(name="gapplan.draft", queue=str(Queue.AI))
     async def draft_plan(owner_id: str, plan_id: str) -> None:
         await gapplan_jobs.draft(deps(), owner_id=owner_id, plan_id=plan_id)
+
+    @app.task(name="gapplan.regenerate", queue=str(Queue.AI))
+    async def regenerate_plan(owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+        await gapplan_jobs.regenerate(
+            deps(), owner_id=owner_id, role_id=role_id, job_posting_id=job_posting_id
+        )
+
+    @app.task(name="gapfill.write", queue=str(Queue.AI))
+    async def write_questions(owner_id: str, set_id: str) -> None:
+        await gapfill_jobs.write(deps(), owner_id=owner_id, set_id=set_id)
+
+    @app.task(name="resume.regenerate", queue=str(Queue.AI))
+    async def regenerate_resume(owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+        await resume_jobs.regenerate(
+            deps(), owner_id=owner_id, role_id=role_id, job_posting_id=job_posting_id
+        )
 
     @app.task(name="resume.generate", queue=str(Queue.AI))
     async def generate_resume(owner_id: str, resume_id: str) -> None:

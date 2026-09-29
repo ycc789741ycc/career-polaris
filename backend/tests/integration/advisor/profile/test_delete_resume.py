@@ -63,7 +63,7 @@ async def test_deleting_a_resume_removes_its_file_and_facts_and_nobody_elses(
     await profile.delete_resume(account, mine)
 
     after = await profile.snapshot(account)
-    assert {e.source for e in after.evidence} == {EvidenceSource.SELF_REPORTED}
+    assert {e.source for e in after.evidence} == {EvidenceSource.USER_ANSWER}
     assert after.version == before.version + 1
     assert (await profile.resumes(account)).items == ()
     with pytest.raises(NotFoundError):

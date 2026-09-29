@@ -6,8 +6,6 @@ import type { AdvisorTab, Focus, Screen } from "./navigation";
 export interface ShellStatus {
   me: Me | null;
   credential: Credential | null;
-  /** Follow-up questions still waiting for an answer. */
-  openQuestions: number;
   /** Mean dimension confidence of the latest analysis, 0–100, or null. */
   confidence: number | null;
 }
@@ -35,7 +33,6 @@ export interface Shell {
 const EMPTY: ShellStatus = {
   me: null,
   credential: null,
-  openQuestions: 0,
   confidence: null,
 };
 

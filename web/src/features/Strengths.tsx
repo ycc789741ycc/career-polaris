@@ -29,7 +29,7 @@ import { messageOf, useAsync } from "./useAsync";
  *
  * One layout, the radar and its evidence, and it explains every score by how
  * sure it is: confidence, whether the evidence is thin (the server's
- * `needs_more_evidence`, the rule that also opens follow-up questions), and
+ * `needs_more_evidence`), and
  * the facts it cites. The least certain dimensions come first, since they
  * are the ones more evidence would change.
  *
@@ -309,7 +309,7 @@ export function Strengths() {
                       className="link-button"
                       onClick={() => navigate("sources")}
                     >
-                      Answer the follow-up questions on Sources
+                      Connect more sources, like Jira,
                     </button>{" "}
                     to add more.
                   </p>

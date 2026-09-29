@@ -20,10 +20,6 @@ from advisor.assessment.domain import (
     AssessedScoreFilter,
     DimensionChange,
     DimensionChangeFilter,
-    FollowUpQuestion,
-    FollowUpQuestionFilter,
-    QuestionRound,
-    QuestionRoundFilter,
     RoleFit,
     RoleFitFilter,
     SkillAssessment,
@@ -143,70 +139,6 @@ class SqlAlchemyDimensionChangeRepository(
         if filter.assessment_id is None:
             return []
         return [models.DimensionLineage.assessment_id == filter.assessment_id]
-
-
-class SqlAlchemyFollowUpQuestionRepository(
-    SqlAlchemyRepository[FollowUpQuestion, models.FollowUpQuestion, FollowUpQuestionFilter]
-):
-    model = models.FollowUpQuestion
-    id_column = models.FollowUpQuestion.id
-    created_column = models.FollowUpQuestion.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.FollowUpQuestion.owner_id
-    )
-    noun = "question"
-
-    def to_entity(self, row: models.FollowUpQuestion) -> FollowUpQuestion:
-        return mappers.question(row)
-
-    def to_row(self, entity: FollowUpQuestion) -> models.FollowUpQuestion:
-        return mappers.question_row(entity)
-
-    def apply(self, row: models.FollowUpQuestion, entity: FollowUpQuestion) -> None:
-        mappers.apply_question(row, entity)
-
-    def id_of(self, entity: FollowUpQuestion) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: FollowUpQuestionFilter) -> list[ColumnElement[bool]]:
-        question = models.FollowUpQuestion
-        found: list[ColumnElement[bool]] = []
-        if filter.is_answered is True:
-            found.append(question.answered_at.is_not(None))
-        if filter.is_answered is False:
-            found.append(question.answered_at.is_(None))
-        if filter.is_retired is True:
-            found.append(question.retired_at.is_not(None))
-        if filter.is_retired is False:
-            found.append(question.retired_at.is_(None))
-        return found
-
-
-class SqlAlchemyQuestionRoundRepository(
-    SqlAlchemyRepository[QuestionRound, models.QuestionRound, QuestionRoundFilter]
-):
-    model = models.QuestionRound
-    id_column = models.QuestionRound.id
-    created_column = models.QuestionRound.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.QuestionRound.owner_id
-    noun = "question round"
-
-    def to_entity(self, row: models.QuestionRound) -> QuestionRound:
-        return mappers.question_round(row)
-
-    def to_row(self, entity: QuestionRound) -> models.QuestionRound:
-        return mappers.question_round_row(entity)
-
-    def apply(self, row: models.QuestionRound, entity: QuestionRound) -> None:
-        mappers.apply_question_round(row, entity)
-
-    def id_of(self, entity: QuestionRound) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: QuestionRoundFilter) -> list[ColumnElement[bool]]:
-        if filter.status is None:
-            return []
-        return [models.QuestionRound.status == str(filter.status)]
 
 
 class SqlAlchemyAnalysisRunRepository(

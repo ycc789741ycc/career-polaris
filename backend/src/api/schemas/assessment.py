@@ -1,24 +1,16 @@
-"""Assessment's wire shapes: the radar, the follow-up questions and the fits."""
+"""Assessment's wire shapes: the radar and the fits."""
 
 from __future__ import annotations
 
 import uuid
 from typing import Literal
 
-from pydantic import Field
-
 from advisor.assessment import (
     AssessmentView,
     FitView,
     MatchedPostingView,
-    QuestionRoundView,
-    QuestionView,
 )
-from api.schemas.common import ApiModel, JobError, Page, RequestModel, Salary, Timestamp
-
-
-class AnswerRequest(RequestModel):
-    answer: str = Field(min_length=1)
+from api.schemas.common import ApiModel, Page, Salary, Timestamp
 
 
 class Dimension(ApiModel):
@@ -29,8 +21,8 @@ class Dimension(ApiModel):
     confidence: float
     read: str
     evidence_ids: list[str]
-    # Confidence is below the threshold that opens follow-up questions: the
-    # evidence is not enough to be sure of this score yet.
+    # Confidence is below the threshold: the evidence is not enough to be
+    # sure of this score yet, and Strengths points to Sources for more.
     needs_more_evidence: bool
 
 
@@ -66,53 +58,6 @@ class Assessment(ApiModel):
                 )
                 for d in assessment.dimensions
             ],
-        )
-
-
-class Question(ApiModel):
-    id: uuid.UUID
-    dimension_key: str
-    text: str
-    # Every question says what it is for and which dimension it moves.
-    why: str
-    options: list[str]
-    answer: str | None
-
-    @classmethod
-    def from_view(cls, q: QuestionView) -> Question:
-        return cls(
-            id=q.id,
-            dimension_key=q.dimension_key,
-            text=q.text,
-            why=q.why,
-            options=list(q.options),
-            answer=q.answer,
-        )
-
-
-class QuestionStatus(ApiModel):
-    """The newest question round, which the page polls while it is
-    ``generating`` (ADR 0006, ADR 0012)."""
-
-    id: uuid.UUID
-    status: Literal["generating", "ready", "failed", "superseded"]
-    # `evidence` after a sync or upload, `assessment` after an analysis.
-    trigger: Literal["evidence", "assessment"]
-    question_count: int
-    created_at: Timestamp
-    finished_at: Timestamp | None
-    error: JobError | None
-
-    @classmethod
-    def from_view(cls, found: QuestionRoundView) -> QuestionStatus:
-        return cls(
-            id=found.id,
-            status=found.status,
-            trigger=found.trigger,
-            question_count=found.question_count,
-            created_at=found.created_at,
-            finished_at=found.finished_at,
-            error=JobError.of(found.error_code, found.error_message),
         )
 
 
@@ -191,10 +136,6 @@ class MatchedPosting(ApiModel):
 
 
 class AssessmentPage(Page[Assessment]):
-    pass
-
-
-class QuestionPage(Page[Question]):
     pass
 
 

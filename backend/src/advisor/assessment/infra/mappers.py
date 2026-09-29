@@ -7,11 +7,7 @@ from advisor.assessment.domain import (
     AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
-    FollowUpQuestion,
     LineageKind,
-    QuestionRound,
-    QuestionRoundStatus,
-    QuestionRoundTrigger,
     RoleFit,
     SkillAssessment,
     SkillDimension,
@@ -122,75 +118,6 @@ def apply_change(row: models.DimensionLineage, entity: DimensionChange) -> None:
     row.dimension_key = entity.dimension_key
     row.from_keys = list(entity.from_keys)
     row.previous_name = entity.previous_name
-
-
-def question(row: models.FollowUpQuestion) -> FollowUpQuestion:
-    return FollowUpQuestion(
-        id=row.id,
-        owner_id=row.owner_id,
-        assessment_id=row.assessment_id,
-        dimension_key=row.dimension_key,
-        text=row.text,
-        why=row.why,
-        options=tuple(row.options),
-        answer=row.answer,
-        answered_at=row.answered_at,
-        retired_at=row.retired_at,
-        created_at=row.created_at,
-    )
-
-
-def question_row(entity: FollowUpQuestion) -> models.FollowUpQuestion:
-    row = models.FollowUpQuestion(
-        id=entity.id, owner_id=entity.owner_id, assessment_id=entity.assessment_id
-    )
-    apply_question(row, entity)
-    return row
-
-
-def apply_question(row: models.FollowUpQuestion, entity: FollowUpQuestion) -> None:
-    row.dimension_key = entity.dimension_key
-    row.text = entity.text
-    row.why = entity.why
-    row.options = list(entity.options)
-    row.answer = entity.answer
-    row.answered_at = entity.answered_at
-    row.retired_at = entity.retired_at
-
-
-def question_round(row: models.QuestionRound) -> QuestionRound:
-    return QuestionRound(
-        id=row.id,
-        owner_id=row.owner_id,
-        assessment_id=row.assessment_id,
-        trigger=QuestionRoundTrigger(row.trigger),
-        status=QuestionRoundStatus(row.status),
-        created_at=row.created_at,
-        question_count=row.question_count,
-        error_code=row.error_code,
-        error_message=row.error_message,
-        finished_at=row.finished_at,
-    )
-
-
-def question_round_row(entity: QuestionRound) -> models.QuestionRound:
-    row = models.QuestionRound(
-        id=entity.id,
-        owner_id=entity.owner_id,
-        assessment_id=entity.assessment_id,
-        trigger=str(entity.trigger),
-        created_at=entity.created_at,
-    )
-    apply_question_round(row, entity)
-    return row
-
-
-def apply_question_round(row: models.QuestionRound, entity: QuestionRound) -> None:
-    row.status = str(entity.status)
-    row.question_count = entity.question_count
-    row.error_code = entity.error_code
-    row.error_message = entity.error_message
-    row.finished_at = entity.finished_at
 
 
 def analysis_run(row: models.AnalysisRun) -> AnalysisRun:
