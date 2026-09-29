@@ -15,7 +15,13 @@ import {
 import { useShell } from "../shell/ShellContext";
 import { messageOf, useAsync } from "./useAsync";
 
+// The prototype's "What runs on your key", with questions written per gap of
+// the target role rather than for uncertain scores (domain decision 27).
 const USES = [
+  {
+    title: "Questions",
+    note: "Written for the gaps between your evidence and the role you target, in Fill the gap.",
+  },
   {
     title: "Skill analysis",
     note: "Reads your evidence into your own dimensions, citing each fact.",
@@ -26,7 +32,7 @@ const USES = [
   },
   {
     title: "Advisor",
-    note: "Writes the questions for the gaps of the role you target, drafts a gap plan for it, and writes a résumé for it from cited work.",
+    note: "Drafts a gap plan for the role you select on the map, and writes a résumé for it from cited work.",
   },
 ];
 
@@ -201,9 +207,7 @@ export function AiSettings() {
 
       <div className="stack" style={{ gap: 20 }}>
         <div className="callout">
-          <Eyebrow style={{ marginBottom: 6 }}>
-            Where this model is used
-          </Eyebrow>
+          <Eyebrow style={{ marginBottom: 6 }}>What runs on your key</Eyebrow>
           <div className="divided">
             {USES.map((use) => (
               <div key={use.title}>
@@ -223,9 +227,8 @@ export function AiSettings() {
             className="callout-note"
             style={{ fontSize: 12.5, lineHeight: 1.55, margin: "14px 0 0" }}
           >
-            Without a key, the app still charts what the connectors return — but
-            no questions, gap plan or résumé revision is generated. Reading your
-            sources never calls a model.
+            Crawling, parsing, embedding and clustering run on our side and need
+            no model.
           </p>
         </div>
 

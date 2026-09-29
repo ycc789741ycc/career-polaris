@@ -68,6 +68,7 @@ function assessment(overrides: Partial<Assessment>): Assessment {
   return {
     id: "a1",
     profile_version: 1,
+    profile_confidence: null,
     is_out_of_date: false,
     model_id: "m",
     template_version: "t",
@@ -90,7 +91,7 @@ const prFact = {
 
 function renderConnect() {
   const shell = {
-    status: { me: null, credential: null, confidence: 0 },
+    status: { me: null, credential: null },
     navigate: vi.fn(),
     focus: null,
     setFocus: vi.fn(),

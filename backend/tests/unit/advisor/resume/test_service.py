@@ -70,7 +70,7 @@ async def _resume(service: ResumeService) -> uuid.UUID:
     summary = await service.request(
         OWNER,
         TargetRef(str(uuid.uuid4()), str(uuid.uuid4())),
-        template=Template.WARM,
+        template=Template.ORGANIC,
         options=Options(),
     )
     return summary.id

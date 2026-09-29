@@ -126,7 +126,7 @@ def test_writing_a_resume_queues_it_with_its_template_and_options(
         "/tailored-resumes",
         json={
             "role_id": target,
-            "template": "brief",
+            "template": "plain",
             "options": {"trim": True},
         },
     )
@@ -134,7 +134,7 @@ def test_writing_a_resume_queues_it_with_its_template_and_options(
     assert response.status_code == 202
     assert response.json()["status"] == "drafting"
     [(ref, template, options)] = resumes.requested
-    assert (ref, template) == (TargetRef(target), Template.BRIEF)
+    assert (ref, template) == (TargetRef(target), Template.PLAIN)
     assert options == Options(metrics=True, reorder=True, trim=True)
     assert [(job["name"], job["resume_id"]) for job in queued] == [
         ("resume.generate", str(RESUME_ID))

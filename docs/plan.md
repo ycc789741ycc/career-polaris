@@ -238,7 +238,12 @@ whatever is next when it merges.
      either: Gap plan | Résumé".
    * README row: Profile & evidence (answers), and a Fill the gap row.
 
-8. **Profile confidence on Strengths** — `feature/no-ticket/profile-confidence`
+8. **Profile confidence on Strengths — done.** `feature/no-ticket/profile-confidence`
+   * Built as: `assessment.domain.profile_confidence` (the unweighted mean),
+     `profile_confidence` on the strength report, and migration 0018 renaming
+     `warm` to `organic` and moving `brief` résumés to `plain`. The AI & model
+     screen's list says questions are written per gap of the target role, not
+     for uncertain scores (domain 2.12).
    * `assessment` returns profile confidence with the strength report. Today
      `App.tsx` averages it in the SPA.
    * Strengths shows it next to Re-analyse, and lists dimensions least

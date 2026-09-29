@@ -2,7 +2,8 @@ import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
 import type { ShellStatus } from "./ShellContext";
 
-/** The prototype's left rail: the numbered journey, the model, confidence. */
+/** The prototype's left rail: the numbered journey and the model. Profile
+ * confidence belongs to Strengths (domain decision 28). */
 export function Sidebar({
   current,
   status,
@@ -85,38 +86,6 @@ export function Sidebar({
           </button>
         </div>
       </nav>
-
-      <div className="confidence">
-        <div className="eyebrow">Profile confidence</div>
-        {status.confidence === null ? (
-          <p className="confidence-note" style={{ marginTop: 8 }}>
-            Run the analysis to see how sure it is.
-          </p>
-        ) : (
-          <>
-            <div
-              className="progress"
-              style={{ height: 10, marginTop: 10 }}
-              role="progressbar"
-              aria-label="Profile confidence"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={status.confidence}
-            >
-              <div
-                className="progress-fill"
-                style={{ width: `${status.confidence}%` }}
-              />
-            </div>
-            <div className="confidence-value">{status.confidence}%</div>
-            <p className="confidence-note">
-              {status.confidence > 85
-                ? "Enough to trust the salary bands."
-                : "Connect another source to tighten the report."}
-            </p>
-          </>
-        )}
-      </div>
     </aside>
   );
 }

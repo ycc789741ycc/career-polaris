@@ -35,6 +35,9 @@ class Assessment(ApiModel):
     template_version: str
     created_at: Timestamp
     dimensions: list[Dimension]
+    # How well the evidence backs the scores overall, 0 to 1: the mean of the
+    # dimensions' confidence (domain decision 28). Null with no dimensions.
+    profile_confidence: float | None
 
     @classmethod
     def from_view(cls, assessment: AssessmentView) -> Assessment:
@@ -58,6 +61,7 @@ class Assessment(ApiModel):
                 )
                 for d in assessment.dimensions
             ],
+            profile_confidence=assessment.profile_confidence,
         )
 
 

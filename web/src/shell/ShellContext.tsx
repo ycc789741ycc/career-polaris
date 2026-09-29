@@ -6,8 +6,6 @@ import type { AdvisorTab, Focus, Screen } from "./navigation";
 export interface ShellStatus {
   me: Me | null;
   credential: Credential | null;
-  /** Mean dimension confidence of the latest analysis, 0–100, or null. */
-  confidence: number | null;
 }
 
 /** Where a navigate() lands beyond the screen. Leaving focus out keeps it. */
@@ -33,7 +31,6 @@ export interface Shell {
 const EMPTY: ShellStatus = {
   me: null,
   credential: null,
-  confidence: null,
 };
 
 export const ShellContext = createContext<Shell>({

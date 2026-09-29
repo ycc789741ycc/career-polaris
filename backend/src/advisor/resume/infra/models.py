@@ -33,7 +33,7 @@ class Resume(Base, OwnedMixin):
     __tablename__ = "resume"
     __table_args__ = (
         CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
-        CheckConstraint("template IN ('warm', 'plain', 'brief')", name="template"),
+        CheckConstraint("template IN ('organic', 'plain')", name="template"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
         {"schema": "resume"},
     )

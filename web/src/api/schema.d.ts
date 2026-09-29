@@ -1192,6 +1192,8 @@ export interface components {
             is_out_of_date: boolean;
             /** Model Id */
             model_id: string;
+            /** Profile Confidence */
+            profile_confidence: number | null;
             /** Profile Version */
             profile_version: number;
             /** Template Version */
@@ -1968,7 +1970,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "warm" | "plain" | "brief";
+            template: "organic" | "plain";
             /**
              * Version Id
              * Format: uuid
@@ -2032,7 +2034,7 @@ export interface components {
              * Format: uuid
              */
             role_id: string;
-            /** @default warm */
+            /** @default organic */
             template: components["schemas"]["Template"];
         };
         /** ResumeSnapshot */
@@ -2389,7 +2391,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "warm" | "plain" | "brief";
+            template: "organic" | "plain";
             /** Updated At */
             updated_at: string;
             version: components["schemas"]["ResumeVersion"] | null;
@@ -2455,10 +2457,11 @@ export interface components {
         };
         /**
          * Template
-         * @description Visual layout for export: rendering only, never a domain rule.
+         * @description Visual layout for export: rendering only, never a domain rule. The
+         *     prototype's two: Organic (rounded, terracotta rule) and Plain.
          * @enum {string}
          */
-        Template: "warm" | "plain" | "brief";
+        Template: "organic" | "plain";
         /** UncoveredRequirement */
         UncoveredRequirement: {
             /** Statement */

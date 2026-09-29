@@ -16,25 +16,22 @@ describe("shell status", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("averages confidence across dimensions and asks nothing about questions", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith("/questions")) throw new Error("no questions route");
-        if (url.endsWith("/assessments/latest"))
-          return json({
-            dimensions: [{ confidence: 0.8 }, { confidence: 0.9 }],
-          });
-        if (url.endsWith("/ai-credential")) return json(null);
-        return json({ id: "u1", email: "maya@example.com" });
-      }),
-    );
+  it("reads the account and the credential, and nothing about the analysis", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/ai-credential")) return json(null);
+      return json({ id: "u1", email: "maya@example.com" });
+    });
+    vi.stubGlobal("fetch", fetch);
 
     const status = await loadStatus();
 
-    expect(status.confidence).toBe(85);
-    expect(status.credential).toBeNull();
+    expect(status).toEqual({
+      me: { id: "u1", email: "maya@example.com" },
+      credential: null,
+    });
+    const urls = fetch.mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => /assessments|questions/.test(url))).toBe(false);
   });
 
   it("keeps the rest when one piece fails", async () => {
@@ -52,7 +49,6 @@ describe("shell status", () => {
     const status = await loadStatus();
 
     expect(status.credential).toBeNull();
-    expect(status.confidence).toBeNull();
     expect(status.me?.email).toBe("maya@example.com");
   });
 });

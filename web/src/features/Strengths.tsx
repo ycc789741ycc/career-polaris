@@ -123,6 +123,9 @@ export function Strengths() {
               {new Date(assessment.data.created_at).toLocaleDateString()}
             </span>
           )}
+          {assessment.data?.profile_confidence != null && (
+            <ProfileConfidence value={assessment.data.profile_confidence} />
+          )}
           <Button
             variant={assessment.data ? "secondary" : "primary"}
             onClick={askForEstimate}
@@ -369,4 +372,32 @@ function percent(confidence: number): string {
 
 function factCount(count: number): string {
   return `${count} ${count === 1 ? "fact" : "facts"}`;
+}
+
+/**
+ * How well the evidence backs these scores overall (domain decision 28),
+ * computed with the analysis, next to Re-analyse.
+ */
+function ProfileConfidence({ value }: { value: number }) {
+  const percent = Math.round(value * 100);
+  return (
+    <span className="row" style={{ gap: 8, alignItems: "center" }}>
+      <span className="eyebrow">Profile confidence</span>
+      <span
+        className="progress"
+        style={{ width: 140, height: 10 }}
+        role="progressbar"
+        aria-label="Profile confidence: how well the evidence supports these scores"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
+        <span
+          className="progress-fill"
+          style={{ display: "block", width: `${percent}%`, height: "100%" }}
+        />
+      </span>
+      <strong>{percent}%</strong>
+    </span>
+  );
 }

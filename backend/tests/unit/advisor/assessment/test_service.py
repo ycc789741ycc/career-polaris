@@ -174,6 +174,8 @@ async def test_a_score_below_the_threshold_says_it_needs_more_evidence() -> None
     }
     history = (await service.history(OWNER)).items
     assert [d.needs_more_evidence for d in history[0].dimensions] == [False, True]
+    # The report carries how sure it is overall, so no screen averages it.
+    assert latest.profile_confidence == pytest.approx(0.6)
 
 
 async def test_a_dimension_that_disappears_is_retired_with_a_record() -> None:

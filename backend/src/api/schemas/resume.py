@@ -27,7 +27,7 @@ from api.schemas.common import (
 )
 from api.schemas.target import TargetRefBody
 
-TemplateName = Literal["warm", "plain", "brief"]
+TemplateName = Literal["organic", "plain"]
 
 
 class OptionsBody(RequestModel):
@@ -39,7 +39,7 @@ class OptionsBody(RequestModel):
 class ResumeRequest(RequestModel):
     role_id: uuid.UUID
     job_posting_id: uuid.UUID | None = None
-    template: Template = Template.WARM
+    template: Template = Template.ORGANIC
     options: OptionsBody = Field(default_factory=OptionsBody)
 
 

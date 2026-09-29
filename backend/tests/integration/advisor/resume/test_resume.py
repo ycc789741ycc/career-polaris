@@ -274,7 +274,7 @@ async def _written(world: World, account: uuid.UUID) -> uuid.UUID:
     requested = await world.resume.request(
         account,
         ref,
-        template=Template.WARM,
+        template=Template.ORGANIC,
         options=Options(),
     )
     await world.resume.generate(account, requested.id)

@@ -43,7 +43,7 @@ const version = {
 
 const resume: TailoredResume = {
   ...summary,
-  template: "warm",
+  template: "organic",
   options: { metrics: true, reorder: true, trim: false },
   snapshot: {
     title: "Senior Backend Engineer",
@@ -155,7 +155,6 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
         status: "active",
         last_error: null,
       },
-      confidence: 80,
     },
     navigate: vi.fn(),
     focus: null,

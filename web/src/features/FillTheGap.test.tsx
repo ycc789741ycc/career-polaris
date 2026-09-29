@@ -102,7 +102,6 @@ function renderGaps(onSubmitted = vi.fn()) {
     status: {
       me: null,
       credential: { provider: "anthropic", model: "claude-sonnet-5" },
-      confidence: null,
     },
     navigate: vi.fn(),
   } as unknown as Shell;

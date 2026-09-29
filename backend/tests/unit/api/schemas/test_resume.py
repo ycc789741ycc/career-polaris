@@ -129,7 +129,7 @@ def test_a_failed_export_says_why() -> None:
     export = ExportView(
         id=uuid.uuid4(),
         version_id=VERSION_ID,
-        template=Template.WARM,
+        template=Template.ORGANIC,
         status="failed",
         error_code="render_failed",
         error_message="the PDF could not be made",

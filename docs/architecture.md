@@ -4,7 +4,7 @@ This doc turns the domain model in [`domain_model.md`](domain_model.md) into an 
 
 **Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for clustering · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
-> **This describes the v3 design** (domain decisions 21–28). The code has not caught up with it yet: it still averages profile confidence in the SPA. [`plan.md`](plan.md) Phase 5 lists the steps that close the gap, in order. Each step's ADR is written in the PR that makes the change.
+> **This describes the v3 design** (domain decisions 21–28), which the code now follows. [`plan.md`](plan.md) Phase 5 records the steps that got it there, and what each left for later.
 
 ## 1. Deployable units
 

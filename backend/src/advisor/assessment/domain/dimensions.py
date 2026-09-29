@@ -123,3 +123,13 @@ def thin_evidence[T: Scored](dimensions: Sequence[T], *, threshold: float) -> li
     questions: those come from a Target's gaps (domain decision 27).
     """
     return [d for d in dimensions if d.confidence < threshold]
+
+
+def profile_confidence(dimensions: Sequence[Scored]) -> float | None:
+    """How well the evidence backs the scores overall (domain decision 28):
+    the mean of the dimensions' confidence, unweighted — weighting by what a
+    dimension matters for would need a role, and Strengths shows none.
+    ``None`` for an assessment with no dimensions."""
+    if not dimensions:
+        return None
+    return sum(d.confidence for d in dimensions) / len(dimensions)

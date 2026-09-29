@@ -53,6 +53,7 @@ from advisor.assessment.domain import (
     derive_lineage,
     dropped_ids,
     evaluate,
+    profile_confidence,
     rank_matches,
     thin_evidence,
 )
@@ -153,6 +154,9 @@ class AssessmentView:
     template_version: str
     created_at: datetime
     dimensions: tuple[DimensionView, ...]
+    # How well the evidence backs the scores overall, 0 to 1 (domain decision
+    # 28): shown next to Re-analyse on 02 Strengths.
+    profile_confidence: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -803,6 +807,7 @@ async def _view(
             )
             for s in sorted(scores, key=lambda s: s.dimension_key)
         ),
+        profile_confidence=profile_confidence(scores),
     )
 
 

@@ -10,6 +10,7 @@ from advisor.assessment.domain.dimensions import (
     assert_within_bounds,
     derive_lineage,
     dropped_ids,
+    profile_confidence,
     thin_evidence,
 )
 from advisor.assessment.domain.entities import (
@@ -112,6 +113,7 @@ __all__ = [
     "derive_lineage",
     "dropped_ids",
     "evaluate",
+    "profile_confidence",
     "rank_matches",
     "thin_evidence",
 ]

@@ -15,7 +15,7 @@ from html import escape
 
 from advisor.resume.domain import Options, ResumeContent, Template
 
-# One page is what "trim" means; these keep the brief template on it.
+# One page is what "trim" means; these keep a résumé on it.
 _TRIMMED_BULLETS = 3
 _TRIMMED_SKILLS = 12
 
@@ -27,11 +27,10 @@ class _Look:
     dot: str
 
 
-# The prototype's three templates (tplDef).
+# The prototype's two templates: Organic and Plain.
 _LOOKS = {
-    Template.WARM: _Look(rule="3px solid #c67139", name_color="#8a4a20", dot="#c67139"),
+    Template.ORGANIC: _Look(rule="3px solid #c67139", name_color="#8a4a20", dot="#c67139"),
     Template.PLAIN: _Look(rule="1px solid #cfcac5", name_color="#201e1d", dot="#9b9691"),
-    Template.BRIEF: _Look(rule="3px solid #7a8a5e", name_color="#4d5a35", dot="#7a8a5e"),
 }
 
 

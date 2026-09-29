@@ -16,6 +16,7 @@ function assessment(overrides: Partial<Assessment>): Assessment {
     model_id: "claude-opus-5",
     template_version: "skill_assessment@v1",
     created_at: "2026-09-27T09:00:00Z",
+    profile_confidence: 0.72,
     dimensions: [
       {
         key: "api",
@@ -75,7 +76,7 @@ function serve(latest: Assessment) {
 
 function renderStrengths(activity: Activity | null = null) {
   const shell = {
-    status: { me: null, credential: null, confidence: 0 },
+    status: { me: null, credential: null },
     navigate: vi.fn(),
   } as unknown as Shell;
   render(
@@ -255,5 +256,16 @@ describe("Strengths", () => {
       "$0.10 for the analysis, and at most $0.40 for the role map built after it, up to 10 roles",
     );
     expect(dialog).toHaveTextContent("$0.50");
+  });
+
+  it("shows the analysis's own profile confidence next to Re-analyse", async () => {
+    serve(assessment({ profile_confidence: 0.72 }));
+    renderStrengths();
+
+    expect(
+      await screen.findByRole("progressbar", {
+        name: /Profile confidence: how well the evidence supports these scores/,
+      }),
+    ).toHaveAttribute("aria-valuenow", "72");
   });
 });
