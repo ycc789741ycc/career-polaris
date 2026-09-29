@@ -29,6 +29,7 @@ class EventName(StrEnum):
     POSTINGS_EXPIRED = "PostingsExpired"
     # Role map
     ROLES_RECLUSTERED = "RolesReclustered"
+    CUSTOM_ROLE_ADDED = "CustomRoleAdded"
     ROLE_REQUIREMENTS_CHANGED = "RoleRequirementsChanged"
     ROLE_SPLIT_OR_MERGED = "RoleSplitOrMerged"
     # Gap plan

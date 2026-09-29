@@ -48,6 +48,8 @@ export type AnalysisEstimate = Schemas["AnalysisEstimate"];
 // Role map
 export type SalaryBand = Schemas["SalaryBand"];
 export type Role = Schemas["Role"];
+/** What adding a custom role costs, before "Add to Role Map" (ADR 0021). */
+export type CustomRoleEstimate = Schemas["CustomRoleEstimate"];
 /** The most a role-map rebuild can cost: a ceiling at ten roles (ADR 0020). */
 export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 

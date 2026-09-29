@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Activity, Fit, Role, TargetOption } from "../api/types";
+import type { Activity, Fit, Role } from "../api/types";
 import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
@@ -10,7 +10,7 @@ import { ToastProvider } from "../shell/toast";
 import { Roles, scopeLine } from "./Roles";
 import { page } from "../test/page";
 
-function role(id: string, name: string): Role {
+function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   return {
     id,
     name,
@@ -22,6 +22,10 @@ function role(id: string, name: string): Role {
     salary_bands: {},
     is_coherent: true,
     requirements: [],
+    origin: "recommended",
+    company_name: null,
+    private_posting_id: null,
+    ...overrides,
   };
 }
 
@@ -38,25 +42,19 @@ function fit(roleId: string, score: number): Fit {
   };
 }
 
-const pasted: TargetOption = {
-  kind: "privatePosting",
-  id: "jd-1",
-  title: "Staff Platform Engineer",
-  role_name: null,
-  role_id: null,
+const yours = role("r3", "Staff Platform Engineer", {
+  origin: "custom",
   company_name: "Meridian Labs",
-  label: "Staff Platform Engineer · Meridian Labs",
-  fit: null,
-  salary: null,
-  source_kind: "pasted",
-  url: null,
-};
+  private_posting_id: "jd-1",
+  opening_count: 0,
+});
 
 function serve() {
   const routes: Record<string, unknown> = {
     "/roles": page([
       role("r1", "Backend Engineer"),
       role("r2", "Platform Engineer"),
+      yours,
     ]),
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
@@ -65,7 +63,6 @@ function serve() {
       open_posting_count: 1284,
     },
     "/matched-postings?page_size=10": page([]),
-    "/targets": page([pasted]),
     "/roles/cost-estimate": {
       max_clusters: 8,
       cost_usd: "0.40",
@@ -141,20 +138,28 @@ describe("the role map's one Advisor target", () => {
     expect(bar).toHaveTextContent("Backend Engineer");
   });
 
-  it("aims at a picked JD instead of a role", async () => {
+  it("aims at a custom role through the JD it came with", async () => {
     const user = userEvent.setup();
-    const shell = renderRoles({ kind: "jd", id: "jd-1" });
+    const shell = renderRoles({ kind: "role", id: "r3" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
     expect(
       await within(bar).findByText("Staff Platform Engineer · Meridian Labs"),
     ).toBeInTheDocument();
     await user.click(
-      within(bar).getByRole("button", { name: "Target this JD" }),
+      within(bar).getByRole("button", { name: "Target this role" }),
     );
     expect(shell.navigate).toHaveBeenCalledWith("advisor", {
       focus: { kind: "jd", id: "jd-1" },
     });
+  });
+
+  it("reads a JD in the hash as the custom role it belongs to", async () => {
+    renderRoles({ kind: "jd", id: "jd-1" });
+
+    expect(
+      await screen.findByText("Selected role · yours"),
+    ).toBeInTheDocument();
   });
 
   it("has no other button that aims the Advisor", async () => {
@@ -268,5 +273,72 @@ describe("ten roles, chosen by the system", () => {
 
     await screen.findByText(/The 10 best-fit roles on the market/);
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
+  });
+});
+
+describe("roles of your own", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("prices a role before adding it, then adds it and selects it", async () => {
+    const calls: { method: string; url: string; body: unknown }[] = [];
+    serve();
+    const base = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace("http://api.test/api/v1", "");
+        const method = init?.method ?? "GET";
+        calls.push({
+          method,
+          url,
+          body: init?.body ? JSON.parse(String(init.body)) : null,
+        });
+        if (url === "/roles/custom/cost-estimate") {
+          return Response.json({
+            cost_usd: "0.08",
+            model_id: "claude-opus-5",
+            matches: 3,
+          });
+        }
+        if (url === "/roles/custom" && method === "POST") {
+          return Response.json(
+            role("r9", "Principal Engineer", {
+              origin: "custom",
+              company_name: "Halden Labs",
+            }),
+          );
+        }
+        return base(input, init);
+      }),
+    );
+    const user = userEvent.setup();
+    const shell = renderRoles(null);
+
+    await user.type(
+      await screen.findByLabelText("Job title"),
+      "Principal Engineer",
+    );
+    await user.type(screen.getByLabelText(/Company name/), "Halden Labs");
+    await user.click(screen.getByRole("button", { name: "Add to Role Map" }));
+
+    expect(
+      await screen.findByText(/It takes in 3 open postings in your locations/),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.url === "/roles/custom")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Run it" }));
+
+    expect(
+      await screen.findByText("Principal Engineer · Halden Labs"),
+    ).toBeInTheDocument();
+    expect(calls.find((c) => c.url === "/roles/custom")?.body).toEqual({
+      title: "Principal Engineer",
+      company_name: "Halden Labs",
+      job_description: null,
+    });
+    expect(shell.setFocus).toHaveBeenCalledWith({ kind: "role", id: "r9" });
   });
 });

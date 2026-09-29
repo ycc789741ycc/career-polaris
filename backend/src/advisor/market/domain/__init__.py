@@ -35,6 +35,7 @@ from advisor.market.domain.posting import (
     expired_keys,
     in_market,
     market_words,
+    names_every_word,
     normalize,
     normalize_title,
 )
@@ -111,6 +112,7 @@ __all__ = [
     "expired_keys",
     "in_market",
     "market_words",
+    "names_every_word",
     "normalize",
     "normalize_title",
     "salary_in_text",

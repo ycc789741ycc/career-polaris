@@ -173,7 +173,11 @@ whatever is next when it merges.
      build's, so there is one confirmation.
    * README row: Role map.
 
-5. **Custom roles** — `feature/no-ticket/custom-roles`, ADR 0021
+5. **Custom roles — done.** `feature/no-ticket/custom-roles`, ADR 0021
+   * Built as: the route that adds a role records its build (as the rebuild
+     route does), and the dispatcher only sends the company to board discovery.
+     `POST /job-descriptions` is removed, and pasted JDs leave clustering.
+     Until step 6, a custom role with a JD aims the Advisor through that JD.
    * `Role.origin` (`recommended` | `custom`). Reconciliation never retires a
      custom role, and custom roles do not count toward the ten.
    * `POST /roles/custom {title, company?, job_description?}` and a delete. The

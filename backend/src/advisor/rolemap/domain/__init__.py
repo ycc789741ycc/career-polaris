@@ -1,12 +1,17 @@
 from advisor.rolemap.domain.entities import (
+    MAX_COMPANY_NAME,
+    MAX_ROLE_TITLE,
     BuildRun,
     BuildRunStatus,
+    CustomRoleError,
     LineageEntry,
     Role,
     RoleMember,
+    RoleOrigin,
     RoleRequirement,
 )
 from advisor.rolemap.domain.events import (
+    CustomRoleAdded,
     RoleMapEvent,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -44,6 +49,8 @@ from advisor.rolemap.domain.selection import (
 )
 
 __all__ = [
+    "MAX_COMPANY_NAME",
+    "MAX_ROLE_TITLE",
     "MIN_POSTINGS_FOR_A_ROLE",
     "MIN_REPORTERS",
     "RECOMMENDED_ROLE_COUNT",
@@ -53,6 +60,8 @@ __all__ = [
     "BuildRunFilter",
     "BuildRunRepository",
     "BuildRunStatus",
+    "CustomRoleAdded",
+    "CustomRoleError",
     "HiringBar",
     "LineageEntry",
     "LineageEntryFilter",
@@ -69,6 +78,7 @@ __all__ = [
     "RoleMember",
     "RoleMemberFilter",
     "RoleMemberRepository",
+    "RoleOrigin",
     "RoleRepository",
     "RoleRequirement",
     "RoleRequirementFilter",

@@ -202,3 +202,46 @@ async def test_new_target_locations_queue_nothing_without_a_role_map_to_rebuild(
     await dispatcher._handle(_container(activity=activity), _target_locations_changed())
 
     assert activity.requests == [OWNER] and queued == []
+
+
+class FakeMarket:
+    def __init__(self) -> None:
+        self.named: list[str] = []
+        self.company_id = uuid.uuid4()
+
+    async def company_named(self, name: str) -> uuid.UUID:
+        self.named.append(name)
+        return self.company_id
+
+
+def _custom_role_added(company_name: str | None) -> OutboxEvent:
+    return OutboxEvent(
+        name=str(EventName.CUSTOM_ROLE_ADDED),
+        owner_id=OWNER,
+        payload={"role_id": str(uuid.uuid4()), "company_name": company_name},
+    )
+
+
+async def test_a_custom_roles_company_goes_to_board_discovery_without_its_owner(
+    queued: list[dict[str, Any]],
+) -> None:
+    market = FakeMarket()
+
+    await dispatcher._handle(_container(market=market), _custom_role_added("Northwind"))
+
+    assert market.named == ["Northwind"]
+    assert queued == [
+        {
+            "name": "market.discover_board",
+            "company_id": str(market.company_id),
+            "company_name": "Northwind",
+        }
+    ]
+
+
+async def test_a_custom_role_with_no_company_seeds_nothing(queued: list[dict[str, Any]]) -> None:
+    market = FakeMarket()
+
+    await dispatcher._handle(_container(market=market), _custom_role_added(None))
+
+    assert market.named == [] and queued == []

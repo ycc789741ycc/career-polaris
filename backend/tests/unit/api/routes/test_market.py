@@ -65,25 +65,10 @@ def client(market: FakeMarket) -> TestClient:
     return TestClient(app)
 
 
-def test_a_pasted_jd_comes_back_private(client: TestClient) -> None:
-    response = client.post(
-        "/job-descriptions",
-        json={
-            "company_name": "Meridian Labs",
-            "title": "Staff Platform Engineer",
-            "location": "Remote",
-            "description": "Run our platform.",
-        },
-    )
+def test_a_jd_is_added_with_a_custom_role_not_on_its_own(client: TestClient) -> None:
+    response = client.post("/job-descriptions", json={"title": "Staff", "description": "JD"})
 
-    assert response.status_code == 201
-    assert response.json() == {
-        "id": str(POSTING_ID),
-        "company_name": "Meridian Labs",
-        "title": "Staff Platform Engineer",
-        "location": "Remote",
-        "visibility": "private",
-    }
+    assert response.status_code == 405
 
 
 def test_target_locations_are_saved_as_a_whole_set(client: TestClient) -> None:

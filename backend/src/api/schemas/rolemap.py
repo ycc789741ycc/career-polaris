@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
-from advisor.rolemap import RoleView
-from api.schemas.common import ApiModel, Page
+from pydantic import Field
+
+from advisor.rolemap import MAX_COMPANY_NAME, MAX_ROLE_TITLE, RoleView
+from api.schemas.common import ApiModel, Page, RequestModel
 
 
 class SalaryBand(ApiModel):
@@ -42,6 +44,12 @@ class Role(ApiModel):
     salary_bands: dict[str, SalaryBand]
     is_coherent: bool
     requirements: list[RoleRequirement]
+    # `recommended`, one of the ten, or `custom`: added by the user and drawn
+    # as "yours" (ADR 0021).
+    origin: Literal["recommended", "custom"]
+    company_name: str | None
+    # A custom role's private JD, when the user pasted one.
+    private_posting_id: uuid.UUID | None
 
     @classmethod
     def from_view(cls, role: RoleView) -> Role:
@@ -61,6 +69,9 @@ class Role(ApiModel):
                 )
                 for r in role.requirements
             ],
+            origin="custom" if role.is_custom else "recommended",
+            company_name=role.company_name,
+            private_posting_id=role.private_posting_id,
         )
 
 
@@ -83,3 +94,22 @@ class RoleMapEstimate(ApiModel):
 
 class RolePage(Page[Role]):
     pass
+
+
+class CustomRoleRequest(RequestModel):
+    """A role of the user's own (domain decision 25): a title, and optionally a
+    company and a job description, which stays private to the user."""
+
+    title: str = Field(min_length=1, max_length=MAX_ROLE_TITLE)
+    company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME)
+    job_description: str | None = Field(default=None, max_length=50_000)
+
+
+class CustomRoleEstimate(ApiModel):
+    """What adding a custom role will cost, shown before "Add to Role Map"."""
+
+    cost_usd: str
+    model_id: str | None
+    # Open postings in scope the role takes in, by title (and company).
+    matches: int
+    rate_is_published: bool | None = None

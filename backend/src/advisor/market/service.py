@@ -53,6 +53,7 @@ from advisor.market.domain import (
     canonical_key,
     chosen_target_locations,
     in_market,
+    names_every_word,
     normalize,
     salary_in_text,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "band_from",
     "canonical_key",
     "in_market",
+    "names_every_word",
     "salary_in_text",
 ]
 
@@ -249,8 +251,7 @@ class MarketService:
         """How much of the market the user's target locations take in."""
         locations = await self.target_locations(owner_id)
         postings = await self.postings_in_scope(owner_id)
-        shared = [p for p in postings if p.visibility is Visibility.SHARED]
-        return MarketScopeView(target_locations=locations, open_posting_count=len(shared))
+        return MarketScopeView(target_locations=locations, open_posting_count=len(postings))
 
     async def paste_job_description(
         self,
@@ -306,13 +307,13 @@ class MarketService:
             return _private_posting_view(posting)
 
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
-        """Every posting this user's role map is built from.
+        """Every shared posting this user's role map is built from: the open
+        postings in their target locations.
 
-        Shared postings in their target locations, plus their own pasted JDs.
-        A user who has chosen no location also gets the platform's baseline
-        postings (domain decision 15), so a first role map has something to
-        group. Another user's private postings can never
-        appear here — they are in a schema this query does not touch.
+        A user who has chosen no location gets the platform's baseline postings
+        instead (domain decision 15), so a first role map has something to
+        group. Pasted JDs are not here: each belongs to the custom role it came
+        with (domain decision 25), and never to a cluster.
         """
         scope = PostingScope(markets=tuple(await self.target_locations(owner_id)))
 
@@ -320,57 +321,24 @@ class MarketService:
             postings = await market.postings.get_open_in_scope(scope)
             names = await _company_names(market, {p.company_id for p in postings})
 
-        shared = [_shared_posting_view(p, names.get(p.company_id, "")) for p in postings]
-        return shared + await self.private_postings(owner_id)
+        return [_shared_posting_view(p, names.get(p.company_id, "")) for p in postings]
 
     async def scope_with_vectors(
         self, owner_id: uuid.UUID, model_name: str
     ) -> list[tuple[str, PostingView, list[float] | None]]:
-        """Every posting in this user's scope, with its embedding where one exists.
-
-        Shared postings were embedded by the crawler. Pasted JDs have not been,
-        so they come back with ``None`` and the caller embeds them — that stays
-        platform-paid computation, never the user's key.
-
-        The key is the posting's stable identity for clustering: the shared id,
-        or ``private:<id>`` for a pasted JD.
-        """
+        """Every posting in this user's scope, keyed by its shared id, with the
+        embedding the crawler made for it, or ``None`` where it has not yet."""
         postings = await self.postings_in_scope(owner_id)
-        shared_ids = tuple(p.id for p in postings if p.visibility is Visibility.SHARED)
-
         vectors: dict[uuid.UUID, list[float]] = {}
-        if shared_ids:
+        if postings:
             async with self._uow.shared() as market:
                 embedded = await market.embeddings.get_list(
-                    PostingEmbeddingFilter(posting_ids=shared_ids, model_name=model_name)
+                    PostingEmbeddingFilter(
+                        posting_ids=tuple(p.id for p in postings), model_name=model_name
+                    )
                 )
             vectors = {e.posting_id: e.vector for e in embedded}
-
-        async with self._uow.for_owner(owner_id) as mine:
-            for pasted in await mine.private_postings.get_list(
-                PrivateJobPostingFilter(has_vector=True)
-            ):
-                if pasted.vector is not None:
-                    vectors[pasted.id] = pasted.vector
-
-        return [
-            (
-                f"private:{p.id}" if p.visibility is Visibility.PRIVATE else str(p.id),
-                p,
-                vectors.get(p.id),
-            )
-            for p in postings
-        ]
-
-    async def store_private_vectors(
-        self, owner_id: uuid.UUID, vectors: dict[uuid.UUID, list[float]]
-    ) -> None:
-        async with self._uow.for_owner(owner_id) as mine:
-            for posting_id, vector in vectors.items():
-                pasted = await mine.private_postings.get(posting_id)
-                if pasted is not None:
-                    pasted.vector = vector
-                    await mine.private_postings.update(pasted)
+        return [(str(p.id), p, vectors.get(p.id)) for p in postings]
 
     async def seed_baseline(
         self, sources: tuple[BaselineSource, ...] = BASELINE_SOURCES
@@ -427,6 +395,14 @@ class MarketService:
                         origin=SourceOrigin.DEMAND,
                     )
                 )
+
+    async def company_named(self, name: str) -> uuid.UUID:
+        """The shared company with this name, recorded if it is new. A company
+        holds no user data, so naming one leaves no trace of who named it."""
+        if not name.strip():
+            raise ValidationError("a company name is required")
+        async with self._uow.shared() as market:
+            return (await _ensure_company(market, name.strip())).id
 
     async def company_needing_source(self, company_id: uuid.UUID, fallback_name: str) -> str | None:
         """The name to look for a board under, or None when the company already

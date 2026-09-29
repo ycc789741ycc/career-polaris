@@ -37,6 +37,7 @@ from advisor.market.service import (
     band_from,
     canonical_key,
     in_market,
+    names_every_word,
 )
 
 __all__ = [
@@ -63,4 +64,5 @@ __all__ = [
     "create_market_service",
     "in_market",
     "jobs",
+    "names_every_word",
 ]

@@ -15,6 +15,7 @@ from typing import Any, assert_never
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.rolemap.domain import (
+    CustomRoleAdded,
     RoleMapEvent,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -64,6 +65,12 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
     These payloads are a contract with the dispatcher and must not drift.
     """
     match event:
+        case CustomRoleAdded():
+            return (
+                EventName.CUSTOM_ROLE_ADDED,
+                {"role_id": str(event.role_id), "company_name": event.company_name},
+                event.owner_id,
+            )
         case RoleRequirementsChanged():
             return (
                 EventName.ROLE_REQUIREMENTS_CHANGED,

@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from advisor.market import MarketService, PostingView, Visibility, band_from, in_market
+from advisor.market import MarketService, PostingView, band_from, in_market, names_every_word
 from advisor.profile import ProfileService
 from advisor.rolemap.domain import (
     MIN_POSTINGS_FOR_A_ROLE,
@@ -23,6 +23,8 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunStatus,
+    CustomRoleAdded,
+    CustomRoleError,
     HiringBar,
     LineageEntry,
     Reconciliation,
@@ -32,6 +34,7 @@ from advisor.rolemap.domain import (
     RoleMapUnitOfWork,
     RoleMember,
     RoleMemberFilter,
+    RoleOrigin,
     RoleRequirement,
     RoleRequirementFilter,
     RoleRequirementsChanged,
@@ -46,7 +49,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.embeddings import cluster, embed
-from kernel.errors import DomainError, NotFoundError
+from kernel.errors import DomainError, NotFoundError, ValidationError
 from kernel.logging import get_logger
 
 __all__ = ["BuildRequestView", "BuildRunView", "RequirementView", "RoleMapService", "RoleView"]
@@ -107,6 +110,14 @@ class RoleView:
     salary_bands: dict[str, Any]
     requirements: tuple[RequirementView, ...]
     is_coherent: bool
+    # `recommended` or `custom` (ADR 0021); a custom role is drawn as "yours".
+    origin: str = str(RoleOrigin.RECOMMENDED)
+    company_name: str | None = None
+    private_posting_id: uuid.UUID | None = None
+
+    @property
+    def is_custom(self) -> bool:
+        return self.origin == str(RoleOrigin.CUSTOM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,10 +336,15 @@ class RoleMapService:
         find it after a crawl changes the underlying postings.
         """
         found = await self._group_postings(owner_id)
-        if not found:
+        if found:
+            await self._build_recommended(owner_id, found)
+        else:
             log.info("rolemap.nothing_to_cluster", owner_id=str(owner_id))
-            return []
+        await self._build_custom(owner_id)
+        return await self.roles(owner_id)
 
+    async def _build_recommended(self, owner_id: uuid.UUID, found: list[_Group]) -> None:
+        """The ten clusters closest to the profile, analysed on the user's key."""
         # Only the ten clusters closest to the profile are analysed on the
         # user's key; the rest are left out, so roles they held are retired below.
         keep = rank_by_fit(
@@ -349,9 +365,6 @@ class RoleMapService:
             new_id=lambda: str(uuid.uuid4()),
         )
 
-        extraction_template = load_template("role_extraction", "v1")
-        difficulty_template = load_template("difficulty_estimate", "v1")
-
         for index, group in enumerate(groups):
             role_id = uuid.UUID(reconciliation.assignments[index])
             # The same postings as the last analysis: nothing for the key to
@@ -360,55 +373,203 @@ class RoleMapService:
                 owner_id, role_id=role_id, postings=group.postings
             ):
                 continue
-            block = _postings_block(group.postings)
-
-            extracted = await self._gateway.run(
-                owner_id,
-                task="rolemap.extract",
-                template=extraction_template,
-                inputs={"postings": block},
-                output_schema=_RoleExtraction,
-                untrusted=frozenset({"postings"}),
-            )
-
-            requirements_block = "\n".join(
-                f"- {r.statement} (weight {r.weight}, {r.expected_level})"
-                for r in extracted.value.requirements
-            )
-            difficulty = await self._gateway.run(
-                owner_id,
-                task="rolemap.difficulty",
-                template=difficulty_template,
-                inputs={
-                    "role_name": extracted.value.name,
-                    "requirements": requirements_block,
-                    "postings": block,
-                },
-                output_schema=_DifficultyEstimate,
-                untrusted=frozenset({"postings"}),
-            )
-
-            # Phase 1 has no InterviewReports, so every bar is an estimate.
-            bar = blend(
-                estimated=difficulty.value.difficulty,
-                estimate_confidence=difficulty.value.confidence,
-                reported=None,
-                reporter_count=0,
-            )
-            await self._store_role(
+            await self._analyse(
                 owner_id,
                 role_id=role_id,
                 keys=group.keys,
                 postings=group.postings,
-                extraction=extracted.value,
-                bar=bar,
-                bar_reasoning=difficulty.value.reasoning,
-                model_id=extracted.model_id,
-                template_version=extracted.template_version,
+                block=_postings_block(group.postings),
             )
 
         await self._record_lineage(owner_id, reconciliation)
-        return await self.roles(owner_id)
+
+    async def _analyse(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        role_id: uuid.UUID,
+        keys: set[str],
+        postings: list[PostingView],
+        block: str,
+    ) -> None:
+        """Name a role, read out what it requires and estimate its bar, on the
+        user's key: two calls. ``block`` is the untrusted text read — the
+        cluster's postings, or a custom role's JD."""
+        extracted = await self._gateway.run(
+            owner_id,
+            task="rolemap.extract",
+            template=load_template("role_extraction", "v1"),
+            inputs={"postings": block},
+            output_schema=_RoleExtraction,
+            untrusted=frozenset({"postings"}),
+        )
+        requirements_block = "\n".join(
+            f"- {r.statement} (weight {r.weight}, {r.expected_level})"
+            for r in extracted.value.requirements
+        )
+        difficulty = await self._gateway.run(
+            owner_id,
+            task="rolemap.difficulty",
+            template=load_template("difficulty_estimate", "v1"),
+            inputs={
+                "role_name": extracted.value.name,
+                "requirements": requirements_block,
+                "postings": block,
+            },
+            output_schema=_DifficultyEstimate,
+            untrusted=frozenset({"postings"}),
+        )
+        # Phase 1 has no InterviewReports, so every bar is an estimate.
+        bar = blend(
+            estimated=difficulty.value.difficulty,
+            estimate_confidence=difficulty.value.confidence,
+            reported=None,
+            reporter_count=0,
+        )
+        await self._store_role(
+            owner_id,
+            role_id=role_id,
+            keys=keys,
+            postings=postings,
+            extraction=extracted.value,
+            bar=bar,
+            bar_reasoning=difficulty.value.reasoning,
+            model_id=extracted.model_id,
+            template_version=extracted.template_version,
+        )
+
+    # -- custom roles (ADR 0021) ---------------------------------------------
+
+    async def add_custom_role(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        company_name: str | None,
+        private_posting_id: uuid.UUID | None,
+    ) -> RoleView:
+        """A role the user named, placed beside the ten. It is analysed by the
+        next build, whose cost the user confirmed when adding it."""
+        try:
+            role = Role.custom(
+                owner_id=owner_id,
+                title=title,
+                company_name=company_name,
+                private_posting_id=private_posting_id,
+            )
+        except CustomRoleError as exc:
+            raise ValidationError(str(exc)) from exc
+        async with self._uow.for_owner(owner_id) as mine:
+            created = await mine.roles.create(role)
+            mine.record(
+                CustomRoleAdded(
+                    owner_id=owner_id, role_id=created.id, company_name=created.company_name
+                )
+            )
+        log.info("rolemap.custom_role_added", role_id=str(created.id))
+        return _role_view(created, [])
+
+    async def remove_custom_role(self, owner_id: uuid.UUID, role_id: uuid.UUID) -> None:
+        """Take a custom role off the map. It is retired, not deleted, so plans
+        and résumés aimed at it keep their snapshots, like any retired role.
+        Idempotent; a recommended role is not the user's to remove."""
+        async with self._uow.for_owner(owner_id) as mine:
+            role = await mine.roles.get(role_id)
+            if role is None or not role.is_custom:
+                raise NotFoundError("custom role not found", role_id=str(role_id))
+            if role.retired_at is None:
+                role.retire(utcnow())
+                await mine.roles.update(role)
+
+    async def estimate_custom_role(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        company_name: str | None,
+        job_description: str | None,
+    ) -> dict[str, Any]:
+        """What adding this role will cost, before it is added: its two calls,
+        read from the JD when there is one, else from the postings it matches."""
+        try:
+            Role.custom(
+                owner_id=owner_id, title=title, company_name=company_name, private_posting_id=None
+            )
+        except CustomRoleError as exc:
+            raise ValidationError(str(exc)) from exc
+        matches = _custom_matches(
+            title, company_name, await self._market.postings_in_scope(owner_id)
+        )
+        jd = (job_description or "").strip()
+        if not jd and not matches:
+            return {"matches": 0, "cost_usd": "0", "model_id": None}
+        block = _jd_block(title, company_name, jd) if jd else _postings_block(matches)
+        estimate = await self._gateway.estimate(
+            owner_id,
+            task="rolemap.extract",
+            template=load_template("role_extraction", "v1"),
+            inputs={"postings": block},
+            untrusted=frozenset({"postings"}),
+        )
+        return {
+            "matches": len(matches),
+            "cost_usd": str(estimate.cost_usd * 2),
+            "model_id": estimate.model_id,
+            "rate_is_published": estimate.rate_is_published,
+        }
+
+    async def _build_custom(self, owner_id: uuid.UUID) -> None:
+        """Place each custom role: match the postings in scope by title words,
+        narrowed to its company, and read its requirements from its JD when it
+        has one, else from those matches. Unchanged roles cost nothing."""
+        async with self._uow.for_owner(owner_id) as mine:
+            custom = await mine.roles.get_list(
+                RoleFilter(is_retired=False, origin=RoleOrigin.CUSTOM)
+            )
+            members = (
+                await mine.members.get_list(
+                    RoleMemberFilter(role_ids=tuple(role.id for role in custom))
+                )
+                if custom
+                else []
+            )
+        if not custom:
+            return
+        previous: dict[uuid.UUID, set[str]] = {}
+        for member in members:
+            previous.setdefault(member.role_id, set()).add(member.posting_key)
+        in_scope = await self._market.postings_in_scope(owner_id)
+
+        for role in custom:
+            matches = _custom_matches(role.name, role.company_name, in_scope)
+            keys = {_posting_key(p) for p in matches}
+            unchanged = previous.get(role.id, set()) == keys and role.model_id is not None
+            if unchanged and await self._keep_role(owner_id, role_id=role.id, postings=matches):
+                continue
+            jd = await self._custom_jd(owner_id, role)
+            if jd is None and not matches:
+                # Nothing to read requirements from: on the map, unscored.
+                await self._keep_role(owner_id, role_id=role.id, postings=[])
+                continue
+            await self._analyse(
+                owner_id,
+                role_id=role.id,
+                keys=keys,
+                postings=matches,
+                block=(
+                    _jd_block(role.name, role.company_name, jd.description)
+                    if jd is not None
+                    else _postings_block(matches)
+                ),
+            )
+
+    async def _custom_jd(self, owner_id: uuid.UUID, role: Role) -> PostingView | None:
+        if role.private_posting_id is None:
+            return None
+        try:
+            return await self._market.private_posting(owner_id, role.private_posting_id)
+        except NotFoundError:
+            return None
 
     # -- internals ----------------------------------------------------------
 
@@ -420,6 +581,7 @@ class RoleMapService:
 
         missing = [(key, posting) for key, posting, vector in scope if vector is None]
         if missing:
+            # Postings the crawler has not embedded yet; embedding is local.
             texts = [
                 "\n".join(
                     part for part in (p.title, p.title, p.location or "", p.description) if part
@@ -427,13 +589,6 @@ class RoleMapService:
                 for _key, p in missing
             ]
             fresh = embed(texts, model_name=self._embedding_model)
-            private = {
-                p.id: vector
-                for (_key, p), vector in zip(missing, fresh, strict=True)
-                if p.visibility is Visibility.PRIVATE
-            }
-            if private:
-                await self._market.store_private_vectors(owner_id, private)
             by_key = dict(zip((k for k, _ in missing), fresh, strict=True))
             scope = [
                 (key, posting, vector if vector is not None else by_key[key])
@@ -466,9 +621,16 @@ class RoleMapService:
         return embed(texts, model_name=self._embedding_model)
 
     async def _previous_members(self, owner_id: uuid.UUID) -> dict[str, set[str]]:
-        """Every role's postings from the last run. One user's map, read whole."""
+        """Every recommended role's postings from the last run, retired ones
+        included. Custom roles are left out, so reconciliation can never retire
+        one (ADR 0021). One user's map, read whole."""
         async with self._uow.for_owner(owner_id) as mine:
-            members = await mine.members.get_list(RoleMemberFilter())
+            recommended = await mine.roles.get_list(RoleFilter(origin=RoleOrigin.RECOMMENDED))
+            if not recommended:
+                return {}
+            members = await mine.members.get_list(
+                RoleMemberFilter(role_ids=tuple(r.id for r in recommended))
+            )
         previous: dict[str, set[str]] = {}
         for member in members:
             previous.setdefault(str(member.role_id), set()).add(member.posting_key)
@@ -610,7 +772,29 @@ class RoleMapService:
 
 def _posting_key(posting: PostingView) -> str:
     """The key a posting is clustered under (see ``MarketService.scope_with_vectors``)."""
-    return f"private:{posting.id}" if posting.visibility is Visibility.PRIVATE else str(posting.id)
+    return str(posting.id)
+
+
+def _custom_matches(
+    title: str, company_name: str | None, postings: list[PostingView]
+) -> list[PostingView]:
+    """The postings a custom role takes in: every word of its title in theirs,
+    and every word of its company in theirs when one was named. The same word
+    rule as a location in a target location."""
+    return [
+        p
+        for p in postings
+        if names_every_word(p.title, title)
+        and (not company_name or names_every_word(p.company_name, company_name))
+    ]
+
+
+def _jd_block(title: str, company_name: str | None, description: str) -> str:
+    """A custom role's pasted JD as untrusted text, trimmed like a posting."""
+    return (
+        f"### {title} — {company_name or 'company not stated'} (the user's own JD)\n"
+        f"{description[:MAX_DESCRIPTION_CHARS]}"
+    )
 
 
 def _prompt_length(posting: PostingView) -> int:
@@ -654,6 +838,9 @@ def _role_view(role: Role, requirements: list[RoleRequirement]) -> RoleView:
             for r in sorted(requirements, key=lambda r: (-r.weight, r.statement))
         ),
         is_coherent=role.is_coherent,
+        origin=str(role.origin),
+        company_name=role.company_name,
+        private_posting_id=role.private_posting_id,
     )
 
 

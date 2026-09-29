@@ -30,4 +30,14 @@ class RolesReclustered:
     roles: int
 
 
-RoleMapEvent = RoleRequirementsChanged | RoleSplitOrMerged | RolesReclustered
+@dataclass(frozen=True, slots=True)
+class CustomRoleAdded:
+    """A role the user named. A company named with it goes to board discovery,
+    with nothing about the user attached (domain decision 25)."""
+
+    owner_id: uuid.UUID
+    role_id: uuid.UUID
+    company_name: str | None
+
+
+RoleMapEvent = CustomRoleAdded | RoleRequirementsChanged | RoleSplitOrMerged | RolesReclustered
