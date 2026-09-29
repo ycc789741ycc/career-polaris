@@ -1,12 +1,12 @@
-"""What a gap plan or a résumé is aimed at (domain decision 16).
+"""What a gap plan or a résumé is aimed at (domain decision 26, ADR 0022).
 
-A Target is a kind plus a reference — a matched posting or a JD the user
-pasted — and a frozen snapshot of what it requires and how the user
+A Target is one of the user's Roles — recommended or custom — and optionally
+one opening in it, plus a frozen snapshot of what it requires and how the user
 measured up when it was chosen. Postings expire and roles re-cluster; the
 snapshot is what lets a plan still say what it was planned against.
 
-Two features aim at Targets, so the concept has its own package rather than
-living in either of them (docs/architecture.md rule 7).
+Several features aim at Targets, so the concept has its own package rather
+than living in any of them (ADR 0005).
 """
 
 from __future__ import annotations
@@ -18,18 +18,14 @@ from enum import StrEnum
 from typing import Any
 
 
-class TargetKind(StrEnum):
-    MATCHED_POSTING = "matchedPosting"
-    PRIVATE_POSTING = "privatePosting"
-
-
 class RequirementBasis(StrEnum):
-    """Where the requirements came from, shown next to them."""
+    """Where the requirements came from, shown next to them. The most specific
+    source a Target has wins."""
 
-    # The Role's requirements: a matched posting.
-    ROLE = "role"
-    # Read from the posting's own text: a pasted JD.
+    # A custom role's private JD: the text the user pasted.
     POSTING = "posting"
+    # The Role's requirements across its openings.
+    ROLE = "role"
 
 
 class TargetError(ValueError):
@@ -38,12 +34,23 @@ class TargetError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TargetRef:
-    kind: TargetKind
-    id: str
+    """A Role, and optionally one opening in it."""
+
+    role_id: str
+    job_posting_id: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.id:
-            raise TargetError("a target needs a reference")
+        if not self.role_id:
+            raise TargetError("a target needs a role")
+        if self.job_posting_id == "":
+            raise TargetError("an opening needs an id")
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"role_id": self.role_id, "job_posting_id": self.job_posting_id}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TargetRef:
+        return cls(str(data["role_id"]), data.get("job_posting_id"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +98,9 @@ class TargetSnapshot:
     ref: TargetRef
     title: str
     company: str
-    # The user's Role the requirements came from; None for a pasted JD.
-    role_id: str | None
-    role_name: str | None
+    # The Role the Target is; kept by name too, since roles re-cluster.
+    role_id: str
+    role_name: str
     requirements: tuple[Requirement, ...]
     basis: RequirementBasis
     fit_score: int | None
@@ -107,12 +114,13 @@ class TargetSnapshot:
     def __post_init__(self) -> None:
         if not self.requirements:
             raise TargetError(
-                "this target has no requirements to plan against; paste its job description"
+                "this role has no requirements to plan against yet; "
+                "add its job description on the role map"
             )
 
     @property
     def label(self) -> str:
-        return f"{self.role_name or self.title} · {self.company}"
+        return f"{self.role_name} · {self.company}" if self.company else self.role_name
 
     @property
     def open_gaps(self) -> tuple[DimensionGap | UncoveredGap, ...]:
@@ -127,8 +135,7 @@ class TargetSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "kind": str(self.ref.kind),
-            "id": self.ref.id,
+            "ref": self.ref.to_dict(),
             "title": self.title,
             "company": self.company,
             "role_id": self.role_id,
@@ -160,11 +167,11 @@ class TargetSnapshot:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TargetSnapshot:
         return cls(
-            ref=TargetRef(TargetKind(data["kind"]), str(data["id"])),
+            ref=TargetRef.from_dict(data["ref"]),
             title=data["title"],
             company=data["company"],
-            role_id=data.get("role_id"),
-            role_name=data.get("role_name"),
+            role_id=str(data["role_id"]),
+            role_name=data.get("role_name") or data["title"],
             requirements=tuple(Requirement(**r) for r in data["requirements"]),
             basis=RequirementBasis(data["basis"]),
             fit_score=data.get("fit_score"),

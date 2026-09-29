@@ -9,8 +9,7 @@ import type {
   ResumeTemplate,
   ResumeVersion,
   TailoredResume,
-  TargetKind,
-  TargetOption,
+  TargetRef,
 } from "../api/types";
 import {
   AutoGrid,
@@ -23,13 +22,14 @@ import {
   RoundCheck,
   VerdictBadge,
 } from "../components/ui";
+import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
 
-type Ref = { kind: TargetKind; id: string };
+type Ref = TargetRef;
 
 const POLL_MS = 2000;
 
@@ -104,7 +104,7 @@ export function Resume({
   onChanged,
   onRevisit,
 }: {
-  target: TargetOption;
+  target: AdvisorTarget;
   /** Every tailored résumé, newest first — loaded by the Advisor. */
   saved: ResumeSummary[];
   /** A résumé was written or saved: the list is out of date. */
@@ -115,7 +115,7 @@ export function Resume({
   const { status, navigate } = useShell();
   const flash = useToast();
   const model = modelName(status.credential);
-  const ref: Ref = { kind: target.kind, id: target.id };
+  const ref: Ref = target.ref;
 
   // Opens with this Target's résumé, if it has one.
   const [resumeId, setResumeId] = useState<string | null>(
@@ -209,7 +209,7 @@ export function Resume({
     setError(null);
     try {
       const cost = await api.get<PlanEstimate>(
-        `/tailored-resumes/cost-estimate?kind=${priced.kind}&id=${priced.id}`,
+        `/tailored-resumes/cost-estimate?${targetQuery(priced)}`,
       );
       setEstimate({ ref: priced, label, cost });
     } catch (caught) {
@@ -396,7 +396,7 @@ export function Resume({
         {!resumeId && (
           <div className="row" style={{ marginTop: 14 }}>
             <Button busy={busy} onClick={() => void price(ref, target.label)}>
-              Write résumé for {target.role_name ?? target.title}
+              Write résumé for {target.roleName}
             </Button>
             <span className="subcopy">
               Written on your model from your own evidence; every line cites its
@@ -416,8 +416,6 @@ export function Resume({
           Writing a résumé for <strong>{estimate.label}</strong> costs about{" "}
           <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
           , charged to your own provider.
-          {estimate.cost.includes_scoring &&
-            " That includes reading and scoring the pasted job description, which happens once."}
           {estimate.cost.rate_is_published === false &&
             " We have no published price for that model, so this is a deliberately high guess."}
         </CostConfirm>
@@ -963,8 +961,4 @@ function ChatPanel({
       </form>
     </div>
   );
-}
-
-function sameTarget(a: Ref, b: Ref): boolean {
-  return a.kind === b.kind && a.id === b.id;
 }

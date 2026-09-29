@@ -27,15 +27,18 @@ describe("screen navigation", () => {
     const place = {
       screen: "advisor" as const,
       tab: "resume" as const,
-      focus: { kind: "role" as const, id: "r1" },
+      focus: { role: "r1" },
     };
     expect(hashFor(place)).toBe("#/advisor/resume?role=r1");
     expect(placeFromHash(hashFor(place))).toEqual(place);
-    expect(placeFromHash("#/roles?jd=j1")).toEqual({
-      screen: "roles",
-      tab: "plan",
-      focus: { kind: "jd", id: "j1" },
-    });
+
+    const opening = { ...place, focus: { role: "r1", opening: "p1" } };
+    expect(hashFor(opening)).toBe("#/advisor/resume?role=r1&opening=p1");
+    expect(placeFromHash(hashFor(opening))).toEqual(opening);
+  });
+
+  it("no longer reads a pasted JD from the hash: it is a role now", () => {
+    expect(placeFromHash("#/roles?jd=j1").focus).toBeNull();
   });
 
   it("lands on the first screen for an empty or unknown hash", () => {

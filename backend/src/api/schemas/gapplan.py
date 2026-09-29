@@ -8,7 +8,6 @@ from typing import Literal
 from pydantic import Field
 
 from advisor.gapplan import GapView, MilestoneView, PlanSummaryView, PlanView
-from advisor.target import TargetKind
 from api.schemas.common import (
     ApiModel,
     EvidenceCitation,
@@ -23,8 +22,10 @@ PlanStatusName = Literal["drafting", "ready", "failed"]
 
 
 class TargetRequest(RequestModel):
-    kind: TargetKind
-    id: uuid.UUID
+    """A role, and optionally one opening in it (ADR 0022)."""
+
+    role_id: uuid.UUID
+    job_posting_id: uuid.UUID | None = None
 
 
 class TaskDoneRequest(RequestModel):

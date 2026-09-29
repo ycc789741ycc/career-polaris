@@ -160,9 +160,6 @@ class AnalysisEstimate(CostEstimate):
 class TargetEstimate(CostEstimate):
     """The price of drafting for a Target: a gap plan or a tailored résumé."""
 
-    # A pasted JD still has to be read and scored; that is included.
-    includes_scoring: bool
-
 
 __all__ = [
     "ERROR_RESPONSES",

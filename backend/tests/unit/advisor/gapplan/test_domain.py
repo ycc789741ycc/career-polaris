@@ -25,7 +25,6 @@ from advisor.target.domain import (
     Requirement,
     RequirementBasis,
     TargetError,
-    TargetKind,
     TargetRef,
     TargetSnapshot,
     UncoveredGap,
@@ -35,7 +34,7 @@ from advisor.target.domain import (
 
 def snapshot(**overrides: object) -> TargetSnapshot:
     values: dict[str, object] = {
-        "ref": TargetRef(TargetKind.MATCHED_POSTING, "p1"),
+        "ref": TargetRef("r1", "p1"),
         "title": "Senior Backend Engineer",
         "company": "Northwind Pay",
         "role_id": "r1",
@@ -60,7 +59,7 @@ def snapshot(**overrides: object) -> TargetSnapshot:
 
 
 def test_a_target_with_no_requirements_cannot_be_planned_for() -> None:
-    with pytest.raises(TargetError, match="paste its job description"):
+    with pytest.raises(TargetError, match="add its job description"):
         snapshot(requirements=())
 
 
@@ -83,6 +82,14 @@ def test_open_gaps_rank_by_what_each_is_worth() -> None:
 def test_a_snapshot_survives_being_stored() -> None:
     original = snapshot()
     assert TargetSnapshot.from_dict(original.to_dict()) == original
+    role_only = snapshot(ref=TargetRef("r1"))
+    assert TargetSnapshot.from_dict(role_only.to_dict()) == role_only
+
+
+def test_a_target_is_a_role_and_an_optional_opening() -> None:
+    assert TargetRef("r1").to_dict() == {"role_id": "r1", "job_posting_id": None}
+    with pytest.raises(TargetError):
+        TargetRef("")
 
 
 def test_an_uncovered_gap_keeps_its_key_when_reworded_only_in_case_and_spacing() -> None:
@@ -93,8 +100,8 @@ def test_an_uncovered_gap_keeps_its_key_when_reworded_only_in_case_and_spacing()
 
 def test_a_target_reads_as_role_and_company() -> None:
     assert snapshot().label == "Senior Backend Engineer · Northwind Pay"
-    pasted = snapshot(role_name=None, title="Staff Engineer")
-    assert pasted.label == "Staff Engineer · Northwind Pay"
+    no_company = snapshot(role_name="Staff Engineer", company="")
+    assert no_company.label == "Staff Engineer"
 
 
 # -- what each gap is worth -----------------------------------------------

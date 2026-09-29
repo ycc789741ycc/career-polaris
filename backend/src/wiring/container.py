@@ -168,7 +168,7 @@ def build(settings: Settings | None = None) -> Container:
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )
-    target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
+    target = TargetService(assessment=assessment, rolemap=rolemap)
     gapplan = create_gapplan_service(
         database,
         target=target,

@@ -2,42 +2,41 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Plan, PlanSummary, TargetOption } from "../api/types";
+import type { Plan, PlanSummary } from "../api/types";
+import type { AdvisorTarget } from "./target";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { GapPlan } from "./GapPlan";
 import { ago } from "./time";
 
-const option: TargetOption = {
-  kind: "matchedPosting",
-  id: "p1",
-  title: "Senior Backend Engineer",
-  role_name: "Senior Backend Engineer",
-  role_id: "r1",
-  company_name: "Northwind Pay",
+const option: AdvisorTarget = {
+  ref: { role_id: "r1", job_posting_id: "p1" },
   label: "Senior Backend Engineer · Northwind Pay",
-  fit: 71,
-  salary: null,
-  source_kind: "atsBoard",
+  roleName: "Senior Backend Engineer",
+  company: "Northwind Pay",
+  location: "Berlin",
+  postingTitle: "Senior Backend Engineer",
   url: null,
+  fit: 71,
+  band: null,
+  isCustom: false,
 };
 
-const pasted: TargetOption = {
+const yours: AdvisorTarget = {
   ...option,
-  kind: "privatePosting",
-  id: "jd-1",
-  title: "Staff Platform Engineer",
-  role_name: null,
-  role_id: null,
-  company_name: "Meridian Labs",
+  ref: { role_id: "r3", job_posting_id: null },
   label: "Staff Platform Engineer · Meridian Labs",
+  roleName: "Staff Platform Engineer",
+  company: "Meridian Labs",
+  location: null,
+  postingTitle: null,
   fit: null,
-  source_kind: "pasted",
+  isCustom: true,
 };
 
 const summary: PlanSummary = {
   id: "plan-1",
-  target: { kind: "matchedPosting", id: "p1" },
+  target: { role_id: "r1", job_posting_id: "p1" },
   label: option.label,
   version: 1,
   status: "ready",
@@ -52,9 +51,9 @@ const readyPlan: Plan = {
   ...summary,
   template_version: "gap_plan@v1",
   snapshot: {
-    title: option.title,
-    company: option.company_name,
-    role_name: option.role_name,
+    title: "Senior Backend Engineer",
+    company: "Northwind Pay",
+    role_name: "Senior Backend Engineer",
     fit: 71,
     basis: "role",
     requirements: [],
@@ -144,7 +143,7 @@ function serve(route: Route) {
 function renderPlan(
   history: PlanSummary[],
   overrides: Partial<Shell> = {},
-  target: TargetOption = option,
+  target: AdvisorTarget = option,
 ) {
   const onChanged = vi.fn();
   const onRevisit = vi.fn();
@@ -220,7 +219,7 @@ describe("gap plan screen", () => {
     expect(calls).toContainEqual({
       method: "POST",
       url: "/gap-plans",
-      body: { kind: "matchedPosting", id: "p1" },
+      body: { role_id: "r1", job_posting_id: "p1" },
     });
     expect(onChanged).toHaveBeenCalled();
   });
@@ -275,14 +274,14 @@ describe("gap plan screen", () => {
     });
   });
 
-  it("prices a pasted JD with the one-off cost of reading it", async () => {
+  it("prices a role of your own by its role alone", async () => {
     const calls = serve((_method, url) => {
       if (url.startsWith("/gap-plans/cost-estimate"))
-        return { cost_usd: "0.09", includes_scoring: true };
+        return { cost_usd: "0.09" };
       return null;
     });
     const user = userEvent.setup();
-    renderPlan([], {}, pasted);
+    renderPlan([], {}, yours);
 
     await user.click(
       await screen.findByRole("button", { name: "Generate gap plan" }),
@@ -290,10 +289,13 @@ describe("gap plan screen", () => {
 
     expect(
       await screen.findByRole("region", { name: "Cost estimate" }),
-    ).toHaveTextContent("reading and scoring the pasted job description");
+    ).toHaveTextContent("$0.09");
     expect(calls.map((c) => c.url)).toContain(
-      "/gap-plans/cost-estimate?kind=privatePosting&id=jd-1",
+      "/gap-plans/cost-estimate?role_id=r3",
     );
+    expect(
+      screen.getByText(/requirements of the role you added/),
+    ).toBeInTheDocument();
   });
 
   it("hands a plan kept for another target to the Advisor", async () => {
@@ -304,7 +306,7 @@ describe("gap plan screen", () => {
     const other: PlanSummary = {
       ...summary,
       id: "plan-2",
-      target: { kind: "matchedPosting", id: "p9" },
+      target: { role_id: "r9", job_posting_id: null },
       label: "Platform Engineer · Contoso",
     };
     const user = userEvent.setup();

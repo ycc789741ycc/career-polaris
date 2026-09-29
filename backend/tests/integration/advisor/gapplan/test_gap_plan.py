@@ -18,13 +18,13 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 
-from advisor.assessment import create_assessment_service
+from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.gapplan import GapPlanService, PlanStatus, create_gapplan_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import create_profile_service
-from advisor.rolemap import create_rolemap_service
-from advisor.target import TargetKind, TargetRef, TargetService
+from advisor.rolemap import RoleMapService, create_rolemap_service
+from advisor.target import TargetRef, TargetService
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Request
 from kernel.config import Settings
@@ -68,6 +68,8 @@ class StubProvider:
 class World:
     stub: StubProvider
     market: MarketService
+    rolemap: RoleMapService
+    assessment: AssessmentService
     gapplan: GapPlanService
     evidence_id: str
 
@@ -120,7 +122,7 @@ async def world(
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )
-    target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
+    target = TargetService(assessment=assessment, rolemap=rolemap)
     gapplan = create_gapplan_service(
         database,
         target=target,
@@ -155,21 +157,32 @@ async def world(
         )
     )
     await assessment.run(account)
-    return World(stub=stub, market=market, gapplan=gapplan, evidence_id=str(evidence.id))
+    return World(
+        stub=stub,
+        market=market,
+        rolemap=rolemap,
+        assessment=assessment,
+        gapplan=gapplan,
+        evidence_id=str(evidence.id),
+    )
 
 
 def _score_the_jd(stub: StubProvider) -> None:
+    """What a build answers for a custom role read from its JD — its
+    requirements, then its hiring bar — and then the fit projection."""
     stub.replies.append(
         json.dumps(
             {
+                "name": "Whatever the model calls it",
                 "requirements": [
                     {"statement": LEADS, "weight": 1.0, "expected_level": "expert"},
                     {"statement": RELIABILITY, "weight": 0.8, "expected_level": "advanced"},
                     {"statement": ORG, "weight": 0.5, "expected_level": "advanced"},
-                ]
+                ],
             }
         )
     )
+    stub.replies.append(json.dumps({"difficulty": 70, "confidence": 0.5, "reasoning": "A guess."}))
     stub.replies.append(
         json.dumps(
             {
@@ -186,6 +199,31 @@ def _score_the_jd(stub: StubProvider) -> None:
             }
         )
     )
+
+
+async def _custom_role(
+    world: World,
+    account: uuid.UUID,
+    *,
+    title: str = "Staff Platform Engineer",
+    company: str = "Meridian Labs",
+) -> TargetRef:
+    """A role of the user's own with a pasted JD, placed and scored by a build
+    the way the role map does it (ADR 0021), aimed at as a Target (ADR 0022)."""
+    posting = await world.market.paste_job_description(
+        account,
+        company_name=company,
+        title=title,
+        location=None,
+        description="Set technical direction across three product teams...",
+    )
+    role = await world.rolemap.add_custom_role(
+        account, title=title, company_name=company, private_posting_id=posting.id
+    )
+    _score_the_jd(world.stub)
+    await world.rolemap.recluster(account)
+    await world.assessment.compute_fits(account)
+    return TargetRef(str(role.id))
 
 
 ORG_KEY = "req:demonstrated-org-level-influence"
@@ -230,22 +268,10 @@ def _plan_reply(cited: str, *, first_task: str = "Lead the checkout migration ep
     )
 
 
-async def _pasted(world: World, account: uuid.UUID) -> TargetRef:
-    posting = await world.market.paste_job_description(
-        account,
-        company_name="Meridian Labs",
-        title="Staff Platform Engineer",
-        location=None,
-        description="Set technical direction across three product teams...",
-    )
-    return TargetRef(TargetKind.PRIVATE_POSTING, str(posting.id))
-
-
-async def test_a_pasted_jd_is_read_scored_and_planned_with_gaps_ranked_by_worth(
+async def test_a_custom_role_is_planned_for_with_gaps_ranked_by_worth(
     world: World, account: uuid.UUID
 ) -> None:
-    ref = await _pasted(world, account)
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     world.stub.replies.append(_plan_reply(CITED))
     calls_before = len(world.stub.calls)
 
@@ -276,15 +302,15 @@ async def test_a_pasted_jd_is_read_scored_and_planned_with_gaps_ranked_by_worth(
     assert plan.summary.progress == 0
     assert plan.summary.model_id == "claude-opus-5"
     assert plan.template_version == "gap_plan@v1"
-    # Read the JD, projected it, drafted the plan.
-    assert len(world.stub.calls) == calls_before + 3
+    # Only the draft runs on the key: the build already read the JD and
+    # scored the role (ADR 0022).
+    assert len(world.stub.calls) == calls_before + 1
 
 
 async def test_regenerating_keeps_the_history_and_carries_finished_work(
     world: World, account: uuid.UUID
 ) -> None:
-    ref = await _pasted(world, account)
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     world.stub.replies.append(_plan_reply(CITED))
     first = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, first.id)
@@ -315,8 +341,7 @@ async def test_regenerating_keeps_the_history_and_carries_finished_work(
 async def test_a_plan_citing_evidence_the_user_lacks_is_recorded_as_failed(
     world: World, account: uuid.UUID
 ) -> None:
-    ref = await _pasted(world, account)
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     world.stub.replies.append(_plan_reply("E9"))
 
     requested = await world.gapplan.request(account, ref)
@@ -331,8 +356,7 @@ async def test_a_plan_citing_evidence_the_user_lacks_is_recorded_as_failed(
 async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
     world: World, account: uuid.UUID
 ) -> None:
-    ref = await _pasted(world, account)
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     reply = json.loads(_plan_reply(CITED))
     reply["gaps"] = reply["gaps"][1:]
     world.stub.replies.append(json.dumps(reply))
@@ -349,8 +373,7 @@ async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
 async def test_another_user_cannot_read_the_plan(
     world: World, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:
-    ref = await _pasted(world, account)
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     world.stub.replies.append(_plan_reply(CITED))
     requested = await world.gapplan.request(account, ref)
     await world.gapplan.draft(account, requested.id)

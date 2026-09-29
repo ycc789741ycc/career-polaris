@@ -2,28 +2,28 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResumeSummary, TailoredResume, TargetOption } from "../api/types";
+import type { ResumeSummary, TailoredResume } from "../api/types";
+import type { AdvisorTarget } from "./target";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { citeLine, Resume } from "./Resume";
 
-const matched: TargetOption = {
-  kind: "matchedPosting",
-  id: "p1",
-  title: "Senior Backend Engineer",
-  role_name: "Senior Backend Engineer",
-  role_id: "r1",
-  company_name: "Northwind Pay",
+const matched: AdvisorTarget = {
+  ref: { role_id: "r1", job_posting_id: "p1" },
   label: "Senior Backend Engineer · Northwind Pay",
-  fit: 88,
-  salary: { min: 178000, max: 196000, currency: "USD" },
-  source_kind: "atsBoard",
+  roleName: "Senior Backend Engineer",
+  company: "Northwind Pay",
+  location: null,
+  postingTitle: "Senior Backend Engineer",
   url: null,
+  fit: 88,
+  band: "USD 178k–196k",
+  isCustom: false,
 };
 
 const summary: ResumeSummary = {
   id: "res-1",
-  target: { kind: "matchedPosting", id: "p1" },
+  target: { role_id: "r1", job_posting_id: "p1" },
   label: matched.label,
   status: "ready",
   error: null,
@@ -46,9 +46,9 @@ const resume: TailoredResume = {
   template: "warm",
   options: { metrics: true, reorder: true, trim: false },
   snapshot: {
-    title: matched.title,
-    company: matched.company_name,
-    role_name: matched.role_name,
+    title: "Senior Backend Engineer",
+    company: "Northwind Pay",
+    role_name: "Senior Backend Engineer",
     fit: 88,
     basis: "role",
   },
@@ -260,7 +260,7 @@ describe("résumé screen", () => {
       name: "Cost estimate",
     });
     expect(calls.map((c) => c.url)).toContain(
-      "/tailored-resumes/cost-estimate?kind=matchedPosting&id=p1",
+      "/tailored-resumes/cost-estimate?role_id=r1&job_posting_id=p1",
     );
     await user.click(within(confirm).getByRole("button", { name: "Run it" }));
 
@@ -271,7 +271,7 @@ describe("résumé screen", () => {
       expect.objectContaining({
         method: "POST",
         url: "/tailored-resumes",
-        body: expect.objectContaining({ kind: "matchedPosting", id: "p1" }),
+        body: expect.objectContaining({ role_id: "r1", job_posting_id: "p1" }),
       }),
     );
     expect(onChanged).toHaveBeenCalled();

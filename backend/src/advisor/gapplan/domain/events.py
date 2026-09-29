@@ -13,7 +13,7 @@ from dataclasses import dataclass
 class PlanDrafted:
     owner_id: uuid.UUID
     plan_id: uuid.UUID
-    target_kind: str
+    role_id: uuid.UUID
     version: int
 
 

@@ -16,11 +16,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from advisor.gapplan import PlanStatus, PlanSummaryView
-from advisor.target import TargetKind, TargetOptionView, TargetRef
+from advisor.target import TargetRef
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import gapplan as gapplan_api
-from api.routes.target import router as target_router
 from kernel.errors import TargetUnusableError
 
 PLAN_ID = uuid.uuid4()
@@ -54,7 +53,7 @@ class FakeGapPlans:
         return summary(ref)
 
     async def history(self, owner_id: uuid.UUID) -> list[PlanSummaryView]:
-        return [summary(TargetRef(TargetKind.MATCHED_POSTING, str(uuid.uuid4())), PlanStatus.READY)]
+        return [summary(TargetRef(str(uuid.uuid4())), PlanStatus.READY)]
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
         self.priced.append(ref)
@@ -63,29 +62,10 @@ class FakeGapPlans:
             "model_id": "claude-opus-5",
             "input_tokens": 1200,
             "rate_is_published": True,
-            "includes_scoring": False,
         }
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
         self.done.append((task_id, done))
-
-
-class FakeTargets:
-    async def options(self, owner_id: uuid.UUID) -> list[TargetOptionView]:
-        return [
-            TargetOptionView(
-                kind=TargetKind.PRIVATE_POSTING,
-                id=uuid.uuid4(),
-                title="Senior Backend",
-                role_name="Senior Backend Engineer",
-                role_id=None,
-                company_name="Kestrel Financial",
-                fit=None,
-                salary=None,
-                source_kind="pasted",
-                url=None,
-            )
-        ]
 
 
 @pytest.fixture
@@ -109,25 +89,22 @@ def client(plans: FakeGapPlans, queued: list[dict[str, Any]]) -> TestClient:
     app = FastAPI()
     errors.install(app)
     app.include_router(gapplan_api.router)
-    app.include_router(target_router)
     user = uuid.uuid4()
     app.dependency_overrides[current_user] = lambda: user
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(
-        gapplan=plans, target=FakeTargets()
-    )
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(gapplan=plans)
     return TestClient(app, raise_server_exceptions=False)
 
 
 def test_requesting_a_plan_queues_it_and_returns_its_status(
     client: TestClient, queued: list[dict[str, Any]]
 ) -> None:
-    target = str(uuid.uuid4())
-    response = client.post("/gap-plans", json={"kind": "privatePosting", "id": target})
+    role, opening = str(uuid.uuid4()), str(uuid.uuid4())
+    response = client.post("/gap-plans", json={"role_id": role, "job_posting_id": opening})
 
     assert response.status_code == 202
     body = response.json()
     assert body["status"] == "drafting"
-    assert body["target"] == {"kind": "privatePosting", "id": target}
+    assert body["target"] == {"role_id": role, "job_posting_id": opening}
     assert [(job["name"], job["plan_id"]) for job in queued] == [("gapplan.draft", str(PLAN_ID))]
 
 
@@ -135,15 +112,15 @@ def test_a_target_that_cannot_be_planned_for_is_refused_before_anything_is_queue
     client: TestClient, plans: FakeGapPlans, queued: list[dict[str, Any]]
 ) -> None:
     plans.refuse = True
-    response = client.post("/gap-plans", json={"kind": "matchedPosting", "id": str(uuid.uuid4())})
+    response = client.post("/gap-plans", json={"role_id": str(uuid.uuid4())})
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "target_unusable"
     assert queued == []
 
 
-def test_an_unknown_target_kind_is_refused_in_the_envelope(client: TestClient) -> None:
-    response = client.get(f"/gap-plans/cost-estimate?kind=linkedin&id={uuid.uuid4()}")
+def test_a_target_without_a_role_is_refused_in_the_envelope(client: TestClient) -> None:
+    response = client.get(f"/gap-plans/cost-estimate?job_posting_id={uuid.uuid4()}")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
 
@@ -151,16 +128,15 @@ def test_an_unknown_target_kind_is_refused_in_the_envelope(client: TestClient) -
 def test_the_estimate_is_for_the_target_asked_about(
     client: TestClient, plans: FakeGapPlans
 ) -> None:
-    target = uuid.uuid4()
-    response = client.get(f"/gap-plans/cost-estimate?kind=matchedPosting&id={target}")
+    role = uuid.uuid4()
+    response = client.get(f"/gap-plans/cost-estimate?role_id={role}")
     assert response.status_code == 200
-    assert plans.priced == [TargetRef(TargetKind.MATCHED_POSTING, str(target))]
+    assert plans.priced == [TargetRef(str(role))]
     assert response.json() == {
         "cost_usd": "0.04",
         "model_id": "claude-opus-5",
         "input_tokens": 1200,
         "rate_is_published": True,
-        "includes_scoring": False,
     }
 
 
@@ -171,14 +147,7 @@ def test_ticking_a_task_is_recorded(client: TestClient, plans: FakeGapPlans) -> 
     assert plans.done == [(task, True)]
 
 
-def test_targets_say_where_each_one_came_from(client: TestClient) -> None:
-    [option] = client.get("/targets").json()["items"]
-    assert option["kind"] == "privatePosting"
-    assert option["source_kind"] == "pasted"
-    assert option["label"] == "Senior Backend Engineer · Kestrel Financial"
-
-
-def test_a_subscription_is_no_longer_a_target(client: TestClient) -> None:
-    response = client.post("/gap-plans", json={"kind": "subscription", "id": str(uuid.uuid4())})
+def test_the_old_kind_and_id_shape_is_refused(client: TestClient) -> None:
+    response = client.post("/gap-plans", json={"kind": "matchedPosting", "id": str(uuid.uuid4())})
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"

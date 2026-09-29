@@ -20,7 +20,7 @@ from advisor.resume.domain import (
     Revision,
     VersionSource,
 )
-from advisor.target import TargetKind, TargetRef
+from advisor.target import TargetRef
 from kernel.errors import NotFoundError, ValidationError
 from tests.unit.advisor.resume.fakes import FakeObjectStore, FakeResumeUnitOfWork
 
@@ -30,7 +30,7 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 class FakeTarget:
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> Any:
-        return SimpleNamespace(label=f"Target {ref.id[:8]}")
+        return SimpleNamespace(label=f"Target {ref.role_id[:8]}")
 
 
 class FakeProfile:
@@ -68,7 +68,7 @@ def _content(line: str = "Owned the retry layer for payments-svc") -> dict[str, 
 async def _resume(service: ResumeService) -> uuid.UUID:
     summary = await service.request(
         OWNER,
-        TargetRef(TargetKind.MATCHED_POSTING, str(uuid.uuid4())),
+        TargetRef(str(uuid.uuid4()), str(uuid.uuid4())),
         template=Template.WARM,
         options=Options(),
     )

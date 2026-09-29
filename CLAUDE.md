@@ -242,8 +242,8 @@ and follow-up questions.
 
 ## Phase 2 scope
 
-In: the gap plan — plan a route to a Target (a matched opening or a pasted JD),
-with gaps ranked by the fit points each is worth, milestones,
+In: the gap plan — plan a route to a Target (a role, and optionally one opening
+in it; ADR 0022), with gaps ranked by the fit points each is worth, milestones,
 tasks and projects drafted on the user's key, versions per Target with finished
 work carried forward, and plan history. `target` resolves what a plan aims at
 and has no tables (ADR 0005). Drafting is a job whose row the page polls
@@ -257,11 +257,12 @@ queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
 Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
-aimed at what the role map has selected: a role, whose openings it offers as
-Targets, or a JD pasted on the role map. That selection
-is carried in the hash (`?role=` / `?jd=`), so neither tab picks a Target of
-its own. The role map has exactly one control that aims the Advisor — the
-sticky "Advisor target" bar; picking a bubble or a pasted JD only selects.
+aimed at what the role map has selected: a role, and optionally one of its
+openings. That selection is carried in the hash (`?role=`, plus `&opening=`),
+so neither tab picks a Target of its own; the Advisor's "Your target role"
+banner only links back. The role map has exactly one control that aims the
+Advisor — the sticky "Advisor target" bar; picking a bubble or an opening only
+selects.
 
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé
@@ -311,3 +312,9 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   the JD and records the build; `CustomRoleAdded` sends the company to board
   discovery. Pasted JDs are no longer clustered, and every one belongs to a
   custom role.
+- **A Target is a role, plus an optional opening** (ADR 0022). `TargetRef` is
+  `(role_id, job_posting_id?)`; plans and résumés store both columns. A custom
+  role's JD is its requirement basis, else the role's own; the fit is the
+  role's, so resolving a Target spends nothing. `/targets` and the private-JD
+  scoring path are gone; `GET /matched-postings?role_id=` lists a role's
+  openings.

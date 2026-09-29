@@ -18,7 +18,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 
-from advisor.assessment import create_assessment_service
+from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import create_profile_service
@@ -31,8 +31,8 @@ from advisor.resume import (
     Template,
     create_resume_service,
 )
-from advisor.rolemap import create_rolemap_service
-from advisor.target import TargetKind, TargetRef, TargetService
+from advisor.rolemap import RoleMapService, create_rolemap_service
+from advisor.target import TargetRef, TargetService
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Request
 from kernel.config import Settings
@@ -79,6 +79,8 @@ class StubProvider:
 class World:
     stub: StubProvider
     market: MarketService
+    rolemap: RoleMapService
+    assessment: AssessmentService
     resume: ResumeService
     store: ObjectStore
     evidence_id: str
@@ -135,7 +137,7 @@ async def world(
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )
-    target = TargetService(assessment=assessment, market=market, rolemap=rolemap)
+    target = TargetService(assessment=assessment, rolemap=rolemap)
     resume = create_resume_service(
         database,
         target=target,
@@ -170,21 +172,33 @@ async def world(
         )
     )
     await assessment.run(account)
-    return World(stub=stub, market=market, resume=resume, store=store, evidence_id=str(evidence.id))
+    return World(
+        stub=stub,
+        market=market,
+        rolemap=rolemap,
+        assessment=assessment,
+        resume=resume,
+        store=store,
+        evidence_id=str(evidence.id),
+    )
 
 
 def _score_the_jd(stub: StubProvider) -> None:
+    """What a build answers for a custom role read from its JD — its
+    requirements, then its hiring bar — and then the fit projection."""
     stub.replies.append(
         json.dumps(
             {
+                "name": "Whatever the model calls it",
                 "requirements": [
                     {"statement": LEADS, "weight": 1.0, "expected_level": "expert"},
                     {"statement": RELIABILITY, "weight": 0.8, "expected_level": "advanced"},
                     {"statement": ORG, "weight": 0.5, "expected_level": "advanced"},
-                ]
+                ],
             }
         )
     )
+    stub.replies.append(json.dumps({"difficulty": 70, "confidence": 0.5, "reasoning": "A guess."}))
     stub.replies.append(
         json.dumps(
             {
@@ -201,6 +215,31 @@ def _score_the_jd(stub: StubProvider) -> None:
             }
         )
     )
+
+
+async def _custom_role(
+    world: World,
+    account: uuid.UUID,
+    *,
+    title: str = "Staff Platform Engineer",
+    company: str = "Meridian Labs",
+) -> TargetRef:
+    """A role of the user's own with a pasted JD, placed and scored by a build
+    the way the role map does it (ADR 0021), aimed at as a Target (ADR 0022)."""
+    posting = await world.market.paste_job_description(
+        account,
+        company_name=company,
+        title=title,
+        location=None,
+        description="Set technical direction across three product teams...",
+    )
+    role = await world.rolemap.add_custom_role(
+        account, title=title, company_name=company, private_posting_id=posting.id
+    )
+    _score_the_jd(world.stub)
+    await world.rolemap.recluster(account)
+    await world.assessment.compute_fits(account)
+    return TargetRef(str(role.id))
 
 
 def _resume_reply(cited: str) -> str:
@@ -230,18 +269,11 @@ def _resume_reply(cited: str) -> str:
 
 
 async def _written(world: World, account: uuid.UUID) -> uuid.UUID:
-    posting = await world.market.paste_job_description(
-        account,
-        company_name="Meridian Labs",
-        title="Staff Platform Engineer",
-        location=None,
-        description="Set technical direction across three product teams...",
-    )
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account)
     world.stub.replies.append(_resume_reply(CITED))
     requested = await world.resume.request(
         account,
-        TargetRef(TargetKind.PRIVATE_POSTING, str(posting.id)),
+        ref,
         template=Template.WARM,
         options=Options(),
     )
@@ -276,14 +308,11 @@ async def test_a_resume_is_written_cited_with_coverage_decided_by_scores(
 async def test_a_resume_citing_evidence_the_user_lacks_is_recorded_as_failed(
     world: World, account: uuid.UUID
 ) -> None:
-    posting = await world.market.paste_job_description(
-        account, company_name="Acme", title="Engineer", location=None, description="..."
-    )
-    _score_the_jd(world.stub)
+    ref = await _custom_role(world, account, title="Engineer", company="Acme")
     world.stub.replies.append(_resume_reply("E9"))
     requested = await world.resume.request(
         account,
-        TargetRef(TargetKind.PRIVATE_POSTING, str(posting.id)),
+        ref,
         template=Template.PLAIN,
         options=Options(),
     )

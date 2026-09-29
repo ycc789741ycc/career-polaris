@@ -197,6 +197,12 @@ h4 { font-size: 17px; margin: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A row of "Top matched openings": picking it selects that opening. */
+.opening-row { cursor: pointer; outline: 2px solid transparent; }
+.opening-row:hover { outline-color: var(--color-neutral-300); }
+.opening-row:focus-visible,
+.opening-row[aria-pressed="true"] { outline-color: var(--color-accent); }
+
 /* A target location: dark, with its own remove button (01 Sources). */
 .location-chip {
   gap: 4px;
@@ -498,31 +504,6 @@ select.input { appearance: auto; }
 }
 
 /* --- gap plan (prototype: isPlan) --------------------------------------- */
-
-/* A Target to plan a route to: role, company and fit. */
-.target-chip {
-  all: unset;
-  box-sizing: border-box;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 9px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--color-neutral-300);
-  font-size: 12.5px;
-  max-width: 100%;
-}
-.target-chip:hover { border-color: var(--color-accent); }
-.target-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.target-chip[aria-pressed="true"] {
-  border-color: var(--color-accent);
-  background: var(--color-accent-200);
-  color: var(--color-accent-900);
-}
-.target-chip-company { opacity: 0.75; }
-.target-chip-fit { font-weight: 700; color: var(--color-accent-700); }
-.target-chip[aria-pressed="true"] .target-chip-fit { color: var(--color-accent-800); }
 
 .history-row {
   display: flex;

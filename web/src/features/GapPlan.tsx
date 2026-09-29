@@ -5,8 +5,7 @@ import type {
   PlanEstimate,
   PlanGap,
   PlanSummary,
-  TargetKind,
-  TargetOption,
+  TargetRef,
 } from "../api/types";
 import {
   AutoGrid,
@@ -19,13 +18,14 @@ import {
   RoundCheck,
   YouVsBar,
 } from "../components/ui";
+import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
 
-type Ref = { kind: TargetKind; id: string };
+type Ref = TargetRef;
 
 /** How often a drafting plan is re-read. */
 const POLL_MS = 2000;
@@ -44,7 +44,7 @@ export function GapPlan({
   onChanged,
   onRevisit,
 }: {
-  target: TargetOption;
+  target: AdvisorTarget;
   /** Every plan, newest first — loaded by the Advisor. */
   history: PlanSummary[];
   /** A plan was drafted or ticked: the history and fits are out of date. */
@@ -55,7 +55,7 @@ export function GapPlan({
   const { status, navigate } = useShell();
   const flash = useToast();
   const model = modelName(status.credential);
-  const ref: Ref = { kind: target.kind, id: target.id };
+  const ref: Ref = target.ref;
 
   // Opens with this Target's latest plan, if it has one.
   const [planId, setPlanId] = useState<string | null>(
@@ -117,7 +117,7 @@ export function GapPlan({
     setError(null);
     try {
       const cost = await api.get<PlanEstimate>(
-        `/gap-plans/cost-estimate?kind=${priced.kind}&id=${priced.id}`,
+        `/gap-plans/cost-estimate?${targetQuery(priced)}`,
       );
       setEstimate({ ref: priced, label, cost });
     } catch (caught) {
@@ -187,9 +187,9 @@ export function GapPlan({
           <div>
             <Eyebrow>Plan a route to {target.label}</Eyebrow>
             <p className="subcopy" style={{ margin: "6px 0 12px" }}>
-              {target.kind === "privatePosting"
-                ? "The gaps, milestones and tasks below are planned against the posting's own requirements."
-                : "The plan closes the distance to this role at this company, drafted on your model from your own evidence."}
+              {target.isCustom
+                ? "The gaps, milestones and tasks below are planned against the requirements of the role you added."
+                : "The plan closes the distance to this role, drafted on your model from your own evidence."}
             </p>
             <div className="row" style={{ marginTop: 16 }}>
               <Button onClick={() => void price(ref, target.label)} busy={busy}>
@@ -255,8 +255,6 @@ export function GapPlan({
           Drafting a plan for <strong>{estimate.label}</strong> costs about{" "}
           <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
           , charged to your own provider.
-          {estimate.cost.includes_scoring &&
-            " That includes reading and scoring the pasted job description, which happens once."}
           {estimate.cost.rate_is_published === false &&
             " We have no published price for that model, so this is a deliberately high guess."}
         </CostConfirm>
@@ -523,10 +521,6 @@ function FailureHint({
       version.
     </p>
   );
-}
-
-function sameTarget(a: Ref, b: Ref): boolean {
-  return a.kind === b.kind && a.id === b.id;
 }
 
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six"];

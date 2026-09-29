@@ -1,7 +1,6 @@
 """ORM rows to gap-plan entities and back. No rules live here, only shape.
 
-A plan's Target is one of two reference columns, chosen by its kind; the
-entity holds the kind and one id.
+A plan's Target is a role and an optional opening, as two columns.
 """
 
 from __future__ import annotations
@@ -9,21 +8,13 @@ from __future__ import annotations
 from advisor.gapplan.domain import GapPlan, Milestone, PlanStatus, Task
 from advisor.gapplan.infra import models
 
-# TargetKind values, as the plan table's check constraint spells them.
-TARGET_COLUMN = {
-    "matchedPosting": "job_posting_id",
-    "privatePosting": "private_posting_id",
-}
-
 
 def plan(row: models.GapPlan) -> GapPlan:
-    target_id = row.job_posting_id or row.private_posting_id
-    assert target_id is not None, "a stored plan has exactly one target"
     return GapPlan(
         id=row.id,
         owner_id=row.owner_id,
-        target_kind=row.target_kind,
-        target_id=target_id,
+        role_id=row.role_id,
+        job_posting_id=row.job_posting_id,
         target_label=row.target_label,
         version=row.version,
         status=PlanStatus(row.status),
@@ -44,9 +35,9 @@ def plan_row(entity: GapPlan) -> models.GapPlan:
     row = models.GapPlan(
         id=entity.id,
         owner_id=entity.owner_id,
-        target_kind=entity.target_kind,
+        role_id=entity.role_id,
+        job_posting_id=entity.job_posting_id,
         created_at=entity.created_at,
-        **{TARGET_COLUMN[entity.target_kind]: entity.target_id},
     )
     apply_plan(row, entity)
     return row
@@ -65,10 +56,6 @@ def apply_plan(row: models.GapPlan, entity: GapPlan) -> None:
     row.model_id = entity.model_id
     row.template_version = entity.template_version
     row.drafted_at = entity.drafted_at
-
-
-def target_column(kind: str) -> str:
-    return TARGET_COLUMN[kind]
 
 
 def milestone(row: models.Milestone) -> Milestone:

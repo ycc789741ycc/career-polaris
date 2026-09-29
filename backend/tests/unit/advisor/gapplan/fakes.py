@@ -33,9 +33,11 @@ class FakePlans(FakeRepository[GapPlan, GapPlanFilter]):
     noun = "plan"
 
     def matches(self, entity: GapPlan, filter: GapPlanFilter) -> bool:
-        return (filter.target_kind is None or entity.target_kind == filter.target_kind) and (
-            filter.target_id is None or entity.target_id == filter.target_id
-        )
+        if filter.role_id is not None and entity.role_id != filter.role_id:
+            return False
+        if filter.job_posting_id is not None:
+            return entity.job_posting_id == filter.job_posting_id
+        return not filter.role_only or entity.job_posting_id is None
 
 
 class FakeMilestones(FakeRepository[Milestone, MilestoneFilter]):

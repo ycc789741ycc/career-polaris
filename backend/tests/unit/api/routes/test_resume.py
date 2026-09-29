@@ -26,7 +26,7 @@ from advisor.resume import (
     Template,
 )
 from advisor.resume.domain import Bullet, Position, ResumeContent
-from advisor.target import TargetKind, TargetRef
+from advisor.target import TargetRef
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import resume as resume_api
@@ -125,8 +125,7 @@ def test_writing_a_resume_queues_it_with_its_template_and_options(
     response = client.post(
         "/tailored-resumes",
         json={
-            "kind": "privatePosting",
-            "id": target,
+            "role_id": target,
             "template": "brief",
             "options": {"trim": True},
         },
@@ -135,7 +134,7 @@ def test_writing_a_resume_queues_it_with_its_template_and_options(
     assert response.status_code == 202
     assert response.json()["status"] == "drafting"
     [(ref, template, options)] = resumes.requested
-    assert (ref.kind, ref.id, template) == (TargetKind.PRIVATE_POSTING, target, Template.BRIEF)
+    assert (ref, template) == (TargetRef(target), Template.BRIEF)
     assert options == Options(metrics=True, reorder=True, trim=True)
     assert [(job["name"], job["resume_id"]) for job in queued] == [
         ("resume.generate", str(RESUME_ID))
@@ -146,7 +145,7 @@ def test_a_target_that_cannot_be_written_for_is_refused_before_queueing(
     client: TestClient, resumes: FakeResumes, queued: list[dict[str, Any]]
 ) -> None:
     resumes.refuse = True
-    body = {"kind": "matchedPosting", "id": str(uuid.uuid4())}
+    body = {"role_id": str(uuid.uuid4()), "job_posting_id": str(uuid.uuid4())}
     response = client.post("/tailored-resumes", json=body)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "target_unusable"
@@ -156,7 +155,7 @@ def test_a_target_that_cannot_be_written_for_is_refused_before_queueing(
 def test_an_unknown_template_is_refused_in_the_envelope(client: TestClient) -> None:
     response = client.post(
         "/tailored-resumes",
-        json={"kind": "matchedPosting", "id": str(uuid.uuid4()), "template": "neon"},
+        json={"role_id": str(uuid.uuid4()), "template": "neon"},
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"

@@ -1,7 +1,6 @@
 """ORM rows to Resume Advisor entities and back. No rules live here, only shape.
 
-A résumé's Target is one of two reference columns, chosen by its kind; the
-entity holds the kind and one id.
+A résumé's Target is a role and an optional opening, as two columns.
 """
 
 from __future__ import annotations
@@ -21,12 +20,6 @@ from advisor.resume.domain import (
 )
 from advisor.resume.infra import models
 
-# TargetKind values, as the résumé table's check constraint spells them.
-TARGET_COLUMN = {
-    "matchedPosting": "job_posting_id",
-    "privatePosting": "private_posting_id",
-}
-
 
 def options_of(data: dict[str, Any]) -> Options:
     return Options(
@@ -41,13 +34,11 @@ def options_dict(options: Options) -> dict[str, bool]:
 
 
 def resume(row: models.Resume) -> TailoredResume:
-    target_id = row.job_posting_id or row.private_posting_id
-    assert target_id is not None, "a stored résumé has exactly one target"
     return TailoredResume(
         id=row.id,
         owner_id=row.owner_id,
-        target_kind=row.target_kind,
-        target_id=target_id,
+        role_id=row.role_id,
+        job_posting_id=row.job_posting_id,
         target_label=row.target_label,
         template=Template(row.template),
         options=options_of(row.options),
@@ -65,9 +56,9 @@ def resume_row(entity: TailoredResume) -> models.Resume:
     row = models.Resume(
         id=entity.id,
         owner_id=entity.owner_id,
-        target_kind=entity.target_kind,
+        role_id=entity.role_id,
+        job_posting_id=entity.job_posting_id,
         created_at=entity.created_at,
-        **{TARGET_COLUMN[entity.target_kind]: entity.target_id},
     )
     apply_resume(row, entity)
     return row

@@ -45,18 +45,14 @@ class SqlAlchemyGapPlanRepository(SqlAlchemyRepository[GapPlan, models.GapPlan, 
         return entity.id
 
     def conditions(self, filter: GapPlanFilter) -> list[ColumnElement[bool]]:
+        plan = models.GapPlan
         found: list[ColumnElement[bool]] = []
-        if filter.target_kind is not None:
-            found.append(models.GapPlan.target_kind == filter.target_kind)
-            if filter.target_id is not None:
-                column = getattr(models.GapPlan, mappers.target_column(filter.target_kind))
-                found.append(column == filter.target_id)
-        elif filter.target_id is not None:
-            plan = models.GapPlan
-            found.append(
-                (plan.job_posting_id == filter.target_id)
-                | (plan.private_posting_id == filter.target_id)
-            )
+        if filter.role_id is not None:
+            found.append(plan.role_id == filter.role_id)
+        if filter.job_posting_id is not None:
+            found.append(plan.job_posting_id == filter.job_posting_id)
+        elif filter.role_only:
+            found.append(plan.job_posting_id.is_(None))
         return found
 
 

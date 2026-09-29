@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
@@ -93,11 +94,17 @@ async def fits(user: CurrentUser, deps: Deps, paging: Paging) -> FitPage:
 
 
 @router.get("/matched-postings")
-async def matched_postings(user: CurrentUser, deps: Deps, paging: Paging) -> MatchedPostingPage:
+async def matched_postings(
+    user: CurrentUser,
+    deps: Deps,
+    paging: Paging,
+    role_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> MatchedPostingPage:
     """The openings inside the user's roles, best first, for the role map's "Top
-    matched" list: ask for ``page_size=10`` for the top ten. Ranked by the
-    role's fit; no AI runs to produce it."""
-    ranked = await deps.assessment.matched_postings(user, limit=None)
+    matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
+    one role's, the openings the Advisor can aim at in it. Ranked by the role's
+    fit; no AI runs to produce it."""
+    ranked = await deps.assessment.matched_postings(user, limit=None, role_id=role_id)
     return MatchedPostingPage.of(
         paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
     )

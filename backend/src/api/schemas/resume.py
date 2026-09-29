@@ -17,7 +17,6 @@ from advisor.resume import (
     Template,
     VersionView,
 )
-from advisor.target import TargetKind
 from api.schemas.common import (
     ApiModel,
     EvidenceCitation,
@@ -38,8 +37,8 @@ class OptionsBody(RequestModel):
 
 
 class ResumeRequest(RequestModel):
-    kind: TargetKind
-    id: uuid.UUID
+    role_id: uuid.UUID
+    job_posting_id: uuid.UUID | None = None
     template: Template = Template.WARM
     options: OptionsBody = Field(default_factory=OptionsBody)
 

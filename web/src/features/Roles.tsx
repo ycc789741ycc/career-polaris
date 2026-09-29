@@ -93,33 +93,41 @@ export function Roles() {
   });
 
   // With nothing picked, the role that fits best is the one worth reading. A
-  // picked role no longer on the map falls back to it too. A pasted JD in the
-  // hash is the custom role it came with (ADR 0021).
+  // picked role no longer on the map falls back to it too.
   const bestId = [...bubbles].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1))[0]
     ?.id;
-  const pickedId =
-    focus?.kind === "role"
-      ? bubbles.find((b) => b.id === focus.id)?.id
-      : focus?.kind === "jd"
-        ? (roles.data ?? []).find((r) => r.private_posting_id === focus.id)?.id
-        : undefined;
+  const pickedId = focus
+    ? bubbles.find((b) => b.id === focus.role)?.id
+    : undefined;
   const activeId = pickedId ?? bestId;
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
   const activeBand = activeRole ? pickBand(activeRole.salary_bands) : null;
+  // An opening picked in "Top matched openings", while its role is selected.
+  const pickedOpening =
+    pickedId && focus?.opening
+      ? (matched.data ?? []).find(
+          (m) => m.posting_id === focus.opening && m.role_id === pickedId,
+        )
+      : undefined;
 
-  // The one thing the Advisor will be aimed at: the role shown as selected,
-  // which is the best fit until the user picks one. A custom role with a JD is
-  // aimed at through its JD, whose requirements are its own.
-  const aim: { focus: Focus; label: string } | null = activeRole
-    ? {
-        focus: activeRole.private_posting_id
-          ? { kind: "jd", id: activeRole.private_posting_id }
-          : { kind: "role", id: activeRole.id },
-        label: activeRole.company_name
-          ? `${activeRole.name} · ${activeRole.company_name}`
-          : activeRole.name,
-      }
+  // The one thing the Advisor will be aimed at (ADR 0022): the role shown as
+  // selected — the best fit until the user picks one — and the opening in it,
+  // if one is picked.
+  const aim: { focus: Focus; label: string; what: string } | null = activeRole
+    ? pickedOpening
+      ? {
+          focus: { role: activeRole.id, opening: pickedOpening.posting_id },
+          label: `${activeRole.name} · ${pickedOpening.company_name}`,
+          what: "opening",
+        }
+      : {
+          focus: { role: activeRole.id },
+          label: activeRole.company_name
+            ? `${activeRole.name} · ${activeRole.company_name}`
+            : activeRole.name,
+          what: "role",
+        }
     : null;
 
   const building = isBusy(activity?.role_map);
@@ -203,7 +211,7 @@ export function Roles() {
             <RoleMap
               roles={bubbles}
               selectedId={activeId}
-              onSelect={(id) => setFocus({ kind: "role", id })}
+              onSelect={(id) => setFocus({ role: id })}
             />
           </div>
 
@@ -353,13 +361,30 @@ export function Roles() {
           <h3>Top matched openings</h3>
           <p className="subcopy">
             Open postings inside your roles, ranked by how well you fit the
-            role. A posting&apos;s own requirements do not change its rank yet.
+            role. Pick one to aim the Advisor at that opening; its own
+            requirements do not change its rank yet.
           </p>
           <div className="stack" style={{ gap: 8, marginTop: 12 }}>
             {(matched.data ?? []).map((match, index) => (
               <div
                 key={match.posting_id}
-                className="row"
+                className="row opening-row"
+                role="button"
+                tabIndex={0}
+                aria-pressed={pickedOpening?.posting_id === match.posting_id}
+                aria-label={`${match.role_name} · ${match.company_name}: ${match.title}`}
+                onClick={() =>
+                  setFocus({ role: match.role_id, opening: match.posting_id })
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setFocus({
+                      role: match.role_id,
+                      opening: match.posting_id,
+                    });
+                  }
+                }}
                 style={{
                   gap: 14,
                   flexWrap: "nowrap",
@@ -422,7 +447,7 @@ export function Roles() {
       <CustomRoleForm
         onAdded={async (role) => {
           await Promise.all([roles.reload(), refreshActivity()]);
-          setFocus({ kind: "role", id: role.id });
+          setFocus({ role: role.id });
         }}
       />
 
@@ -466,7 +491,7 @@ export function Roles() {
             <div className="ellipsis target-bar-label">{aim.label}</div>
           </div>
           <Button onClick={() => navigate("advisor", { focus: aim.focus })}>
-            Target this role
+            Target this {aim.what}
           </Button>
         </div>
       )}

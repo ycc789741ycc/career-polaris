@@ -26,11 +26,12 @@ from advisor.resume import (
 from advisor.resume.domain import Bullet, Position, ResumeContent
 from advisor.resume.domain.content import VersionSource
 from advisor.resume.service import EvidenceNote
-from advisor.target import TargetKind, TargetRef
+from advisor.target import TargetRef
 from api.schemas.resume import ResumeContent as ContentBody
 from api.schemas.resume import ResumeExport, TailoredResume, revision_event
 
 AT = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
+ROLE_ID = uuid.uuid4()
 RESUME_ID = uuid.uuid4()
 VERSION_ID = uuid.uuid4()
 CONTENT = ResumeContent(
@@ -56,7 +57,7 @@ def _view() -> ResumeView:
     return ResumeView(
         summary=ResumeSummaryView(
             id=RESUME_ID,
-            target=TargetRef(TargetKind.PRIVATE_POSTING, "p-1"),
+            target=TargetRef(str(ROLE_ID)),
             label="Staff Platform Engineer · Meridian Labs",
             status="ready",
             error_code=None,
@@ -97,7 +98,7 @@ def test_a_tailored_resume_carries_its_summary_and_its_content() -> None:
     body = TailoredResume.from_resume(_view()).model_dump(mode="json")
 
     assert body["id"] == str(RESUME_ID)
-    assert body["target"] == {"kind": "privatePosting", "id": "p-1"}
+    assert body["target"] == {"role_id": str(ROLE_ID), "job_posting_id": None}
     assert body["status"] == "ready" and body["error"] is None
     assert body["template"] == "plain"
     assert body["options"] == {"metrics": True, "reorder": False, "trim": True}

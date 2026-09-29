@@ -11,7 +11,7 @@ import pytest
 
 from advisor.gapplan import GapPlanService, PlanStatus
 from advisor.gapplan.domain import Milestone, Task
-from advisor.target import TargetKind, TargetRef
+from advisor.target import TargetRef
 from kernel.errors import NotFoundError
 from tests.unit.advisor.gapplan.fakes import FakeGapPlanUnitOfWork
 
@@ -21,7 +21,7 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 class FakeTarget:
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> Any:
-        return SimpleNamespace(label=f"Target {ref.id[:8]}")
+        return SimpleNamespace(label=f"Target {ref.role_id[:8]}")
 
 
 def _service(uow: FakeGapPlanUnitOfWork) -> GapPlanService:
@@ -36,7 +36,7 @@ def _service(uow: FakeGapPlanUnitOfWork) -> GapPlanService:
 
 
 def _ref() -> TargetRef:
-    return TargetRef(TargetKind.MATCHED_POSTING, str(uuid.uuid4()))
+    return TargetRef(str(uuid.uuid4()), str(uuid.uuid4()))
 
 
 async def _with_tasks(uow: FakeGapPlanUnitOfWork, plan_id: uuid.UUID, *texts: str) -> list[Task]:
@@ -82,6 +82,19 @@ async def test_requesting_again_for_a_target_adds_the_next_version() -> None:
     assert second.status is PlanStatus.DRAFTING and second.target == ref
     history = (await plans.history(OWNER)).items
     assert [h.id for h in history] == [elsewhere.id, second.id]
+
+
+async def test_a_role_and_an_opening_in_it_are_versioned_apart() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow)
+    role = str(uuid.uuid4())
+
+    for_role = await plans.request(OWNER, TargetRef(role))
+    for_opening = await plans.request(OWNER, TargetRef(role, str(uuid.uuid4())))
+    for_role_again = await plans.request(OWNER, TargetRef(role))
+
+    assert (for_role.version, for_opening.version, for_role_again.version) == (1, 1, 2)
+    assert for_role_again.target == TargetRef(role)
 
 
 async def test_history_is_paged_after_each_target_keeps_only_its_latest() -> None:

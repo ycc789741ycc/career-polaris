@@ -14,7 +14,6 @@ PHASE_1_TEMPLATES = [
     "difficulty_estimate",
     "fit_projection",
     # Phase 2
-    "posting_requirements",
     "gap_plan",
     "resume_write",
     "resume_revise",
