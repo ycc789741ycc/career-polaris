@@ -297,3 +297,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   `subscription` Target kind are gone. Board discovery stays as an ownerless
   `market.discover_board(company_id, company_name)`, for the companies custom
   roles will name; it leaves a company that already has a source alone.
+- **Ten roles, built after every analysis** (ADR 0020). `RECOMMENDED_ROLE_COUNT`
+  is a `rolemap` domain constant; there is no setting. `AnalysisFinished`
+  goes to `activity.build_after_analysis`: a successful analysis always builds
+  the map, a failed one only releases a build that waited. Analyze's estimate
+  (`AnalysisEstimate`) includes the build's, so it is confirmed once.

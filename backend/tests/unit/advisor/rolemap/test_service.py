@@ -12,11 +12,9 @@ import pytest
 from advisor.market import PostingView, SalaryRange, Visibility
 from advisor.rolemap import RoleMapService
 from advisor.rolemap.domain import (
-    DEFAULT_ROLE_COUNT,
     BarBasis,
     HiringBar,
     RoleChange,
-    RoleCountChanged,
     RoleLineage,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -97,26 +95,6 @@ async def _store(
         model_id="model",
         template_version="v1",
     )
-
-
-async def test_the_role_count_defaults_and_a_change_is_announced_once() -> None:
-    uow = FakeRoleMapUnitOfWork()
-    rolemap = _service(uow)
-
-    assert await rolemap.role_count(OWNER) == DEFAULT_ROLE_COUNT
-    await rolemap.set_role_count(OWNER, 5)
-    await rolemap.set_role_count(OWNER, 5)
-
-    assert await rolemap.role_count(OWNER) == 5
-    assert await rolemap.role_count(OTHER) == DEFAULT_ROLE_COUNT
-    assert uow.store.events == [
-        RoleCountChanged(owner_id=OWNER, previous=DEFAULT_ROLE_COUNT, current=5)
-    ]
-
-
-async def test_a_role_count_outside_the_bounds_is_refused() -> None:
-    with pytest.raises(ValidationError):
-        await _service(FakeRoleMapUnitOfWork()).set_role_count(OWNER, 0)
 
 
 async def test_storing_a_role_replaces_its_members_and_requirements() -> None:

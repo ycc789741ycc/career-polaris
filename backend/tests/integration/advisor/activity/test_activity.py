@@ -111,7 +111,7 @@ async def test_a_role_map_waits_for_the_analysis_and_starts_when_it_finishes(
     assert (await services.activity.status(other_account)).role_map is None
 
     await services.assessment.fail_run(account, run.id, code="ai_budget_exceeded", message="spent")
-    released = await services.activity.release_waiting_builds(account)
+    released = await services.activity.build_after_analysis(account, succeeded=False)
 
     assert released is not None and released.id == requested.build.id
     status = await services.activity.status(account)

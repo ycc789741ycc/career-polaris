@@ -292,7 +292,8 @@ class AssessmentService:
     # -- cost ---------------------------------------------------------------
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        """Priced before anything is spent, for the first-run confirmation."""
+        """Priced before anything is spent: the analysis, and the role-map build
+        that follows it."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError(
@@ -307,11 +308,20 @@ class AssessmentService:
             ),
             untrusted=frozenset({"evidence", "timeline"}),
         )
+        # The role map is built after every analysis, so its cost is part of
+        # the one confirmation (domain decision 24, ADR 0020).
+        role_map = await self._rolemap.estimate_cost(owner_id)
+        role_map_cost = Decimal(role_map["cost_usd"])
+        total = estimate.cost_usd + role_map_cost
         return {
-            "cost_usd": str(estimate.cost_usd),
+            "cost_usd": str(total),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
-            "rate_is_published": estimate.rate_is_published,
+            "rate_is_published": estimate.rate_is_published
+            and role_map.get("rate_is_published") is not False,
+            "analysis_cost_usd": str(estimate.cost_usd),
+            "role_map_cost_usd": role_map["cost_usd"],
+            "max_roles": role_map["max_clusters"],
         }
 
     # -- the strength report ------------------------------------------------

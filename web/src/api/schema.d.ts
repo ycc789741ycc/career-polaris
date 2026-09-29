@@ -117,7 +117,8 @@ export interface paths {
         };
         /**
          * Cost Estimate
-         * @description The first analysis is priced and confirmed before it runs.
+         * @description An analysis is priced and confirmed before it runs, with the role-map
+         *     build that follows it.
          */
         get: operations["cost_estimate_api_v1_assessments_cost_estimate_get"];
         put?: never;
@@ -740,7 +741,7 @@ export interface paths {
         };
         /**
          * List Roles
-         * @description The analysed roles: at most the user's k (ADR 0003).
+         * @description The analysed roles: the ten recommended ones at most (ADR 0020).
          */
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
@@ -760,8 +761,7 @@ export interface paths {
         };
         /**
          * Cost Estimate
-         * @description Shown before a role map runs, so nothing is spent unasked. Pass
-         *     ``role_count`` to price a k before saving it; omit it for the saved k.
+         * @description Shown before a rebuild runs, so nothing is spent unasked.
          */
         get: operations["cost_estimate_api_v1_roles_cost_estimate_get"];
         put?: never;
@@ -788,31 +788,6 @@ export interface paths {
          *     already under way returns that one.
          */
         post: operations["recluster_api_v1_roles_recluster_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/roles/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Settings */
-        get: operations["get_settings_api_v1_roles_settings_get"];
-        /**
-         * Put Settings
-         * @description Saved only after the user confirmed the estimate for this k, so a change
-         *     rebuilds the role map, waiting for an analysis that is running (ADR 0018).
-         *
-         *     The build is recorded here rather than from ``RoleCountChanged``, so the
-         *     page sees it the moment this returns.
-         */
-        put: operations["put_settings_api_v1_roles_settings_put"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1066,6 +1041,27 @@ export interface components {
             /** Syncing */
             syncing: components["schemas"]["PendingWork"][];
         };
+        /**
+         * AnalysisEstimate
+         * @description The price of Analyze: the analysis and the role-map build that follows
+         *     it, confirmed once (domain decision 24). ``cost_usd`` is their sum.
+         */
+        AnalysisEstimate: {
+            /** Analysis Cost Usd */
+            analysis_cost_usd: string;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Max Roles */
+            max_roles: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published: boolean;
+            /** Role Map Cost Usd */
+            role_map_cost_usd: string;
+        };
         /** AnswerRequest */
         AnswerRequest: {
             /** Answer */
@@ -1170,20 +1166,6 @@ export interface components {
             kind: string;
             /** Status */
             status: string;
-        };
-        /**
-         * CostEstimate
-         * @description What an AI run will cost on the user's key, shown before it runs.
-         */
-        CostEstimate: {
-            /** Cost Usd */
-            cost_usd: string;
-            /** Input Tokens */
-            input_tokens: number;
-            /** Model Id */
-            model_id: string | null;
-            /** Rate Is Published */
-            rate_is_published: boolean;
         };
         /** Coverage */
         Coverage: {
@@ -2063,19 +2045,6 @@ export interface components {
             model_id: string | null;
             /** Rate Is Published */
             rate_is_published?: boolean | null;
-            /** Role Count */
-            role_count: number;
-        };
-        /**
-         * RoleMapSettings
-         * @description How many roles the role map analyses on the user's key (ADR 0003).
-         *
-         *     Both the body of a change and the answer to a read, so it keeps a
-         *     request's leniency.
-         */
-        RoleMapSettings: {
-            /** Role Count */
-            role_count: number;
         };
         /** RolePage */
         RolePage: {
@@ -2844,7 +2813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CostEstimate"];
+                    "application/json": components["schemas"]["AnalysisEstimate"];
                 };
             };
             /** @description The request could not be read. */
@@ -4673,9 +4642,7 @@ export interface operations {
     };
     cost_estimate_api_v1_roles_cost_estimate_get: {
         parameters: {
-            query?: {
-                role_count?: number | null;
-            };
+            query?: never;
             header?: {
                 authorization?: string | null;
             };
@@ -4740,108 +4707,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunStatus"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    get_settings_api_v1_roles_settings_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoleMapSettings"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    put_settings_api_v1_roles_settings_put: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RoleMapSettings"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RoleMapSettings"];
                 };
             };
             /** @description The request could not be read. */

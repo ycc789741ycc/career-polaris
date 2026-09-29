@@ -3,12 +3,10 @@ from advisor.rolemap.domain.entities import (
     BuildRunStatus,
     LineageEntry,
     Role,
-    RoleMapSetting,
     RoleMember,
     RoleRequirement,
 )
 from advisor.rolemap.domain.events import (
-    RoleCountChanged,
     RoleMapEvent,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -31,8 +29,6 @@ from advisor.rolemap.domain.repositories import (
     OwnerRoleMap,
     Repository,
     RoleFilter,
-    RoleMapSettingFilter,
-    RoleMapSettingRepository,
     RoleMapUnitOfWork,
     RoleMemberFilter,
     RoleMemberRepository,
@@ -41,22 +37,16 @@ from advisor.rolemap.domain.repositories import (
     RoleRequirementRepository,
 )
 from advisor.rolemap.domain.selection import (
-    DEFAULT_ROLE_COUNT,
-    MAX_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
-    MIN_ROLE_COUNT,
-    RoleCountError,
+    RECOMMENDED_ROLE_COUNT,
     max_role_count,
     rank_by_fit,
-    validate_role_count,
 )
 
 __all__ = [
-    "DEFAULT_ROLE_COUNT",
-    "MAX_ROLE_COUNT",
     "MIN_POSTINGS_FOR_A_ROLE",
     "MIN_REPORTERS",
-    "MIN_ROLE_COUNT",
+    "RECOMMENDED_ROLE_COUNT",
     "SAME_ROLE_THRESHOLD",
     "BarBasis",
     "BuildRun",
@@ -72,14 +62,9 @@ __all__ = [
     "Repository",
     "Role",
     "RoleChange",
-    "RoleCountChanged",
-    "RoleCountError",
     "RoleFilter",
     "RoleLineage",
     "RoleMapEvent",
-    "RoleMapSetting",
-    "RoleMapSettingFilter",
-    "RoleMapSettingRepository",
     "RoleMapUnitOfWork",
     "RoleMember",
     "RoleMemberFilter",
@@ -96,5 +81,4 @@ __all__ = [
     "overlap",
     "rank_by_fit",
     "reconcile",
-    "validate_role_count",
 ]

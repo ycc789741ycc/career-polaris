@@ -15,8 +15,6 @@ from advisor.rolemap.domain import (
     Role,
     RoleFilter,
     RoleMapEvent,
-    RoleMapSetting,
-    RoleMapSettingFilter,
     RoleMember,
     RoleMemberFilter,
     RoleRequirement,
@@ -31,7 +29,6 @@ class Store:
     members: dict[uuid.UUID, RoleMember] = field(default_factory=dict)
     requirements: dict[uuid.UUID, RoleRequirement] = field(default_factory=dict)
     lineage: dict[uuid.UUID, LineageEntry] = field(default_factory=dict)
-    settings: dict[uuid.UUID, RoleMapSetting] = field(default_factory=dict)
     builds: dict[uuid.UUID, BuildRun] = field(default_factory=dict)
     events: list[RoleMapEvent] = field(default_factory=list)
 
@@ -74,14 +71,6 @@ class FakeLineage(FakeRepository[LineageEntry, LineageEntryFilter]):
         return filter.role_id is None or entity.role_id == filter.role_id
 
 
-class FakeSettings(FakeRepository[RoleMapSetting, RoleMapSettingFilter]):
-    owner_field = "owner_id"
-    noun = "role map setting"
-
-    def matches(self, entity: RoleMapSetting, filter: RoleMapSettingFilter) -> bool:
-        return True
-
-
 class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter]):
     created_field = "requested_at"
     updated_field = None
@@ -98,7 +87,6 @@ class FakeOwner:
         self.members = FakeMembers(store.members, owner_id=owner_id)
         self.requirements = FakeRequirements(store.requirements, owner_id=owner_id)
         self.lineage = FakeLineage(store.lineage, owner_id=owner_id)
-        self.settings = FakeSettings(store.settings, owner_id=owner_id)
         self.builds = FakeBuilds(store.builds, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 

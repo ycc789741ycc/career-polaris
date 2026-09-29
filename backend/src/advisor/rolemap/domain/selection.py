@@ -1,8 +1,7 @@
 """Which clusters become roles, and how many there can be.
 
 Every role costs two calls on the user's key, so a role map analyses only the
-k clusters closest to the user's profile, where the user picks k within
-``MIN_ROLE_COUNT``..``MAX_ROLE_COUNT`` (ADR 0003). Closeness is
+ten clusters closest to the user's profile (ADR 0020). Closeness is
 decided before any AI runs, from local embeddings: the assessed fit needs a
 role's requirements, and those come from the very analysis this limits.
 
@@ -19,41 +18,26 @@ from collections.abc import Sequence
 
 # Below this, there is nothing to cluster and no role worth naming.
 MIN_POSTINGS_FOR_A_ROLE = 3
-# How many roles one role map analyses on the user's key: the user's choice,
-# within a bound that keeps the cost from scaling with the market (ADR 0003).
-MIN_ROLE_COUNT = 3
-MAX_ROLE_COUNT = 20
-DEFAULT_ROLE_COUNT = 10
+# How many recommended roles one role map analyses on the user's key: fixed by
+# the system, so the cost is predictable (domain decision 23, ADR 0020). Roles
+# the user adds themselves do not count toward it.
+RECOMMENDED_ROLE_COUNT = 10
 
 Vector = Sequence[float]
 
 
-class RoleCountError(ValueError):
-    """A role count outside what one role map may analyse."""
-
-
-def validate_role_count(role_count: int) -> int:
-    if not MIN_ROLE_COUNT <= role_count <= MAX_ROLE_COUNT:
-        raise RoleCountError(
-            f"a role map analyses between {MIN_ROLE_COUNT} and {MAX_ROLE_COUNT} roles, "
-            f"got {role_count}"
-        )
-    return role_count
-
-
-def max_role_count(posting_count: int, role_count: int = DEFAULT_ROLE_COUNT) -> int:
-    """The most roles ``posting_count`` postings can turn into, given the
-    user's ``role_count``."""
+def max_role_count(posting_count: int) -> int:
+    """The most recommended roles ``posting_count`` postings can turn into."""
     if posting_count < 0:
         raise ValueError("posting_count cannot be negative")
-    return min(posting_count // MIN_POSTINGS_FOR_A_ROLE, validate_role_count(role_count))
+    return min(posting_count // MIN_POSTINGS_FOR_A_ROLE, RECOMMENDED_ROLE_COUNT)
 
 
 def rank_by_fit(
     profile: Sequence[Vector],
     clusters: Sequence[Sequence[Vector]],
     *,
-    limit: int = DEFAULT_ROLE_COUNT,
+    limit: int = RECOMMENDED_ROLE_COUNT,
 ) -> list[int]:
     """Indices of the ``limit`` clusters closest to the profile, closest first.
 

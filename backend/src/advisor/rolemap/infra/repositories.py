@@ -20,8 +20,6 @@ from advisor.rolemap.domain import (
     LineageEntryFilter,
     Role,
     RoleFilter,
-    RoleMapSetting,
-    RoleMapSettingFilter,
     RoleMember,
     RoleMemberFilter,
     RoleRequirement,
@@ -139,31 +137,6 @@ class SqlAlchemyLineageEntryRepository(
         if filter.role_id is None:
             return []
         return [models.RoleLineage.role_id == filter.role_id]
-
-
-class SqlAlchemyRoleMapSettingRepository(
-    SqlAlchemyRepository[RoleMapSetting, models.RoleMapSetting, RoleMapSettingFilter]
-):
-    model = models.RoleMapSetting
-    id_column = models.RoleMapSetting.id
-    created_column = models.RoleMapSetting.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.RoleMapSetting.owner_id
-    noun = "role map setting"
-
-    def to_entity(self, row: models.RoleMapSetting) -> RoleMapSetting:
-        return mappers.setting(row)
-
-    def to_row(self, entity: RoleMapSetting) -> models.RoleMapSetting:
-        return mappers.setting_row(entity)
-
-    def apply(self, row: models.RoleMapSetting, entity: RoleMapSetting) -> None:
-        mappers.apply_setting(row, entity)
-
-    def id_of(self, entity: RoleMapSetting) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: RoleMapSettingFilter) -> list[ColumnElement[bool]]:
-        return []
 
 
 class SqlAlchemyBuildRunRepository(SqlAlchemyRepository[BuildRun, models.BuildRun, BuildRunFilter]):

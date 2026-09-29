@@ -99,11 +99,11 @@ class FakeActivity:
     def __init__(self, *, released: Any = None, requested: Any = None) -> None:
         self.released = released
         self.requested = requested
-        self.releases: list[uuid.UUID] = []
+        self.releases: list[tuple[uuid.UUID, bool]] = []
         self.requests: list[uuid.UUID] = []
 
-    async def release_waiting_builds(self, owner_id: uuid.UUID) -> Any:
-        self.releases.append(owner_id)
+    async def build_after_analysis(self, owner_id: uuid.UUID, *, succeeded: bool) -> Any:
+        self.releases.append((owner_id, succeeded))
         return self.released
 
     async def request_role_map(self, owner_id: uuid.UUID) -> Any:
@@ -127,29 +127,29 @@ def _analysis_finished(status: str) -> OutboxEvent:
     )
 
 
-@pytest.mark.parametrize("status", ["ready", "failed"])
-async def test_a_finished_analysis_starts_the_role_map_that_waited_for_it(
-    status: str, queued: list[dict[str, Any]]
+@pytest.mark.parametrize(("status", "succeeded"), [("ready", True), ("failed", False)])
+async def test_a_finished_analysis_queues_the_build_activity_hands_back(
+    status: str, succeeded: bool, queued: list[dict[str, Any]]
 ) -> None:
     build_id = uuid.uuid4()
     activity = FakeActivity(released=SimpleNamespace(id=build_id))
 
     await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
-    assert activity.releases == [OWNER]
+    assert activity.releases == [(OWNER, succeeded)]
     assert queued == [
         {"name": "rolemap.recluster", "owner_id": str(OWNER), "build_id": str(build_id)}
     ]
 
 
-async def test_a_finished_analysis_queues_nothing_when_no_role_map_waited(
+async def test_a_finished_analysis_queues_nothing_when_there_is_no_build_to_start(
     queued: list[dict[str, Any]],
 ) -> None:
     activity = FakeActivity(released=None)
 
-    await dispatcher._handle(_container(activity=activity), _analysis_finished("ready"))
+    await dispatcher._handle(_container(activity=activity), _analysis_finished("failed"))
 
-    assert activity.releases == [OWNER] and queued == []
+    assert activity.releases == [(OWNER, False)] and queued == []
 
 
 @pytest.mark.parametrize(("should_queue", "expected"), [(True, 1), (False, 0)])
@@ -170,20 +170,6 @@ async def test_new_postings_rebuild_only_a_role_map_that_is_not_waiting_or_runni
     await dispatcher._handle(_container(activity=activity), event)
 
     assert activity.requests == [OWNER] and len(queued) == expected
-
-
-async def test_a_new_role_count_is_rebuilt_by_its_route_not_again_here(
-    queued: list[dict[str, Any]],
-) -> None:
-    event = OutboxEvent(
-        name=str(EventName.ROLE_COUNT_CHANGED),
-        owner_id=OWNER,
-        payload={"previous": 10, "current": 12},
-    )
-
-    await dispatcher._handle(_container(), event)
-
-    assert queued == []
 
 
 def _target_locations_changed() -> OutboxEvent:

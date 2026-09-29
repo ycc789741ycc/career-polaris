@@ -52,6 +52,15 @@ function serve(latest: Assessment) {
   const routes: Record<string, unknown> = {
     "/assessments/latest": latest,
     "/evidence": page([]),
+    "/assessments/cost-estimate": {
+      cost_usd: "0.50",
+      model_id: "claude-opus-5",
+      input_tokens: 1200,
+      rate_is_published: true,
+      analysis_cost_usd: "0.10",
+      role_map_cost_usd: "0.40",
+      max_roles: 10,
+    },
   };
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input).replace("http://api.test/api/v1", "");
@@ -233,5 +242,18 @@ describe("Strengths", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Re-analyse" })).toBeEnabled();
+  });
+
+  it("prices the analysis with the role map built after it, in one confirmation", async () => {
+    serve(assessment({}));
+    renderStrengths();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-analyse" }));
+
+    const dialog = await screen.findByText(/for the analysis/);
+    expect(dialog).toHaveTextContent(
+      "$0.10 for the analysis, and at most $0.40 for the role map built after it, up to 10 roles",
+    );
+    expect(dialog).toHaveTextContent("$0.50");
   });
 });

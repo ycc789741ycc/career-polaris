@@ -42,14 +42,13 @@ export type QuestionRoundStatus = QuestionStatus["status"];
 export type Fit = Schemas["Fit"];
 /** An opening inside one of the user's roles, ranked by that role's fit. */
 export type MatchedPosting = Schemas["MatchedPosting"];
-/** What the first analysis will cost on the user's key. */
-export type CostEstimate = Schemas["CostEstimate"];
+/** Analyze: the analysis and the role-map build after it, confirmed once (ADR 0020). */
+export type AnalysisEstimate = Schemas["AnalysisEstimate"];
 
 // Role map
 export type SalaryBand = Schemas["SalaryBand"];
 export type Role = Schemas["Role"];
-export type RoleMapSettings = Schemas["RoleMapSettings"];
-/** The most a role map can cost: a ceiling for a k (ADR 0003). */
+/** The most a role-map rebuild can cost: a ceiling at ten roles (ADR 0020). */
 export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 
 // Market

@@ -155,10 +155,20 @@ class ActivityService:
             return None
         return await self.request_role_map(owner_id)
 
-    async def release_waiting_builds(self, owner_id: uuid.UUID) -> BuildRunView | None:
-        """An analysis finished: start the build that waited for it, if any.
-        The caller queues it."""
-        return await self._rolemap.start_waiting(owner_id)
+    async def build_after_analysis(
+        self, owner_id: uuid.UUID, *, succeeded: bool
+    ) -> BuildRunView | None:
+        """An analysis finished: the build to queue now, if any.
+
+        A successful analysis always builds the role map (domain decision 24):
+        it starts a build that waited for it, or records a new one, or joins
+        one already running, in which case there is nothing to queue. A failed
+        analysis only releases a build that waited for it (ADR 0018).
+        """
+        if not succeeded:
+            return await self._rolemap.start_waiting(owner_id)
+        requested = await self.request_role_map(owner_id)
+        return requested.build if requested.should_queue else None
 
     async def _analysis_running(self, owner_id: uuid.UUID, now: datetime) -> bool:
         """Whether an analysis is running. One past the limit is closed as lost,

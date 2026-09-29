@@ -58,7 +58,6 @@ function serve() {
       role("r1", "Backend Engineer"),
       role("r2", "Platform Engineer"),
     ]),
-    "/roles/settings": { role_count: 8 },
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
     "/market-scope": {
@@ -67,9 +66,8 @@ function serve() {
     },
     "/matched-postings?page_size=10": page([]),
     "/targets": page([pasted]),
-    "/roles/cost-estimate?role_count=8": {
+    "/roles/cost-estimate": {
       max_clusters: 8,
-      role_count: 8,
       cost_usd: "0.40",
       model_id: "claude-opus-5",
       rate_is_published: true,
@@ -195,7 +193,7 @@ describe("the role map while an analysis runs", () => {
     });
 
     await user.click(
-      await screen.findByRole("button", { name: "Build role map" }),
+      await screen.findByRole("button", { name: "Rebuild role map" }),
     );
     await user.click(await screen.findByRole("button", { name: "Run it" }));
 
@@ -255,5 +253,20 @@ describe("how much of the market the role map takes in", () => {
         open_posting_count: 12,
       }),
     ).toBe("12 open postings in Berlin, Lisbon and Remote EU.");
+  });
+});
+
+describe("ten roles, chosen by the system", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers no count of roles to choose", async () => {
+    renderRoles(null);
+
+    await screen.findByText(/The 10 best-fit roles on the market/);
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 });

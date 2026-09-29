@@ -20,7 +20,7 @@ from api.schemas.assessment import (
     QuestionPage,
     QuestionStatus,
 )
-from api.schemas.common import Accepted, CostEstimate
+from api.schemas.common import Accepted, AnalysisEstimate
 from kernel.paging import paginate
 from wiring.queue import enqueue
 
@@ -28,9 +28,10 @@ router = APIRouter(tags=["assessment"])
 
 
 @router.get("/assessments/cost-estimate")
-async def cost_estimate(user: CurrentUser, deps: Deps) -> CostEstimate:
-    """The first analysis is priced and confirmed before it runs."""
-    return CostEstimate.model_validate(await deps.assessment.estimate_cost(user))
+async def cost_estimate(user: CurrentUser, deps: Deps) -> AnalysisEstimate:
+    """An analysis is priced and confirmed before it runs, with the role-map
+    build that follows it."""
+    return AnalysisEstimate.model_validate(await deps.assessment.estimate_cost(user))
 
 
 @router.post("/assessments", status_code=202)
