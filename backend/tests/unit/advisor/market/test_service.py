@@ -21,12 +21,12 @@ from advisor.market.domain import (
     Company,
     Coverage,
     CrawlSource,
-    MarketSelected,
     PostingsChanged,
     PostingStatus,
     SourceOrigin,
     SourceStatus,
     SubscriptionAdded,
+    TargetLocationsChanged,
 )
 from kernel.errors import NotFoundError, RateLimitedError, ValidationError
 from tests.unit.advisor.market.fakes import FakeMarketUnitOfWork
@@ -128,25 +128,70 @@ async def test_a_refresh_marks_every_role_at_that_company() -> None:
     assert uow.store.subscriptions[elsewhere.id].last_refreshed_at is None
 
 
-# --- markets ---------------------------------------------------------------
+# --- target locations ------------------------------------------------------
 
 
-async def test_choosing_a_market_twice_announces_it_once() -> None:
+async def test_saving_the_same_target_locations_twice_announces_them_once() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
 
-    await market.add_market(OWNER, " Berlin ")
-    chosen = await market.add_market(OWNER, "Berlin")
+    await market.set_target_locations(OWNER, [" Remote EU ", "Berlin", "berlin"])
+    chosen = await market.set_target_locations(OWNER, ["Berlin", "Remote EU"])
 
-    assert chosen == ["Berlin"]
-    assert uow.store.events == [MarketSelected(owner_id=OWNER, market="Berlin")]
+    assert chosen == ["Berlin", "Remote EU"]
+    assert await market.target_locations(OWNER) == ["Berlin", "Remote EU"]
+    assert uow.store.events == [
+        TargetLocationsChanged(owner_id=OWNER, locations=("Berlin", "Remote EU"))
+    ]
+
+
+async def test_a_fourth_target_location_is_refused_and_nothing_changes() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    await market.set_target_locations(OWNER, ["Berlin", "Lisbon", "Remote EU"])
+
+    with pytest.raises(ValidationError):
+        await market.set_target_locations(OWNER, ["Berlin", "Lisbon", "Remote EU", "Paris"])
+
+    assert await market.target_locations(OWNER) == ["Berlin", "Lisbon", "Remote EU"]
+
+
+async def test_removing_every_target_location_is_announced() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    await market.set_target_locations(OWNER, ["Berlin"])
+
+    assert await market.set_target_locations(OWNER, []) == []
+    assert uow.store.events[-1] == TargetLocationsChanged(owner_id=OWNER, locations=())
+
+
+async def test_the_scope_counts_the_open_shared_postings_in_the_target_locations() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest, market = CrawlIngest(uow), _service(uow)
+    baseline = _source(uow, origin=SourceOrigin.BASELINE)
+    await ingest.record_crawl(
+        baseline.id,
+        [
+            replace(_posting("Backend"), location="Berlin, Germany"),
+            replace(_posting("Data"), location="Lisbon, Portugal"),
+        ],
+    )
+    await market.paste_job_description(
+        OWNER, company_name="Acme", title="Staff", location="Berlin", description="JD"
+    )
+    await market.set_target_locations(OWNER, ["Berlin"])
+
+    scope = await market.scope(OWNER)
+
+    assert scope.target_locations == ["Berlin"]
+    assert scope.open_posting_count == 1
 
 
 async def test_the_fan_out_finds_watchers_of_a_company_or_a_market() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
     watched = await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
-    await market.add_market(OTHER, "Berlin")
+    await market.set_target_locations(OTHER, ["Berlin"])
 
     assert await market.owners_affected_by(company_id=watched.company_id) == [OWNER]
     assert await market.owners_affected_by(market="Berlin") == [OTHER]
@@ -262,7 +307,7 @@ async def test_without_markets_the_scope_falls_back_to_baseline_postings() -> No
     assert [p.title for p in in_scope] == ["Backend"]
 
     # With a market chosen, only postings in it count, baseline or not.
-    await market.add_market(OWNER, "Lisbon")
+    await market.set_target_locations(OWNER, ["Lisbon"])
     assert await market.postings_in_scope(OWNER) == []
 
 
@@ -279,8 +324,7 @@ async def test_a_market_takes_in_postings_whose_location_names_it() -> None:
         ],
     )
 
-    await market.add_market(OWNER, "berlin")
-    await market.add_market(OWNER, "Munchen")
+    await market.set_target_locations(OWNER, ["berlin", "Munchen"])
     in_scope = await market.postings_in_scope(OWNER)
     assert sorted(p.title for p in in_scope) == ["Backend", "Platform"]
 

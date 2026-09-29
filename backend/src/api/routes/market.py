@@ -1,4 +1,4 @@
-"""Market HTTP surface: watched roles at companies, chosen markets and pasted JDs."""
+"""Market HTTP surface: watched roles at companies, target locations and pasted JDs."""
 
 from __future__ import annotations
 
@@ -10,12 +10,13 @@ from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import Accepted, StringPage
 from api.schemas.market import (
     JobDescriptionRequest,
-    MarketRequest,
+    MarketScope,
     PastedJobDescription,
     PastedJobDescriptionPage,
     Subscription,
     SubscriptionPage,
     SubscriptionRequest,
+    TargetLocationsRequest,
 )
 from kernel.paging import paginate
 from wiring.queue import enqueue
@@ -68,22 +69,25 @@ async def refresh(subscription_id: uuid.UUID, user: CurrentUser, deps: Deps) -> 
     return Accepted()
 
 
-@router.get("/market-preferences")
-async def list_markets(user: CurrentUser, deps: Deps, paging: Paging) -> StringPage:
-    """The markets the user chose. Adding or removing one answers with the
-    whole saved set instead, since that is the result of the change."""
-    found = paginate(await deps.market.markets(user), paging.page, paging.page_size)
+@router.get("/target-locations")
+async def list_target_locations(user: CurrentUser, deps: Deps, paging: Paging) -> StringPage:
+    """Where the user wants to work: at most three places (domain decision 21)."""
+    found = paginate(await deps.market.target_locations(user), paging.page, paging.page_size)
     return StringPage.of(found, str)
 
 
-@router.post("/market-preferences", status_code=201)
-async def add_market(body: MarketRequest, user: CurrentUser, deps: Deps) -> list[str]:
-    return await deps.market.add_market(user, body.market)
+@router.put("/target-locations")
+async def set_target_locations(
+    body: TargetLocationsRequest, user: CurrentUser, deps: Deps
+) -> list[str]:
+    """Replace the whole set. A change rebuilds a role map the user already
+    has, on the new scope; the worker does that from the event it records."""
+    return await deps.market.set_target_locations(user, body.locations)
 
 
-@router.delete("/market-preferences/{market}")
-async def remove_market(market: str, user: CurrentUser, deps: Deps) -> list[str]:
-    return await deps.market.remove_market(user, market)
+@router.get("/market-scope")
+async def market_scope(user: CurrentUser, deps: Deps) -> MarketScope:
+    return MarketScope.from_view(await deps.market.scope(user))
 
 
 @router.get("/job-descriptions")

@@ -1,4 +1,6 @@
 from advisor.market.domain.entities import (
+    MAX_TARGET_LOCATION,
+    MAX_TARGET_LOCATIONS,
     Company,
     CompanySubscription,
     CrawlSource,
@@ -9,13 +11,15 @@ from advisor.market.domain.entities import (
     PostingScope,
     PrivateJobPosting,
     SourceStatus,
+    TargetLocationError,
+    chosen_target_locations,
     refresh_allowed,
 )
 from advisor.market.domain.events import (
     MarketEvent,
-    MarketSelected,
     PostingsChanged,
     SubscriptionAdded,
+    TargetLocationsChanged,
 )
 from advisor.market.domain.pay_text import salary_in_text
 from advisor.market.domain.posting import (
@@ -70,6 +74,8 @@ __all__ = [
     "MAX_CANONICAL_KEY",
     "MAX_COMPANY_NAME",
     "MAX_LOCATION",
+    "MAX_TARGET_LOCATION",
+    "MAX_TARGET_LOCATIONS",
     "MAX_TITLE",
     "Company",
     "CompanyFilter",
@@ -90,7 +96,6 @@ __all__ = [
     "MarketPreference",
     "MarketPreferenceFilter",
     "MarketPreferenceRepository",
-    "MarketSelected",
     "MarketUnitOfWork",
     "NormalizedPosting",
     "OwnerMarket",
@@ -113,9 +118,12 @@ __all__ = [
     "SubscriptionAdded",
     "SubscriptionFilter",
     "SubscriptionRepository",
+    "TargetLocationError",
+    "TargetLocationsChanged",
     "Visibility",
     "band_from",
     "canonical_key",
+    "chosen_target_locations",
     "clip",
     "expired_keys",
     "in_market",

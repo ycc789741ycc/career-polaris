@@ -197,3 +197,21 @@ async def test_a_lost_build_is_closed_and_a_new_one_queued(world: World) -> None
     fresh = await world.activity.request_role_map(OWNER)
 
     assert fresh.should_queue and fresh.build.id != lost.build.id
+
+
+# --- a new market scope ----------------------------------------------------
+
+
+async def test_a_new_scope_builds_nothing_for_a_user_with_no_role_map(world: World) -> None:
+    assert await world.activity.rebuild_role_map(OWNER) is None
+    assert await world.rolemap.latest_build(OWNER) is None
+
+
+async def test_a_new_scope_rebuilds_a_role_map_the_user_already_has(world: World) -> None:
+    first = await world.activity.request_role_map(OWNER)
+    await world.rolemap.fail_build(OWNER, first.build.id, code="internal", message="gone")
+
+    rebuild = await world.activity.rebuild_role_map(OWNER)
+
+    assert rebuild is not None and rebuild.should_queue
+    assert rebuild.build.id != first.build.id

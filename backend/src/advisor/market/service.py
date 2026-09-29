@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 
 from advisor.market.baseline import BASELINE_SOURCES, BaselineSource
 from advisor.market.domain import (
+    MAX_TARGET_LOCATION,
+    MAX_TARGET_LOCATIONS,
     Company,
     CompanyFilter,
     CompanySubscription,
@@ -34,7 +36,6 @@ from advisor.market.domain import (
     ManualRefreshFilter,
     MarketPreference,
     MarketPreferenceFilter,
-    MarketSelected,
     MarketUnitOfWork,
     NormalizedPosting,
     PostingEmbedding,
@@ -52,9 +53,12 @@ from advisor.market.domain import (
     SourceStatus,
     SubscriptionAdded,
     SubscriptionFilter,
+    TargetLocationError,
+    TargetLocationsChanged,
     Visibility,
     band_from,
     canonical_key,
+    chosen_target_locations,
     in_market,
     normalize,
     refresh_allowed,
@@ -65,11 +69,14 @@ from kernel.errors import NotFoundError, RateLimitedError, ValidationError
 
 __all__ = [
     "BASELINE_SOURCES",
+    "MAX_TARGET_LOCATION",
+    "MAX_TARGET_LOCATIONS",
     "BaselineSource",
     "CompanySubscriptionView",
     "Coverage",
     "CrawlIngest",
     "CrawlSourceView",
+    "MarketScopeView",
     "MarketService",
     "NormalizedPosting",
     "PostingStatus",
@@ -108,6 +115,15 @@ class CompanySubscriptionView:
     url: str | None
     coverage: Coverage
     last_refreshed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MarketScopeView:
+    """The user's target locations and the open postings they take in. With
+    none chosen, the scope is the platform's baseline."""
+
+    target_locations: list[str]
+    open_posting_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,26 +359,40 @@ class MarketService:
             if await mine.subscriptions.get(subscription_id) is not None:
                 await mine.subscriptions.delete(subscription_id)
 
-    async def markets(self, owner_id: uuid.UUID) -> list[str]:
+    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
+        """Where the user wants to work, alphabetically."""
         async with self._uow.for_owner(owner_id) as mine:
             chosen = await mine.markets.get_list(MarketPreferenceFilter())
         return sorted(m.market for m in chosen)
 
-    async def add_market(self, owner_id: uuid.UUID, market: str) -> list[str]:
-        value = market.strip()
-        if not value:
-            raise ValidationError("a market is required")
-        async with self._uow.for_owner(owner_id) as mine:
-            if await mine.markets.get_count(MarketPreferenceFilter(market=value)) == 0:
-                await mine.markets.create(MarketPreference.chosen(owner_id=owner_id, market=value))
-                mine.record(MarketSelected(owner_id=owner_id, market=value))
-        return await self.markets(owner_id)
+    async def set_target_locations(self, owner_id: uuid.UUID, locations: list[str]) -> list[str]:
+        """Replace the user's target locations with ``locations``: one to three
+        places, or none to fall back to the baseline (domain decision 21).
 
-    async def remove_market(self, owner_id: uuid.UUID, market: str) -> list[str]:
+        A change is announced once, with the whole new set, so the role map is
+        rebuilt on the new scope. Saving the same set again announces nothing.
+        """
+        try:
+            wanted = tuple(sorted(chosen_target_locations(locations)))
+        except TargetLocationError as exc:
+            raise ValidationError(str(exc)) from exc
         async with self._uow.for_owner(owner_id) as mine:
-            for preference in await mine.markets.get_list(MarketPreferenceFilter(market=market)):
+            current = await mine.markets.get_list(MarketPreferenceFilter())
+            if tuple(sorted(m.market for m in current)) == wanted:
+                return list(wanted)
+            for preference in current:
                 await mine.markets.delete(preference.id)
-        return await self.markets(owner_id)
+            for value in wanted:
+                await mine.markets.create(MarketPreference.chosen(owner_id=owner_id, market=value))
+            mine.record(TargetLocationsChanged(owner_id=owner_id, locations=wanted))
+        return list(wanted)
+
+    async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
+        """How much of the market the user's target locations take in."""
+        locations = await self.target_locations(owner_id)
+        postings = await self.postings_in_scope(owner_id)
+        shared = [p for p in postings if p.visibility is Visibility.SHARED]
+        return MarketScopeView(target_locations=locations, open_posting_count=len(shared))
 
     async def paste_job_description(
         self,
@@ -426,7 +456,7 @@ class MarketService:
         has something to group. Another user's private postings can never
         appear here — they are in a schema this query does not touch.
         """
-        markets = await self.markets(owner_id)
+        markets = await self.target_locations(owner_id)
         subscriptions = await self.subscriptions(owner_id)
         scope = PostingScope(
             company_ids=tuple(s.company_id for s in subscriptions), markets=tuple(markets)

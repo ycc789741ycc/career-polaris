@@ -24,7 +24,7 @@ class EventName(StrEnum):
     ROLE_FITS_COMPUTED = "RoleFitsComputed"
     # Market / crawler
     SUBSCRIPTION_ADDED = "SubscriptionAdded"
-    MARKET_SELECTED = "MarketSelected"
+    TARGET_LOCATIONS_CHANGED = "TargetLocationsChanged"
     CRAWL_COMPLETED = "CrawlCompleted"
     POSTINGS_CHANGED = "PostingsChanged"
     POSTINGS_EXPIRED = "PostingsExpired"

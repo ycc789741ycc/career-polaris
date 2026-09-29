@@ -518,40 +518,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/market-preferences": {
+    "/api/v1/market-scope": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Markets
-         * @description The markets the user chose. Adding or removing one answers with the
-         *     whole saved set instead, since that is the result of the change.
-         */
-        get: operations["list_markets_api_v1_market_preferences_get"];
-        put?: never;
-        /** Add Market */
-        post: operations["add_market_api_v1_market_preferences_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/market-preferences/{market}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
+        /** Market Scope */
+        get: operations["market_scope_api_v1_market_scope_get"];
         put?: never;
         post?: never;
-        /** Remove Market */
-        delete: operations["remove_market_api_v1_market_preferences__market__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1056,6 +1034,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/target-locations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Target Locations
+         * @description Where the user wants to work: at most three places (domain decision 21).
+         */
+        get: operations["list_target_locations_api_v1_target_locations_get"];
+        /**
+         * Set Target Locations
+         * @description Replace the whole set. A change rebuilds a role map the user already
+         *     has, on the new scope; the worker does that from the event it records.
+         */
+        put: operations["set_target_locations_api_v1_target_locations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/targets": {
         parameters: {
             query?: never;
@@ -1450,10 +1453,16 @@ export interface components {
             /** Message */
             message: string | null;
         };
-        /** MarketRequest */
-        MarketRequest: {
-            /** Market */
-            market: string;
+        /**
+         * MarketScope
+         * @description The user's target locations and how many open postings they take in.
+         *     With none chosen, the count is the platform's baseline.
+         */
+        MarketScope: {
+            /** Open Posting Count */
+            open_posting_count: number;
+            /** Target Locations */
+            target_locations: string[];
         };
         /**
          * MatchedPosting
@@ -2369,6 +2378,15 @@ export interface components {
          * @enum {string}
          */
         TargetKind: "matchedPosting" | "subscription" | "privatePosting";
+        /**
+         * TargetLocationsRequest
+         * @description The user's whole set of target locations (domain decision 21). The
+         *     market domain checks the cap again; this rejects an oversized body early.
+         */
+        TargetLocationsRequest: {
+            /** Locations */
+            locations: string[];
+        };
         /**
          * TargetOption
          * @description One row of the "Plan a route to" / "Write for" pickers (domain decision 16).
@@ -4098,14 +4116,9 @@ export interface operations {
             };
         };
     };
-    list_markets_api_v1_market_preferences_get: {
+    market_scope_api_v1_market_scope_get: {
         parameters: {
-            query?: {
-                /** @description 1-based. */
-                page?: number;
-                /** @description Omit it for the whole list, on page 1. */
-                page_size?: number | null;
-            };
+            query?: never;
             header?: {
                 authorization?: string | null;
             };
@@ -4120,111 +4133,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StringPage"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    add_market_api_v1_market_preferences_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MarketRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string[];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    remove_market_api_v1_market_preferences__market__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                market: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string[];
+                    "application/json": components["schemas"]["MarketScope"];
                 };
             };
             /** @description The request could not be read. */
@@ -5738,6 +5647,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersion"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_target_locations_api_v1_target_locations_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StringPage"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_target_locations_api_v1_target_locations_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TargetLocationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description The request could not be read. */

@@ -38,7 +38,7 @@ class FakeMarket:
         self.postings = postings or []
         self.chosen = markets or []
 
-    async def markets(self, owner_id: uuid.UUID) -> list[str]:
+    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
         return self.chosen
 
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:

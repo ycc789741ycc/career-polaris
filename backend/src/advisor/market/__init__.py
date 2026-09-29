@@ -19,11 +19,14 @@ from advisor.market.factory import (
 )
 from advisor.market.service import (
     BASELINE_SOURCES,
+    MAX_TARGET_LOCATION,
+    MAX_TARGET_LOCATIONS,
     BaselineSource,
     CompanySubscriptionView,
     Coverage,
     CrawlIngest,
     CrawlSourceView,
+    MarketScopeView,
     MarketService,
     NormalizedPosting,
     PostingStatus,
@@ -40,11 +43,14 @@ from advisor.market.service import (
 
 __all__ = [
     "BASELINE_SOURCES",
+    "MAX_TARGET_LOCATION",
+    "MAX_TARGET_LOCATIONS",
     "BaselineSource",
     "CompanySubscriptionView",
     "Coverage",
     "CrawlIngest",
     "CrawlSourceView",
+    "MarketScopeView",
     "MarketService",
     "NormalizedPosting",
     "PostingStatus",

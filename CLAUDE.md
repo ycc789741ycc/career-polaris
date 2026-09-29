@@ -279,3 +279,17 @@ password and sessions, because our own addresses are unverified (ADR 0008).
 Optional: blank `GOOGLE_OAUTH_CLIENT_ID` turns it off.
 
 Not yet: unlinking Google, or linking it from Settings.
+
+## Phase 5 scope
+
+The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
+
+- **Target locations.** 01 Sources asks "Where you want to work": one to three
+  places, a `market` domain rule (`chosen_target_locations`) checked again by
+  the request schema. `PUT /target-locations` saves the whole set; a change
+  emits `TargetLocationsChanged`, which rebuilds a role map the user already
+  has, and never builds a first one. The role map has no market pills or band
+  toggle, and says how many open postings the locations take in
+  (`GET /market-scope`). The table keeps its old name,
+  `market_user.market_preference`. Public-API crawl sources per location are
+  not built: there is no adapter for one yet.

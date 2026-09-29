@@ -64,7 +64,7 @@ async def _own_market_only(market, account: uuid.UUID) -> None:
     """Choosing a market keeps the platform's baseline postings out of scope, so
     a test sees only the postings it pasted, whatever the crawler has stored in
     this database (domain decision 15)."""
-    await market.add_market(account, f"Test market {uuid.uuid4().hex[:8]}")
+    await market.set_target_locations(account, [f"Test market {uuid.uuid4().hex[:8]}"])
 
 
 @pytest.fixture

@@ -197,6 +197,26 @@ h4 { font-size: 17px; margin: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A target location: dark, with its own remove button (01 Sources). */
+.location-chip {
+  gap: 4px;
+  padding: 4px 4px 4px 14px;
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+.location-chip-remove {
+  all: unset;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+}
+.location-chip-remove:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+.location-chip-remove:disabled { cursor: default; opacity: 0.5; }
 .chip-warn {
   background: var(--color-accent-200);
   color: var(--color-accent-800);

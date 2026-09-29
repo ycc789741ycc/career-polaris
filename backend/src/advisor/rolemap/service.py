@@ -600,7 +600,7 @@ class RoleMapService:
         self, owner_id: uuid.UUID, postings: list[PostingView]
     ) -> dict[str, Any]:
         """One band per market the user selected, not one number per role."""
-        selected = await self._market.markets(owner_id)
+        selected = await self._market.target_locations(owner_id)
         bands: dict[str, Any] = {}
         for market in selected or [""]:
             ranges = [

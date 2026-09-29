@@ -7,6 +7,7 @@ stored; ``advisor.market.infra`` maps these to and from the database.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -279,9 +280,45 @@ class PrivateJobPosting:
         )
 
 
+# A user works toward one to three places: a city, a country or a remote
+# region (domain decision 21). The cap keeps a first role map affordable and
+# the map legible.
+MAX_TARGET_LOCATIONS = 3
+MAX_TARGET_LOCATION = 128
+
+
+class TargetLocationError(ValueError):
+    """A set of target locations the market cannot scope by."""
+
+
+def chosen_target_locations(values: Sequence[str]) -> tuple[str, ...]:
+    """The user's target locations as they will be stored: trimmed, each
+    named once (ignoring case), in the order given, and at most three."""
+    chosen: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = raw.strip()
+        if not value:
+            raise TargetLocationError("a target location cannot be blank")
+        if len(value) > MAX_TARGET_LOCATION:
+            raise TargetLocationError(
+                f"a target location is at most {MAX_TARGET_LOCATION} characters"
+            )
+        if value.casefold() in seen:
+            continue
+        seen.add(value.casefold())
+        chosen.append(value)
+    if len(chosen) > MAX_TARGET_LOCATIONS:
+        raise TargetLocationError(
+            f"choose at most {MAX_TARGET_LOCATIONS} target locations, got {len(chosen)}"
+        )
+    return tuple(chosen)
+
+
 @dataclass(slots=True)
 class MarketPreference:
-    """A market the user chose to be measured against."""
+    """One of the user's target locations (domain decision 21). The name is the
+    table's, ``market_user.market_preference``, which predates the term."""
 
     id: uuid.UUID
     owner_id: uuid.UUID
