@@ -17,13 +17,10 @@ from typing import Any
 from advisor.market.domain import (
     Company,
     CompanyFilter,
-    CompanySubscription,
     CrawlSource,
     CrawlSourceFilter,
     JobPosting,
     JobPostingFilter,
-    ManualRefresh,
-    ManualRefreshFilter,
     MarketEvent,
     MarketPreference,
     MarketPreferenceFilter,
@@ -34,7 +31,6 @@ from advisor.market.domain import (
     PrivateJobPosting,
     PrivateJobPostingFilter,
     SourceOrigin,
-    SubscriptionFilter,
     in_market,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
@@ -46,10 +42,8 @@ class Store:
     sources: dict[uuid.UUID, CrawlSource] = field(default_factory=dict)
     postings: dict[uuid.UUID, JobPosting] = field(default_factory=dict)
     embeddings: dict[uuid.UUID, PostingEmbedding] = field(default_factory=dict)
-    subscriptions: dict[uuid.UUID, CompanySubscription] = field(default_factory=dict)
     markets: dict[uuid.UUID, MarketPreference] = field(default_factory=dict)
     private_postings: dict[uuid.UUID, PrivateJobPosting] = field(default_factory=dict)
-    refreshes: dict[uuid.UUID, ManualRefresh] = field(default_factory=dict)
     events: list[MarketEvent] = field(default_factory=list)
 
 
@@ -122,8 +116,7 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter]):
         return [
             p
             for p in opened
-            if p.company_id in scope.company_ids
-            or any(in_market(p.location, market) for market in scope.markets)
+            if any(in_market(p.location, market) for market in scope.markets)
             or (scope.includes_baseline and p.crawl_source_id in baseline)
         ]
 
@@ -143,16 +136,6 @@ class FakeEmbeddings(FakeRepository[PostingEmbedding, PostingEmbeddingFilter]):
 # --- owner zone ------------------------------------------------------------
 
 
-class FakeSubscriptions(FakeRepository[CompanySubscription, SubscriptionFilter]):
-    owner_field = "owner_id"
-    noun = "subscription"
-
-    def matches(self, entity: CompanySubscription, filter: SubscriptionFilter) -> bool:
-        return _set(entity.company_id, filter.company_id) and _set(
-            entity.role_title, filter.role_title
-        )
-
-
 class FakeMarkets(FakeRepository[MarketPreference, MarketPreferenceFilter]):
     owner_field = "owner_id"
     noun = "market preference"
@@ -167,20 +150,6 @@ class FakePrivatePostings(FakeRepository[PrivateJobPosting, PrivateJobPostingFil
 
     def matches(self, entity: PrivateJobPosting, filter: PrivateJobPostingFilter) -> bool:
         return filter.has_vector is None or (entity.vector is not None) == filter.has_vector
-
-
-class FakeRefreshes(FakeRepository[ManualRefresh, ManualRefreshFilter]):
-    created_field = "requested_at"
-    updated_field = None
-    owner_field = "owner_id"
-    noun = "manual refresh"
-
-    def matches(self, entity: ManualRefresh, filter: ManualRefreshFilter) -> bool:
-        return (
-            filter.requested_since is None
-            or entity.requested_at is None
-            or entity.requested_at >= filter.requested_since
-        )
 
 
 # --- scopes ----------------------------------------------------------------
@@ -206,15 +175,12 @@ class FakeShared(_Scope):
 class FakeOwner(_Scope):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         super().__init__()
-        self.subscriptions = FakeSubscriptions(store.subscriptions, owner_id=owner_id)
         self.markets = FakeMarkets(store.markets, owner_id=owner_id)
         self.private_postings = FakePrivatePostings(store.private_postings, owner_id=owner_id)
-        self.refreshes = FakeRefreshes(store.refreshes, owner_id=owner_id)
 
 
 class FakeFanout:
     def __init__(self, store: Store) -> None:
-        self.subscriptions = FakeSubscriptions(store.subscriptions)
         self.markets = FakeMarkets(store.markets)
 
 

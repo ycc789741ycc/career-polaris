@@ -1,12 +1,10 @@
 """Finding a company's job board.
 
-When a user watches a role at a company, we look for a supported board. A
-careers or JD URL they gave comes first: a board URL names its slug outright,
-and any other page may carry schema.org ``JobPosting`` markup (domain decision
-19). Then we guess slugs from the company name. If we find nothing, the
-subscription is ``manual``: it says plainly that there are no automatic updates
-and offers "paste a JD" instead. Each weekly crawl looks again, because
-companies change hiring systems (domain decision 13).
+When a user names a company, we look for a supported board. A careers or JD
+URL comes first when there is one: a board URL names its slug outright, and
+any other page may carry schema.org ``JobPosting`` markup. Then we guess slugs
+from the company name. If we find nothing, nothing is crawled for the company
+(domain decisions 13 and 22).
 """
 
 from __future__ import annotations

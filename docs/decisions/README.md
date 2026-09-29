@@ -24,6 +24,7 @@ new record that supersedes the old one.
 | [0016](0016-count-github-work-by-commit-not-pull-request.md) | Count GitHub work by commit, not by pull request | Accepted |
 | [0017](0017-group-jira-work-by-epic-not-project.md) | Group Jira work by epic, not by project | Accepted |
 | [0018](0018-gate-journey-stages-on-recorded-run-status.md) | Gate the journey's stages on the status each stage records while it runs | Accepted |
+| [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -1,6 +1,6 @@
 """ORM rows to Resume Advisor entities and back. No rules live here, only shape.
 
-A résumé's Target is one of three reference columns, chosen by its kind; the
+A résumé's Target is one of two reference columns, chosen by its kind; the
 entity holds the kind and one id.
 """
 
@@ -24,7 +24,6 @@ from advisor.resume.infra import models
 # TargetKind values, as the résumé table's check constraint spells them.
 TARGET_COLUMN = {
     "matchedPosting": "job_posting_id",
-    "subscription": "subscription_id",
     "privatePosting": "private_posting_id",
 }
 
@@ -42,7 +41,7 @@ def options_dict(options: Options) -> dict[str, bool]:
 
 
 def resume(row: models.Resume) -> TailoredResume:
-    target_id = row.job_posting_id or row.subscription_id or row.private_posting_id
+    target_id = row.job_posting_id or row.private_posting_id
     assert target_id is not None, "a stored résumé has exactly one target"
     return TailoredResume(
         id=row.id,

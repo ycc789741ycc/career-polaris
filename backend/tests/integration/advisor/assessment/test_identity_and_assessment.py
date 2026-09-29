@@ -266,7 +266,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
     )
 
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     rolemap = create_rolemap_service(
         database,
         market=market,
@@ -329,7 +329,7 @@ async def test_the_role_map_estimate_runs_no_local_ml(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     await _own_market_only(market, account)
     for i in range(7):
         await market.paste_job_description(
@@ -392,7 +392,7 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     await _own_market_only(market, account)
     for group in range(12):
         for copy in range(3):
@@ -476,7 +476,7 @@ async def test_k_has_a_default_is_stored_per_user_and_changes_the_ceiling(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     await _own_market_only(market, account)
     for i in range(60):
         await market.paste_job_description(

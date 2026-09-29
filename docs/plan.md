@@ -141,8 +141,12 @@ whatever is next when it merges.
      the band toggle, and says how many postings are in the chosen locations.
    * README row: Profile & evidence.
 
-3. **Remove the watchlist** — `refactor/no-ticket/drop-role-subscriptions`,
+3. **Remove the watchlist — done.** `refactor/no-ticket/drop-role-subscriptions`,
    ADR 0019
+   * Built as: migration 0013 also drops `market_user.manual_refresh_log`, and
+     the `CRAWL_MANUAL_REFRESH_PER_DAY` setting goes. `materialize_crawl_sources`
+     is gone whole, since subscriptions were its only input; `discover_board`
+     takes a company and no owner.
    * Delete `CompanySubscription`, `SubscriptionAdded`, the
      `/role-subscriptions` routes, `refresh_company`, and the subscription
      input to `materialize_crawl_sources`. Keep board discovery

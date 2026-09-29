@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 from advisor.market.baseline import BASELINE_SOURCES, BaselineSource
 from advisor.market.domain import (
@@ -26,14 +25,10 @@ from advisor.market.domain import (
     MAX_TARGET_LOCATIONS,
     Company,
     CompanyFilter,
-    CompanySubscription,
-    Coverage,
     CrawlSource,
     CrawlSourceFilter,
     JobPosting,
     JobPostingFilter,
-    ManualRefresh,
-    ManualRefreshFilter,
     MarketPreference,
     MarketPreferenceFilter,
     MarketUnitOfWork,
@@ -51,8 +46,6 @@ from advisor.market.domain import (
     SourceKind,
     SourceOrigin,
     SourceStatus,
-    SubscriptionAdded,
-    SubscriptionFilter,
     TargetLocationError,
     TargetLocationsChanged,
     Visibility,
@@ -61,19 +54,16 @@ from advisor.market.domain import (
     chosen_target_locations,
     in_market,
     normalize,
-    refresh_allowed,
     salary_in_text,
 )
 from kernel.clock import utcnow
-from kernel.errors import NotFoundError, RateLimitedError, ValidationError
+from kernel.errors import NotFoundError, ValidationError
 
 __all__ = [
     "BASELINE_SOURCES",
     "MAX_TARGET_LOCATION",
     "MAX_TARGET_LOCATIONS",
     "BaselineSource",
-    "CompanySubscriptionView",
-    "Coverage",
     "CrawlIngest",
     "CrawlSourceView",
     "MarketScopeView",
@@ -104,20 +94,6 @@ class CrawlSourceView:
 
 
 @dataclass(frozen=True, slots=True)
-class CompanySubscriptionView:
-    """A RoleSubscription: one role at one company (domain decision 19)."""
-
-    id: uuid.UUID
-    company_id: uuid.UUID
-    company_name: str
-    role_title: str
-    role_id: uuid.UUID | None
-    url: str | None
-    coverage: Coverage
-    last_refreshed_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
 class MarketScopeView:
     """The user's target locations and the open postings they take in. With
     none chosen, the scope is the platform's baseline."""
@@ -141,11 +117,6 @@ class PostingView:
     # Which kind of source it was crawled from (atsBoard, jsonLd, publicApi);
     # None for a pasted JD, which was not crawled at all.
     source_kind: str | None = None
-
-
-# The fan-out reads every user's subscriptions; it pages through them rather
-# than loading a table that grows with the user base in one go.
-_FANOUT_PAGE_SIZE = 500
 
 
 class CrawlIngest:
@@ -227,137 +198,24 @@ class CrawlIngest:
 
 
 class MarketService:
-    """Subscriptions, market preferences and pasted JDs. Owner zone."""
+    """Target locations and pasted JDs. Owner zone."""
 
-    def __init__(self, uow: MarketUnitOfWork, *, manual_refresh_per_day: int) -> None:
+    def __init__(self, uow: MarketUnitOfWork) -> None:
         self._uow = uow
-        self._manual_refresh_per_day = manual_refresh_per_day
 
-    async def owners_affected_by(
-        self, *, company_id: uuid.UUID | None = None, market: str | None = None
-    ) -> list[uuid.UUID]:
-        """The users who watch this company or this market.
+    async def owners_affected_by(self, *, market: str | None = None) -> list[uuid.UUID]:
+        """The users whose target locations include this market.
 
         The only cross-user read in the system, through the fan-out transaction
         and its SELECT-only policy. The crawler cannot answer this — it has no
         grant on any user schema — so the worker's dispatcher asks here when a
         market changes (docs/architecture.md section 2).
         """
-        affected: set[uuid.UUID] = set()
+        if not market:
+            return []
         async with self._uow.fanout() as everyone:
-            if company_id is not None:
-                watching = await everyone.subscriptions.get_list(
-                    SubscriptionFilter(company_id=company_id)
-                )
-                affected |= {s.owner_id for s in watching}
-            if market:
-                choosing = await everyone.markets.get_list(MarketPreferenceFilter(market=market))
-                affected |= {m.owner_id for m in choosing}
-        return sorted(affected)
-
-    async def subscriptions(self, owner_id: uuid.UUID) -> list[CompanySubscriptionView]:
-        """Newest first. One user's watches: a small set, read whole."""
-        async with self._uow.for_owner(owner_id) as mine:
-            return [
-                _subscription_view(s)
-                for s in await mine.subscriptions.get_list(SubscriptionFilter())
-            ]
-
-    async def subscription(
-        self, owner_id: uuid.UUID, subscription_id: uuid.UUID
-    ) -> CompanySubscriptionView:
-        async with self._uow.for_owner(owner_id) as mine:
-            subscription = await mine.subscriptions.get(subscription_id)
-            if subscription is None:
-                raise NotFoundError("subscription not found", subscription_id=str(subscription_id))
-            return _subscription_view(subscription)
-
-    async def subscribe(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        company_name: str,
-        role_title: str,
-        role_id: uuid.UUID | None = None,
-        url: str | None = None,
-    ) -> CompanySubscriptionView:
-        """Watch one role at one company. Subscribing again to the same role
-        there updates its link rather than adding a duplicate."""
-        name = company_name.strip()
-        if not name:
-            raise ValidationError("a company name is required")
-        title = role_title.strip()
-        if not title:
-            raise ValidationError("a role is required")
-        link = (url or "").strip() or None
-        if link is not None and not link.lower().startswith(("https://", "http://")):
-            raise ValidationError("a link must start with http:// or https://")
-
-        async with self._uow.shared() as market:
-            company = await _ensure_company(market, name)
-
-        async with self._uow.for_owner(owner_id) as mine:
-            existing = _first(
-                await mine.subscriptions.get_list(
-                    SubscriptionFilter(company_id=company.id, role_title=title), page_size=1
-                )
-            )
-            if existing is not None:
-                existing.resubscribe(role_id=role_id, url=link)
-                return _subscription_view(await mine.subscriptions.update(existing))
-
-            # Coverage belongs to the company's board, so a new role at an
-            # already-watched company starts from what is known about it.
-            known = _first(
-                await mine.subscriptions.get_list(
-                    SubscriptionFilter(company_id=company.id), page_size=1
-                )
-            )
-            created = await mine.subscriptions.create(
-                CompanySubscription.new(
-                    owner_id=owner_id,
-                    company=company,
-                    role_title=title,
-                    role_id=role_id,
-                    url=link,
-                    coverage=known.coverage if known is not None else Coverage.MANUAL,
-                )
-            )
-            mine.record(
-                SubscriptionAdded(
-                    owner_id=owner_id, company_id=company.id, company_name=company.name
-                )
-            )
-            return _subscription_view(created)
-
-    async def set_coverage(
-        self, owner_id: uuid.UUID, company_id: uuid.UUID, coverage: Coverage
-    ) -> None:
-        """Coverage belongs to the company's board, so every role watched there
-        takes it at once."""
-        async with self._uow.for_owner(owner_id) as mine:
-            for subscription in await mine.subscriptions.get_list(
-                SubscriptionFilter(company_id=company_id)
-            ):
-                subscription.coverage = coverage
-                await mine.subscriptions.update(subscription)
-
-    async def mark_refreshed(self, owner_id: uuid.UUID, company_id: uuid.UUID) -> None:
-        """Every role the user watches at this company shares its board, so a
-        re-crawl refreshes them all."""
-        async with self._uow.for_owner(owner_id) as mine:
-            refreshed_at = utcnow()
-            for subscription in await mine.subscriptions.get_list(
-                SubscriptionFilter(company_id=company_id)
-            ):
-                subscription.last_refreshed_at = refreshed_at
-                await mine.subscriptions.update(subscription)
-
-    async def unsubscribe(self, owner_id: uuid.UUID, subscription_id: uuid.UUID) -> None:
-        """Idempotent: an unknown or someone else's subscription is left alone."""
-        async with self._uow.for_owner(owner_id) as mine:
-            if await mine.subscriptions.get(subscription_id) is not None:
-                await mine.subscriptions.delete(subscription_id)
+            choosing = await everyone.markets.get_list(MarketPreferenceFilter(market=market))
+        return sorted({m.owner_id for m in choosing})
 
     async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
         """Where the user wants to work, alphabetically."""
@@ -450,17 +308,13 @@ class MarketService:
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         """Every posting this user's role map is built from.
 
-        Shared postings in their markets or from a company they watch, plus
-        their own pasted JDs. A user who has chosen no market also gets the
-        platform's baseline postings (domain decision 15), so a first role map
-        has something to group. Another user's private postings can never
+        Shared postings in their target locations, plus their own pasted JDs.
+        A user who has chosen no location also gets the platform's baseline
+        postings (domain decision 15), so a first role map has something to
+        group. Another user's private postings can never
         appear here — they are in a schema this query does not touch.
         """
-        markets = await self.target_locations(owner_id)
-        subscriptions = await self.subscriptions(owner_id)
-        scope = PostingScope(
-            company_ids=tuple(s.company_id for s in subscriptions), markets=tuple(markets)
-        )
+        scope = PostingScope(markets=tuple(await self.target_locations(owner_id)))
 
         async with self._uow.shared() as market:
             postings = await market.postings.get_open_in_scope(scope)
@@ -561,7 +415,8 @@ class MarketService:
         return len(sources), retired
 
     async def register_board(self, company_id: uuid.UUID, *, kind: str, endpoint: str) -> None:
-        """Crawl a board found for a watched company, unless it is already known."""
+        """Crawl a board that discovery found for a company, as a ``demand``
+        source with no owner, unless the endpoint is already known."""
         async with self._uow.shared() as market:
             if await market.sources.get_count(CrawlSourceFilter(endpoint=endpoint)) == 0:
                 await market.sources.create(
@@ -573,28 +428,6 @@ class MarketService:
                     )
                 )
 
-    async def watched_boards(self) -> list[tuple[uuid.UUID, str, str | None]]:
-        """One entry per watched company, with a link someone gave for it.
-
-        A cross-user read, through the fan-out transaction. Only the company and
-        the link cross over — never who gave them — so the crawler holds no user
-        data and cannot infer any.
-        """
-        by_company: dict[uuid.UUID, tuple[str, str | None]] = {}
-        async with self._uow.fanout() as everyone:
-            page = 1
-            while True:
-                batch = await everyone.subscriptions.get_list(
-                    SubscriptionFilter(), page=page, page_size=_FANOUT_PAGE_SIZE
-                )
-                for s in batch:
-                    name, known_url = by_company.get(s.company_id, (s.company_name, None))
-                    by_company[s.company_id] = (name, known_url or s.url)
-                if len(batch) < _FANOUT_PAGE_SIZE:
-                    break
-                page += 1
-        return [(cid, name, url) for cid, (name, url) in by_company.items()]
-
     async def company_needing_source(self, company_id: uuid.UUID, fallback_name: str) -> str | None:
         """The name to look for a board under, or None when the company already
         has a crawl source."""
@@ -603,32 +436,6 @@ class MarketService:
                 return None
             company = await market.companies.get(company_id)
             return company.name if company is not None else fallback_name
-
-    async def add_demand_source(self, company_id: uuid.UUID, *, kind: str, endpoint: str) -> None:
-        async with self._uow.shared() as market:
-            await market.sources.create(
-                CrawlSource.board(
-                    kind=kind, endpoint=endpoint, company_id=company_id, origin=SourceOrigin.DEMAND
-                )
-            )
-
-    async def request_manual_refresh(self, owner_id: uuid.UUID, company_id: uuid.UUID) -> None:
-        """Re-crawl one watched company now, within a per-day cap.
-
-        The weekly schedule stays the norm; this is for the moment right after
-        subscribing.
-        """
-        since = utcnow() - timedelta(days=1)
-        async with self._uow.for_owner(owner_id) as mine:
-            used = await mine.refreshes.get_count(ManualRefreshFilter(requested_since=since))
-            if not refresh_allowed(used_today=used, per_day=self._manual_refresh_per_day):
-                raise RateLimitedError(
-                    "you have used today's manual refreshes; the weekly crawl still runs",
-                    limit=self._manual_refresh_per_day,
-                )
-            await mine.refreshes.create(
-                ManualRefresh.requested(owner_id=owner_id, company_id=company_id)
-            )
 
     async def salary_band(self, owner_id: uuid.UUID, posting_ids: list[uuid.UUID]) -> object:
         async with self._uow.shared() as market:
@@ -688,19 +495,6 @@ async def _upsert_posting(
 
 def _embedding_parts(posting: JobPosting) -> tuple[str | None, ...]:
     return (posting.title, posting.title, posting.location, posting.description)
-
-
-def _subscription_view(subscription: CompanySubscription) -> CompanySubscriptionView:
-    return CompanySubscriptionView(
-        id=subscription.id,
-        company_id=subscription.company_id,
-        company_name=subscription.company_name,
-        role_title=subscription.role_title,
-        role_id=subscription.role_id,
-        url=subscription.url,
-        coverage=subscription.coverage,
-        last_refreshed_at=subscription.last_refreshed_at,
-    )
 
 
 def _shared_posting_view(posting: JobPosting, company_name: str) -> PostingView:

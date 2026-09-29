@@ -108,7 +108,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             )
             ids: dict[str, uuid.UUID] = {title: posting_id for title, posting_id in found.all()}
 
-        market = create_market_service(database, manual_refresh_per_day=3)
+        market = create_market_service(database)
         await market.set_target_locations(account, [market_name])
         pasted = await market.paste_job_description(
             account,
@@ -140,10 +140,6 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
                 RoleMember(owner_id=account, role_id=role_id, posting_key=key)
                 for role_id, key in members
             )
-
-        watched = await market.subscribe(
-            account, company_name=northwind, role_title="senior backend engineer"
-        )
 
         identity = create_identity_service(database, default_monthly_cap_usd=Decimal("20"))
         profile = create_profile_service(
@@ -185,11 +181,6 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             (f"Backend B {tag}", 80),
             (f"Backend A {tag}", 80),
         ]
-        by_title = {m.title: m for m in matched}
-        assert by_title[f"Backend A {tag}"].subscription_id == watched.id
-        assert by_title[f"Backend B {tag}"].subscription_id is None
-        assert by_title[f"Platform {tag}"].subscription_id is None
-
         assert [m.title for m in await assessment.matched_postings(account, limit=1)] == [
             f"Platform {tag}"
         ]

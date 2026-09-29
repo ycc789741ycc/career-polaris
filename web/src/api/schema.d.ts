@@ -731,65 +731,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/role-subscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Subscriptions
-         * @description Watched roles, newest first.
-         */
-        get: operations["list_subscriptions_api_v1_role_subscriptions_get"];
-        put?: never;
-        /** Subscribe */
-        post: operations["subscribe_api_v1_role_subscriptions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/role-subscriptions/{subscription_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Unsubscribe */
-        delete: operations["unsubscribe_api_v1_role_subscriptions__subscription_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/role-subscriptions/{subscription_id}/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Refresh
-         * @description Re-crawl the company behind this subscription now. Rate limited; weekly
-         *     stays the norm.
-         */
-        post: operations["refresh_api_v1_role_subscriptions__subscription_id__refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -1068,7 +1009,7 @@ export interface paths {
         };
         /**
          * List Targets
-         * @description Matched openings, then watched roles, then pasted JDs. No AI runs.
+         * @description Matched openings, then pasted JDs. No AI runs.
          */
         get: operations["list_targets_api_v1_targets_get"];
         put?: never;
@@ -1496,8 +1437,6 @@ export interface components {
             salary: components["schemas"]["Salary"] | null;
             /** Source Kind */
             source_kind: string | null;
-            /** Subscription Id */
-            subscription_id: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -2262,59 +2201,6 @@ export interface components {
             /** Total */
             total: number;
         };
-        /**
-         * Subscription
-         * @description A watch on one role at one company (domain decision 19).
-         */
-        Subscription: {
-            /**
-             * Company Id
-             * Format: uuid
-             */
-            company_id: string;
-            /** Company Name */
-            company_name: string;
-            /** Coverage */
-            coverage: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Last Refreshed At */
-            last_refreshed_at: string | null;
-            /** Role Id */
-            role_id: string | null;
-            /** Role Title */
-            role_title: string;
-            /** Url */
-            url: string | null;
-        };
-        /** SubscriptionPage */
-        SubscriptionPage: {
-            /** Items */
-            items: components["schemas"]["Subscription"][];
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number | null;
-            /** Total */
-            total: number;
-        };
-        /**
-         * SubscriptionRequest
-         * @description A watch on one role at one company (domain decision 19).
-         */
-        SubscriptionRequest: {
-            /** Company Name */
-            company_name: string;
-            /** Role Id */
-            role_id?: string | null;
-            /** Role Title */
-            role_title: string;
-            /** Url */
-            url?: string | null;
-        };
         /** TailoredResume */
         TailoredResume: {
             content: components["schemas"]["ResumeContent"] | null;
@@ -2377,7 +2263,7 @@ export interface components {
          * TargetKind
          * @enum {string}
          */
-        TargetKind: "matchedPosting" | "subscription" | "privatePosting";
+        TargetKind: "matchedPosting" | "privatePosting";
         /**
          * TargetLocationsRequest
          * @description The user's whole set of target locations (domain decision 21). The
@@ -2405,7 +2291,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "matchedPosting" | "subscription" | "privatePosting";
+            kind: "matchedPosting" | "privatePosting";
             /** Label */
             label: string;
             /** Role Id */
@@ -2415,8 +2301,6 @@ export interface components {
             salary: components["schemas"]["Salary"] | null;
             /** Source Kind */
             source_kind: string | null;
-            /** Subscription Id */
-            subscription_id: string | null;
             /** Title */
             title: string;
             /** Url */
@@ -2441,7 +2325,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "matchedPosting" | "subscription" | "privatePosting";
+            kind: "matchedPosting" | "privatePosting";
         };
         /** TargetRequest */
         TargetRequest: {
@@ -4702,213 +4586,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DownloadUrl"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    list_subscriptions_api_v1_role_subscriptions_get: {
-        parameters: {
-            query?: {
-                /** @description 1-based. */
-                page?: number;
-                /** @description Omit it for the whole list, on page 1. */
-                page_size?: number | null;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubscriptionPage"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    subscribe_api_v1_role_subscriptions_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubscriptionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Subscription"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    unsubscribe_api_v1_role_subscriptions__subscription_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                subscription_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    refresh_api_v1_role_subscriptions__subscription_id__refresh_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                subscription_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Accepted"];
                 };
             };
             /** @description The request could not be read. */

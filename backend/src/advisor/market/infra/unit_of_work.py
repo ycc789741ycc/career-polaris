@@ -18,18 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from advisor.market.domain import (
     MarketEvent,
     PostingsChanged,
-    SubscriptionAdded,
     TargetLocationsChanged,
 )
 from advisor.market.infra.repositories import (
     SqlAlchemyCompanyRepository,
     SqlAlchemyCrawlSourceRepository,
     SqlAlchemyJobPostingRepository,
-    SqlAlchemyManualRefreshRepository,
     SqlAlchemyMarketPreferenceRepository,
     SqlAlchemyPostingEmbeddingRepository,
     SqlAlchemyPrivateJobPostingRepository,
-    SqlAlchemySubscriptionRepository,
 )
 from kernel.db import Database
 from kernel.outbox import EventName, emit
@@ -61,18 +58,15 @@ class SqlAlchemySharedMarket(_Events):
 class SqlAlchemyOwnerMarket(_Events):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         super().__init__()
-        self.subscriptions = SqlAlchemySubscriptionRepository(session, owner_id=owner_id)
         self.markets = SqlAlchemyMarketPreferenceRepository(session, owner_id=owner_id)
         self.private_postings = SqlAlchemyPrivateJobPostingRepository(session, owner_id=owner_id)
-        self.refreshes = SqlAlchemyManualRefreshRepository(session, owner_id=owner_id)
 
 
 class SqlAlchemyFanoutMarket:
     """Not bound to an owner: the fan-out policy lets this scope read every
-    user's subscriptions and market choices, and write nothing."""
+    user's target locations, and write nothing."""
 
     def __init__(self, session: AsyncSession) -> None:
-        self.subscriptions = SqlAlchemySubscriptionRepository(session)
         self.markets = SqlAlchemyMarketPreferenceRepository(session)
 
 
@@ -106,12 +100,6 @@ def _outbox_entry(event: MarketEvent) -> tuple[EventName, dict[str, Any], uuid.U
     These payloads are a contract with the dispatcher and must not drift.
     """
     match event:
-        case SubscriptionAdded():
-            return (
-                EventName.SUBSCRIPTION_ADDED,
-                {"company_id": str(event.company_id), "company_name": event.company_name},
-                event.owner_id,
-            )
         case TargetLocationsChanged():
             return (
                 EventName.TARGET_LOCATIONS_CHANGED,

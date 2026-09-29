@@ -1,6 +1,6 @@
 """Tables in the ``rolemap`` schema.
 
-Roles are grouped per user, over that user's markets and subscriptions, and
+Roles are grouped per user, over the postings in that user's target locations, and
 computed on that user's key — so this is owner-zone, under RLS, even though
 the postings underneath it are shared (domain decision 7).
 """

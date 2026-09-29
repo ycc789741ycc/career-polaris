@@ -19,24 +19,22 @@ from advisor.market import (
 )
 from advisor.market.domain import (
     Company,
-    Coverage,
     CrawlSource,
     PostingsChanged,
     PostingStatus,
     SourceOrigin,
     SourceStatus,
-    SubscriptionAdded,
     TargetLocationsChanged,
 )
-from kernel.errors import NotFoundError, RateLimitedError, ValidationError
+from kernel.errors import NotFoundError, ValidationError
 from tests.unit.advisor.market.fakes import FakeMarketUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
-def _service(uow: FakeMarketUnitOfWork, *, per_day: int = 3) -> MarketService:
-    return MarketService(uow, manual_refresh_per_day=per_day)
+def _service(uow: FakeMarketUnitOfWork) -> MarketService:
+    return MarketService(uow)
 
 
 def _posting(title: str, *, company: str = "Acme", salary: SalaryRange | None = None):
@@ -51,81 +49,6 @@ def _posting(title: str, *, company: str = "Acme", salary: SalaryRange | None = 
         posted_on=date(2026, 9, 1),
         salary=salary,
     )
-
-
-# --- subscriptions ---------------------------------------------------------
-
-
-async def test_a_new_subscription_is_announced_once() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-
-    first = await market.subscribe(OWNER, company_name=" Acme ", role_title="Backend")
-    again = await market.subscribe(
-        OWNER, company_name="acme", role_title="Backend", url="https://acme.test/jobs"
-    )
-
-    assert again.id == first.id
-    assert again.url == "https://acme.test/jobs"
-    assert uow.store.events == [
-        SubscriptionAdded(owner_id=OWNER, company_id=first.company_id, company_name="Acme")
-    ]
-    assert len(uow.store.companies) == 1
-
-
-async def test_a_new_role_at_a_watched_company_inherits_its_coverage() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    first = await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
-    await market.set_coverage(OWNER, first.company_id, Coverage.CRAWLED)
-
-    second = await market.subscribe(OWNER, company_name="Acme", role_title="SRE")
-
-    assert second.coverage is Coverage.CRAWLED
-
-
-@pytest.mark.parametrize(
-    ("company", "role", "url"),
-    [("  ", "Backend", None), ("Acme", " ", None), ("Acme", "Backend", "ftp://acme.test")],
-)
-async def test_a_subscription_needs_a_company_a_role_and_a_web_link(
-    company: str, role: str, url: str | None
-) -> None:
-    uow = FakeMarketUnitOfWork()
-    with pytest.raises(ValidationError):
-        await _service(uow).subscribe(OWNER, company_name=company, role_title=role, url=url)
-    assert uow.store.subscriptions == {}
-
-
-async def test_another_users_subscription_is_not_found() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    theirs = await market.subscribe(OTHER, company_name="Acme", role_title="Backend")
-
-    with pytest.raises(NotFoundError):
-        await market.subscription(OWNER, theirs.id)
-    await market.unsubscribe(OWNER, theirs.id)
-
-    assert theirs.id in uow.store.subscriptions
-
-
-async def test_a_refresh_marks_every_role_at_that_company() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    backend = await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
-    await market.subscribe(OWNER, company_name="Acme", role_title="SRE")
-    elsewhere = await market.subscribe(OWNER, company_name="Globex", role_title="Backend")
-
-    await market.mark_refreshed(OWNER, backend.company_id)
-
-    refreshed = {
-        (s.company_name, s.role_title): s.last_refreshed_at
-        for s in await market.subscriptions(OWNER)
-    }
-    assert refreshed[("Acme", "Backend")] is not None
-    assert refreshed[("Acme", "SRE")] is not None
-    assert refreshed[("Globex", "Backend")] is None
-    assert uow.store.subscriptions[elsewhere.id].last_refreshed_at is None
 
 
 # --- target locations ------------------------------------------------------
@@ -187,33 +110,15 @@ async def test_the_scope_counts_the_open_shared_postings_in_the_target_locations
     assert scope.open_posting_count == 1
 
 
-async def test_the_fan_out_finds_watchers_of_a_company_or_a_market() -> None:
+async def test_the_fan_out_finds_the_users_whose_locations_take_in_a_market() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    watched = await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
+    await market.set_target_locations(OWNER, ["Lisbon"])
     await market.set_target_locations(OTHER, ["Berlin"])
 
-    assert await market.owners_affected_by(company_id=watched.company_id) == [OWNER]
     assert await market.owners_affected_by(market="Berlin") == [OTHER]
-    assert await market.owners_affected_by(
-        company_id=watched.company_id, market="Berlin"
-    ) == sorted([OWNER, OTHER])
-
-
-# --- manual refresh --------------------------------------------------------
-
-
-async def test_manual_refreshes_stop_at_the_daily_cap() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow, per_day=2)
-    company = uuid.uuid4()
-
-    await market.request_manual_refresh(OWNER, company)
-    await market.request_manual_refresh(OWNER, company)
-    with pytest.raises(RateLimitedError):
-        await market.request_manual_refresh(OWNER, company)
-    # The cap is per user.
-    await market.request_manual_refresh(OTHER, company)
+    # A company's board changing reaches nobody through the fan-out on its own.
+    assert await market.owners_affected_by(market=None) == []
 
 
 # --- crawling --------------------------------------------------------------
@@ -362,12 +267,18 @@ async def test_seeding_the_baseline_retires_what_is_no_longer_listed() -> None:
     assert status == {kept.endpoint: SourceStatus.ACTIVE, dropped.endpoint: SourceStatus.RETIRED}
 
 
+def _company(uow: FakeMarketUnitOfWork, name: str = "Acme") -> Company:
+    company = Company.named(name)
+    uow.store.companies[company.id] = company
+    return company
+
+
 async def test_a_demand_board_becomes_baseline_when_listed() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    watched = await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
-    await market.register_board(watched.company_id, kind="lever", endpoint="https://lever.test/a")
-    await market.register_board(watched.company_id, kind="lever", endpoint="https://lever.test/a")
+    company = _company(uow)
+    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/a")
+    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/a")
 
     await market.seed_baseline(
         (BaselineSource(kind="lever", company_name="Acme", endpoint="https://lever.test/a"),)
@@ -375,18 +286,17 @@ async def test_a_demand_board_becomes_baseline_when_listed() -> None:
 
     (source,) = uow.store.sources.values()
     assert source.origin is SourceOrigin.BASELINE
-    assert source.company_id == watched.company_id
+    assert source.company_id == company.id
 
 
-async def test_watched_boards_carry_one_link_per_company_and_no_owner() -> None:
+async def test_a_company_with_a_board_needs_no_discovery() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    await market.subscribe(OWNER, company_name="Acme", role_title="Backend")
-    await market.subscribe(OTHER, company_name="Acme", role_title="SRE", url="https://acme.test")
+    company = _company(uow)
 
-    [(company_id, name, url)] = await market.watched_boards()
+    assert await market.company_needing_source(company.id, "Acme") == "Acme"
+    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/acme")
 
-    assert name == "Acme" and url == "https://acme.test"
-    assert await market.company_needing_source(company_id, "Acme") == "Acme"
-    await market.add_demand_source(company_id, kind="lever", endpoint="https://lever.test/acme")
-    assert await market.company_needing_source(company_id, "Acme") is None
+    assert await market.company_needing_source(company.id, "Acme") is None
+    (source,) = uow.store.sources.values()
+    assert source.origin is SourceOrigin.DEMAND

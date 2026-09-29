@@ -20,7 +20,6 @@ const option: TargetOption = {
   salary: null,
   source_kind: "atsBoard",
   url: null,
-  subscription_id: null,
 };
 
 const pasted: TargetOption = {

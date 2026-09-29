@@ -19,7 +19,6 @@ const matched: TargetOption = {
   salary: { min: 178000, max: 196000, currency: "USD" },
   source_kind: "atsBoard",
   url: null,
-  subscription_id: null,
 };
 
 const summary: ResumeSummary = {

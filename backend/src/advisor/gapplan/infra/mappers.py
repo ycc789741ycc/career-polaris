@@ -1,6 +1,6 @@
 """ORM rows to gap-plan entities and back. No rules live here, only shape.
 
-A plan's Target is one of three reference columns, chosen by its kind; the
+A plan's Target is one of two reference columns, chosen by its kind; the
 entity holds the kind and one id.
 """
 
@@ -12,13 +12,12 @@ from advisor.gapplan.infra import models
 # TargetKind values, as the plan table's check constraint spells them.
 TARGET_COLUMN = {
     "matchedPosting": "job_posting_id",
-    "subscription": "subscription_id",
     "privatePosting": "private_posting_id",
 }
 
 
 def plan(row: models.GapPlan) -> GapPlan:
-    target_id = row.job_posting_id or row.subscription_id or row.private_posting_id
+    target_id = row.job_posting_id or row.private_posting_id
     assert target_id is not None, "a stored plan has exactly one target"
     return GapPlan(
         id=row.id,

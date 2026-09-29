@@ -70,13 +70,6 @@ class SourceOrigin(StrEnum):
     DEMAND = "demand"
 
 
-class Coverage(StrEnum):
-    """Whether a watched company can be crawled at all (domain decision 13)."""
-
-    CRAWLED = "crawled"
-    MANUAL = "manual"
-
-
 def normalize(text: str) -> str:
     folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return _WHITESPACE.sub(" ", _NOISE.sub(" ", folded.lower())).strip()

@@ -57,8 +57,7 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
   if (roles.length === 0) {
     return (
       <p className="muted">
-        No roles yet. Watch a company or choose a market, then build your role
-        map.
+        No roles yet. Choose where you want to work, then build your role map.
       </p>
     );
   }

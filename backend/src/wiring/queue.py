@@ -52,18 +52,8 @@ def _register(app: App) -> None:
         await profile_jobs.parse_resume(deps(), owner_id=owner_id, resume_id=resume_id)
 
     @app.task(name="market.discover_board", queue=str(Queue.SYNC))
-    async def discover_board(owner_id: str, company_id: str, company_name: str) -> None:
-        await market_jobs.discover_board(
-            deps(), owner_id=owner_id, company_id=company_id, company_name=company_name
-        )
-
-    @app.task(name="market.refresh_company", queue=str(Queue.SYNC))
-    async def refresh_company(owner_id: str, company_id: str) -> None:
-        await market_jobs.refresh_company(deps(), owner_id=owner_id, company_id=company_id)
-
-    @app.task(name="market.materialize_crawl_sources", queue=str(Queue.SYNC))
-    async def materialize_crawl_sources() -> None:
-        await market_jobs.materialize_crawl_sources(deps())
+    async def discover_board(company_id: str, company_name: str) -> None:
+        await market_jobs.discover_board(deps(), company_id=company_id, company_name=company_name)
 
     @app.task(name="rolemap.recluster", queue=str(Queue.AI))
     async def recluster(owner_id: str, build_id: str) -> None:

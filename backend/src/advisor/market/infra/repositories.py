@@ -18,13 +18,10 @@ from advisor.market.domain import (
     ACCENT_FOLDS,
     Company,
     CompanyFilter,
-    CompanySubscription,
     CrawlSource,
     CrawlSourceFilter,
     JobPosting,
     JobPostingFilter,
-    ManualRefresh,
-    ManualRefreshFilter,
     MarketPreference,
     MarketPreferenceFilter,
     PostingEmbedding,
@@ -34,7 +31,6 @@ from advisor.market.domain import (
     PrivateJobPosting,
     PrivateJobPostingFilter,
     SourceOrigin,
-    SubscriptionFilter,
     market_words,
 )
 from advisor.market.infra import mappers, models
@@ -164,8 +160,6 @@ class SqlAlchemyJobPostingRepository(
     async def get_open_in_scope(self, scope: PostingScope) -> list[JobPosting]:
         posting = models.JobPosting
         either: list[ColumnElement[bool]] = []
-        if scope.company_ids:
-            either.append(posting.company_id.in_(scope.company_ids))
         for market in scope.markets:
             if words := market_words(market):
                 either.append(_location_in_market(words))
@@ -178,7 +172,7 @@ class SqlAlchemyJobPostingRepository(
                 )
             )
         if not either:
-            return []  # markets with no words in them, and nothing else chosen
+            return []  # locations with no words in them, and nothing else chosen
         rows = await self._session.execute(
             select(posting)
             .where(posting.status == str(PostingStatus.OPEN), or_(*either))
@@ -226,39 +220,6 @@ class SqlAlchemyPostingEmbeddingRepository(
 
 
 # --- owner zone ------------------------------------------------------------
-
-
-class SqlAlchemySubscriptionRepository(
-    SqlAlchemyRepository[CompanySubscription, models.CompanySubscription, SubscriptionFilter]
-):
-    model = models.CompanySubscription
-    id_column = models.CompanySubscription.id
-    created_column = models.CompanySubscription.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.CompanySubscription.owner_id
-    )
-    noun = "subscription"
-
-    def to_entity(self, row: models.CompanySubscription) -> CompanySubscription:
-        return mappers.subscription(row)
-
-    def to_row(self, entity: CompanySubscription) -> models.CompanySubscription:
-        return mappers.subscription_row(entity)
-
-    def apply(self, row: models.CompanySubscription, entity: CompanySubscription) -> None:
-        mappers.apply_subscription(row, entity)
-
-    def id_of(self, entity: CompanySubscription) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: SubscriptionFilter) -> list[ColumnElement[bool]]:
-        subscription = models.CompanySubscription
-        found: list[ColumnElement[bool]] = []
-        if filter.company_id is not None:
-            found.append(subscription.company_id == filter.company_id)
-        if filter.role_title is not None:
-            found.append(subscription.role_title == filter.role_title)
-        return found
 
 
 class SqlAlchemyMarketPreferenceRepository(
@@ -320,32 +281,3 @@ class SqlAlchemyPrivateJobPostingRepository(
         if filter.has_vector is False:
             return [vector.is_(None)]
         return []
-
-
-class SqlAlchemyManualRefreshRepository(
-    SqlAlchemyRepository[ManualRefresh, models.ManualRefreshLog, ManualRefreshFilter]
-):
-    model = models.ManualRefreshLog
-    id_column = models.ManualRefreshLog.id
-    created_column = models.ManualRefreshLog.requested_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.ManualRefreshLog.owner_id
-    )
-    noun = "manual refresh"
-
-    def to_entity(self, row: models.ManualRefreshLog) -> ManualRefresh:
-        return mappers.manual_refresh(row)
-
-    def to_row(self, entity: ManualRefresh) -> models.ManualRefreshLog:
-        return mappers.manual_refresh_row(entity)
-
-    def apply(self, row: models.ManualRefreshLog, entity: ManualRefresh) -> None:
-        mappers.apply_manual_refresh(row, entity)
-
-    def id_of(self, entity: ManualRefresh) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: ManualRefreshFilter) -> list[ColumnElement[bool]]:
-        if filter.requested_since is None:
-            return []
-        return [models.ManualRefreshLog.requested_at >= filter.requested_since]

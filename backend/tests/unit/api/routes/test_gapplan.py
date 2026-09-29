@@ -54,7 +54,7 @@ class FakeGapPlans:
         return summary(ref)
 
     async def history(self, owner_id: uuid.UUID) -> list[PlanSummaryView]:
-        return [summary(TargetRef(TargetKind.SUBSCRIPTION, str(uuid.uuid4())), PlanStatus.READY)]
+        return [summary(TargetRef(TargetKind.MATCHED_POSTING, str(uuid.uuid4())), PlanStatus.READY)]
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
         self.priced.append(ref)
@@ -74,7 +74,7 @@ class FakeTargets:
     async def options(self, owner_id: uuid.UUID) -> list[TargetOptionView]:
         return [
             TargetOptionView(
-                kind=TargetKind.SUBSCRIPTION,
+                kind=TargetKind.PRIVATE_POSTING,
                 id=uuid.uuid4(),
                 title="Senior Backend",
                 role_name="Senior Backend Engineer",
@@ -82,9 +82,8 @@ class FakeTargets:
                 company_name="Kestrel Financial",
                 fit=None,
                 salary=None,
-                source_kind="watchlist",
+                source_kind="pasted",
                 url=None,
-                subscription_id=None,
             )
         ]
 
@@ -136,7 +135,7 @@ def test_a_target_that_cannot_be_planned_for_is_refused_before_anything_is_queue
     client: TestClient, plans: FakeGapPlans, queued: list[dict[str, Any]]
 ) -> None:
     plans.refuse = True
-    response = client.post("/gap-plans", json={"kind": "subscription", "id": str(uuid.uuid4())})
+    response = client.post("/gap-plans", json={"kind": "matchedPosting", "id": str(uuid.uuid4())})
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "target_unusable"
@@ -174,6 +173,12 @@ def test_ticking_a_task_is_recorded(client: TestClient, plans: FakeGapPlans) -> 
 
 def test_targets_say_where_each_one_came_from(client: TestClient) -> None:
     [option] = client.get("/targets").json()["items"]
-    assert option["kind"] == "subscription"
-    assert option["source_kind"] == "watchlist"
+    assert option["kind"] == "privatePosting"
+    assert option["source_kind"] == "pasted"
     assert option["label"] == "Senior Backend Engineer · Kestrel Financial"
+
+
+def test_a_subscription_is_no_longer_a_target(client: TestClient) -> None:
+    response = client.post("/gap-plans", json={"kind": "subscription", "id": str(uuid.uuid4())})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"

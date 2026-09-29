@@ -266,7 +266,6 @@ class MatchedPostingView:
     url: str | None
     salary: SalaryRange | None
     fit: int | None
-    subscription_id: uuid.UUID | None
     # The crawl source kind (atsBoard, jsonLd, publicApi); never a site that
     # forbids crawling (domain decision 6).
     source_kind: str | None = None
@@ -792,11 +791,9 @@ class AssessmentService:
         """The best openings inside the user's analysed roles.
 
         Ranked by the role's current fit; no AI runs here. Pasted JDs are left
-        out — they are the user's own, shown as "My own JD", not as a match —
-        and each row says whether the user already watches that role there.
+        out — they are the user's own, shown as "My own JD", not as a match.
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id) if f.role_id}
-        subscriptions = await self._market.subscriptions(owner_id)
 
         by_posting: dict[str, tuple[RoleView, Any]] = {}
         candidates: list[MatchCandidate] = []
@@ -824,15 +821,6 @@ class AssessmentService:
         matched: list[MatchedPostingView] = []
         for candidate in ranked:
             role, posting = by_posting[candidate.posting_id]
-            watching = next(
-                (
-                    s.id
-                    for s in subscriptions
-                    if s.company_id == posting.company_id
-                    and (s.role_id == role.id or s.role_title.casefold() == role.name.casefold())
-                ),
-                None,
-            )
             matched.append(
                 MatchedPostingView(
                     posting_id=posting.id,
@@ -844,7 +832,6 @@ class AssessmentService:
                     url=posting.url,
                     salary=posting.salary,
                     fit=candidate.fit,
-                    subscription_id=watching,
                     source_kind=posting.source_kind,
                 )
             )

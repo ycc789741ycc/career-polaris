@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from advisor.market.domain import (
     Company,
-    CompanySubscription,
-    Coverage,
     CrawlSource,
     JobPosting,
-    ManualRefresh,
     MarketPreference,
     PostingEmbedding,
     PostingStatus,
@@ -140,38 +137,6 @@ def apply_job_posting(row: models.JobPosting, entity: JobPosting) -> None:
 # --- owner zone ------------------------------------------------------------
 
 
-def subscription(row: models.CompanySubscription) -> CompanySubscription:
-    return CompanySubscription(
-        id=row.id,
-        owner_id=row.owner_id,
-        company_id=row.company_id,
-        company_name=row.company_name,
-        role_title=row.role_title,
-        role_id=row.role_id,
-        url=row.url,
-        coverage=Coverage(row.coverage),
-        last_refreshed_at=row.last_refreshed_at,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
-
-
-def subscription_row(entity: CompanySubscription) -> models.CompanySubscription:
-    row = models.CompanySubscription(id=entity.id, owner_id=entity.owner_id)
-    apply_subscription(row, entity)
-    return row
-
-
-def apply_subscription(row: models.CompanySubscription, entity: CompanySubscription) -> None:
-    row.company_id = entity.company_id
-    row.company_name = entity.company_name
-    row.role_title = entity.role_title
-    row.role_id = entity.role_id
-    row.url = entity.url
-    row.coverage = str(entity.coverage)
-    row.last_refreshed_at = entity.last_refreshed_at
-
-
 def private_posting(row: models.PrivateJobPosting) -> PrivateJobPosting:
     return PrivateJobPosting(
         id=row.id,
@@ -222,28 +187,6 @@ def market_preference_row(entity: MarketPreference) -> models.MarketPreference:
 
 def apply_market_preference(row: models.MarketPreference, entity: MarketPreference) -> None:
     row.market = entity.market
-
-
-def manual_refresh(row: models.ManualRefreshLog) -> ManualRefresh:
-    return ManualRefresh(
-        id=row.id,
-        owner_id=row.owner_id,
-        company_id=row.company_id,
-        requested_at=row.requested_at,
-    )
-
-
-def manual_refresh_row(entity: ManualRefresh) -> models.ManualRefreshLog:
-    return models.ManualRefreshLog(
-        id=entity.id, owner_id=entity.owner_id, company_id=entity.company_id
-    )
-
-
-def apply_manual_refresh(row: models.ManualRefreshLog, entity: ManualRefresh) -> None:
-    row.company_id = entity.company_id
-
-
-# --- shared zone, embeddings -----------------------------------------------
 
 
 def posting_embedding(row: models.PostingEmbedding) -> PostingEmbedding:

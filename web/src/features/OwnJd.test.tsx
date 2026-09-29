@@ -17,7 +17,6 @@ const pasted: TargetOption = {
   salary: null,
   source_kind: "pasted",
   url: null,
-  subscription_id: null,
 };
 
 type Call = { method: string; url: string; body: unknown };

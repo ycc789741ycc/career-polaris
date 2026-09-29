@@ -66,7 +66,7 @@ class CrawlSource(Base, TimestampMixin):
     endpoint: Mapped[str] = mapped_column(String(1024), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
     # Why this is crawled: `baseline` (the platform's list) or `demand` (a
-    # subscription or market asked for it). Never *who* asked.
+    # company named on a custom role, or a target location). Never *who* asked.
     origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="demand")
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -133,40 +133,6 @@ class PostingEmbedding(Base):
 # --- owner zone ------------------------------------------------------------
 
 
-class CompanySubscription(Base, OwnedMixin, TimestampMixin):
-    """A RoleSubscription: a watch on one role at one company (domain decision 19).
-
-    The table keeps its original name, which the fan-out RLS policy is keyed on;
-    a user can watch several roles at the same company.
-    """
-
-    __tablename__ = "company_subscription"
-    __table_args__ = (
-        UniqueConstraint(
-            "owner_id", "company_id", "role_title", name="uq_company_subscription_owner_id"
-        ),
-        {"schema": "market_user"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    company_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # The role's name when the user subscribed. Roles are per user and can be
-    # retired by a recluster, so the title is what persists; `role_id` points
-    # at the user's role while it exists.
-    role_title: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
-    role_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    # A careers page or JD link. It seeds board discovery and is never shown
-    # to the crawler with an owner attached.
-    url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # `crawled` when a supported board was found, otherwise `manual`, which
-    # offers "paste a JD" and is re-checked weekly (domain decision 13).
-    coverage: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manual")
-    last_refreshed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-
 class MarketPreference(Base, OwnedMixin, TimestampMixin):
     """A location or remote region the user chose. There is no fixed list."""
 
@@ -201,19 +167,3 @@ class PrivateJobPosting(Base, OwnedMixin, TimestampMixin):
     # updates. Nothing ever flows back the other way.
     shared_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     vector: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
-
-
-class ManualRefreshLog(Base, OwnedMixin):
-    """Backs the per-day cap on manual single-company re-crawls."""
-
-    __tablename__ = "manual_refresh_log"
-    __table_args__ = (
-        Index("ix_manual_refresh_log_owner_day", "owner_id", "requested_at"),
-        {"schema": "market_user"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    company_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    requested_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )

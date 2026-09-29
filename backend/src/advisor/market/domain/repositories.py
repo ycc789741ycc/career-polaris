@@ -20,7 +20,7 @@ lives (docs/architecture.md section 3):
 
 * ``for_owner`` — one user's owner-zone data, and nothing else of anyone's.
 * ``shared`` — the shared zone: companies, sources, crawled postings.
-* ``fanout`` — the one cross-user read: who watches a company or a market.
+* ``fanout`` — the one cross-user read: whose target locations take in a market.
 
 Each scope is one transaction. Events recorded in it are committed with it.
 """
@@ -30,15 +30,12 @@ from __future__ import annotations
 import uuid
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Protocol
 
 from advisor.market.domain.entities import (
     Company,
-    CompanySubscription,
     CrawlSource,
     JobPosting,
-    ManualRefresh,
     MarketPreference,
     PostingEmbedding,
     PostingScope,
@@ -115,7 +112,7 @@ class JobPostingRepository(Repository[JobPosting, JobPostingFilter], Protocol):
     async def get_open_in_scope(self, scope: PostingScope) -> list[JobPosting]:
         """Open postings in a user's scope, newest first.
 
-        Extra method: the scope is an OR (a watched company, or a chosen market,
+        Extra method: the scope is an OR (one of several target locations,
         or a baseline source), which a filter's AND cannot express.
         """
         ...
@@ -151,15 +148,6 @@ class SharedMarket(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class SubscriptionFilter:
-    company_id: uuid.UUID | None = None
-    role_title: str | None = None
-
-
-class SubscriptionRepository(Repository[CompanySubscription, SubscriptionFilter], Protocol): ...
-
-
-@dataclass(frozen=True, slots=True)
 class MarketPreferenceFilter:
     market: str | None = None
 
@@ -180,26 +168,12 @@ class PrivateJobPostingRepository(
 ): ...
 
 
-@dataclass(frozen=True, slots=True)
-class ManualRefreshFilter:
-    requested_since: datetime | None = None
-
-
-class ManualRefreshRepository(Repository[ManualRefresh, ManualRefreshFilter], Protocol): ...
-
-
 class OwnerMarket(Protocol):
-    @property
-    def subscriptions(self) -> SubscriptionRepository: ...
-
     @property
     def markets(self) -> MarketPreferenceRepository: ...
 
     @property
     def private_postings(self) -> PrivateJobPostingRepository: ...
-
-    @property
-    def refreshes(self) -> ManualRefreshRepository: ...
 
     def record(self, event: MarketEvent) -> None: ...
 
@@ -208,14 +182,11 @@ class OwnerMarket(Protocol):
 
 
 class FanoutMarket(Protocol):
-    """Subscriptions and market choices across every user, read-only.
+    """Target locations across every user, read-only.
 
     The database's fan-out policy allows SELECT here and nothing else, so a
     write through these repositories fails at the database.
     """
-
-    @property
-    def subscriptions(self) -> SubscriptionRepository: ...
 
     @property
     def markets(self) -> MarketPreferenceRepository: ...

@@ -242,8 +242,8 @@ and follow-up questions.
 
 ## Phase 2 scope
 
-In: the gap plan — plan a route to a Target (a matched opening, a watched role
-or a pasted JD), with gaps ranked by the fit points each is worth, milestones,
+In: the gap plan — plan a route to a Target (a matched opening or a pasted JD),
+with gaps ranked by the fit points each is worth, milestones,
 tasks and projects drafted on the user's key, versions per Target with finished
 work carried forward, and plan history. `target` resolves what a plan aims at
 and has no tables (ADR 0005). Drafting is a job whose row the page polls
@@ -257,8 +257,8 @@ queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
 Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
-aimed at what the role map has selected: a role, whose openings and watched
-companies it offers as Targets, or a JD pasted on the role map. That selection
+aimed at what the role map has selected: a role, whose openings it offers as
+Targets, or a JD pasted on the role map. That selection
 is carried in the hash (`?role=` / `?jd=`), so neither tab picks a Target of
 its own. The role map has exactly one control that aims the Advisor — the
 sticky "Advisor target" bar; picking a bubble or a pasted JD only selects.
@@ -293,3 +293,7 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   (`GET /market-scope`). The table keeps its old name,
   `market_user.market_preference`. Public-API crawl sources per location are
   not built: there is no adapter for one yet.
+- **No watchlist** (ADR 0019). Role subscriptions, manual re-crawls and the
+  `subscription` Target kind are gone. Board discovery stays as an ownerless
+  `market.discover_board(company_id, company_name)`, for the companies custom
+  roles will name; it leaves a company that already has a source alone.

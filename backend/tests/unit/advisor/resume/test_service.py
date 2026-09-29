@@ -68,7 +68,7 @@ def _content(line: str = "Owned the retry layer for payments-svc") -> dict[str, 
 async def _resume(service: ResumeService) -> uuid.UUID:
     summary = await service.request(
         OWNER,
-        TargetRef(TargetKind.SUBSCRIPTION, str(uuid.uuid4())),
+        TargetRef(TargetKind.MATCHED_POSTING, str(uuid.uuid4())),
         template=Template.WARM,
         options=Options(),
     )

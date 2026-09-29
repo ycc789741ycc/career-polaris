@@ -8,7 +8,7 @@ from typing import Literal
 from advisor.target import TargetOptionView, TargetRef
 from api.schemas.common import ApiModel, Page, Salary
 
-TargetKindName = Literal["matchedPosting", "subscription", "privatePosting"]
+TargetKindName = Literal["matchedPosting", "privatePosting"]
 
 
 class TargetRefBody(ApiModel):
@@ -32,11 +32,10 @@ class TargetOption(ApiModel):
     label: str
     fit: int | None
     salary: Salary | None
-    # atsBoard / jsonLd / publicApi for a crawled opening, "watchlist" for a
-    # subscribed role, "pasted" for the user's own JD.
+    # atsBoard / jsonLd / publicApi for a crawled opening, "pasted" for the
+    # user's own JD.
     source_kind: str | None
     url: str | None
-    subscription_id: uuid.UUID | None
 
     @classmethod
     def from_view(cls, option: TargetOptionView) -> TargetOption:
@@ -52,7 +51,6 @@ class TargetOption(ApiModel):
             salary=Salary.of(option.salary),
             source_kind=option.source_kind,
             url=option.url,
-            subscription_id=option.subscription_id,
         )
 
 
