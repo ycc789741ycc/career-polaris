@@ -21,9 +21,7 @@ async def main() -> None:
     settings = get_settings()
     database = Database(settings)
     try:
-        market = create_market_service(
-            database, manual_refresh_per_day=settings.crawl_manual_refresh_per_day
-        )
+        market = create_market_service(database)
         active, retired = await market.seed_baseline()
     finally:
         await database.dispose()

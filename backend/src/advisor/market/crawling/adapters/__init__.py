@@ -4,7 +4,7 @@ from advisor.market.crawling.adapters.greenhouse import GreenhouseAdapter
 from advisor.market.crawling.adapters.json_ld import JsonLdAdapter
 from advisor.market.crawling.adapters.lever import LeverAdapter
 
-# Probed in order when discovering a board for a newly watched company.
+# Probed in order when discovering a board for a newly named company.
 ATS_ADAPTERS: tuple[BoardAdapter, ...] = (
     GreenhouseAdapter(),
     LeverAdapter(),

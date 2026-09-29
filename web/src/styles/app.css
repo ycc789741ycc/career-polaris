@@ -478,7 +478,7 @@ select.input { appearance: auto; }
 
 /* --- role map: the one control that aims the Advisor -------------------- */
 
-/* Stays in view at the bottom while the map, the JDs and the watchlist scroll. */
+/* Stays in view at the bottom while the map and the JDs scroll. */
 .target-bar {
   position: sticky;
   bottom: 16px;
@@ -499,7 +499,7 @@ select.input { appearance: auto; }
 
 /* --- gap plan (prototype: isPlan) --------------------------------------- */
 
-/* A Target to plan a route to: role, company, fit, and a subscribed tag. */
+/* A Target to plan a route to: role, company and fit. */
 .target-chip {
   all: unset;
   box-sizing: border-box;
@@ -523,7 +523,6 @@ select.input { appearance: auto; }
 .target-chip-company { opacity: 0.75; }
 .target-chip-fit { font-weight: 700; color: var(--color-accent-700); }
 .target-chip[aria-pressed="true"] .target-chip-fit { color: var(--color-accent-800); }
-.target-chip-tag { font-size: 11px; color: var(--color-accent-2-800); }
 
 .history-row {
   display: flex;

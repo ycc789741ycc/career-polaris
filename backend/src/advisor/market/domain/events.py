@@ -11,13 +11,6 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class SubscriptionAdded:
-    owner_id: uuid.UUID
-    company_id: uuid.UUID
-    company_name: str
-
-
-@dataclass(frozen=True, slots=True)
 class TargetLocationsChanged:
     """The user's target locations after a change: the whole set, since it is
     the set that scopes their role map."""
@@ -37,4 +30,4 @@ class PostingsChanged:
     expired: int
 
 
-MarketEvent = SubscriptionAdded | TargetLocationsChanged | PostingsChanged
+MarketEvent = TargetLocationsChanged | PostingsChanged

@@ -118,7 +118,7 @@ async def world(
         answer="I led it across two teams",
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     await market.set_target_locations(account, [f"Résumé market {uuid.uuid4().hex[:8]}"])
     rolemap = create_rolemap_service(
         database,

@@ -171,7 +171,6 @@ class MatchedPosting(ApiModel):
     # The role's fit: a posting's own requirements do not move it yet.
     fit: int | None
     fit_basis: Literal["role"] = "role"
-    subscription_id: uuid.UUID | None
     # atsBoard, jsonLd or publicApi; never a site that forbids crawling.
     source_kind: str | None
 
@@ -187,7 +186,6 @@ class MatchedPosting(ApiModel):
             url=m.url,
             salary=Salary.of(m.salary),
             fit=m.fit,
-            subscription_id=m.subscription_id,
             source_kind=m.source_kind,
         )
 

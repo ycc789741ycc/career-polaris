@@ -22,7 +22,6 @@ function opening(overrides: Partial<TargetOption>): TargetOption {
     salary: null,
     source_kind: "atsBoard",
     url: null,
-    subscription_id: null,
     ...overrides,
   };
 }
@@ -34,14 +33,11 @@ const acme = opening({
   label: "Senior Backend Engineer · Acme",
   fit: 90,
 });
-const watchedKestrel = opening({
-  kind: "subscription",
-  id: "s1",
+const kestrel = opening({
+  id: "p4",
   company_name: "Kestrel",
   label: "Senior Backend Engineer · Kestrel",
   fit: 60,
-  source_kind: "watchlist",
-  subscription_id: "s1",
 });
 const platform = opening({
   id: "p3",
@@ -63,7 +59,7 @@ const pasted = opening({
   fit: null,
   source_kind: "pasted",
 });
-const targets = [northwind, acme, watchedKestrel, platform, pasted];
+const targets = [northwind, acme, kestrel, platform, pasted];
 
 function plan(target: TargetOption, id: string, at: string): PlanSummary {
   return {
@@ -227,9 +223,9 @@ describe("which opening the Advisor opens first", () => {
   it("is the one a history entry asked for, when it is listed", () => {
     expect(
       firstOpening(options, [northwindPlan], [], {
-        kind: "subscription",
-        id: "s1",
+        kind: "matchedPosting",
+        id: "p4",
       }),
-    ).toEqual({ kind: "subscription", id: "s1" });
+    ).toEqual({ kind: "matchedPosting", id: "p4" });
   });
 });

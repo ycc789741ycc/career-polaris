@@ -25,6 +25,8 @@ branch_labels = None
 depends_on = None
 
 _APP_USER = "app.user_id"
+# The owner-zone tables the fan-out may read across users.
+_FANOUT_TABLES = ("company_subscription", "market_preference")
 
 
 def upgrade() -> None:
@@ -109,7 +111,12 @@ def upgrade() -> None:
     # SELECT-only policy gated on a transaction setting the dispatcher sets and
     # nothing else does. It is narrow, it is greppable, and it cannot be used to
     # read evidence, credentials, assessments or pasted JDs.
-    for table in ("company_subscription", "market_preference"):
+    #
+    # Only tables the live metadata still has: company_subscription was
+    # dropped by migration 0013, so a fresh database never has it.
+    for table in _FANOUT_TABLES:
+        if f"market_user.{table}" not in metadata.tables:
+            continue
         op.execute(
             f"CREATE POLICY fanout_read ON market_user.{table} FOR SELECT "
             "USING (current_setting('app.fanout', true) = 'on')"
@@ -125,8 +132,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     op.execute("DROP INDEX IF EXISTS market.ix_posting_embedding_vector")
-    for table in ("company_subscription", "market_preference"):
-        op.execute(f"DROP POLICY IF EXISTS fanout_read ON market_user.{table}")
+    for table in _FANOUT_TABLES:
+        if f"market_user.{table}" in metadata.tables:
+            op.execute(f"DROP POLICY IF EXISTS fanout_read ON market_user.{table}")
     for qualified in (*OWNER_ZONE_TABLES, "identity.account"):
         schema, _, table = qualified.partition(".")
         op.execute(f'DROP POLICY IF EXISTS owner_isolation ON "{schema}"."{table}"')

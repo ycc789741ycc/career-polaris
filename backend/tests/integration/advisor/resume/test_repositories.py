@@ -95,7 +95,7 @@ async def test_resume_events_reach_the_outbox_as_the_dispatcher_reads_them(
     resume_id = uuid.uuid4()
     async with uow.for_owner(account) as mine:
         mine.record(
-            ResumeTailored(owner_id=account, resume_id=resume_id, target_kind="subscription")
+            ResumeTailored(owner_id=account, resume_id=resume_id, target_kind="matchedPosting")
         )
         mine.record(
             ResumeVersionSaved(
@@ -109,6 +109,6 @@ async def test_resume_events_reach_the_outbox_as_the_dispatcher_reads_them(
             {"owner": account},
         )
         assert sorted(tuple(r) for r in rows.all()) == [
-            ("ResumeTailored", {"resume_id": str(resume_id), "target_kind": "subscription"}),
+            ("ResumeTailored", {"resume_id": str(resume_id), "target_kind": "matchedPosting"}),
             ("ResumeVersionSaved", {"resume_id": str(resume_id), "number": 2, "source": "chat"}),
         ]

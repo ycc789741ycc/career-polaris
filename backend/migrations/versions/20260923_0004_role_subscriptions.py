@@ -7,7 +7,9 @@ roles at one company, so uniqueness moves from (owner, company) to
 empty title, which still satisfies the new constraint.
 
 Written to be idempotent: the baseline migration builds tables from the live
-ORM metadata, so on a fresh database these columns already exist.
+ORM metadata, so on a fresh database these columns already exist — and since
+migration 0013 the table does not exist at all, so every statement here
+tolerates its absence.
 """
 
 from __future__ import annotations
@@ -25,13 +27,15 @@ _UNIQUE = "uq_company_subscription_owner_id"
 
 def upgrade() -> None:
     op.execute(
-        f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS role_title varchar(255) NOT NULL DEFAULT ''"
+        f"ALTER TABLE IF EXISTS {_TABLE} "
+        "ADD COLUMN IF NOT EXISTS role_title varchar(255) NOT NULL DEFAULT ''"
     )
-    op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS role_id uuid")
-    op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS url varchar(1024)")
-    op.execute(f"ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS {_UNIQUE}")
+    op.execute(f"ALTER TABLE IF EXISTS {_TABLE} ADD COLUMN IF NOT EXISTS role_id uuid")
+    op.execute(f"ALTER TABLE IF EXISTS {_TABLE} ADD COLUMN IF NOT EXISTS url varchar(1024)")
+    op.execute(f"ALTER TABLE IF EXISTS {_TABLE} DROP CONSTRAINT IF EXISTS {_UNIQUE}")
     op.execute(
-        f"ALTER TABLE {_TABLE} ADD CONSTRAINT {_UNIQUE} UNIQUE (owner_id, company_id, role_title)"
+        f"ALTER TABLE IF EXISTS {_TABLE} "
+        f"ADD CONSTRAINT {_UNIQUE} UNIQUE (owner_id, company_id, role_title)"
     )
 
 

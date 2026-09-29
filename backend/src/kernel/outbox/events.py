@@ -23,7 +23,6 @@ class EventName(StrEnum):
     DIMENSIONS_CHANGED = "DimensionsChanged"
     ROLE_FITS_COMPUTED = "RoleFitsComputed"
     # Market / crawler
-    SUBSCRIPTION_ADDED = "SubscriptionAdded"
     TARGET_LOCATIONS_CHANGED = "TargetLocationsChanged"
     CRAWL_COMPLETED = "CrawlCompleted"
     POSTINGS_CHANGED = "PostingsChanged"

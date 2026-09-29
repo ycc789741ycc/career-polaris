@@ -1,7 +1,7 @@
 """Tables in the ``gapplan`` schema. Owner-zone, under RLS.
 
 A plan row holds its Target as a kind plus exactly one reference — a shared
-posting, a subscription or a pasted JD — and the frozen snapshot of what that
+posting or a pasted JD — and the frozen snapshot of what that
 Target required, so the plan survives posting expiry and re-clustering
 (docs/architecture.md section 3). Regenerating adds a row with the next
 version; nothing is overwritten.
@@ -34,11 +34,11 @@ class GapPlan(Base, OwnedMixin):
     __tablename__ = "plan"
     __table_args__ = (
         CheckConstraint(
-            "num_nonnulls(job_posting_id, subscription_id, private_posting_id) = 1",
+            "num_nonnulls(job_posting_id, private_posting_id) = 1",
             name="one_target",
         ),
         CheckConstraint(
-            "target_kind IN ('matchedPosting', 'subscription', 'privatePosting')",
+            "target_kind IN ('matchedPosting', 'privatePosting')",
             name="target_kind",
         ),
         CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
@@ -49,7 +49,6 @@ class GapPlan(Base, OwnedMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     target_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    subscription_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     private_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     # "{role} · {company}", kept so history reads without the snapshot.
     target_label: Mapped[str] = mapped_column(String(400), nullable=False)

@@ -12,8 +12,6 @@ import type {
   RolePage,
   SalaryBand,
   MarketScope,
-  Subscription,
-  SubscriptionPage,
   TargetOption,
   TargetOptionPage,
 } from "../api/types";
@@ -27,13 +25,11 @@ import {
   Eyebrow,
   FitBadge,
   Loading,
-  PillToggle,
   StatTile,
 } from "../components/ui";
 import { isBusy, useActivity } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
-import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { OwnJdPanel } from "./OwnJd";
 import { messageOf, useAsync } from "./useAsync";
@@ -51,7 +47,6 @@ const MAX_ROLE_COUNT = 20;
  * and the trip to the Advisor and back.
  */
 export function Roles() {
-  const flash = useToast();
   const { navigate, focus, setFocus } = useShell();
   const { activity, refresh: refreshActivity, settled } = useActivity();
   // What a finished build or analysis wrote shows without a reload.
@@ -71,10 +66,6 @@ export function Roles() {
     () => api.get("/assessments/latest"),
     [settled.analysis],
   );
-  const subscriptions = useAsync<Subscription[]>(
-    () => api.items<SubscriptionPage>("/role-subscriptions"),
-    [],
-  );
   const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
   // For the pasted JDs: the only Targets that are not a role on the map.
   const targets = useAsync<TargetOption[]>(
@@ -86,9 +77,6 @@ export function Roles() {
     [settled.roleMap, settled.analysis],
   );
 
-  const [company, setCompany] = useState("");
-  const [watchRole, setWatchRole] = useState("");
-  const [watchUrl, setWatchUrl] = useState("");
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   // The k being considered; saved only once its estimate is confirmed.
   const [roleCount, setRoleCount] = useState<number | null>(null);
@@ -242,8 +230,7 @@ export function Roles() {
         <Loading what="your roles" />
       ) : bubbles.length === 0 ? (
         <EmptyState title="No roles yet">
-          Choose where you want to work on Sources, or watch a role below, then
-          build your role map.
+          Choose where you want to work on Sources, then build your role map.
         </EmptyState>
       ) : (
         <AutoGrid col={400} gap={20}>
@@ -439,41 +426,6 @@ export function Roles() {
                     {match.location ? ` · ${match.location}` : ""}
                   </div>
                 </div>
-                <PillToggle
-                  small
-                  pressed={match.subscription_id !== null}
-                  disabled={busy}
-                  onClick={() =>
-                    void act(
-                      match.subscription_id
-                        ? "Removed from your watchlist"
-                        : "Added to your watchlist",
-                      async () => {
-                        if (match.subscription_id) {
-                          await api.del(
-                            `/role-subscriptions/${match.subscription_id}`,
-                          );
-                        } else {
-                          await api.post("/role-subscriptions", {
-                            company_name: match.company_name,
-                            role_title: match.role_name,
-                            role_id: match.role_id,
-                            url: match.url,
-                          });
-                          flash(
-                            `Subscribed to ${match.role_name} at ${match.company_name}.`,
-                          );
-                        }
-                        await Promise.all([
-                          subscriptions.reload(),
-                          matched.reload(),
-                        ]);
-                      },
-                    )
-                  }
-                >
-                  {match.subscription_id ? "Subscribed" : "Subscribe"}
-                </PillToggle>
               </div>
             ))}
           </div>
@@ -492,126 +444,6 @@ export function Roles() {
       />
 
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
-        <div className="panel">
-          <h3>Roles to watch</h3>
-          <p className="subcopy">
-            A role at a company, with its careers or JD link if you have one.
-            Watched roles are checked weekly, and the Advisor offers them as a
-            company to aim at when you select their role.
-          </p>
-          <div className="stack" style={{ gap: 8, marginTop: 10 }}>
-            <input
-              className="input"
-              aria-label="Role"
-              list="watch-role-options"
-              value={watchRole}
-              placeholder="Senior Backend Engineer"
-              onChange={(event) => setWatchRole(event.target.value)}
-            />
-            <datalist id="watch-role-options">
-              {(roles.data ?? []).map((role) => (
-                <option key={role.id} value={role.name} />
-              ))}
-            </datalist>
-            <input
-              className="input"
-              aria-label="Company"
-              value={company}
-              placeholder="Company"
-              onChange={(event) => setCompany(event.target.value)}
-            />
-            <input
-              className="input"
-              aria-label="Careers or JD link"
-              type="url"
-              value={watchUrl}
-              placeholder="Careers or JD URL (optional)"
-              onChange={(event) => setWatchUrl(event.target.value)}
-            />
-            <div>
-              <Button
-                variant="secondary"
-                disabled={!company.trim() || !watchRole.trim()}
-                onClick={() =>
-                  act("Role added to your watchlist", async () => {
-                    const known = (roles.data ?? []).find(
-                      (role) => role.name === watchRole.trim(),
-                    );
-                    await api.post("/role-subscriptions", {
-                      company_name: company,
-                      role_title: watchRole,
-                      role_id: known?.id ?? null,
-                      url: watchUrl.trim() || null,
-                    });
-                    flash(`Subscribed to ${watchRole} at ${company}.`);
-                    setCompany("");
-                    setWatchRole("");
-                    setWatchUrl("");
-                    await subscriptions.reload();
-                  })
-                }
-              >
-                Subscribe to this role
-              </Button>
-            </div>
-          </div>
-          {(subscriptions.data ?? []).length > 0 && (
-            <div className="stack" style={{ gap: 7, marginTop: 14 }}>
-              {(subscriptions.data ?? []).map((subscription) => (
-                <div
-                  key={subscription.id}
-                  className="inset"
-                  style={{ padding: "9px 12px" }}
-                >
-                  <div className="row-between">
-                    <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                      {subscription.role_title || "Any role"} ·{" "}
-                      {subscription.company_name}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        act("Removed from your watchlist", async () => {
-                          await api.del(
-                            `/role-subscriptions/${subscription.id}`,
-                          );
-                          await subscriptions.reload();
-                        })
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                  <div
-                    className="subcopy"
-                    style={{
-                      fontSize: 12,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {subscription.url ? (
-                      <a
-                        href={subscription.url}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        {subscription.url.replace(/^https?:\/\//, "")}
-                      </a>
-                    ) : (
-                      "No link saved"
-                    )}
-                    {subscription.coverage === "manual"
-                      ? " · no job board we can read — paste a JD instead"
-                      : " · checked weekly"}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="panel">
           <h3>Roles to analyse</h3>
           <p className="subcopy">

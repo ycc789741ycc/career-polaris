@@ -36,7 +36,6 @@ class FakeTargets:
                 salary=SalaryRange(min_amount=180_000, max_amount=220_000, currency="USD"),
                 source_kind="atsBoard",
                 url="https://boards.example/meridian/1",
-                subscription_id=None,
             )
         ]
 
@@ -61,6 +60,5 @@ def test_an_option_carries_its_kind_label_and_salary() -> None:
             "salary": {"min": 180_000, "max": 220_000, "currency": "USD"},
             "source_kind": "atsBoard",
             "url": "https://boards.example/meridian/1",
-            "subscription_id": None,
         }
     ]

@@ -1,7 +1,7 @@
 """Targets: what a gap plan or a résumé is aimed at (domain decision 16).
 
 A Target is a value, not a table. This module resolves one — a matched
-posting, a subscribed role, or a pasted JD — through the other modules' public
+posting or a pasted JD — through the other modules' public
 surfaces and freezes what it requires and how the user measures up into a
 ``TargetSnapshot``. The plan or résumé that keys on it stores that snapshot.
 
@@ -43,9 +43,8 @@ __all__ = [
     "requirements_block",
 ]
 
-# Where a subscription or pasted JD came from, next to the crawl source kinds
-# a matched posting carries.
-WATCHLIST = "watchlist"
+# Where a pasted JD came from, next to the crawl source kinds a matched
+# posting carries.
 PASTED = "pasted"
 
 
@@ -63,7 +62,6 @@ class TargetOptionView:
     salary: SalaryRange | None
     source_kind: str | None
     url: str | None
-    subscription_id: uuid.UUID | None
 
     @property
     def label(self) -> str:
@@ -97,11 +95,9 @@ class TargetService:
         self._rolemap = rolemap
 
     async def options(self, owner_id: uuid.UUID) -> list[TargetOptionView]:
-        """Top matched openings, then watched roles, then pasted JDs."""
+        """Top matched openings, then pasted JDs."""
         fits = await self._assessment.fits(owner_id)
-        role_fit = {f.role_id: f.score for f in fits if f.role_id}
         posting_fit = {f.private_posting_id: f.score for f in fits if f.private_posting_id}
-        roles = await self._rolemap.roles(owner_id)
 
         options = [
             TargetOptionView(
@@ -115,27 +111,9 @@ class TargetService:
                 salary=match.salary,
                 source_kind=match.source_kind,
                 url=match.url,
-                subscription_id=match.subscription_id,
             )
             for match in await self._assessment.matched_postings(owner_id)
         ]
-        for subscription in await self._market.subscriptions(owner_id):
-            role = _role_for(roles, subscription.role_id, subscription.role_title)
-            options.append(
-                TargetOptionView(
-                    kind=TargetKind.SUBSCRIPTION,
-                    id=subscription.id,
-                    title=subscription.role_title,
-                    role_name=role.name if role else subscription.role_title or None,
-                    role_id=role.id if role else None,
-                    company_name=subscription.company_name,
-                    fit=role_fit.get(role.id) if role else None,
-                    salary=None,
-                    source_kind=WATCHLIST,
-                    url=subscription.url,
-                    subscription_id=subscription.id,
-                )
-            )
         for posting in await self._market.private_postings(owner_id):
             options.append(
                 TargetOptionView(
@@ -149,7 +127,6 @@ class TargetService:
                     salary=None,
                     source_kind=PASTED,
                     url=posting.url,
-                    subscription_id=None,
                 )
             )
         return options
@@ -223,19 +200,7 @@ class TargetService:
                 "that opening is no longer in any of your roles", posting_id=str(target_id)
             )
 
-        subscription = await self._market.subscription(owner_id, target_id)
-        watched = _role_for(
-            await self._rolemap.roles(owner_id), subscription.role_id, subscription.role_title
-        )
-        if watched is None:
-            # A subscription is a Target whether or not a posting is open, but
-            # its requirements come from the Role; with no Role there are none.
-            raise TargetUnusableError(
-                f"nothing is known yet about what {subscription.role_title or 'this role'} "
-                f"at {subscription.company_name} requires; paste its job description instead",
-                subscription_id=str(target_id),
-            )
-        return watched, subscription.role_title or watched.name, subscription.company_name
+        raise NotFoundError("target not found", kind=str(ref.kind), id=ref.id)
 
     async def _freeze(
         self,
@@ -290,16 +255,6 @@ def requirements_block(snapshot: TargetSnapshot) -> str:
         f"- {r.statement} (weight {r.weight}, expects {r.expected_level})"
         for r in snapshot.requirements
     )
-
-
-def _role_for(roles: list[RoleView], role_id: uuid.UUID | None, title: str) -> RoleView | None:
-    """The user's Role a subscription points at; by title once the id retires."""
-    if role_id is not None:
-        for role in roles:
-            if role.id == role_id:
-                return role
-    wanted = title.casefold().strip()
-    return next((role for role in roles if wanted and role.name.casefold() == wanted), None)
 
 
 def _uuid(ref: TargetRef) -> uuid.UUID:

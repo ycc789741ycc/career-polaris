@@ -103,10 +103,6 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return
 
-    if name == EventName.SUBSCRIPTION_ADDED:
-        await enqueue("market.materialize_crawl_sources")
-        return
-
     if name == EventName.TARGET_LOCATIONS_CHANGED and owner_id:
         # A new scope: a role map the user already has is rebuilt on it, with
         # ADR 0018's gating. Nothing is materialised for the locations yet —
@@ -130,13 +126,9 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
 
 
 async def _users_affected_by(deps: Container, payload: dict[str, Any]) -> list[uuid.UUID]:
-    """Resolve a market change to the users who care about it.
+    """Resolve a market change to the users whose target locations take it in.
 
     The crawler cannot do this — it has no grant on any user schema — which is
     the whole reason the fan-out lives in the worker.
     """
-    company_id = payload.get("company_id")
-    return await deps.market.owners_affected_by(
-        company_id=uuid.UUID(company_id) if company_id else None,
-        market=payload.get("market"),
-    )
+    return await deps.market.owners_affected_by(market=payload.get("market"))

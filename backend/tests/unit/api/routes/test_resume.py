@@ -146,7 +146,7 @@ def test_a_target_that_cannot_be_written_for_is_refused_before_queueing(
     client: TestClient, resumes: FakeResumes, queued: list[dict[str, Any]]
 ) -> None:
     resumes.refuse = True
-    body = {"kind": "subscription", "id": str(uuid.uuid4())}
+    body = {"kind": "matchedPosting", "id": str(uuid.uuid4())}
     response = client.post("/tailored-resumes", json=body)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "target_unusable"

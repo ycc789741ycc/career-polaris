@@ -22,7 +22,7 @@ from advisor.identity import (
     create_auth_service,
     create_identity_service,
 )
-from advisor.market import CrawlIngest, MarketService, create_market_service
+from advisor.market import MarketService, create_market_service
 from advisor.profile import (
     GitHubConnector,
     JiraConnector,
@@ -37,7 +37,6 @@ from kernel.auth import ALGORITHM, JwksResolver, StaticSecretResolver, TokenVeri
 from kernel.config import Settings, get_settings, must
 from kernel.db import Database
 from kernel.storage import ObjectStore
-from wiring.crawl import build_crawl_ingest
 
 # Google rotates its signing keys over days; an hour keeps the fetch rare while
 # a newly published key is still picked up well before it is used.
@@ -113,13 +112,6 @@ class Container:
             self._google = GoogleSignIn(self.auth, provider, secret=settings.require_auth_secret())
         return self._google
 
-    def open_crawl_ingest(self) -> tuple[Database, CrawlIngest]:
-        """A crawler-role connection, for a worker job that writes postings.
-
-        The caller disposes of the returned database when it is done.
-        """
-        return build_crawl_ingest(self.settings)
-
     async def aclose(self) -> None:
         await self.database.dispose()
 
@@ -160,9 +152,7 @@ def build(settings: Settings | None = None) -> Container:
         http_timeout_seconds=settings.crawl_http_timeout_seconds,
         user_agent=settings.service_name,
     )
-    market = create_market_service(
-        database, manual_refresh_per_day=settings.crawl_manual_refresh_per_day
-    )
+    market = create_market_service(database)
     rolemap = create_rolemap_service(
         database,
         market=market,

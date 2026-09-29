@@ -132,7 +132,6 @@ class Settings(BaseSettings):
     crawl_rate_limit_per_host_per_second: float = Field(
         default=1.0, alias="CRAWL_RATE_LIMIT_PER_HOST_PER_SECOND"
     )
-    crawl_manual_refresh_per_day: int = Field(default=3, alias="CRAWL_MANUAL_REFRESH_PER_DAY")
     embedding_model_name: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL_NAME"
     )

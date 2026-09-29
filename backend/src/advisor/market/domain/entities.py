@@ -16,7 +16,6 @@ from advisor.market.domain.posting import (
     MAX_COMPANY_NAME,
     MAX_LOCATION,
     MAX_TITLE,
-    Coverage,
     NormalizedPosting,
     PostingStatus,
     SalaryRange,
@@ -174,13 +173,12 @@ class PostingEmbedding:
 class PostingScope:
     """Which shared postings a user's role map is built from (domain decision 15).
 
-    A posting is in scope if it is from a company they watch *or* in a market
-    they chose. A user with no market also gets the platform's baseline
-    postings, so a first role map has something to group; with markets chosen,
-    baseline postings in them are already in scope through the market match.
+    A posting is in scope if it is in one of their target locations. A user
+    with none also gets the platform's baseline postings, so a first role map
+    has something to group; with locations chosen, baseline postings in them
+    are already in scope through the location match.
     """
 
-    company_ids: tuple[uuid.UUID, ...]
     markets: tuple[str, ...]
 
     @property
@@ -189,51 +187,6 @@ class PostingScope:
 
 
 # --- owner zone ------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class CompanySubscription:
-    """A RoleSubscription: one role at one company (domain decision 19)."""
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    company_id: uuid.UUID
-    company_name: str
-    role_title: str
-    role_id: uuid.UUID | None
-    url: str | None
-    # Coverage belongs to the company's board, not to one role there.
-    coverage: Coverage
-    last_refreshed_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-    @classmethod
-    def new(
-        cls,
-        *,
-        owner_id: uuid.UUID,
-        company: Company,
-        role_title: str,
-        role_id: uuid.UUID | None,
-        url: str | None,
-        coverage: Coverage,
-    ) -> CompanySubscription:
-        return cls(
-            id=uuid.uuid4(),
-            owner_id=owner_id,
-            company_id=company.id,
-            company_name=company.name,
-            role_title=role_title,
-            role_id=role_id,
-            url=url,
-            coverage=coverage,
-        )
-
-    def resubscribe(self, *, role_id: uuid.UUID | None, url: str | None) -> None:
-        """Subscribing again to the same role updates it; it never duplicates."""
-        self.role_id = role_id or self.role_id
-        self.url = url or self.url
 
 
 @dataclass(slots=True)
@@ -329,22 +282,3 @@ class MarketPreference:
     @classmethod
     def chosen(cls, *, owner_id: uuid.UUID, market: str) -> MarketPreference:
         return cls(id=uuid.uuid4(), owner_id=owner_id, market=market)
-
-
-@dataclass(slots=True)
-class ManualRefresh:
-    """One manual re-crawl a user asked for; counted against a daily cap."""
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    company_id: uuid.UUID
-    requested_at: datetime | None = None
-
-    @classmethod
-    def requested(cls, *, owner_id: uuid.UUID, company_id: uuid.UUID) -> ManualRefresh:
-        return cls(id=uuid.uuid4(), owner_id=owner_id, company_id=company_id)
-
-
-def refresh_allowed(*, used_today: int, per_day: int) -> bool:
-    """Manual re-crawls are capped per day; the weekly schedule is the norm."""
-    return used_today < per_day

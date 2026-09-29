@@ -121,7 +121,7 @@ async def test_discovery_returns_the_first_board_that_has_postings() -> None:
 
 
 async def test_a_company_with_no_supported_board_falls_back_to_manual() -> None:
-    """None here is what makes a subscription `manual`."""
+    """None here means nothing is crawled for the company."""
     adapter = StubAdapter("https://board.test")
     client = StubClient({})
     assert await discover_board(client, "Uncrawlable Ltd", adapters=(adapter,)) is None  # type: ignore[arg-type]

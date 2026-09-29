@@ -32,8 +32,8 @@ type Ref = { kind: TargetKind; id: string };
  *
  * What it aims at is what the role map has selected. A role spans openings at
  * several companies and plans and résumés are kept per opening, so the
- * header offers that role's openings — and the watched roles filed under it —
- * and opens the one last worked on, or the best fit. A pasted JD is its own
+ * header offers that role's openings and opens the one last worked on, or the
+ * best fit. A pasted JD is its own
  * single opening.
  */
 export function Advisor({ tab }: { tab: AdvisorTab }) {
@@ -184,9 +184,8 @@ function Aimed({
           <p className="subcopy" style={{ margin: 0 }}>
             {focus.kind === "jd"
               ? "That job description is no longer saved."
-              : "This role has no open postings or watched companies right now."}{" "}
-            Pick another on the role map, or watch a company for this role
-            there.
+              : "This role has no open postings right now."}{" "}
+            Pick another on the role map.
           </p>
         ) : (
           <>
@@ -273,16 +272,13 @@ function TargetChips({
           {option.fit !== null && (
             <span className="target-chip-fit">{option.fit}%</span>
           )}
-          {option.kind === "subscription" && (
-            <span className="target-chip-tag">subscribed</span>
-          )}
         </button>
       ))}
     </div>
   );
 }
 
-/** The Targets a focus offers: a role's openings and watches, or one JD. Pure. */
+/** The Targets a focus offers: a role's openings, or one JD. Pure. */
 export function openingsFor(
   focus: Focus,
   targets: TargetOption[],

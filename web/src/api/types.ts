@@ -55,8 +55,6 @@ export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 // Market
 /** The user's target locations and the open postings they take in (domain decision 21). */
 export type MarketScope = Schemas["MarketScope"];
-/** A watch on one role at one company (domain decision 19). */
-export type Subscription = Schemas["Subscription"];
 
 // Targets (domain decision 16)
 export type TargetOption = Schemas["TargetOption"];
@@ -94,5 +92,4 @@ export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
 export type RolePage = Schemas["RolePage"];
 export type StringPage = Schemas["StringPage"];
-export type SubscriptionPage = Schemas["SubscriptionPage"];
 export type TargetOptionPage = Schemas["TargetOptionPage"];

@@ -50,7 +50,6 @@ const pasted: TargetOption = {
   salary: null,
   source_kind: "pasted",
   url: null,
-  subscription_id: null,
 };
 
 function serve() {
@@ -62,7 +61,6 @@ function serve() {
     "/roles/settings": { role_count: 8 },
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
-    "/role-subscriptions": page([]),
     "/market-scope": {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,

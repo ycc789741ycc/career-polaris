@@ -55,7 +55,6 @@ class SqlAlchemyGapPlanRepository(SqlAlchemyRepository[GapPlan, models.GapPlan, 
             plan = models.GapPlan
             found.append(
                 (plan.job_posting_id == filter.target_id)
-                | (plan.subscription_id == filter.target_id)
                 | (plan.private_posting_id == filter.target_id)
             )
         return found

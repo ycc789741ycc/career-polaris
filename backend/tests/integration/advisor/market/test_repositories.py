@@ -20,14 +20,10 @@ from sqlalchemy import text
 from advisor.market.domain import (
     Company,
     CompanyFilter,
-    CompanySubscription,
-    Coverage,
     CrawlSource,
     CrawlSourceFilter,
     JobPosting,
     JobPostingFilter,
-    ManualRefresh,
-    ManualRefreshFilter,
     MarketPreference,
     MarketPreferenceFilter,
     NormalizedPosting,
@@ -41,8 +37,6 @@ from advisor.market.domain import (
     SalaryRange,
     SourceKind,
     SourceOrigin,
-    SubscriptionAdded,
-    SubscriptionFilter,
     TargetLocationsChanged,
 )
 from advisor.market.infra.unit_of_work import SqlAlchemyMarketUnitOfWork
@@ -52,93 +46,70 @@ from kernel.errors import NotFoundError, ValidationError
 pytestmark = pytest.mark.integration
 
 
-async def _company(uow: SqlAlchemyMarketUnitOfWork) -> Company:
-    async with uow.shared() as market:
-        return await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
-
-
-def _subscription(owner_id: uuid.UUID, company: Company, role: str) -> CompanySubscription:
-    return CompanySubscription.new(
-        owner_id=owner_id,
-        company=company,
-        role_title=role,
-        role_id=None,
-        url="https://acme.test/jobs",
-        coverage=Coverage.MANUAL,
-    )
-
-
 async def test_the_six_methods_keep_their_contract(database: Database, account: uuid.UUID) -> None:
     uow = SqlAlchemyMarketUnitOfWork(database)
-    company = await _company(uow)
+    tag = uuid.uuid4().hex[:8]
 
     # One transaction each: created_at is the transaction's start time.
     created = []
-    for role in ("First", "Second", "Third"):
+    for place in ("First", "Second", "Third"):
         async with uow.for_owner(account) as mine:
-            created.append(await mine.subscriptions.create(_subscription(account, company, role)))
-    assert all(s.created_at is not None and s.updated_at is not None for s in created)
+            created.append(
+                await mine.markets.create(
+                    MarketPreference.chosen(owner_id=account, market=f"{place} {tag}")
+                )
+            )
+    assert all(m.created_at is not None and m.updated_at is not None for m in created)
 
     async with uow.for_owner(account) as mine:
-        everything = SubscriptionFilter(company_id=company.id)
-        newest_first = await mine.subscriptions.get_list(everything)
-        assert [s.role_title for s in newest_first] == ["Third", "Second", "First"]
+        everything = MarketPreferenceFilter()
+        newest_first = await mine.markets.get_list(everything)
+        expected = [f"{place} {tag}" for place in ("Third", "Second", "First")]
+        assert [m.market for m in newest_first] == expected
         assert newest_first[-1] == created[0]
-        assert [s.role_title for s in await mine.subscriptions.get_list(everything, 2, 2)] == [
-            "First"
-        ]
-        assert await mine.subscriptions.get_count(everything) == 3
-        assert (
-            await mine.subscriptions.get_count(
-                SubscriptionFilter(company_id=company.id, role_title="Second")
-            )
-            == 1
-        )
+        assert [m.market for m in await mine.markets.get_list(everything, 2, 2)] == [f"First {tag}"]
+        assert await mine.markets.get_count(everything) == 3
+        assert await mine.markets.get_count(MarketPreferenceFilter(market=f"Second {tag}")) == 1
         with pytest.raises(ValidationError):
-            await mine.subscriptions.get_list(everything, page=2)
+            await mine.markets.get_list(everything, page=3)
 
         first = created[0]
-        first.resubscribe(role_id=None, url="https://acme.test/careers")
-        first.last_refreshed_at = datetime(2026, 9, 27, tzinfo=UTC)
-        updated = await mine.subscriptions.update(first)
-        assert updated.url == "https://acme.test/careers"
-        assert await mine.subscriptions.get(first.id) == updated
+        first.market = f"Renamed {tag}"
+        updated = await mine.markets.update(first)
+        assert updated.market == f"Renamed {tag}"
+        assert await mine.markets.get(first.id) == updated
 
-        await mine.subscriptions.delete(first.id)
-        assert await mine.subscriptions.get(first.id) is None
+        await mine.markets.delete(first.id)
+        assert await mine.markets.get(first.id) is None
         with pytest.raises(NotFoundError):
-            await mine.subscriptions.delete(first.id)
+            await mine.markets.delete(first.id)
         with pytest.raises(NotFoundError):
-            await mine.subscriptions.update(first)
+            await mine.markets.update(first)
 
 
 async def test_an_owner_scope_sees_nobody_elses_rows(
     database: Database, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:
     uow = SqlAlchemyMarketUnitOfWork(database)
-    company = await _company(uow)
+    place = f"Berlin {uuid.uuid4().hex[:8]}"
     async with uow.for_owner(account) as mine:
-        subscription = await mine.subscriptions.create(_subscription(account, company, "Backend"))
         preference = await mine.markets.create(
-            MarketPreference.chosen(owner_id=account, market="Berlin")
+            MarketPreference.chosen(owner_id=account, market=place)
         )
 
     async with uow.for_owner(other_account) as theirs:
-        assert await theirs.subscriptions.get(subscription.id) is None
-        assert await theirs.subscriptions.get_list(SubscriptionFilter()) == []
+        assert await theirs.markets.get(preference.id) is None
         assert await theirs.markets.get_count(MarketPreferenceFilter()) == 0
         with pytest.raises(NotFoundError):
             await theirs.markets.delete(preference.id)
 
     # The fan-out scope reads across users, for the dispatcher.
     async with uow.fanout() as everyone:
-        watching = await everyone.subscriptions.get_list(SubscriptionFilter(company_id=company.id))
-        assert [s.owner_id for s in watching] == [account]
+        choosing = await everyone.markets.get_list(MarketPreferenceFilter(market=place))
+        assert [m.owner_id for m in choosing] == [account]
 
 
-async def test_pasted_jds_and_manual_refreshes_round_trip(
-    database: Database, account: uuid.UUID
-) -> None:
+async def test_pasted_jds_round_trip(database: Database, account: uuid.UUID) -> None:
     uow = SqlAlchemyMarketUnitOfWork(database)
     vector = [0.0] * 383 + [1.0]
 
@@ -154,10 +125,6 @@ async def test_pasted_jds_and_manual_refreshes_round_trip(
                 shared_posting_id=None,
             )
         )
-        refresh = await mine.refreshes.create(
-            ManualRefresh.requested(owner_id=account, company_id=uuid.uuid4())
-        )
-    assert refresh.requested_at is not None
 
     async with uow.for_owner(account) as mine:
         assert await mine.private_postings.get(pasted.id) == pasted
@@ -166,12 +133,6 @@ async def test_pasted_jds_and_manual_refreshes_round_trip(
         await mine.private_postings.update(pasted)
         [embedded] = await mine.private_postings.get_list(PrivateJobPostingFilter(has_vector=True))
         assert embedded.vector == vector
-        assert (
-            await mine.refreshes.get_count(
-                ManualRefreshFilter(requested_since=refresh.requested_at)
-            )
-            == 1
-        )
 
 
 async def test_shared_postings_round_trip_through_the_crawler_role(
@@ -224,7 +185,7 @@ async def test_shared_postings_round_trip_through_the_crawler_role(
                 == 1
             )
             assert posting in await market.postings.get_open_in_scope(
-                PostingScope(company_ids=(company.id,), markets=())
+                PostingScope(markets=("Berlin",))
             )
 
             assert (
@@ -313,17 +274,15 @@ async def test_a_market_scope_matches_locations_by_their_words(
 
         async with uow.shared() as market:
             in_scope = await market.postings.get_open_in_scope(
-                PostingScope(company_ids=(), markets=(place.lower(),))
+                PostingScope(markets=(place.lower(),))
             )
             typed_with_accent = await market.postings.get_open_in_scope(
-                PostingScope(company_ids=(), markets=(f"{place.replace('y', 'ü', 1)} Nord",))
+                PostingScope(markets=(f"{place.replace('y', 'ü', 1)} Nord",))
             )
             typed_without = await market.postings.get_open_in_scope(
-                PostingScope(company_ids=(), markets=(f"{place.replace('y', 'u', 1)} nord",))
+                PostingScope(markets=(f"{place.replace('y', 'u', 1)} nord",))
             )
-            wordless = await market.postings.get_open_in_scope(
-                PostingScope(company_ids=(), markets=("---",))
-            )
+            wordless = await market.postings.get_open_in_scope(PostingScope(markets=("---",)))
         ids = {p.id for p in in_scope}
         assert postings["in-city"].id in ids
         assert postings["prefix-only"].id not in ids
@@ -348,10 +307,8 @@ async def test_owner_events_reach_the_outbox_as_the_dispatcher_reads_them(
     database: Database, account: uuid.UUID
 ) -> None:
     uow = SqlAlchemyMarketUnitOfWork(database)
-    company_id = uuid.uuid4()
 
     async with uow.for_owner(account) as mine:
-        mine.record(SubscriptionAdded(owner_id=account, company_id=company_id, company_name="Acme"))
         mine.record(TargetLocationsChanged(owner_id=account, locations=("Berlin",)))
 
     async with database.shared() as session:
@@ -359,9 +316,8 @@ async def test_owner_events_reach_the_outbox_as_the_dispatcher_reads_them(
             text("SELECT name, payload FROM outbox.event WHERE owner_id = :owner"),
             {"owner": account},
         )
-        assert sorted(rows.all()) == [
-            ("SubscriptionAdded", {"company_id": str(company_id), "company_name": "Acme"}),
-            ("TargetLocationsChanged", {"locations": ["Berlin"]}),
+        assert [tuple(row) for row in rows.all()] == [
+            ("TargetLocationsChanged", {"locations": ["Berlin"]})
         ]
 
 

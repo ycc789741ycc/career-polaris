@@ -35,7 +35,6 @@ AT = datetime(2026, 9, 27, tzinfo=UTC)
     ("kind", "column"),
     [
         ("matchedPosting", "job_posting_id"),
-        ("subscription", "subscription_id"),
         ("privatePosting", "private_posting_id"),
     ],
 )
@@ -85,7 +84,7 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         plan = await mine.plans.create(
             GapPlan.requested(
                 owner_id=account,
-                target_kind="subscription",
+                target_kind="matchedPosting",
                 target_id=uuid.uuid4(),
                 label="Platform role",
                 version=2,
@@ -128,7 +127,7 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         )
         await mine.plans.update(plan)
         mine.record(
-            PlanDrafted(owner_id=account, plan_id=plan.id, target_kind="subscription", version=2)
+            PlanDrafted(owner_id=account, plan_id=plan.id, target_kind="matchedPosting", version=2)
         )
 
     async with uow.for_owner(account) as mine:
@@ -145,6 +144,6 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         assert [tuple(r) for r in rows.all()] == [
             (
                 "PlanDrafted",
-                {"plan_id": str(plan.id), "target_kind": "subscription", "version": 2},
+                {"plan_id": str(plan.id), "target_kind": "matchedPosting", "version": 2},
             )
         ]

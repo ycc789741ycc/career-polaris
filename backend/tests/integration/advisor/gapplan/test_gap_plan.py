@@ -29,7 +29,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Request
 from kernel.config import Settings
 from kernel.db import Database
-from kernel.errors import NotFoundError, TargetUnusableError
+from kernel.errors import NotFoundError
 from kernel.storage import ObjectStore
 
 pytestmark = pytest.mark.integration
@@ -102,7 +102,7 @@ async def world(
         answer="I led it across two teams",
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database, manual_refresh_per_day=3)
+    market = create_market_service(database)
     # A market of its own keeps the platform baseline out of this user's scope.
     await market.set_target_locations(account, [f"Plan market {uuid.uuid4().hex[:8]}"])
     rolemap = create_rolemap_service(
@@ -344,16 +344,6 @@ async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
     assert plan.summary.status is PlanStatus.FAILED
     assert plan.summary.error_code == "plan_invalid"
     assert "unexplained" in (plan.summary.error_message or "")
-
-
-async def test_a_watched_role_with_nothing_known_about_it_is_refused_up_front(
-    world: World, account: uuid.UUID
-) -> None:
-    watched = await world.market.subscribe(
-        account, company_name="Kestrel Financial", role_title="Head of Nothing Known"
-    )
-    with pytest.raises(TargetUnusableError, match="paste its job description"):
-        await world.gapplan.request(account, TargetRef(TargetKind.SUBSCRIPTION, str(watched.id)))
 
 
 async def test_another_user_cannot_read_the_plan(

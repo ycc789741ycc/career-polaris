@@ -1,7 +1,7 @@
 """What a gap plan or a résumé is aimed at (domain decision 16).
 
-A Target is a kind plus a reference — a matched posting, a subscribed role, or a
-JD the user pasted — and a frozen snapshot of what it requires and how the user
+A Target is a kind plus a reference — a matched posting or a JD the user
+pasted — and a frozen snapshot of what it requires and how the user
 measured up when it was chosen. Postings expire and roles re-cluster; the
 snapshot is what lets a plan still say what it was planned against.
 
@@ -20,14 +20,13 @@ from typing import Any
 
 class TargetKind(StrEnum):
     MATCHED_POSTING = "matchedPosting"
-    SUBSCRIPTION = "subscription"
     PRIVATE_POSTING = "privatePosting"
 
 
 class RequirementBasis(StrEnum):
     """Where the requirements came from, shown next to them."""
 
-    # The Role's requirements: a matched posting, or a subscribed role.
+    # The Role's requirements: a matched posting.
     ROLE = "role"
     # Read from the posting's own text: a pasted JD.
     POSTING = "posting"
