@@ -15,7 +15,7 @@ from advisor.resume.domain.content import VersionSource
 class ResumeTailored:
     owner_id: uuid.UUID
     resume_id: uuid.UUID
-    target_kind: str
+    role_id: uuid.UUID
 
 
 @dataclass(frozen=True, slots=True)

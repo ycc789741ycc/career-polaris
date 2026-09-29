@@ -7,9 +7,9 @@
  * (`#/advisor/plan?role=…`) lets a reload or the back button land on the same
  * screen, tab and role, without a router dependency.
  *
- * What the Advisor aims at is whatever the role map has selected — a role, or
- * a JD the user pasted — so that selection lives here too, not in either
- * screen.
+ * What the Advisor aims at is whatever the role map has selected — a role,
+ * and optionally one opening in it (ADR 0022) — so that selection lives here
+ * too, not in either screen.
  */
 
 export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
@@ -17,8 +17,11 @@ export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
 /** The Advisor's two tabs. */
 export type AdvisorTab = "plan" | "resume";
 
-/** What the role map has selected: a role, or a JD the user pasted. */
-export type Focus = { kind: "role"; id: string } | { kind: "jd"; id: string };
+/** What the role map has selected: a role, and optionally one opening in it. */
+export interface Focus {
+  role: string;
+  opening?: string | undefined;
+}
 
 /** Everything the hash says. */
 export interface Place {
@@ -86,8 +89,6 @@ export function metaOf(screen: Screen): ScreenMeta {
 
 export const DEFAULT_TAB: AdvisorTab = "plan";
 
-const FOCUS_PARAMS = { role: "role", jd: "jd" } as const;
-
 /** What a hash names; the defaults for anything it does not. Pure. */
 export function placeFromHash(hash: string): Place {
   const [path = "", query = ""] = hash.replace(/^#\/?/, "").split("?", 2);
@@ -97,13 +98,13 @@ export function placeFromHash(hash: string): Place {
     : DEFAULT_SCREEN;
   const tab: AdvisorTab = tabPart === "resume" ? "resume" : DEFAULT_TAB;
   const params = new URLSearchParams(query);
-  const role = params.get(FOCUS_PARAMS.role);
-  const jd = params.get(FOCUS_PARAMS.jd);
+  const role = params.get("role");
+  const opening = params.get("opening");
   const focus: Focus | null = role
-    ? { kind: "role", id: role }
-    : jd
-      ? { kind: "jd", id: jd }
-      : null;
+    ? opening
+      ? { role, opening }
+      : { role }
+    : null;
   return { screen, tab, focus };
 }
 
@@ -118,8 +119,11 @@ export function hashFor({
   focus?: Focus | null;
 }): string {
   const path = screen === "advisor" ? `${screen}/${tab}` : screen;
-  const query = focus
-    ? `?${new URLSearchParams({ [FOCUS_PARAMS[focus.kind]]: focus.id })}`
-    : "";
+  const params = new URLSearchParams();
+  if (focus) {
+    params.set("role", focus.role);
+    if (focus.opening) params.set("opening", focus.opening);
+  }
+  const query = focus ? `?${params}` : "";
   return `#/${path}${query}`;
 }

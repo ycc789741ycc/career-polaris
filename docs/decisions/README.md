@@ -10,7 +10,7 @@ new record that supersedes the old one.
 | [0002](0002-analyse-only-the-ten-closest-roles.md) | Analyse only the ten roles closest to the user's profile | Superseded by 0003 |
 | [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md) | Let the user choose how many roles to analyse (3–20, default 10) | Superseded by 0020 |
 | [0004](0004-build-the-spa-on-the-prototypes-design-system.md) | Build the SPA on the prototype's design system and sidebar shell | Accepted |
-| [0005](0005-resolve-targets-in-their-own-module.md) | Resolve Targets in their own module | Accepted |
+| [0005](0005-resolve-targets-in-their-own-module.md) | Resolve Targets in their own module | Accepted, amended by 0022 |
 | [0006](0006-report-ai-job-progress-through-a-status-the-page-polls.md) | Report AI job progress through a status the page polls | Accepted |
 | [0007](0007-render-resume-pdfs-with-weasyprint.md) | Render résumé PDFs with WeasyPrint, not a headless browser | Accepted |
 | [0008](0008-sign-in-with-google-by-our-own-oidc-exchange.md) | Sign in with Google through our own OpenID Connect exchange, and let a verified address take over an unverified one | Accepted |
@@ -27,6 +27,7 @@ new record that supersedes the old one.
 | [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted |
 | [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted |
 | [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Accepted |
+| [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

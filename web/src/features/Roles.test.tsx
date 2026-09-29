@@ -62,7 +62,21 @@ function serve() {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,
     },
-    "/matched-postings?page_size=10": page([]),
+    "/matched-postings?page_size=10": page([
+      {
+        posting_id: "p1",
+        role_id: "r1",
+        role_name: "Backend Engineer",
+        title: "Staff Engineer, Ledger",
+        company_name: "Northwind Pay",
+        location: "Berlin",
+        url: null,
+        salary: null,
+        fit: 62,
+        fit_basis: "role",
+        source_kind: "atsBoard",
+      },
+    ]),
     "/roles/cost-estimate": {
       max_clusters: 8,
       cost_usd: "0.40",
@@ -127,20 +141,20 @@ describe("the role map's one Advisor target", () => {
       within(bar).getByRole("button", { name: "Target this role" }),
     );
     expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { kind: "role", id: "r2" },
+      focus: { role: "r2" },
     });
   });
 
   it("aims at the picked role", async () => {
-    renderRoles({ kind: "role", id: "r1" });
+    renderRoles({ role: "r1" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
     expect(bar).toHaveTextContent("Backend Engineer");
   });
 
-  it("aims at a custom role through the JD it came with", async () => {
+  it("aims at a custom role as a role, like any other", async () => {
     const user = userEvent.setup();
-    const shell = renderRoles({ kind: "role", id: "r3" });
+    const shell = renderRoles({ role: "r3" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
     expect(
@@ -150,20 +164,40 @@ describe("the role map's one Advisor target", () => {
       within(bar).getByRole("button", { name: "Target this role" }),
     );
     expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { kind: "jd", id: "jd-1" },
+      focus: { role: "r3" },
     });
   });
 
-  it("reads a JD in the hash as the custom role it belongs to", async () => {
-    renderRoles({ kind: "jd", id: "jd-1" });
+  it("aims at an opening picked in its role", async () => {
+    const user = userEvent.setup();
+    const shell = renderRoles({ role: "r1", opening: "p1" });
 
+    const bar = await screen.findByRole("region", { name: "Advisor target" });
     expect(
-      await screen.findByText("Selected role · yours"),
+      await within(bar).findByText("Backend Engineer · Northwind Pay"),
     ).toBeInTheDocument();
+    await user.click(
+      within(bar).getByRole("button", { name: "Target this opening" }),
+    );
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      focus: { role: "r1", opening: "p1" },
+    });
+  });
+
+  it("selects an opening when its row is picked", async () => {
+    const user = userEvent.setup();
+    const shell = renderRoles({ role: "r1" });
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Backend Engineer · Northwind Pay: Staff Engineer, Ledger/,
+      }),
+    );
+    expect(shell.setFocus).toHaveBeenCalledWith({ role: "r1", opening: "p1" });
   });
 
   it("has no other button that aims the Advisor", async () => {
-    renderRoles({ kind: "role", id: "r1" });
+    renderRoles({ role: "r1" });
 
     await screen.findByRole("region", { name: "Advisor target" });
     expect(
@@ -339,6 +373,6 @@ describe("roles of your own", () => {
       company_name: "Halden Labs",
       job_description: null,
     });
-    expect(shell.setFocus).toHaveBeenCalledWith({ kind: "role", id: "r9" });
+    expect(shell.setFocus).toHaveBeenCalledWith({ role: "r9" });
   });
 });

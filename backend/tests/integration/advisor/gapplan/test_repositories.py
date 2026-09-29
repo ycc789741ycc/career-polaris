@@ -31,49 +31,38 @@ pytestmark = pytest.mark.integration
 AT = datetime(2026, 9, 27, tzinfo=UTC)
 
 
-@pytest.mark.parametrize(
-    ("kind", "column"),
-    [
-        ("matchedPosting", "job_posting_id"),
-        ("privatePosting", "private_posting_id"),
-    ],
-)
-async def test_a_plans_target_round_trips_through_its_column(
-    database: Database, account: uuid.UUID, kind: str, column: str
+async def test_a_plans_target_is_a_role_and_an_optional_opening(
+    database: Database, account: uuid.UUID
 ) -> None:
     uow = SqlAlchemyGapPlanUnitOfWork(database)
-    target = uuid.uuid4()
-    async with uow.for_owner(account) as mine:
-        plan = await mine.plans.create(
-            GapPlan.requested(
-                owner_id=account,
-                target_kind=kind,
-                target_id=target,
-                label="Staff Engineer at Acme",
-                version=1,
-                at=AT,
-            )
-        )
-        await mine.plans.create(
-            GapPlan.requested(
-                owner_id=account,
-                target_kind=kind,
-                target_id=uuid.uuid4(),
-                label="Another",
-                version=1,
-                at=AT,
-            )
+    role, opening = uuid.uuid4(), uuid.uuid4()
+
+    def requested(job_posting_id: uuid.UUID | None, label: str) -> GapPlan:
+        return GapPlan.requested(
+            owner_id=account,
+            role_id=role,
+            job_posting_id=job_posting_id,
+            label=label,
+            version=1,
+            at=AT,
         )
 
     async with uow.for_owner(account) as mine:
-        assert await mine.plans.get_list(GapPlanFilter(target_kind=kind, target_id=target)) == [
-            plan
+        for_role = await mine.plans.create(requested(None, "Staff Engineer"))
+        for_opening = await mine.plans.create(requested(opening, "Staff Engineer · Acme"))
+
+    async with uow.for_owner(account) as mine:
+        assert await mine.plans.get_list(GapPlanFilter(role_id=role, role_only=True)) == [for_role]
+        assert await mine.plans.get_list(GapPlanFilter(role_id=role, job_posting_id=opening)) == [
+            for_opening
         ]
+        assert await mine.plans.get_count(GapPlanFilter(role_id=role)) == 2
     async with database.for_user(account) as session:
         stored = await session.execute(
-            text(f"SELECT {column} FROM gapplan.plan WHERE id = :id"), {"id": plan.id}
+            text("SELECT role_id, job_posting_id FROM gapplan.plan WHERE id = :id"),
+            {"id": for_opening.id},
         )
-        assert stored.scalar_one() == target
+        assert tuple(stored.one()) == (role, opening)
 
 
 async def test_a_drafted_plan_its_tasks_and_its_event(
@@ -84,8 +73,8 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         plan = await mine.plans.create(
             GapPlan.requested(
                 owner_id=account,
-                target_kind="matchedPosting",
-                target_id=uuid.uuid4(),
+                role_id=uuid.uuid4(),
+                job_posting_id=None,
                 label="Platform role",
                 version=2,
                 at=AT,
@@ -126,9 +115,7 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
             at=AT,
         )
         await mine.plans.update(plan)
-        mine.record(
-            PlanDrafted(owner_id=account, plan_id=plan.id, target_kind="matchedPosting", version=2)
-        )
+        mine.record(PlanDrafted(owner_id=account, plan_id=plan.id, role_id=plan.role_id, version=2))
 
     async with uow.for_owner(account) as mine:
         loaded = await mine.plans.get(plan.id)
@@ -144,6 +131,6 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         assert [tuple(r) for r in rows.all()] == [
             (
                 "PlanDrafted",
-                {"plan_id": str(plan.id), "target_kind": "matchedPosting", "version": 2},
+                {"plan_id": str(plan.id), "role_id": str(plan.role_id), "version": 2},
             )
         ]

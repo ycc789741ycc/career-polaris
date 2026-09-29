@@ -543,8 +543,9 @@ export interface paths {
         /**
          * Matched Postings
          * @description The openings inside the user's roles, best first, for the role map's "Top
-         *     matched" list: ask for ``page_size=10`` for the top ten. Ranked by the
-         *     role's fit; no AI runs to produce it.
+         *     matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
+         *     one role's, the openings the Advisor can aim at in it. Ranked by the role's
+         *     fit; no AI runs to produce it.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;
@@ -1025,26 +1026,6 @@ export interface paths {
          *     has, on the new scope; the worker does that from the event it records.
          */
         put: operations["set_target_locations_api_v1_target_locations_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/targets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Targets
-         * @description Matched openings, then pasted JDs. No AI runs.
-         */
-        get: operations["list_targets_api_v1_targets_get"];
-        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1948,13 +1929,14 @@ export interface components {
         };
         /** ResumeRequest */
         ResumeRequest: {
+            /** Job Posting Id */
+            job_posting_id?: string | null;
+            options?: components["schemas"]["OptionsBody"];
             /**
-             * Id
+             * Role Id
              * Format: uuid
              */
-            id: string;
-            kind: components["schemas"]["TargetKind"];
-            options?: components["schemas"]["OptionsBody"];
+            role_id: string;
             /** @default warm */
             template: components["schemas"]["Template"];
         };
@@ -2299,8 +2281,6 @@ export interface components {
         TargetEstimate: {
             /** Cost Usd */
             cost_usd: string;
-            /** Includes Scoring */
-            includes_scoring: boolean;
             /** Input Tokens */
             input_tokens: number;
             /** Model Id */
@@ -2308,11 +2288,6 @@ export interface components {
             /** Rate Is Published */
             rate_is_published: boolean;
         };
-        /**
-         * TargetKind
-         * @enum {string}
-         */
-        TargetKind: "matchedPosting" | "privatePosting";
         /**
          * TargetLocationsRequest
          * @description The user's whole set of target locations (domain decision 21). The
@@ -2323,67 +2298,30 @@ export interface components {
             locations: string[];
         };
         /**
-         * TargetOption
-         * @description One row of the "Plan a route to" / "Write for" pickers (domain decision 16).
+         * TargetRefBody
+         * @description A role on the user's role map, and optionally one opening in it.
          */
-        TargetOption: {
-            /** Company Name */
-            company_name: string;
-            /** Fit */
-            fit: number | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "matchedPosting" | "privatePosting";
-            /** Label */
-            label: string;
-            /** Role Id */
-            role_id: string | null;
-            /** Role Name */
-            role_name: string | null;
-            salary: components["schemas"]["Salary"] | null;
-            /** Source Kind */
-            source_kind: string | null;
-            /** Title */
-            title: string;
-            /** Url */
-            url: string | null;
-        };
-        /** TargetOptionPage */
-        TargetOptionPage: {
-            /** Items */
-            items: components["schemas"]["TargetOption"][];
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number | null;
-            /** Total */
-            total: number;
-        };
-        /** TargetRefBody */
         TargetRefBody: {
-            /** Id */
-            id: string;
+            /** Job Posting Id */
+            job_posting_id?: string | null;
             /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "matchedPosting" | "privatePosting";
-        };
-        /** TargetRequest */
-        TargetRequest: {
-            /**
-             * Id
+             * Role Id
              * Format: uuid
              */
-            id: string;
-            kind: components["schemas"]["TargetKind"];
+            role_id: string;
+        };
+        /**
+         * TargetRequest
+         * @description A role, and optionally one opening in it (ADR 0022).
+         */
+        TargetRequest: {
+            /** Job Posting Id */
+            job_posting_id?: string | null;
+            /**
+             * Role Id
+             * Format: uuid
+             */
+            role_id: string;
         };
         /** TaskDoneRequest */
         TaskDoneRequest: {
@@ -3842,8 +3780,8 @@ export interface operations {
     cost_estimate_api_v1_gap_plans_cost_estimate_get: {
         parameters: {
             query: {
-                kind: components["schemas"]["TargetKind"];
-                id: string;
+                role_id: string;
+                job_posting_id?: string | null;
             };
             header?: {
                 authorization?: string | null;
@@ -4048,6 +3986,7 @@ export interface operations {
     matched_postings_api_v1_matched_postings_get: {
         parameters: {
             query?: {
+                role_id?: string | null;
                 /** @description 1-based. */
                 page?: number;
                 /** @description Omit it for the whole list, on page 1. */
@@ -5030,8 +4969,8 @@ export interface operations {
     cost_estimate_api_v1_tailored_resumes_cost_estimate_get: {
         parameters: {
             query: {
-                kind: components["schemas"]["TargetKind"];
-                id: string;
+                role_id: string;
+                job_posting_id?: string | null;
             };
             header?: {
                 authorization?: string | null;
@@ -5478,60 +5417,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": string[];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    list_targets_api_v1_targets_get: {
-        parameters: {
-            query?: {
-                /** @description 1-based. */
-                page?: number;
-                /** @description Omit it for the whole list, on page 1. */
-                page_size?: number | null;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TargetOptionPage"];
                 };
             };
             /** @description The request could not be read. */

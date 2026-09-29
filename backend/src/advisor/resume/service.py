@@ -23,7 +23,6 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -68,7 +67,6 @@ from advisor.resume.domain import (
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.target import (
-    TargetKind,
     TargetRef,
     TargetService,
     TargetSnapshot,
@@ -268,7 +266,7 @@ class ResumeService:
     # -- writing ------------------------------------------------------------
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
-        """Priced before anything is spent. A pasted JD not yet scored adds that."""
+        """Priced before anything is spent."""
         preview = await self._target.preview(owner_id, ref)
         profile = await self._profile.snapshot(owner_id)
         estimate = await self._gateway.estimate(
@@ -287,11 +285,10 @@ class ResumeService:
             untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
         )
         return {
-            "cost_usd": str(estimate.cost_usd + preview.pending_cost_usd),
+            "cost_usd": str(estimate.cost_usd),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
             "rate_is_published": estimate.rate_is_published,
-            "includes_scoring": preview.pending_cost_usd > Decimal(0),
         }
 
     async def request(
@@ -303,8 +300,8 @@ class ResumeService:
             resume = await mine.resumes.create(
                 TailoredResume.requested(
                     owner_id=owner_id,
-                    target_kind=str(ref.kind),
-                    target_id=uuid.UUID(ref.id),
+                    role_id=uuid.UUID(ref.role_id),
+                    job_posting_id=(uuid.UUID(ref.job_posting_id) if ref.job_posting_id else None),
                     label=preview.label,
                     template=template,
                     options=options,
@@ -708,7 +705,9 @@ class ResumeService:
         )
         async with self._uow.for_owner(owner_id) as mine:
             mine.record(
-                ResumeTailored(owner_id=owner_id, resume_id=resume_id, target_kind=str(ref.kind))
+                ResumeTailored(
+                    owner_id=owner_id, resume_id=resume_id, role_id=uuid.UUID(ref.role_id)
+                )
             )
 
     async def _coverage(
@@ -850,7 +849,9 @@ def _content_of(model: _Resume) -> ResumeContent:
 
 
 def _ref_of(resume: TailoredResume) -> TargetRef:
-    return TargetRef(TargetKind(resume.target_kind), str(resume.target_id))
+    return TargetRef(
+        str(resume.role_id), str(resume.job_posting_id) if resume.job_posting_id else None
+    )
 
 
 def _write_inputs(

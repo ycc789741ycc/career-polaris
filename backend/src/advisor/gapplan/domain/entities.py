@@ -20,9 +20,10 @@ from advisor.gapplan.domain.plan import PlanStatus
 class GapPlan:
     id: uuid.UUID
     owner_id: uuid.UUID
-    # A TargetKind value from the target component, and the id it points at.
-    target_kind: str
-    target_id: uuid.UUID
+    # The Target (ADR 0022): one of the user's roles, and optionally one
+    # opening in it. Plain ids: the target component owns what they mean.
+    role_id: uuid.UUID
+    job_posting_id: uuid.UUID | None
     target_label: str
     version: int
     status: PlanStatus
@@ -42,8 +43,8 @@ class GapPlan:
         cls,
         *,
         owner_id: uuid.UUID,
-        target_kind: str,
-        target_id: uuid.UUID,
+        role_id: uuid.UUID,
+        job_posting_id: uuid.UUID | None,
         label: str,
         version: int,
         at: datetime,
@@ -51,8 +52,8 @@ class GapPlan:
         return cls(
             id=uuid.uuid4(),
             owner_id=owner_id,
-            target_kind=target_kind,
-            target_id=target_id,
+            role_id=role_id,
+            job_posting_id=job_posting_id,
             target_label=label[:400],
             version=version,
             status=PlanStatus.DRAFTING,

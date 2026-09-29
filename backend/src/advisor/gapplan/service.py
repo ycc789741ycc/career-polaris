@@ -14,7 +14,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -56,7 +55,6 @@ from advisor.profile import (
 from advisor.rolemap import RoleMapService
 from advisor.target import (
     DimensionGap,
-    TargetKind,
     TargetRef,
     TargetService,
     TargetSnapshot,
@@ -229,7 +227,7 @@ class GapPlanService:
         self._gateway = gateway
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
-        """Priced before anything is spent. A pasted JD not yet scored adds that."""
+        """Priced before anything is spent."""
         preview = await self._target.preview(owner_id, ref)
         profile = await self._profile.snapshot(owner_id)
         inputs = await self._inputs(
@@ -248,11 +246,10 @@ class GapPlanService:
             untrusted=_UNTRUSTED,
         )
         return {
-            "cost_usd": str(estimate.cost_usd + preview.pending_cost_usd),
+            "cost_usd": str(estimate.cost_usd),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
             "rate_is_published": estimate.rate_is_published,
-            "includes_scoring": preview.pending_cost_usd > Decimal(0),
         }
 
     async def request(self, owner_id: uuid.UUID, ref: TargetRef) -> PlanSummaryView:
@@ -267,8 +264,8 @@ class GapPlanService:
             plan = await mine.plans.create(
                 GapPlan.requested(
                     owner_id=owner_id,
-                    target_kind=str(ref.kind),
-                    target_id=uuid.UUID(ref.id),
+                    role_id=uuid.UUID(ref.role_id),
+                    job_posting_id=_opening_id(ref),
                     label=preview.label,
                     # Versions only grow, so the newest plan holds the highest.
                     version=(max(p.version for p in earlier) if earlier else 0) + 1,
@@ -537,7 +534,7 @@ class GapPlanService:
                 PlanDrafted(
                     owner_id=owner_id,
                     plan_id=plan_id,
-                    target_kind=str(ref.kind),
+                    role_id=uuid.UUID(ref.role_id),
                     version=plan.version,
                 )
             )
@@ -617,11 +614,18 @@ class GapPlanService:
 
 
 def _same_target(ref: TargetRef) -> GapPlanFilter:
-    return GapPlanFilter(target_kind=str(ref.kind), target_id=uuid.UUID(ref.id))
+    opening = _opening_id(ref)
+    return GapPlanFilter(
+        role_id=uuid.UUID(ref.role_id), job_posting_id=opening, role_only=opening is None
+    )
+
+
+def _opening_id(ref: TargetRef) -> uuid.UUID | None:
+    return uuid.UUID(ref.job_posting_id) if ref.job_posting_id else None
 
 
 def _ref_of(plan: GapPlan) -> TargetRef:
-    return TargetRef(TargetKind(plan.target_kind), str(plan.target_id))
+    return TargetRef(str(plan.role_id), str(plan.job_posting_id) if plan.job_posting_id else None)
 
 
 async def _tasks_by_plan(mine: OwnerGapPlans) -> dict[uuid.UUID, list[Task]]:

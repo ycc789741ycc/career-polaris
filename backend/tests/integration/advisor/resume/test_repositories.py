@@ -36,8 +36,8 @@ AT = datetime(2026, 9, 27, tzinfo=UTC)
 def _resume(owner_id: uuid.UUID) -> TailoredResume:
     return TailoredResume.requested(
         owner_id=owner_id,
-        target_kind="privatePosting",
-        target_id=uuid.uuid4(),
+        role_id=uuid.uuid4(),
+        job_posting_id=None,
         label="Staff Engineer at Acme",
         template=Template.PLAIN,
         options=Options(metrics=False, reorder=True, trim=True),
@@ -80,11 +80,11 @@ async def test_resumes_round_trip_and_latest_numbers_are_per_resume(
         assert two.label == "v2"
     async with database.for_user(account) as session:
         stored = await session.execute(
-            text("SELECT private_posting_id, options FROM resume.resume WHERE id = :id"),
+            text("SELECT role_id, options FROM resume.resume WHERE id = :id"),
             {"id": first.id},
         )
         target, options = stored.one()
-    assert target == first.target_id
+    assert target == first.role_id
     assert options == {"metrics": False, "reorder": True, "trim": True}
 
 
@@ -92,11 +92,9 @@ async def test_resume_events_reach_the_outbox_as_the_dispatcher_reads_them(
     database: Database, account: uuid.UUID
 ) -> None:
     uow = SqlAlchemyResumeUnitOfWork(database)
-    resume_id = uuid.uuid4()
+    resume_id, role_id = uuid.uuid4(), uuid.uuid4()
     async with uow.for_owner(account) as mine:
-        mine.record(
-            ResumeTailored(owner_id=account, resume_id=resume_id, target_kind="matchedPosting")
-        )
+        mine.record(ResumeTailored(owner_id=account, resume_id=resume_id, role_id=role_id))
         mine.record(
             ResumeVersionSaved(
                 owner_id=account, resume_id=resume_id, number=2, source=VersionSource.CHAT
@@ -109,6 +107,6 @@ async def test_resume_events_reach_the_outbox_as_the_dispatcher_reads_them(
             {"owner": account},
         )
         assert sorted(tuple(r) for r in rows.all()) == [
-            ("ResumeTailored", {"resume_id": str(resume_id), "target_kind": "matchedPosting"}),
+            ("ResumeTailored", {"resume_id": str(resume_id), "role_id": str(role_id)}),
             ("ResumeVersionSaved", {"resume_id": str(resume_id), "number": 2, "source": "chat"}),
         ]

@@ -63,7 +63,6 @@ def create_app() -> FastAPI:
     from api.routes.profile import router as profile_router
     from api.routes.resume import router as resume_router
     from api.routes.rolemap import router as rolemap_router
-    from api.routes.target import router as target_router
 
     for router in (
         identity_router,
@@ -71,7 +70,6 @@ def create_app() -> FastAPI:
         market_router,
         rolemap_router,
         assessment_router,
-        target_router,
         gapplan_router,
         resume_router,
         activity_router,

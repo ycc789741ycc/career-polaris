@@ -67,7 +67,7 @@ from advisor.assessment.domain import (
 from advisor.assessment.domain import (
     DimensionScore as DimensionValue,
 )
-from advisor.market import MarketService, PostingView, SalaryRange, Visibility
+from advisor.market import MarketService, SalaryRange, Visibility
 from advisor.profile import (
     CitationError,
     CitationHandles,
@@ -133,16 +133,6 @@ class _Mapping(BaseModel):
 class _Target(BaseModel):
     dimension_id: str
     target: int = Field(ge=0, le=100)
-
-
-class _PostingRequirement(BaseModel):
-    statement: str = Field(min_length=1, max_length=400)
-    weight: float = Field(ge=0.0, le=1.0)
-    expected_level: str = Field(pattern="^(familiar|proficient|advanced|expert)$")
-
-
-class _PostingRequirements(BaseModel):
-    requirements: list[_PostingRequirement] = Field(min_length=3, max_length=12)
 
 
 class _Projection(BaseModel):
@@ -664,77 +654,6 @@ class AssessmentService:
             latest.append(_fit_view(fit))
         return latest
 
-    async def fit_for_private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> FitView:
-        """Fit against a JD the user pasted, reading its requirements first.
-
-        A pasted JD has no Role, so its requirements are read from its own text
-        (on the user's key), then projected onto the user's dimensions like any
-        role's. A fit already taken against the current analysis is reused, so
-        planning and writing for the same JD pay for this once.
-        """
-        assessment = await self.latest(owner_id)
-        if assessment is None:
-            raise ValidationError("run an analysis before scoring a job description")
-        for fit in await self.fits(owner_id):
-            if fit.private_posting_id == posting_id and fit.assessment_id == assessment.id:
-                return fit
-
-        posting = await self._market.private_posting(owner_id, posting_id)
-        extraction = await self._gateway.run(
-            owner_id,
-            task="assessment.posting_requirements",
-            template=load_template("posting_requirements", "v1"),
-            inputs=_posting_inputs(posting),
-            output_schema=_PostingRequirements,
-            untrusted=frozenset({"posting"}),
-        )
-        requirements = tuple(
-            RequirementView(r.statement, r.weight, r.expected_level)
-            for r in extraction.value.requirements
-        )
-        await self._project(
-            owner_id,
-            assessment,
-            name=f"{posting.title} at {posting.company_name}",
-            requirements=requirements,
-            private_posting_id=posting_id,
-        )
-        for fit in await self.fits(owner_id):
-            if fit.private_posting_id == posting_id:
-                return fit
-        raise NotFoundError("the fit disappeared immediately after being written")
-
-    async def estimate_private_fit(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> Decimal:
-        """What scoring a pasted JD would cost; nothing when it is already scored."""
-        assessment = await self.latest(owner_id)
-        if assessment is None:
-            raise ValidationError("run an analysis before scoring a job description")
-        for fit in await self.fits(owner_id):
-            if fit.private_posting_id == posting_id and fit.assessment_id == assessment.id:
-                return Decimal(0)
-        posting = await self._market.private_posting(owner_id, posting_id)
-        extraction = await self._gateway.estimate(
-            owner_id,
-            task="assessment.posting_requirements",
-            template=load_template("posting_requirements", "v1"),
-            inputs=_posting_inputs(posting),
-            untrusted=frozenset({"posting"}),
-        )
-        # The projection's requirements are not known yet; the posting's own
-        # text stands in for them, which over- rather than under-estimates.
-        projection = await self._gateway.estimate(
-            owner_id,
-            task="assessment.fit",
-            template=load_template("fit_projection", "v1"),
-            inputs={
-                "dimensions": _dimensions_block(assessment),
-                "role_name": posting.title,
-                "requirements": posting.description,
-            },
-            untrusted=frozenset({"requirements"}),
-        )
-        return extraction.cost_usd + projection.cost_usd
-
     async def _project(
         self,
         owner_id: uuid.UUID,
@@ -796,18 +715,25 @@ class AssessmentService:
         )
 
     async def matched_postings(
-        self, owner_id: uuid.UUID, *, limit: int | None = DEFAULT_MATCHES
+        self,
+        owner_id: uuid.UUID,
+        *,
+        limit: int | None = DEFAULT_MATCHES,
+        role_id: uuid.UUID | None = None,
     ) -> list[MatchedPostingView]:
-        """The best openings inside the user's analysed roles.
+        """The best openings inside the user's analysed roles, or inside one
+        of them: the openings a Target in that role can name (ADR 0022).
 
-        Ranked by the role's current fit; no AI runs here. Pasted JDs are left
-        out — they are the user's own, shown as "My own JD", not as a match.
+        Ranked by the role's current fit; no AI runs here. A custom role's
+        private JD is not an opening: only shared postings are listed.
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id) if f.role_id}
 
         by_posting: dict[str, tuple[RoleView, Any]] = {}
         candidates: list[MatchCandidate] = []
         for role, postings in await self._rolemap.role_postings(owner_id):
+            if role_id is not None and role.id != role_id:
+                continue
             for posting in postings:
                 if posting.visibility is not Visibility.SHARED:
                     continue
@@ -1199,15 +1125,6 @@ def _dimensions_block(assessment: AssessmentView) -> str:
         f"- {d.key}: {d.name} — scored {d.score}/100 (confidence {d.confidence:.2f})"
         for d in assessment.dimensions
     )
-
-
-def _posting_inputs(posting: PostingView) -> dict[str, str]:
-    return {
-        "posting": (
-            f"Title: {posting.title}\nCompany: {posting.company_name}\n"
-            f"Location: {posting.location or 'not given'}\n\n{posting.description}"
-        )
-    }
 
 
 def _fit_view(fit: RoleFit) -> FitView:

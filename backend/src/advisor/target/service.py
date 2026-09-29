@@ -1,29 +1,28 @@
-"""Targets: what a gap plan or a résumé is aimed at (domain decision 16).
+"""Targets: what a gap plan or a résumé is aimed at (domain decision 26, ADR 0022).
 
-A Target is a value, not a table. This module resolves one — a matched
-posting or a pasted JD — through the other modules' public
-surfaces and freezes what it requires and how the user measures up into a
-``TargetSnapshot``. The plan or résumé that keys on it stores that snapshot.
+A Target is a value, not a table: one of the user's Roles, recommended or
+custom, and optionally one opening in it. This module resolves one through the
+other components' public surfaces and freezes what it requires and how the user
+measures up into a ``TargetSnapshot``, which the plan or résumé stores.
 
-Only a pasted JD may cost anything to resolve: it has no Role, so its
-requirements are read and scored on the user's key the first time.
+The role map is the only picker: the SPA carries the role, and the opening when
+one was picked, to the Advisor. Nothing here spends the user's key — a role is
+read and scored by the role-map build, a custom role's JD included.
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from decimal import Decimal
 
 from advisor.assessment import AssessmentService, FitView
-from advisor.market import MarketService, SalaryRange
+from advisor.market import PostingView
 from advisor.rolemap import RoleMapService, RoleView
 from advisor.target.domain import (
     DimensionGap,
     Requirement,
     RequirementBasis,
     TargetError,
-    TargetKind,
     TargetRef,
     TargetSnapshot,
     UncoveredGap,
@@ -33,8 +32,6 @@ from kernel.errors import NotFoundError, TargetUnusableError
 
 __all__ = [
     "DimensionGap",
-    "TargetKind",
-    "TargetOptionView",
     "TargetPreview",
     "TargetRef",
     "TargetService",
@@ -43,187 +40,105 @@ __all__ = [
     "requirements_block",
 ]
 
-# Where a pasted JD came from, next to the crawl source kinds a matched
-# posting carries.
-PASTED = "pasted"
-
-
-@dataclass(frozen=True, slots=True)
-class TargetOptionView:
-    """One row of the "Plan a route to" / "Write for" pickers."""
-
-    kind: TargetKind
-    id: uuid.UUID
-    title: str
-    role_name: str | None
-    role_id: uuid.UUID | None
-    company_name: str
-    fit: int | None
-    salary: SalaryRange | None
-    source_kind: str | None
-    url: str | None
-
-    @property
-    def label(self) -> str:
-        return f"{self.role_name or self.title} · {self.company_name}"
-
 
 @dataclass(frozen=True, slots=True)
 class TargetPreview:
-    """What pricing a plan needs, resolved without spending anything.
-
-    ``snapshot`` is None for a pasted JD not yet scored against the current
-    analysis; ``pending_cost_usd`` is then what scoring it will cost.
-    """
+    """What pricing work on a Target needs, resolved without spending anything."""
 
     label: str
-    snapshot: TargetSnapshot | None
+    snapshot: TargetSnapshot
     requirements_text: str
-    pending_cost_usd: Decimal
 
 
 class TargetService:
-    def __init__(
-        self,
-        *,
-        assessment: AssessmentService,
-        market: MarketService,
-        rolemap: RoleMapService,
-    ) -> None:
+    def __init__(self, *, assessment: AssessmentService, rolemap: RoleMapService) -> None:
         self._assessment = assessment
-        self._market = market
         self._rolemap = rolemap
 
-    async def options(self, owner_id: uuid.UUID) -> list[TargetOptionView]:
-        """Top matched openings, then pasted JDs."""
-        fits = await self._assessment.fits(owner_id)
-        posting_fit = {f.private_posting_id: f.score for f in fits if f.private_posting_id}
-
-        options = [
-            TargetOptionView(
-                kind=TargetKind.MATCHED_POSTING,
-                id=match.posting_id,
-                title=match.title,
-                role_name=match.role_name,
-                role_id=match.role_id,
-                company_name=match.company_name,
-                fit=match.fit,
-                salary=match.salary,
-                source_kind=match.source_kind,
-                url=match.url,
-            )
-            for match in await self._assessment.matched_postings(owner_id)
-        ]
-        for posting in await self._market.private_postings(owner_id):
-            options.append(
-                TargetOptionView(
-                    kind=TargetKind.PRIVATE_POSTING,
-                    id=posting.id,
-                    title=posting.title,
-                    role_name=None,
-                    role_id=None,
-                    company_name=posting.company_name,
-                    fit=posting_fit.get(posting.id),
-                    salary=None,
-                    source_kind=PASTED,
-                    url=posting.url,
-                )
-            )
-        return options
-
     async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
-        """Freeze the Target. For an unscored pasted JD this spends the user's key."""
-        target_id = _uuid(ref)
-        if ref.kind is TargetKind.PRIVATE_POSTING:
-            posting = await self._market.private_posting(owner_id, target_id)
-            fit = await self._assessment.fit_for_private_posting(owner_id, target_id)
-            return await self._freeze(
-                owner_id,
-                ref,
-                title=posting.title,
-                company=posting.company_name,
-                role=None,
-                fit=fit,
-                basis=RequirementBasis.POSTING,
-            )
+        """Freeze the Target: its role's requirements and the user's fit to them.
 
-        role, title, company = await self._resolve_role(owner_id, ref, target_id)
-        role_fit = next(
-            (f for f in await self._assessment.fits(owner_id) if f.role_id == role.id), None
-        )
-        if role_fit is None:
+        The requirements are the most specific the Target has: a custom role's
+        private JD, else the role's across its openings. An opening narrows the
+        title and company; per-opening requirements are not read yet, so an
+        opening in a role is measured against the role's (ADR 0022).
+        """
+        role = await self._role(owner_id, ref)
+        opening = await self._opening(owner_id, role, ref)
+        fit = next((f for f in await self._assessment.fits(owner_id) if f.role_id == role.id), None)
+        if fit is None:
             raise TargetUnusableError(
                 f"{role.name} has not been scored against your profile yet; "
-                "re-score fit on the role map first",
+                "it is scored when the role map is built",
                 role_id=str(role.id),
             )
         return await self._freeze(
             owner_id,
             ref,
-            title=title,
-            company=company,
             role=role,
-            fit=role_fit,
-            basis=RequirementBasis.ROLE,
+            title=opening.title if opening else role.name,
+            company=opening.company_name if opening else role.company_name or "",
+            fit=fit,
+            basis=(
+                RequirementBasis.POSTING
+                if role.is_custom and role.private_posting_id is not None
+                else RequirementBasis.ROLE
+            ),
         )
 
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetPreview:
         """Everything needed to price work on a Target, spending nothing."""
-        target_id = _uuid(ref)
-        if ref.kind is not TargetKind.PRIVATE_POSTING:
-            snapshot = await self.snapshot(owner_id, ref)
-            return TargetPreview(
-                label=snapshot.label,
-                snapshot=snapshot,
-                requirements_text=requirements_block(snapshot),
-                pending_cost_usd=Decimal(0),
-            )
-        posting = await self._market.private_posting(owner_id, target_id)
-        pending = await self._assessment.estimate_private_fit(owner_id, target_id)
-        scored = await self.snapshot(owner_id, ref) if pending == 0 else None
+        snapshot = await self.snapshot(owner_id, ref)
         return TargetPreview(
-            label=f"{posting.title} · {posting.company_name}",
-            snapshot=scored,
-            requirements_text=requirements_block(scored) if scored else posting.description,
-            pending_cost_usd=pending,
+            label=snapshot.label,
+            snapshot=snapshot,
+            requirements_text=requirements_block(snapshot),
         )
 
-    async def _resolve_role(
-        self, owner_id: uuid.UUID, ref: TargetRef, target_id: uuid.UUID
-    ) -> tuple[RoleView, str, str]:
-        if ref.kind is TargetKind.MATCHED_POSTING:
-            for role, postings in await self._rolemap.role_postings(owner_id):
-                for posting in postings:
-                    if posting.id == target_id:
-                        return role, posting.title, posting.company_name
-            raise NotFoundError(
-                "that opening is no longer in any of your roles", posting_id=str(target_id)
-            )
+    async def _role(self, owner_id: uuid.UUID, ref: TargetRef) -> RoleView:
+        role_id = _uuid(ref.role_id, ref)
+        for role in await self._rolemap.roles(owner_id):
+            if role.id == role_id:
+                return role
+        raise NotFoundError("that role is no longer on your role map", role_id=ref.role_id)
 
-        raise NotFoundError("target not found", kind=str(ref.kind), id=ref.id)
+    async def _opening(
+        self, owner_id: uuid.UUID, role: RoleView, ref: TargetRef
+    ) -> PostingView | None:
+        if ref.job_posting_id is None:
+            return None
+        posting_id = _uuid(ref.job_posting_id, ref)
+        for listed, postings in await self._rolemap.role_postings(owner_id):
+            if listed.id == role.id:
+                for posting in postings:
+                    if posting.id == posting_id:
+                        return posting
+        raise NotFoundError(
+            f"that opening is no longer in {role.name}", job_posting_id=ref.job_posting_id
+        )
 
     async def _freeze(
         self,
         owner_id: uuid.UUID,
         ref: TargetRef,
         *,
+        role: RoleView,
         title: str,
         company: str,
-        role: RoleView | None,
         fit: FitView,
         basis: RequirementBasis,
     ) -> TargetSnapshot:
         assessment = await self._assessment.latest(owner_id)
         names = {d.key: d.name for d in assessment.dimensions} if assessment else {}
         lifts = fit.lifts()
-        requirements = fit.requirements or (role.requirements if role else ())
+        requirements = fit.requirements or role.requirements
         try:
             return TargetSnapshot(
                 ref=ref,
                 title=title,
                 company=company,
-                role_id=str(role.id) if role else None,
-                role_name=role.name if role else None,
+                role_id=str(role.id),
+                role_name=role.name,
                 requirements=tuple(
                     Requirement(r.statement, r.weight, r.expected_level) for r in requirements
                 ),
@@ -247,7 +162,7 @@ class TargetService:
                 taken_at=utcnow(),
             )
         except TargetError as exc:
-            raise TargetUnusableError(str(exc), kind=str(ref.kind), id=ref.id) from exc
+            raise TargetUnusableError(str(exc), role_id=ref.role_id) from exc
 
 
 def requirements_block(snapshot: TargetSnapshot) -> str:
@@ -257,8 +172,8 @@ def requirements_block(snapshot: TargetSnapshot) -> str:
     )
 
 
-def _uuid(ref: TargetRef) -> uuid.UUID:
+def _uuid(value: str, ref: TargetRef) -> uuid.UUID:
     try:
-        return uuid.UUID(ref.id)
+        return uuid.UUID(value)
     except ValueError as exc:
-        raise NotFoundError("target not found", kind=str(ref.kind), id=ref.id) from exc
+        raise NotFoundError("target not found", **ref.to_dict()) from exc

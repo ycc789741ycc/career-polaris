@@ -1,6 +1,6 @@
 # 0005. Resolve Targets in their own module
 
-**Status:** Accepted — 2026-09-23.
+**Status:** Accepted — 2026-09-23. Amended by [0022](0022-make-a-target-a-role-and-an-optional-opening.md).
 
 ## Context
 

@@ -192,8 +192,12 @@ whatever is next when it merges.
    * Pasted JDs already stored become custom roles, titled from the JD.
    * README row: Role map.
 
-6. **A Target is a role, plus an optional opening** — `refactor/no-ticket/role-targets`,
+6. **A Target is a role, plus an optional opening — done.** `refactor/no-ticket/role-targets`,
    ADR 0022, amending ADR 0005
+   * Built as: an opening narrows the title, company and fit, but a single
+     posting's own requirements are not read yet — the role's are used (ADR
+     0022 records the deviation). Picking a "Top matched openings" row
+     selects the opening; `GET /matched-postings?role_id=` lists a role's.
    * `TargetRef{role_id, job_posting_id?}` in `target/domain/snapshot.py`.
      `RequirementBasis` becomes posting, then private JD, then role.
      `TargetService.options()` goes: the role map is the only picker.

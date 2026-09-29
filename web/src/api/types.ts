@@ -57,9 +57,8 @@ export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 /** The user's target locations and the open postings they take in (domain decision 21). */
 export type MarketScope = Schemas["MarketScope"];
 
-// Targets (domain decision 16)
-export type TargetOption = Schemas["TargetOption"];
-export type TargetKind = TargetOption["kind"];
+// Targets: a role, and optionally one opening in it (ADR 0022)
+export type TargetRef = Schemas["TargetRefBody"];
 
 // Gap plan
 export type PlanSummary = Schemas["PlanSummary"];
@@ -67,7 +66,7 @@ export type PlanStatus = PlanSummary["status"];
 export type PlanGap = Schemas["PlanGap"];
 export type PlanTask = Schemas["PlanTask"];
 export type Plan = Schemas["Plan"];
-/** Drafting for a Target; a pasted JD's scoring is included. */
+/** What drafting for a Target costs. */
 export type PlanEstimate = Schemas["TargetEstimate"];
 
 // Tailored résumé
@@ -93,4 +92,3 @@ export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
 export type RolePage = Schemas["RolePage"];
 export type StringPage = Schemas["StringPage"];
-export type TargetOptionPage = Schemas["TargetOptionPage"];

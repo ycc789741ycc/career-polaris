@@ -32,14 +32,6 @@ from kernel.db.base import Base, OwnedMixin, new_id
 class Resume(Base, OwnedMixin):
     __tablename__ = "resume"
     __table_args__ = (
-        CheckConstraint(
-            "num_nonnulls(job_posting_id, private_posting_id) = 1",
-            name="one_target",
-        ),
-        CheckConstraint(
-            "target_kind IN ('matchedPosting', 'privatePosting')",
-            name="target_kind",
-        ),
         CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
         CheckConstraint("template IN ('warm', 'plain', 'brief')", name="template"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
@@ -47,9 +39,9 @@ class Resume(Base, OwnedMixin):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    target_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    # The Target (ADR 0022): a role, and optionally one opening in it.
+    role_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    private_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     target_label: Mapped[str] = mapped_column(String(400), nullable=False)
     snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # RequirementCoverage for the snapshot: [{requirement, verdict, dimension_key,

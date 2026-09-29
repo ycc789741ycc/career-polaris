@@ -50,7 +50,7 @@ class SqlAlchemyGapPlanUnitOfWork:
                     EventName.PLAN_DRAFTED,
                     {
                         "plan_id": str(event.plan_id),
-                        "target_kind": event.target_kind,
+                        "role_id": str(event.role_id),
                         "version": event.version,
                     },
                     owner_id=event.owner_id,
