@@ -159,8 +159,11 @@ whatever is next when it merges.
      migration says how many.
    * README row: Gap plan (no watched roles).
 
-4. **Ten roles, built after each analysis** — `refactor/no-ticket/fixed-ten-roles`,
+4. **Ten roles, built after each analysis — done.** `refactor/no-ticket/fixed-ten-roles`,
    ADR 0020, superseding ADR 0003
+   * Built as: `activity.build_after_analysis` decides what `AnalysisFinished`
+     queues, migration 0014 drops the table, and the role map keeps a priced
+     "Rebuild role map" button.
    * `rolemap/domain/selection.py` replaces the 3–20 bound with a constant of
      ten. Drop `RoleMapSetting`, `rolemap.role_map_setting`, `RoleCountChanged`,
      `/roles/settings`, `role_count` on the cost estimate, and the SPA's

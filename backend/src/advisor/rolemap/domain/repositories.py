@@ -23,7 +23,6 @@ from advisor.rolemap.domain.entities import (
     BuildRunStatus,
     LineageEntry,
     Role,
-    RoleMapSetting,
     RoleMember,
     RoleRequirement,
 )
@@ -81,14 +80,6 @@ class LineageEntryRepository(Repository[LineageEntry, LineageEntryFilter], Proto
 
 
 @dataclass(frozen=True, slots=True)
-class RoleMapSettingFilter:
-    """One setting per user; the owner scope is the only filter."""
-
-
-class RoleMapSettingRepository(Repository[RoleMapSetting, RoleMapSettingFilter], Protocol): ...
-
-
-@dataclass(frozen=True, slots=True)
 class BuildRunFilter:
     statuses: tuple[BuildRunStatus, ...] | None = None
 
@@ -108,9 +99,6 @@ class OwnerRoleMap(Protocol):
 
     @property
     def lineage(self) -> LineageEntryRepository: ...
-
-    @property
-    def settings(self) -> RoleMapSettingRepository: ...
 
     @property
     def builds(self) -> BuildRunRepository: ...

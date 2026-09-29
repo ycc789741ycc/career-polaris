@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 from advisor.market import MarketService, PostingView, Visibility, band_from, in_market
 from advisor.profile import ProfileService
 from advisor.rolemap.domain import (
-    DEFAULT_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
     BarBasis,
     BuildRun,
@@ -29,11 +28,7 @@ from advisor.rolemap.domain import (
     Reconciliation,
     Role,
     RoleChange,
-    RoleCountChanged,
-    RoleCountError,
     RoleFilter,
-    RoleMapSetting,
-    RoleMapSettingFilter,
     RoleMapUnitOfWork,
     RoleMember,
     RoleMemberFilter,
@@ -46,13 +41,12 @@ from advisor.rolemap.domain import (
     max_role_count,
     rank_by_fit,
     reconcile,
-    validate_role_count,
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.embeddings import cluster, embed
-from kernel.errors import DomainError, NotFoundError, ValidationError
+from kernel.errors import DomainError, NotFoundError
 from kernel.logging import get_logger
 
 __all__ = ["BuildRequestView", "BuildRunView", "RequirementView", "RoleMapService", "RoleView"]
@@ -160,7 +154,7 @@ class RoleMapService:
 
     async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The live roles, newest first, each with its requirements, weightiest
-        first. One user's map: bounded by their role count, read whole."""
+        first. One user's map: ten roles and their own, read whole."""
         async with self._uow.for_owner(owner_id) as mine:
             roles = await mine.roles.get_list(RoleFilter(is_retired=False))
             requirements = (
@@ -198,49 +192,18 @@ class RoleMapService:
             for role in roles
         ]
 
-    async def role_count(self, owner_id: uuid.UUID) -> int:
-        """How many roles this user's role map analyses (ADR 0003)."""
-        async with self._uow.for_owner(owner_id) as mine:
-            setting = _first(await mine.settings.get_list(RoleMapSettingFilter(), page_size=1))
-        return DEFAULT_ROLE_COUNT if setting is None else setting.role_count
-
-    async def set_role_count(self, owner_id: uuid.UUID, role_count: int) -> int:
-        """Store the user's k. The caller has already shown the estimate for it
-        and had it confirmed, so a change queues a recluster."""
-        role_count = _checked(role_count)
-        async with self._uow.for_owner(owner_id) as mine:
-            setting = _first(await mine.settings.get_list(RoleMapSettingFilter(), page_size=1))
-            previous = DEFAULT_ROLE_COUNT if setting is None else setting.role_count
-            if setting is None:
-                await mine.settings.create(
-                    RoleMapSetting(id=uuid.uuid4(), owner_id=owner_id, role_count=role_count)
-                )
-            else:
-                setting.role_count = role_count
-                await mine.settings.update(setting)
-            if role_count != previous:
-                mine.record(
-                    RoleCountChanged(owner_id=owner_id, previous=previous, current=role_count)
-                )
-        log.info("rolemap.role_count_set", owner_id=str(owner_id), role_count=role_count)
-        return role_count
-
-    async def estimate_cost(
-        self, owner_id: uuid.UUID, *, role_count: int | None = None
-    ) -> dict[str, Any]:
+    async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         """The most a role map can cost, before any money is spent.
 
         A ceiling, not a prediction: the api runs no embeddings or clustering,
         so it prices the largest number of clusters these postings could form,
-        capped at the user's k — or at a proposed k, so the price of changing it
-        is shown before it is saved — each sent with the costliest prompt they
-        could fill.
+        capped at the ten recommended roles, each sent with the costliest
+        prompt they could fill.
         """
-        k = _checked(role_count) if role_count is not None else await self.role_count(owner_id)
         postings = await self._market.postings_in_scope(owner_id)
-        max_clusters = max_role_count(len(postings), k)
+        max_clusters = max_role_count(len(postings))
         if max_clusters == 0:
-            return {"max_clusters": 0, "role_count": k, "cost_usd": "0", "model_id": None}
+            return {"max_clusters": 0, "cost_usd": "0", "model_id": None}
 
         template = load_template("role_extraction", "v1")
         sample = _postings_block(sorted(postings, key=_prompt_length, reverse=True))
@@ -255,7 +218,6 @@ class RoleMapService:
         total = estimate.cost_usd * max_clusters * 2
         return {
             "max_clusters": max_clusters,
-            "role_count": k,
             "cost_usd": str(total.quantize(estimate.cost_usd)),
             "model_id": estimate.model_id,
             "rate_is_published": estimate.rate_is_published,
@@ -367,12 +329,10 @@ class RoleMapService:
             log.info("rolemap.nothing_to_cluster", owner_id=str(owner_id))
             return []
 
-        # Only the k clusters closest to the profile are analysed on the user's
-        # key; the rest are left out, so roles they held are retired below.
+        # Only the ten clusters closest to the profile are analysed on the
+        # user's key; the rest are left out, so roles they held are retired below.
         keep = rank_by_fit(
-            await self._profile_vectors(owner_id),
-            [group.vectors for group in found],
-            limit=await self.role_count(owner_id),
+            await self._profile_vectors(owner_id), [group.vectors for group in found]
         )
         groups = [found[index] for index in keep]
         log.info(
@@ -395,7 +355,7 @@ class RoleMapService:
         for index, group in enumerate(groups):
             role_id = uuid.UUID(reconciliation.assignments[index])
             # The same postings as the last analysis: nothing for the key to
-            # redo. This is what makes lowering k free (ADR 0003).
+            # redo, so a rebuild on an unchanged market is free.
             if previous.get(str(role_id)) == group.keys and await self._keep_role(
                 owner_id, role_id=role_id, postings=group.postings
             ):
@@ -700,13 +660,6 @@ def _role_view(role: Role, requirements: list[RoleRequirement]) -> RoleView:
 def role_bar_is_estimate(role: RoleView) -> bool:
     """Estimated bubbles are drawn with a dashed outline."""
     return role.bar_basis == str(BarBasis.ESTIMATED)
-
-
-def _checked(role_count: int) -> int:
-    try:
-        return validate_role_count(role_count)
-    except RoleCountError as exc:
-        raise ValidationError(str(exc), role_count=role_count) from exc
 
 
 def _build_view(build: BuildRun) -> BuildRunView:

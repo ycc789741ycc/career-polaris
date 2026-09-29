@@ -8,7 +8,6 @@ from advisor.rolemap.domain import (
     LineageEntry,
     Role,
     RoleChange,
-    RoleMapSetting,
     RoleMember,
     RoleRequirement,
 )
@@ -121,26 +120,6 @@ def apply_lineage(row: models.RoleLineage, entity: LineageEntry) -> None:
     row.role_id = entity.role_id
     row.kind = str(entity.kind)
     row.from_role_ids = list(entity.from_role_ids)
-
-
-def setting(row: models.RoleMapSetting) -> RoleMapSetting:
-    return RoleMapSetting(
-        id=row.id,
-        owner_id=row.owner_id,
-        role_count=row.role_count,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
-
-
-def setting_row(entity: RoleMapSetting) -> models.RoleMapSetting:
-    return models.RoleMapSetting(
-        id=entity.id, owner_id=entity.owner_id, role_count=entity.role_count
-    )
-
-
-def apply_setting(row: models.RoleMapSetting, entity: RoleMapSetting) -> None:
-    row.role_count = entity.role_count
 
 
 def build_run(row: models.BuildRun) -> BuildRun:

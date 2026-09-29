@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -42,6 +43,7 @@ class _Evidence:
 @dataclass(frozen=True)
 class _Snapshot:
     evidence: tuple[_Evidence, ...]
+    positions: tuple[Any, ...] = ()
 
 
 class FakeProfile:
@@ -527,3 +529,65 @@ async def test_a_run_that_already_ended_does_not_analyse_again() -> None:
 async def test_an_unknown_run_is_not_found() -> None:
     with pytest.raises(NotFoundError):
         await _service(FakeAssessmentUnitOfWork()).analyse(OWNER, uuid.uuid4())
+
+
+# --- the Analyze estimate (ADR 0020) ----------------------------------------
+
+
+@dataclass
+class _Estimate:
+    cost_usd: Decimal
+    model_id: str = "claude-opus-5"
+    input_tokens: int = 1200
+    rate_is_published: bool = True
+
+
+class _PricedGateway:
+    async def estimate(self, owner_id: uuid.UUID, **kwargs: Any) -> _Estimate:
+        return _Estimate(cost_usd=Decimal("0.10"))
+
+
+class _PricedRoleMap:
+    def __init__(self, cost: dict[str, Any]) -> None:
+        self.cost = cost
+
+    async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
+        return self.cost
+
+
+def _priced(role_map_cost: dict[str, Any]) -> AssessmentService:
+    return AssessmentService(
+        FakeAssessmentUnitOfWork(),
+        profile=FakeProfile(),  # type: ignore[arg-type]
+        rolemap=_PricedRoleMap(role_map_cost),  # type: ignore[arg-type]
+        market=None,  # type: ignore[arg-type]
+        gateway=_PricedGateway(),  # type: ignore[arg-type]
+        confidence_threshold=0.5,
+    )
+
+
+async def test_analyze_is_priced_with_the_role_map_build_that_follows_it() -> None:
+    service = _priced(
+        {
+            "max_clusters": 10,
+            "cost_usd": "0.40",
+            "model_id": "claude-opus-5",
+            "rate_is_published": True,
+        }
+    )
+
+    estimate = await service.estimate_cost(OWNER)
+
+    assert estimate["cost_usd"] == "0.50"
+    assert (estimate["analysis_cost_usd"], estimate["role_map_cost_usd"]) == ("0.10", "0.40")
+    assert estimate["max_roles"] == 10
+    assert estimate["rate_is_published"] is True
+
+
+async def test_analyze_on_a_market_too_thin_for_a_role_costs_the_analysis_alone() -> None:
+    service = _priced({"max_clusters": 0, "cost_usd": "0", "model_id": None})
+
+    estimate = await service.estimate_cost(OWNER)
+
+    assert estimate["cost_usd"] == "0.10"
+    assert estimate["max_roles"] == 0

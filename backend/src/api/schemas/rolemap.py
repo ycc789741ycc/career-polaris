@@ -1,4 +1,4 @@
-"""Role map's wire shapes: the bubble chart's roles and how many it analyses."""
+"""Role map's wire shapes: the bubble chart's roles and what a rebuild costs."""
 
 from __future__ import annotations
 
@@ -6,20 +6,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import Field
-
-from advisor.rolemap import MAX_ROLE_COUNT, MIN_ROLE_COUNT, RoleView
-from api.schemas.common import ApiModel, Page, RequestModel
-
-
-class RoleMapSettings(RequestModel):
-    """How many roles the role map analyses on the user's key (ADR 0003).
-
-    Both the body of a change and the answer to a read, so it keeps a
-    request's leniency.
-    """
-
-    role_count: int = Field(ge=MIN_ROLE_COUNT, le=MAX_ROLE_COUNT)
+from advisor.rolemap import RoleView
+from api.schemas.common import ApiModel, Page
 
 
 class SalaryBand(ApiModel):
@@ -89,8 +77,6 @@ class RoleMapEstimate(ApiModel):
     cost_usd: str
     model_id: str | None
     max_clusters: int
-    # The k this estimate was priced for (ADR 0003).
-    role_count: int
     # Null when there is nothing to price, so no model was asked.
     rate_is_published: bool | None = None
 

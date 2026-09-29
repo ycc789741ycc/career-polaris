@@ -114,23 +114,6 @@ class RoleLineage(Base, OwnedMixin):
     )
 
 
-class RoleMapSetting(Base, OwnedMixin, TimestampMixin):
-    """How many roles this user's role map analyses (ADR 0003).
-
-    One row per user; no row means the default. The bound is a domain rule in
-    ``advisor.rolemap.domain``, checked before anything is stored here.
-    """
-
-    __tablename__ = "role_map_setting"
-    __table_args__ = (
-        UniqueConstraint("owner_id", name="uq_role_map_setting_owner_id"),
-        {"schema": "rolemap"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    role_count: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
 class BuildRun(Base, OwnedMixin):
     """One background role-map build (ADR 0006, ADR 0018).
 

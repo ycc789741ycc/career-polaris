@@ -9,10 +9,7 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.rolemap import jobs
-from advisor.rolemap.domain import (
-    MAX_ROLE_COUNT,
-    MIN_ROLE_COUNT,
-)
+from advisor.rolemap.domain import RECOMMENDED_ROLE_COUNT
 from advisor.rolemap.factory import create_rolemap_service
 from advisor.rolemap.service import (
     BuildRequestView,
@@ -23,8 +20,7 @@ from advisor.rolemap.service import (
 )
 
 __all__ = [
-    "MAX_ROLE_COUNT",
-    "MIN_ROLE_COUNT",
+    "RECOMMENDED_ROLE_COUNT",
     "BuildRequestView",
     "BuildRunView",
     "RequirementView",

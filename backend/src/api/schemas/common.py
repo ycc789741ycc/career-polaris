@@ -147,6 +147,16 @@ class CostEstimate(ApiModel):
     rate_is_published: bool
 
 
+class AnalysisEstimate(CostEstimate):
+    """The price of Analyze: the analysis and the role-map build that follows
+    it, confirmed once (domain decision 24). ``cost_usd`` is their sum."""
+
+    analysis_cost_usd: str
+    # A ceiling: the ten recommended roles at most, fewer on a thin market.
+    role_map_cost_usd: str
+    max_roles: int
+
+
 class TargetEstimate(CostEstimate):
     """The price of drafting for a Target: a gap plan or a tailored résumé."""
 

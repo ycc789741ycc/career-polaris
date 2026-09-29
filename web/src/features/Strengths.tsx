@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type {
   Assessment,
-  CostEstimate,
+  AnalysisEstimate,
   Evidence,
   EvidencePage,
 } from "../api/types";
@@ -54,7 +54,7 @@ export function Strengths() {
     () => api.items<EvidencePage>("/evidence"),
     [],
   );
-  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | undefined>(undefined);
@@ -63,7 +63,9 @@ export function Strengths() {
     setBusy(true);
     setError(null);
     try {
-      setEstimate(await api.get<CostEstimate>("/assessments/cost-estimate"));
+      setEstimate(
+        await api.get<AnalysisEstimate>("/assessments/cost-estimate"),
+      );
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -172,7 +174,13 @@ export function Strengths() {
           onCancel={() => setEstimate(null)}
         >
           This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-          {estimate.model_id}, charged to your own provider.
+          {estimate.model_id}, charged to your own provider: $
+          {estimate.analysis_cost_usd} for the analysis, and at most $
+          {estimate.role_map_cost_usd} for the role map built after it
+          {estimate.max_roles > 0
+            ? `, up to ${estimate.max_roles} roles`
+            : ", which has no roles to name yet"}
+          .
           {estimate.rate_is_published === false && (
             <>
               {" "}

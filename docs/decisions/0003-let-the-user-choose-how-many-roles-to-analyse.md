@@ -1,6 +1,6 @@
 # 0003. Let the user choose how many roles to analyse
 
-**Status:** Accepted — 2026-09-22. Supersedes [0002](0002-analyse-only-the-ten-closest-roles.md).
+**Status:** Superseded by [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) — 2026-09-29. Supersedes [0002](0002-analyse-only-the-ten-closest-roles.md).
 
 ## Context
 

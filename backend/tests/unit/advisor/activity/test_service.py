@@ -171,7 +171,7 @@ async def test_a_role_map_waits_for_a_running_analysis_and_is_released_after(
     assert status.role_map is not None and status.role_map.status == "waiting"
 
     await world.assessment.fail_run(OWNER, run.id, code="ai_budget_exceeded", message="spent")
-    released = await world.activity.release_waiting_builds(OWNER)
+    released = await world.activity.build_after_analysis(OWNER, succeeded=False)
 
     assert released is not None and released.id == requested.build.id
     assert released.status == "running"
@@ -197,6 +197,45 @@ async def test_a_lost_build_is_closed_and_a_new_one_queued(world: World) -> None
     fresh = await world.activity.request_role_map(OWNER)
 
     assert fresh.should_queue and fresh.build.id != lost.build.id
+
+
+# --- 03 follows every successful analysis (ADR 0020) ----------------------
+
+
+async def test_a_successful_analysis_builds_the_role_map_unasked(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+
+    build = await world.activity.build_after_analysis(OWNER, succeeded=True)
+
+    assert build is not None and build.status == "running"
+
+
+async def test_a_failed_analysis_builds_nothing_that_did_not_wait(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+
+    assert await world.activity.build_after_analysis(OWNER, succeeded=False) is None
+    assert await world.rolemap.latest_build(OWNER) is None
+
+
+async def test_a_successful_analysis_starts_the_build_that_waited_rather_than_another(
+    world: World,
+) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    waiting = await world.activity.request_role_map(OWNER)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+
+    build = await world.activity.build_after_analysis(OWNER, succeeded=True)
+
+    assert build is not None and build.id == waiting.build.id
+    assert build.status == "running"
+
+
+async def test_a_successful_analysis_joins_a_build_already_running(world: World) -> None:
+    await world.activity.request_role_map(OWNER)
+
+    assert await world.activity.build_after_analysis(OWNER, succeeded=True) is None
 
 
 # --- a new market scope ----------------------------------------------------

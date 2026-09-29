@@ -12,13 +12,6 @@ from advisor.rolemap.domain.identity import RoleLineage
 
 
 @dataclass(frozen=True, slots=True)
-class RoleCountChanged:
-    owner_id: uuid.UUID
-    previous: int
-    current: int
-
-
-@dataclass(frozen=True, slots=True)
 class RoleRequirementsChanged:
     owner_id: uuid.UUID
     role_id: uuid.UUID
@@ -37,4 +30,4 @@ class RolesReclustered:
     roles: int
 
 
-RoleMapEvent = RoleCountChanged | RoleRequirementsChanged | RoleSplitOrMerged | RolesReclustered
+RoleMapEvent = RoleRequirementsChanged | RoleSplitOrMerged | RolesReclustered

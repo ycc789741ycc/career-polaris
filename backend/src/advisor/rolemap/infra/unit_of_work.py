@@ -15,7 +15,6 @@ from typing import Any, assert_never
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.rolemap.domain import (
-    RoleCountChanged,
     RoleMapEvent,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -24,7 +23,6 @@ from advisor.rolemap.domain import (
 from advisor.rolemap.infra.repositories import (
     SqlAlchemyBuildRunRepository,
     SqlAlchemyLineageEntryRepository,
-    SqlAlchemyRoleMapSettingRepository,
     SqlAlchemyRoleMemberRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemyRoleRequirementRepository,
@@ -39,7 +37,6 @@ class SqlAlchemyOwnerRoleMap:
         self.members = SqlAlchemyRoleMemberRepository(session, owner_id=owner_id)
         self.requirements = SqlAlchemyRoleRequirementRepository(session, owner_id=owner_id)
         self.lineage = SqlAlchemyLineageEntryRepository(session, owner_id=owner_id)
-        self.settings = SqlAlchemyRoleMapSettingRepository(session, owner_id=owner_id)
         self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
@@ -67,12 +64,6 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
     These payloads are a contract with the dispatcher and must not drift.
     """
     match event:
-        case RoleCountChanged():
-            return (
-                EventName.ROLE_COUNT_CHANGED,
-                {"from": event.previous, "to": event.current},
-                event.owner_id,
-            )
         case RoleRequirementsChanged():
             return (
                 EventName.ROLE_REQUIREMENTS_CHANGED,

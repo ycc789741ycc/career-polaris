@@ -8,7 +8,6 @@ import type {
   MatchedPostingPage,
   Role,
   RoleMapEstimate,
-  RoleMapSettings,
   RolePage,
   SalaryBand,
   MarketScope,
@@ -34,11 +33,6 @@ import { CostConfirm } from "./CostConfirm";
 import { OwnJdPanel } from "./OwnJd";
 import { messageOf, useAsync } from "./useAsync";
 
-// The bound the api enforces on k (ADR 0003). The api is the authority; these
-// only keep the input from offering a value it would refuse.
-const MIN_ROLE_COUNT = 3;
-const MAX_ROLE_COUNT = 20;
-
 /**
  * The role map: which roles exist in this user's market, and how they fit.
  *
@@ -53,10 +47,6 @@ export function Roles() {
   const roles = useAsync<Role[]>(
     () => api.items<RolePage>("/roles"),
     [settled.roleMap],
-  );
-  const settings = useAsync<RoleMapSettings>(
-    () => api.get("/roles/settings"),
-    [],
   );
   const fits = useAsync<Fit[]>(
     () => api.items<FitPage>("/fits"),
@@ -78,10 +68,6 @@ export function Roles() {
   );
 
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
-  // The k being considered; saved only once its estimate is confirmed.
-  const [roleCount, setRoleCount] = useState<number | null>(null);
-  const savedRoleCount = settings.data?.role_count;
-  const chosenRoleCount = roleCount ?? savedRoleCount;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
@@ -168,13 +154,7 @@ export function Roles() {
     setBusy(true);
     setError(null);
     try {
-      setEstimate(
-        await api.get<RoleMapEstimate>(
-          chosenRoleCount === undefined
-            ? "/roles/cost-estimate"
-            : `/roles/cost-estimate?role_count=${chosenRoleCount}`,
-        ),
-      );
+      setEstimate(await api.get<RoleMapEstimate>("/roles/cost-estimate"));
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -197,27 +177,14 @@ export function Roles() {
                 ? "Role map queued — it starts when your analysis finishes"
                 : "Role map queued",
               async () => {
-                if (
-                  chosenRoleCount !== undefined &&
-                  chosenRoleCount !== savedRoleCount
-                ) {
-                  // Saving a new k queues the rebuild itself.
-                  await api.put("/roles/settings", {
-                    role_count: chosenRoleCount,
-                  });
-                  await settings.reload();
-                  setRoleCount(null);
-                } else {
-                  await api.post("/roles/recluster");
-                }
+                await api.post("/roles/recluster");
                 setEstimate(null);
               },
             )
           }
         >
-          Your map covers up to {estimate.max_clusters ?? 0} of the{" "}
-          {estimate.role_count ?? chosenRoleCount} roles closest to your
-          profile. Naming them will cost at most{" "}
+          Your map covers up to {estimate.max_clusters ?? 0} of the ten roles
+          closest to your profile. Naming them will cost at most{" "}
           <strong>${estimate.cost_usd}</strong> on {estimate.model_id} — usually
           less, since postings may form fewer roles than that, and roles already
           analysed are not paid for again. Grouping itself runs on our machines;
@@ -230,7 +197,8 @@ export function Roles() {
         <Loading what="your roles" />
       ) : bubbles.length === 0 ? (
         <EmptyState title="No roles yet">
-          Choose where you want to work on Sources, then build your role map.
+          Choose where you want to work on Sources, then analyse your strengths:
+          the role map is built after every analysis.
         </EmptyState>
       ) : (
         <AutoGrid col={400} gap={20}>
@@ -238,7 +206,8 @@ export function Roles() {
             <div style={{ marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Role market map</h3>
               <div className="subcopy">
-                Bubble size = fit.
+                Bubble size = fit. The 10 best-fit roles on the market, built
+                after your strength analysis.
                 {scope.data && ` ${scopeLine(scope.data)}`}
               </div>
             </div>
@@ -445,34 +414,19 @@ export function Roles() {
 
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
-          <h3>Roles to analyse</h3>
+          <h3>Keep your map current</h3>
           <p className="subcopy">
-            How many of the roles closest to your profile the map analyses —
-            each one costs calls on your key.
+            The map is rebuilt after every analysis, and when the market in your
+            locations changes. Rebuild it now, or re-score your fit against the
+            roles already on it.
           </p>
-          <label className="field-label" htmlFor="role-count-input">
-            Roles ({MIN_ROLE_COUNT}–{MAX_ROLE_COUNT})
-          </label>
-          <input
-            id="role-count-input"
-            className="input"
-            type="number"
-            min={MIN_ROLE_COUNT}
-            max={MAX_ROLE_COUNT}
-            style={{ maxWidth: 140 }}
-            value={chosenRoleCount ?? ""}
-            onChange={(event) => {
-              setRoleCount(Number(event.target.value));
-              setEstimate(null);
-            }}
-          />
           <div className="row" style={{ marginTop: 14 }}>
             <Button busy={busy} disabled={building} onClick={askForEstimate}>
               {activity?.role_map?.status === "waiting"
                 ? "Waiting for analysis…"
                 : building
                   ? "Building…"
-                  : "Build role map"}
+                  : "Rebuild role map"}
             </Button>
             <Button
               variant="secondary"

@@ -1,5 +1,5 @@
 """The role map's entities: roles, what they were built from and require, how
-they changed, and the user's chosen role count.
+they changed, and the builds that produce them.
 
 Plain data with the rules that belong to it; ``advisor.rolemap.infra`` maps
 these to and from the database.
@@ -110,17 +110,6 @@ class LineageEntry:
     kind: RoleChange
     from_role_ids: tuple[str, ...]
     recorded_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class RoleMapSetting:
-    """How many roles this user's role map analyses (ADR 0003)."""
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    role_count: int
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class BuildRunStatus(StrEnum):

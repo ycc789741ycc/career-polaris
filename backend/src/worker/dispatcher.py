@@ -86,17 +86,15 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         return
 
     if name == EventName.ANALYSIS_FINISHED and owner_id:
-        # Recorded as the run closed, so it no longer counts as running: a
-        # role map that waited for it starts now, whether or not it succeeded
-        # (ADR 0018).
-        started = await deps.activity.release_waiting_builds(owner_id)
-        if started is not None:
-            await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(started.id))
-        return
-
-    if name == EventName.ROLE_COUNT_CHANGED:
-        # The route that saved the new k already recorded and queued the
-        # rebuild, so the page sees it at once (ADR 0018).
+        # Recorded as the run closed, so it no longer counts as running. A
+        # successful analysis always builds the role map, its cost confirmed
+        # with the analysis's (ADR 0020); a failed one still starts a build
+        # that waited for it (ADR 0018).
+        build = await deps.activity.build_after_analysis(
+            owner_id, succeeded=event.payload.get("status") == "ready"
+        )
+        if build is not None:
+            await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(build.id))
         return
 
     if name == EventName.ROLE_REQUIREMENTS_CHANGED and owner_id:
