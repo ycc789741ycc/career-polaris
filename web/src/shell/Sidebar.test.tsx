@@ -21,7 +21,6 @@ function status(overrides: Partial<ShellStatus> = {}): ShellStatus {
   return {
     me: null,
     credential,
-    confidence: null,
     ...overrides,
   };
 }
@@ -60,25 +59,13 @@ describe("sidebar", () => {
     expect(screen.getByText("claude-opus-5")).toBeInTheDocument();
   });
 
-  it("shows confidence only once there is an analysis", () => {
-    const { rerender } = render(
+  it("shows no profile confidence: it belongs to Strengths now", () => {
+    render(
       <Sidebar current="sources" status={status()} onNavigate={() => {}} />,
     );
-    expect(screen.getByText(/Run the analysis/)).toBeInTheDocument();
-
-    rerender(
-      <Sidebar
-        current="sources"
-        status={status({ confidence: 91 })}
-        onNavigate={() => {}}
-      />,
-    );
     expect(
-      screen.getByRole("progressbar", { name: "Profile confidence" }),
-    ).toHaveAttribute("aria-valuenow", "91");
-    expect(
-      screen.getByText("Enough to trust the salary bands."),
-    ).toBeInTheDocument();
+      screen.queryByRole("progressbar", { name: "Profile confidence" }),
+    ).not.toBeInTheDocument();
   });
 });
 

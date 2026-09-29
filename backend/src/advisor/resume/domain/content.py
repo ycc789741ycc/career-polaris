@@ -49,11 +49,11 @@ class VersionSource(StrEnum):
 
 
 class Template(StrEnum):
-    """Visual layout for export: rendering only, never a domain rule."""
+    """Visual layout for export: rendering only, never a domain rule. The
+    prototype's two: Organic (rounded, terracotta rule) and Plain."""
 
-    WARM = "warm"
+    ORGANIC = "organic"
     PLAIN = "plain"
-    BRIEF = "brief"
 
 
 class Verdict(StrEnum):

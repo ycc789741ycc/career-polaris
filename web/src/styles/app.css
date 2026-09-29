@@ -141,20 +141,6 @@ h4 { font-size: 17px; margin: 0; }
   white-space: nowrap;
 }
 
-.confidence {
-  margin-top: auto;
-  padding: 18px 22px 22px;
-}
-.confidence-value {
-  font-family: var(--font-heading);
-  font-size: 24px;
-  margin-top: 6px;
-}
-.confidence-note {
-  font-size: 12.5px;
-  color: var(--color-neutral-800);
-}
-
 .main {
   flex: 1;
   min-width: 0;
@@ -945,8 +931,7 @@ select.input { appearance: auto; }
   .nav-item { width: auto; white-space: nowrap; }
   .brand { padding: 16px 16px 10px; }
   .sidebar-section { margin: 0 16px 10px; padding-top: 8px; }
-  .sidebar-section .eyebrow,
-  .confidence { display: none; }
+  .sidebar-section .eyebrow { display: none; }
   .page-header { padding: 20px 16px 14px; }
   .page-body { padding: 4px 16px 48px; }
   h1 { font-size: 26px; }

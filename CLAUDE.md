@@ -283,7 +283,7 @@ Not yet: unlinking Google, or linking it from Settings.
 
 ## Phase 5 scope
 
-The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
+The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
 
 - **Target locations.** 01 Sources asks "Where you want to work": one to three
   places, a `market` domain rule (`chosen_target_locations`) checked again by
@@ -327,3 +327,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`). Built so far:
   `resume.regenerate`, each a no-op without a plan or résumé. The old
   follow-up questions, `/questions` and their tables are gone. The Advisor
   opens on `#/advisor/gaps`.
+- **Profile confidence on Strengths.** `assessment` returns
+  `profile_confidence` with the strength report (the unweighted mean of the
+  dimensions' confidence); Strengths shows it next to Re-analyse and lists
+  dimensions least certain first. The sidebar has no meter. Résumés come in the
+  prototype's two templates, `organic` and `plain`.

@@ -151,7 +151,7 @@ def test_fourteen_short_is_no_longer_partial() -> None:
 
 def test_every_value_is_escaped_in_the_export() -> None:
     hostile = content(Bullet('<script>alert("x")</script>', ("e1",)), name="<b>Maya</b>")
-    html = render_html(hostile, template=Template.WARM, options=Options())
+    html = render_html(hostile, template=Template.ORGANIC, options=Options())
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert "<b>Maya</b>" not in html
@@ -165,14 +165,18 @@ def test_trim_keeps_three_lines_a_role() -> None:
 
 
 def test_each_template_has_its_own_rule() -> None:
-    warm = render_html(content(CITED), template=Template.WARM, options=Options())
-    brief = render_html(content(CITED), template=Template.BRIEF, options=Options())
-    assert "#c67139" in warm
-    assert "#7a8a5e" in brief
+    organic = render_html(content(CITED), template=Template.ORGANIC, options=Options())
+    plain = render_html(content(CITED), template=Template.PLAIN, options=Options())
+    assert "#c67139" in organic and "#c67139" not in plain
+    assert "#cfcac5" in plain
+
+
+def test_the_prototype_offers_two_templates() -> None:
+    assert [str(t) for t in Template] == ["organic", "plain"]
 
 
 def test_the_export_is_a_pdf_rendered_without_fetching_anything() -> None:
-    pdf = render_pdf(render_html(content(CITED), template=Template.WARM, options=Options()))
+    pdf = render_pdf(render_html(content(CITED), template=Template.ORGANIC, options=Options()))
     assert pdf.startswith(b"%PDF-")
 
 

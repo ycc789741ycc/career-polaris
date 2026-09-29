@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
-import type { Assessment, Credential, Me } from "./api/types";
+import type { Credential, Me } from "./api/types";
 import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
@@ -59,24 +59,11 @@ export function App() {
 
 /** What the sidebar and header need. Pieces fail independently. */
 export async function loadStatus(): Promise<ShellStatus> {
-  const [me, credential, assessment] = await Promise.all([
+  const [me, credential] = await Promise.all([
     api.get<Me>("/me").catch(() => null),
     api.get<Credential | null>("/ai-credential").catch(() => null),
-    api.get<Assessment | null>("/assessments/latest").catch(() => null),
   ]);
-  const dimensions = assessment?.dimensions ?? [];
-  return {
-    me,
-    credential,
-    confidence:
-      dimensions.length === 0
-        ? null
-        : Math.round(
-            (dimensions.reduce((sum, d) => sum + d.confidence, 0) /
-              dimensions.length) *
-              100,
-          ),
-  };
+  return { me, credential };
 }
 
 function Shell() {
@@ -93,7 +80,6 @@ function Shell() {
   const [status, setStatus] = useState<ShellStatus>({
     me: null,
     credential: null,
-    confidence: null,
   });
   const [target, setTarget] = useState<string | null>(null);
   const [callback, setCallback] = useState<CallbackOutcome | null>(null);

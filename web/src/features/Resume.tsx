@@ -42,8 +42,8 @@ const TEMPLATES: {
   rule: string;
 }[] = [
   {
-    id: "warm",
-    name: "Warm",
+    id: "organic",
+    name: "Organic",
     note: "Rounded, terracotta rule.",
     swatch: "#c67139",
     color: "#8a4a20",
@@ -52,18 +52,10 @@ const TEMPLATES: {
   {
     id: "plain",
     name: "Plain",
-    note: "ATS-safe, no ornament.",
+    note: "One page, evidence first.",
     swatch: "#9b9691",
     color: "#201e1d",
     rule: "1px solid #cfcac5",
-  },
-  {
-    id: "brief",
-    name: "Brief",
-    note: "One page, evidence first.",
-    swatch: "#7a8a5e",
-    color: "#4d5a35",
-    rule: "3px solid #7a8a5e",
   },
 ];
 
@@ -128,7 +120,7 @@ export function Resume({
     label: string;
     cost: PlanEstimate;
   } | null>(null);
-  const [template, setTemplate] = useState<ResumeTemplate>("warm");
+  const [template, setTemplate] = useState<ResumeTemplate>("organic");
   const [options, setOptions] = useState<ResumeOptions>({
     metrics: true,
     reorder: true,

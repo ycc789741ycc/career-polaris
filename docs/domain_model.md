@@ -4,7 +4,7 @@ A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.exc
 
 Earlier reviews covered v1 (`job_searching_advisor_domain_concepts.excalidraw`) and v2 (`…_v2.excalidraw`). Their decisions still stand unless section 6 marks them superseded. This version reviews v3 and keeps the settled material the model still depends on.
 
-The code has not caught up with v3 yet. [`plan.md`](plan.md) Phase 5 lists the refactoring steps, in order.
+The code follows v3. [`plan.md`](plan.md) Phase 5 records the refactoring steps, and what each left for later.
 
 ## 1. What the v3 model says
 

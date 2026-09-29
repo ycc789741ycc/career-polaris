@@ -118,7 +118,6 @@ function renderAdvisor(focus: Focus | null, tab: AdvisorTab = "plan") {
     status: {
       me: null,
       credential: null,
-      confidence: null,
     },
     navigate: vi.fn(),
     focus,

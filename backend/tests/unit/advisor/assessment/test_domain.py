@@ -15,6 +15,7 @@ from advisor.assessment.domain import (
     derive_lineage,
     dropped_ids,
     evaluate,
+    profile_confidence,
     thin_evidence,
 )
 
@@ -187,3 +188,16 @@ def test_a_role_with_nothing_to_compare_is_not_a_fit_of_one_hundred() -> None:
 def test_a_target_outside_the_scale_is_rejected() -> None:
     with pytest.raises(ValueError, match="between 0 and 100"):
         TargetScore("a", 120)
+
+
+# -- profile confidence (domain decision 28) ----------------------------------
+
+
+def test_profile_confidence_is_the_mean_of_the_dimensions_confidence() -> None:
+    assert profile_confidence([dim("a", confidence=0.9), dim("b", confidence=0.6)]) == (
+        pytest.approx(0.75)
+    )
+
+
+def test_an_assessment_with_no_dimensions_has_no_profile_confidence() -> None:
+    assert profile_confidence([]) is None
