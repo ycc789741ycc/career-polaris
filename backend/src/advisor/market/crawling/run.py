@@ -15,7 +15,7 @@ from advisor.market.crawling.adapters import BY_NAME
 from advisor.market.crawling.politeness import RateLimiter, RobotsCache, origin_of, robots_url_for
 from advisor.market.service import CrawlIngest, CrawlSourceView, NormalizedPosting
 from kernel.embeddings import embed
-from kernel.errors import UpstreamFailedError
+from kernel.errors import BlockedAddressError, UpstreamFailedError
 from kernel.fetch import GuardedClient
 from kernel.logging import get_logger
 
@@ -47,7 +47,7 @@ async def fetch_source(
             await limiter.wait(source.endpoint)
             response = await client.request("GET", robots_url_for(source.endpoint))
             robots.remember(origin, response.text if response.status_code == 200 else None)
-        except UpstreamFailedError:
+        except (UpstreamFailedError, BlockedAddressError):
             robots.remember(origin, None)
 
     if not robots.allows(source.endpoint):
@@ -79,7 +79,7 @@ async def crawl_one_source(
     async with GuardedClient(timeout_seconds=timeout_seconds, user_agent=user_agent) as client:
         try:
             postings = await fetch_source(client, source, robots=robots, limiter=limiter)
-        except UpstreamFailedError as exc:
+        except (UpstreamFailedError, BlockedAddressError) as exc:
             await ingest.record_crawl(source.id, [], error=exc.message)
             return CrawlOutcome(source.id, 0, 0, exc.message)
     return await _store(ingest, source, postings)
@@ -102,8 +102,10 @@ async def crawl_all(
         for source in sources:
             try:
                 postings = await fetch_source(client, source, robots=robots, limiter=limiter)
-            except UpstreamFailedError as exc:
+            except (UpstreamFailedError, BlockedAddressError) as exc:
                 # One bad board must not stop the run; the source records why.
+                # A host that no longer resolves, or now resolves somewhere
+                # private, is a bad board too.
                 log.warning("crawl.source_failed", source_id=str(source.id), reason=exc.message)
                 await ingest.record_crawl(source.id, [], error=exc.message)
                 outcomes.append(CrawlOutcome(source.id, 0, 0, exc.message))
