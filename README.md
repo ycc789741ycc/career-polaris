@@ -148,7 +148,7 @@ backend/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
 infra/        infra compose project, DB role bootstrap, health wait
 prototype/    design reference screens for the v3 journey (prototype/README.md)
-docs/         intent, domain model, architecture, plan, decisions
+docs/         domain model, architecture, plan, decisions
 ```
 
 Twenty-two `import-linter` contracts in `backend/.importlinter` enforce the module
@@ -158,7 +158,6 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 
 | Document | What it covers |
 |---|---|
-| [`docs/intent.md`](docs/intent.md) | What the product is for |
 | [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
 | [`docs/architecture.md`](docs/architecture.md) | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
 | [`docs/plan.md`](docs/plan.md) | Scope for phases 1–4, and the Phase 5 refactoring steps |
