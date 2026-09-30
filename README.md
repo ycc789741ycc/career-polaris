@@ -160,7 +160,7 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 |---|---|
 | [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
 | [`docs/architecture.md`](docs/architecture.md) | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
-| [`docs/task-queue.md`](docs/task-queue.md) | Task submission, outbox dispatch, worker execution and status polling, with data-flow diagrams |
+| [`docs/technical/task-queue.md`](docs/technical/task-queue.md) | Task submission, outbox dispatch, worker execution and status polling, with data-flow diagrams |
 | [`docs/plan.md`](docs/plan.md) | Scope for phases 1–4, and the Phase 5 refactoring steps |
 | [`prototype/`](prototype/README.md) | The design reference: one screen per file, and the domain spec it was reviewed with |
 | [`docs/decisions/`](docs/decisions/README.md) | Decision records for choices that are costly to reverse |

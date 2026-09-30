@@ -119,12 +119,12 @@ duplicate submissions; the outbox is not an exactly-once execution guarantee.
 
 ## Implementation references
 
-- [Task submission and registration](../backend/src/wiring/queue.py)
-- [Procrastinate configuration and queue names](../backend/src/kernel/jobs/app.py)
-- [Outbox event model](../backend/src/kernel/outbox/models.py)
-- [Outbox writer](../backend/src/kernel/outbox/writer.py)
-- [Event dispatcher](../backend/src/worker/dispatcher.py)
-- [Worker entrypoint](../backend/src/worker/main.py)
-- [Architecture: communication](architecture.md#communication)
-- [ADR 0006: polling application status](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)
-- [ADR 0018: recorded run status](decisions/0018-gate-journey-stages-on-recorded-run-status.md)
+- [Task submission and registration](../../backend/src/wiring/queue.py)
+- [Procrastinate configuration and queue names](../../backend/src/kernel/jobs/app.py)
+- [Outbox event model](../../backend/src/kernel/outbox/models.py)
+- [Outbox writer](../../backend/src/kernel/outbox/writer.py)
+- [Event dispatcher](../../backend/src/worker/dispatcher.py)
+- [Worker entrypoint](../../backend/src/worker/main.py)
+- [Architecture: communication](../architecture.md#communication)
+- [ADR 0006: polling application status](../decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)
+- [ADR 0018: recorded run status](../decisions/0018-gate-journey-stages-on-recorded-run-status.md)
