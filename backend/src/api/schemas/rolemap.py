@@ -1,4 +1,5 @@
-"""Role map's wire shapes: the bubble chart's roles and what a rebuild costs."""
+"""Role map's wire shapes: the bubble chart's roles, the candidates they come
+from, and what a rebuild costs."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from advisor.rolemap import MAX_COMPANY_NAME, MAX_ROLE_TITLE, RoleView
+from advisor.rolemap import MAX_COMPANY_NAME, MAX_ROLE_TITLE, RoleCandidateView, RoleView
 from api.schemas.common import ApiModel, Page, RequestModel
 
 
@@ -82,17 +83,51 @@ def _bands(bands: Mapping[str, Any]) -> dict[str, SalaryBand]:
 
 
 class RoleMapEstimate(ApiModel):
-    """The most a role map can cost: a ceiling, not a prediction."""
+    """The most a role map can cost: a ceiling, not a prediction. ``cost_usd``
+    includes scoring the fits once the build ends (ADR 0024)."""
 
     # A decimal string: money never goes through a float.
     cost_usd: str
     model_id: str | None
-    max_clusters: int
+    max_roles: int
+    fits_cost_usd: str
     # Null when there is nothing to price, so no model was asked.
     rate_is_published: bool | None = None
 
 
 class RolePage(Page[Role]):
+    pass
+
+
+class RoleCandidate(ApiModel):
+    """A role the latest analysis recommended from the user's strengths, and
+    what the last build made of it (ADR 0024)."""
+
+    id: uuid.UUID
+    # The analysis's order, best fit first.
+    rank: int
+    title: str
+    description: str
+    dimension_keys: list[str]
+    # The role it became on the map; null when the user's target locations
+    # had too few openings for it.
+    role_id: uuid.UUID | None
+    opening_count: int
+
+    @classmethod
+    def from_view(cls, candidate: RoleCandidateView) -> RoleCandidate:
+        return cls(
+            id=candidate.id,
+            rank=candidate.rank,
+            title=candidate.title,
+            description=candidate.description,
+            dimension_keys=list(candidate.dimension_keys),
+            role_id=candidate.role_id,
+            opening_count=candidate.opening_count,
+        )
+
+
+class RoleCandidatePage(Page[RoleCandidate]):
     pass
 
 
@@ -106,10 +141,12 @@ class CustomRoleRequest(RequestModel):
 
 
 class CustomRoleEstimate(ApiModel):
-    """What adding a custom role will cost, shown before "Add to Role Map"."""
+    """What adding a custom role will cost, shown before "Add to Role Map".
+    ``cost_usd`` includes scoring the fits once its build ends (ADR 0024)."""
 
     cost_usd: str
     model_id: str | None
+    fits_cost_usd: str
     # Open postings in scope the role takes in, by title (and company).
     matches: int
     rate_is_published: bool | None = None

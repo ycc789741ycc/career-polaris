@@ -40,4 +40,20 @@ class CustomRoleAdded:
     company_name: str | None
 
 
-RoleMapEvent = CustomRoleAdded | RoleRequirementsChanged | RoleSplitOrMerged | RolesReclustered
+@dataclass(frozen=True, slots=True)
+class RoleMapBuildFinished:
+    """A build closed, ``ready`` or ``failed``. The one trigger for scoring the
+    fits, so each build is scored once, whatever it changed (ADR 0024)."""
+
+    owner_id: uuid.UUID
+    build_id: uuid.UUID
+    status: str
+
+
+RoleMapEvent = (
+    CustomRoleAdded
+    | RoleMapBuildFinished
+    | RoleRequirementsChanged
+    | RoleSplitOrMerged
+    | RolesReclustered
+)

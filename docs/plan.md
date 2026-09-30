@@ -256,3 +256,20 @@ whatever is next when it merges.
 
 Order: step 3 before 6, step 4 before 5, and steps 5 and 6 before 7. Step 2
 and step 8 can land any time.
+
+9. **Roles from the strength assessment — done.** `feature/no-ticket/roles-from-strengths`
+   (ADR 0024, domain decision 29; the v3 diagram's 2d–2h as drawn)
+   * `skill_assessment` v2 also recommends up to 20 candidate roles, each
+     resting on dimensions from the same reply. `assessment` hands them to
+     `rolemap.replace_candidates`; they live in `rolemap.role_candidate`
+     (migration 0019).
+   * A build embeds the candidates, gives each posting in scope to the nearest
+     one (or one whose title it names), and keeps the first ten with three or
+     more openings. Naming, requirements, lineage and free unchanged roles
+     work as before. With no candidates, only custom roles are placed.
+   * Per-user HDBSCAN clustering, `rank_by_fit` and the direct
+     `scikit-learn` dependency are gone; `rolemap` no longer reads `profile`.
+   * Fits are scored once per build, on `RoleMapBuildFinished`, and every
+     estimate that leads to a build prices them (`fits_cost_usd`).
+   * The role map lists the recommended roles the market lacks
+     (`GET /role-candidates`).

@@ -1,27 +1,35 @@
-"""Which clusters become roles, and how many there can be.
+"""Which recommended candidates become roles, and how many there can be.
 
-Every role costs two calls on the user's key, so a role map analyses only the
-ten clusters closest to the user's profile (ADR 0020). Closeness is
-decided before any AI runs, from local embeddings: the assessed fit needs a
-role's requirements, and those come from the very analysis this limits.
+The analysis recommends up to ``CANDIDATE_ROLE_COUNT`` roles from the user's
+strengths, best fit first (ADR 0024). A build searches the postings in the
+user's target locations for each one, and keeps the first
+``RECOMMENDED_ROLE_COUNT`` the market has at least ``MIN_POSTINGS_FOR_A_ROLE``
+openings for. Every kept role costs two calls on the user's key, so the ten
+bound what a build can spend.
 
-The cost shown before a first role map comes from the api, which runs no local
-ML (architecture: embeddings and clustering live in the crawler and the
-worker). So that estimate is a ceiling rather than a prediction: every cluster
-needs at least ``MIN_POSTINGS_FOR_A_ROLE`` members, which bounds how many there
-can be, and the user is never charged more than they were shown.
+Matching is local: embeddings compared by cosine, plus the title-word rule
+custom roles use. Each posting goes to one candidate at most, so the ten
+roles never share an opening, and ``max_role_count`` stays a true ceiling for
+the cost the api shows before any embedding runs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-# Below this, there is nothing to cluster and no role worth naming.
+# Below this, a candidate has no openings worth naming a role after.
 MIN_POSTINGS_FOR_A_ROLE = 3
 # How many recommended roles one role map analyses on the user's key: fixed by
 # the system, so the cost is predictable (domain decision 23, ADR 0020). Roles
 # the user adds themselves do not count toward it.
 RECOMMENDED_ROLE_COUNT = 10
+# How many candidates one analysis may recommend: twice the ten, so a candidate
+# the market lacks leaves room for the next (ADR 0024).
+CANDIDATE_ROLE_COUNT = 20
+# The least cosine at which a posting counts as an opening for a candidate it
+# does not name by title. Set for all-MiniLM-L6-v2 over a candidate's title and
+# description against a posting's title and description.
+CANDIDATE_MATCH_THRESHOLD = 0.40
 
 Vector = Sequence[float]
 
@@ -33,36 +41,54 @@ def max_role_count(posting_count: int) -> int:
     return min(posting_count // MIN_POSTINGS_FOR_A_ROLE, RECOMMENDED_ROLE_COUNT)
 
 
-def rank_by_fit(
-    profile: Sequence[Vector],
-    clusters: Sequence[Sequence[Vector]],
+def assign_postings(
+    candidates: Sequence[Vector],
+    postings: Sequence[Vector],
+    title_hits: Sequence[frozenset[int]],
+    *,
+    threshold: float = CANDIDATE_MATCH_THRESHOLD,
+) -> list[int | None]:
+    """The candidate each posting is an opening for, or ``None``.
+
+    ``title_hits[j]`` holds the candidates whose every title word posting ``j``
+    names. A posting that names any goes to the nearest of those, whatever the
+    cosine: the title is the strongest sign there is. Otherwise it goes to the
+    nearest candidate at or above ``threshold``. Ties go to the better-ranked
+    (earlier) candidate, so the same inputs always give the same roles.
+    """
+    if len(title_hits) != len(postings):
+        raise ValueError("title_hits needs one entry per posting")
+    if not -1.0 <= threshold <= 1.0:
+        raise ValueError("threshold is a cosine, between -1 and 1")
+    assigned: list[int | None] = []
+    for posting, hits in zip(postings, title_hits, strict=True):
+        if any(c < 0 or c >= len(candidates) for c in hits):
+            raise ValueError("title_hits names a candidate that does not exist")
+        pool = sorted(hits) if hits else range(len(candidates))
+        floor = -1.0 if hits else threshold
+        best: int | None = None
+        best_score = floor
+        for candidate in pool:
+            score = _cosine(candidates[candidate], posting)
+            if score > best_score or (best is None and score >= floor):
+                best, best_score = candidate, score
+        assigned.append(best)
+    return assigned
+
+
+def keep_on_market(
+    opening_counts: Sequence[int],
     *,
     limit: int = RECOMMENDED_ROLE_COUNT,
+    minimum: int = MIN_POSTINGS_FOR_A_ROLE,
 ) -> list[int]:
-    """Indices of the ``limit`` clusters closest to the profile, closest first.
-
-    Closeness is the cosine between the profile's centroid and each cluster's.
-    With no profile to compare against, the largest clusters win, so a new user
-    still gets a map. Ties go to the larger cluster, then the earlier index,
-    so the same inputs always select the same roles.
-    """
+    """The candidates that become roles: those with at least ``minimum``
+    openings, in the analysis's order, at most ``limit`` of them."""
     if limit < 0:
         raise ValueError("limit cannot be negative")
-    target = _centroid(profile) if profile else None
-
-    def score(index: int) -> tuple[float, int, int]:
-        members = clusters[index]
-        closeness = _cosine(target, _centroid(members)) if target and members else 0.0
-        return (-closeness, -len(members), index)
-
-    return sorted(range(len(clusters)), key=score)[:limit]
-
-
-def _centroid(vectors: Sequence[Vector]) -> list[float]:
-    dimensions = len(vectors[0])
-    if any(len(v) != dimensions for v in vectors):
-        raise ValueError("vectors must have the same length")
-    return [sum(v[i] for v in vectors) / len(vectors) for i in range(dimensions)]
+    if minimum < 1:
+        raise ValueError("a role needs at least one opening")
+    return [index for index, count in enumerate(opening_counts) if count >= minimum][:limit]
 
 
 def _cosine(left: Vector, right: Vector) -> float:

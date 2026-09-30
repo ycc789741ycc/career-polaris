@@ -2,7 +2,7 @@
 
 This doc turns the domain model in [`domain_model.md`](domain_model.md) into an architecture. It covers what gets deployed separately, who owns which data, where secrets can be decrypted, where untrusted input enters, how modules talk to each other, and the decisions behind all of it.
 
-**Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for clustering · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
+**Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for matching postings · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
 > **This describes the v3 design** (domain decisions 21–28), which the code now follows. [`plan.md`](plan.md) Phase 5 records the steps that got it there, and what each left for later.
 
@@ -58,7 +58,7 @@ The worker queues share one image for the MVP. Split them later by giving each q
 | Persistence | Postgres, SQLAlchemy 2, Alembic | One managed database for data, queue and outbox |
 | Jobs | Procrastinate (Postgres-backed, periodic tasks) | No Redis at MVP scale |
 | Documents | WeasyPrint (PDF export, [ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)), pypdf / python-docx (parsing) | No browser in the image; the export fetches nothing |
-| Local ML | sentence-transformers + HDBSCAN | Works with every LLM provider, including Anthropic, which has no embeddings API |
+| Local ML | sentence-transformers | Works with every LLM provider, including Anthropic, which has no embeddings API |
 | Client | React + Vite, `openapi-typescript` client generated from FastAPI's OpenAPI; the SPA's response types alias it | The API contract is the client/server boundary, checked in CI down to the SPA's typecheck ([ADR 0013](decisions/0013-type-every-http-response-with-a-schema-model.md)) |
 | Auth | Own sign-in in `identity`: Argon2id, 15-minute HS256 access tokens, rotating refresh cookie; optional Google through our own OpenID Connect exchange | No external account needed to run the app; see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md) and [ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md) |
 
@@ -179,8 +179,8 @@ flowchart TB
 | `identity` | none | Accounts, password and Google sign-in, sessions, and the write-only AI credential |
 | `profile` | none | Evidence: GitHub and Jira connectors, résumé upload and parsing; never reaches the AI gateway (rule 10) |
 | `market` | none | Openings: board adapters, discovery and politeness (`crawling/`), the baseline seed, the user's 1–3 target locations, custom roles' private JDs, posting embeddings |
-| `rolemap` | market, profile | Clusters the user's market into Roles, keeps the ten closest, and places the user's custom Roles beside them |
-| `assessment` | market, profile, rolemap | Skill dimensions, the strength report with per-dimension and profile confidence, and RoleFit |
+| `rolemap` | market | Holds the candidate roles each analysis recommends, keeps the first ten the user's market has openings for, and places the user's custom Roles beside them ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
+| `assessment` | market, profile, rolemap | Skill dimensions, the strength report with per-dimension and profile confidence, the candidate roles it hands to `rolemap`, and RoleFit |
 | `target` | market, rolemap, assessment | Resolves a role (and optionally an opening) into a frozen snapshot; no tables |
 | `gapfill` | profile, assessment, target | Questions per gap of a Target, and the one submit that records every answer as `user_answer` evidence |
 | `gapplan` | profile, rolemap, assessment, target, gapfill | Gap plans per Target: ranked gaps, milestones, tasks, versions; regenerated after answers are submitted |
@@ -207,13 +207,14 @@ flowchart TB
 | Event | Emitted by | Handled by |
 |---|---|---|
 | `ProfileUpdated` | profile | nothing that spends: the strength report marks itself out of date (ADR 0015). Evidence no longer opens a question round — questions come from a Target's gaps (domain decision 27) |
-| `AssessmentCompleted` / `DimensionsChanged` | assessment | assessment.compute_fits |
+| `AssessmentCompleted` / `DimensionsChanged` | assessment | nothing: the build that follows every analysis scores the fits ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
 | `AnalysisFinished(run, status)` | assessment, as the run closes | activity.request_role_map: a successful analysis always queues rolemap.recluster (domain decision 24; its cost was confirmed with the analysis's), and a build that waited on it starts whether the analysis succeeded or failed ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
 | `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → activity.request_role_map per user: joins a build already open, waits for a running analysis, or queues rolemap.recluster. A baseline-only change reaches every user whose scope includes that market. |
 | `TargetLocationsChanged(locations)` | market | activity.rebuild_role_map: a role map the user already has is rebuilt on the new scope (ADR 0018 gating); a user with none waits for their first analysis. Later: materialise the locations' public-API `crawl_source` rows with no user id — not built, there is no public job API adapter yet |
 | `CustomRoleAdded(role, company?)` | rolemap | a named company → `market.company_named` → `market.discover_board`, which may leave a `demand` `crawl_source` with no user id. The route that added the role already recorded the build that places it (its cost was confirmed when it was added) |
 | `GapAnswersSubmitted(target, evidence ids)` | gapfill | gapplan.regenerate and resume.regenerate for that Target, each only if the user already has one — dispatched separately, so the two never import each other |
-| `RoleRequirementsChanged`, `RoleSplitOrMerged` | rolemap | assessment.compute_fits; later gapplan.suggest_successor (for Targets whose snapshot came from that Role — not built: rolemap does not emit `RoleSplitOrMerged` yet) |
+| `RoleMapBuildFinished(build, status)` | rolemap, as a build closes, `ready` or `failed` | assessment.compute_fits: the fits are scored once per build ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
+| `RoleRequirementsChanged`, `RoleSplitOrMerged` | rolemap | nothing yet; later gapplan.suggest_successor (for Targets whose snapshot came from that Role — not built: rolemap does not emit `RoleSplitOrMerged` yet) |
 | `PlanDrafted` | gapplan | nothing yet; recorded for the match digest and progress history |
 | `ResumeTailored`, `ResumeVersionSaved` | resume | nothing yet; `ResumeTailored` is what the interview-report prompt will key on |
 | `InterviewReported` | profile | market.record_contribution, profile.add_evidence, assessment.calibrate_fit |
@@ -258,7 +259,7 @@ flowchart TB
 | Baseline sources (domain decision 15) | `market.crawl_source` with `origin = 'baseline'` | A versioned seed owned by `advisor.market`, loaded by `make migrate`. It is data reviewed like code, not environment configuration. Demand rows have `origin = 'demand'` and come from target locations and custom-role companies. Neither carries a user id. |
 | Role, with `origin` (domain decisions 23, 25) | `rolemap.role` | Owner zone. `origin` is `recommended` (one of the ten; retired by reconciliation when it falls out) or `custom` (kept until the user removes it, with its title, optional company and optional `private_posting_id`). The count of ten is a constant in the `rolemap` domain, not a setting. |
 | Resume, ResumeVersion, RevisionThread, exports | `resume.resume`, `resume.version`, `resume.revision`, `resume.export` | Owner zone. A résumé holds its Target like a plan does, with its snapshot and RequirementCoverage. Versions are never overwritten (`generated`, `manual`, `chat`, and `answers` for a regeneration after Fill the gap); each chat exchange keeps the proposal it made and the version it became; exported PDFs live in object storage under `users/{owner}/exports/`. |
-| GapPlan, Milestone, Task | `gapplan.plan`, `gapplan.milestone`, `gapplan.task` | Owner zone. A plan row holds the Target as a `role_id` plus a nullable `job_posting_id` (domain decision 26), and the frozen requirements snapshot, so a plan survives posting expiry and re-clustering. Regenerating adds a row with the next `version`; finished tasks carry over by matching. Each row has a `status` (`drafting`, `ready`, `failed`) and the failure's code ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)). |
+| GapPlan, Milestone, Task | `gapplan.plan`, `gapplan.milestone`, `gapplan.task` | Owner zone. A plan row holds the Target as a `role_id` plus a nullable `job_posting_id` (domain decision 26), and the frozen requirements snapshot, so a plan survives posting expiry and rebuilds. Regenerating adds a row with the next `version`; finished tasks carry over by matching. Each row has a `status` (`drafting`, `ready`, `failed`) and the failure's code ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)). |
 | QuestionSet, GapQuestion (domain decision 27) | `gapfill.question_set`, `gapfill.question` | Owner zone. A set is keyed on the Target (`role_id`, nullable `job_posting_id`) and records the model and a `status` the page polls (`writing`, `ready`, `failed`, `superseded`). Each question keeps its gap (dimension id or requirement), "asked because", answer type and choices. Answers are **not** stored here while the user types — they arrive in one submit and are written as `profile.evidence` with source `user_answer`, citing the question; the question keeps the evidence id. |
 | What a fit was projected from | `assessment.role_fit.requirements`, `requirement_map` | The requirements and which of the user's dimensions each mapped to, so a Target snapshot and requirement coverage can be read without the role or posting. A fit may be for a custom role's JD (`private_posting_id`). |
 | A custom role's JD (decisions 12, 25) | `market_user.private_job_posting` | The crawler role and shared queries physically can't reach it. An optional `shared_posting_id` gives a one-way link to a matching crawled posting. It is referenced by the custom role that owns it. |
@@ -324,19 +325,19 @@ flowchart LR
 - **Prompt templates** are versioned files. Each snapshot (SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion) stores the model id and template version.
 - **Cost confirmation** comes from the same estimate step, run in dry-run mode. Analyze's estimate covers the analysis **and** the ten-role build that follows it (domain decision 24); "Add to Role Map" and "Submit answers" (which regenerates the plan and résumé) estimate their own.
 - **Callers:** `assessment` (analysis, fit, reading a custom role's JD), `rolemap` (naming, requirements, difficulty), `gapfill` (questions per gap), `gapplan` (drafting) and `resume` (writing, and the revision chat through `stream_structured`: prose streams, the marker never does, and the JSON after it is validated like any `run`). Never `profile`: ingestion is outside the gateway (rule 10).
-- **Local ML is outside the gateway.** sentence-transformers and HDBSCAN run in `crawler` (posting embeddings, dedup) and in `worker` (per-user clustering over the embeddings of that user's market postings). The gateway on the user's key only **names clusters and extracts requirements**. Rule: *generative AI is paid by the user; plain computation is paid by the platform* (domain decision 7).
+- **Local ML is outside the gateway.** sentence-transformers runs in `crawler` (posting embeddings) and in `worker` (embedding the analysis's candidate roles, and any posting not yet embedded, to match them locally). The gateway on the user's key only **recommends candidate roles with the analysis, names roles and extracts requirements** ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)). Rule: *generative AI is paid by the user; plain computation is paid by the platform* (domain decision 7).
 
 ## 6. Schedules and flows across units
 
 | Trigger | Unit | Flow |
 |---|---|---|
 | Weekly cron | crawler | crawl every `crawl_source`, baseline and demand → normalize → dedup → embed → expire unseen → outbox `PostingsChanged` |
-| `PostingsChanged` | worker (`ai`) | resolve affected users → recluster → keep the ten clusters closest to the profile, and re-match each custom role → name them and extract requirements → compute fits |
+| `PostingsChanged` | worker (`ai`) | resolve affected users → recluster → match the latest analysis's candidates to the postings in scope and keep the first ten the market has, and re-match each custom role → name them and extract requirements → `RoleMapBuildFinished` → compute fits once |
 | User adds, removes or changes a target location | api → worker | the whole set saved at once, at most three, checked in the domain → store in `market_user` → `TargetLocationsChanged` → rebuild a role map the user already has on the new scope (ADR 0018 gating). Materialising the locations' public-API `crawl_source` rows without user id is not built yet |
 | Weekly cron, after crawl | worker (`notify`) | send interview-report prompts about 2 weeks after tailoring (not built yet) |
 | Weekly cron | worker | re-check demand `crawl_source` rows whose company had no board yet; refresh public-API rows from target locations through the `app.fanout` read. A custom role's company needs no fan-out: `CustomRoleAdded` carries it, and the ownerless row it becomes persists |
 | User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits → the role-map build, whose cost was part of the same confirmation (domain decision 24; ADR 0006, ADR 0018) |
-| Role-map build (after an analysis, or a market change) | worker (`ai`) | build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → the ten closest clusters plus every custom role → `ready` or `failed` (ADR 0018) |
+| Role-map build (after an analysis, or a market change) | worker (`ai`) | build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → the first ten candidates the market has, plus every custom role → `ready` or `failed` (ADR 0018), recording `RoleMapBuildFinished` → compute fits once (ADR 0024) |
 | User clicks "Add to Role Map" (title, company?, JD?) | api → worker (`ai`) | cost estimate → user confirms → a custom role in `rolemap` (its JD stored privately in `market_user`) → `CustomRoleAdded` → board discovery for the company, if any → match postings in scope by title (and company) → requirements from the JD or the matches → fit → placed on the map, drawn green |
 | Any background work running | api | the shell polls `GET /activity` every 2 s while a sync, parse, analysis or build is busy: the running bar, sidebar marks, a toast when a stage ends, and screens reload what it wrote. Work busy past `JOB_STALE_AFTER_SECONDS` reads as `failed`/`stale` (ADR 0018) |
 | Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated`; nothing on the user's key |
@@ -359,7 +360,7 @@ flowchart LR
 | T4 | Privacy by storage location: target locations and custom roles' JDs in `market_user`; interview reports split into a private outcome and an anonymized contribution, aggregated at ≥ 3 contributors |
 | T5 | Envelope encryption for the LLM key and connector tokens; master key only on `api` and `worker`; path to cloud KMS later |
 | T6 | A single AI gateway: budget check → decrypt → provider adapter → schema validation → usage ledger |
-| T7 | Local embeddings plus HDBSCAN for dedup and clustering; the LLM only names clusters and extracts requirements |
+| T7 | Local embeddings to match candidate roles to postings; the LLM recommends the candidates with the analysis, then names roles and extracts requirements (ADR 0024) |
 | T8 | ~~Managed auth provider~~ — **superseded by [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)**: own email-and-password sign-in. Still true: FastAPI verifies JWTs on every request, and login is kept separate from connector OAuth |
 | T9 | Untrusted-input rules: parsing only in workers, delimited prompts, no side-effecting tools, schema-validated output, SSRF-guarded fetch including custom LLM base URLs and custom-role company discovery |
 | T10 | Baseline crawl: a platform-curated seed in `market.crawl_source` (`origin = 'baseline'`), loaded by `migrate`, shared zone, no user linkage |
@@ -382,7 +383,7 @@ flowchart LR
 | Domain decision | Technical boundary |
 |---|---|
 | 1 Per-user dimensions | `assessment` schema, owner zone; fit computed in worker `ai` |
-| 2 / 7 Roles grouped by AI, user pays | T6, T7: per-user `rolemap`, clustering compute on the platform, naming on the user's key |
+| 29 / 7 Roles recommended by the analysis, user pays | T6, T7: per-user `rolemap`, matching compute on the platform, candidates and naming on the user's key |
 | 4 Multiple goals | *Superseded by 16* |
 | 3 Key encrypted on server | T5, §4 secrets table |
 | 5 / 11 Interview difficulty, reporter incentive | T4: split storage, ≥ 3 aggregation, outcome → Evidence → `calibrate_fit` |

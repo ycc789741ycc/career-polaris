@@ -18,13 +18,17 @@ from advisor.rolemap.domain.identity import RoleChange
 
 MAX_ROLE_TITLE = 255
 MAX_COMPANY_NAME = 255
+# The most requirements one role is read out with. A fit is projected over them,
+# so it also bounds what scoring a role's fit can cost.
+MAX_ROLE_REQUIREMENTS = 20
 
 
 class RoleOrigin(StrEnum):
     """Where a role came from (domain decision 25).
 
-    ``recommended`` is one of the ten clusters closest to the profile, retired
-    by reconciliation when it falls out. ``custom`` is one the user added by
+    ``recommended`` is one of the ten candidates from the latest analysis that
+    the market has openings for (ADR 0024), retired by reconciliation when it
+    falls out. ``custom`` is one the user added by
     title; it is never retired by reconciliation, does not count toward the
     ten, and stays until the user removes it.
     """
@@ -140,8 +144,42 @@ class Role:
 
 
 @dataclass(slots=True)
+class RoleCandidate:
+    """A role the latest analysis recommended from the user's strengths, before
+    the market is searched for it (ADR 0024).
+
+    ``rank`` is the analysis's own order, best fit first. A build places the
+    candidate on the role it became, or leaves it unplaced when the user's
+    target locations have too few openings for it.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    rank: int
+    title: str
+    description: str
+    dimension_keys: tuple[str, ...]
+    role_id: uuid.UUID | None = None
+    opening_count: int = 0
+    created_at: datetime | None = None
+
+    @property
+    def is_placed(self) -> bool:
+        return self.role_id is not None
+
+    def placed(self, *, role_id: uuid.UUID, opening_count: int) -> None:
+        self.role_id = role_id
+        self.opening_count = opening_count
+
+    def unplaced(self, *, opening_count: int = 0) -> None:
+        self.role_id = None
+        self.opening_count = opening_count
+
+
+@dataclass(slots=True)
 class RoleMember:
-    """One posting a role was built from, by its clustering key."""
+    """One posting a role was built from, by its shared posting id."""
 
     id: uuid.UUID
     owner_id: uuid.UUID

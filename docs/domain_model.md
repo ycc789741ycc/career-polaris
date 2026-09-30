@@ -84,7 +84,7 @@ The prototype's Advisor opens every page with a **"Your target role" banner**: t
 The prototype's role map reads: *"The 10 best-fit roles on the market, plus the ones you add"* and *"Built after your strength analysis."* The "Roles to analyse" input is gone.
 
 **Decision 23: the system decides how many roles to analyse: ten.** This supersedes decision 17, and will supersede [ADR 0003](decisions/0003-let-the-user-choose-how-many-roles-to-analyse.md) in the PR that changes the code (Phase 5).
-- **`RoleSelection`** still picks the Roles whose posting centroid is closest to the profile's embedding. It runs locally with no AI and costs the user nothing (ADR 0002's reasoning). Only the cut-off changes: it is a fixed 10 instead of a user setting.
+- **`RoleSelection`** keeps the first ten of the analysis's candidate roles that the user's market has openings for (decision 29, [ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)). The matching runs locally with no AI and costs the user nothing. The cut-off is a fixed 10 instead of a user setting.
 - **Why ten, and why fixed:**
   - Every analysed Role costs calls on the user's key, and a fixed number gives a cost the user can predict.
   - A user who wants further afield now adds the role they have in mind (2.4). That targets the spend better than raising k did.
@@ -172,7 +172,7 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
 - **Shared, platform-owned, no AI:** `CrawlSource`, `JobPosting`, `Company`, and aggregated `InterviewReport`s.
 - **Per user, on the user's key:** `Role`, `RoleRequirement`, `EstimatedDifficulty` and `RoleFit`.
 - Requirements are free text (statement, weight, expected level).
-- Role identity survives re-clustering: stable ids, `RoleRenamed` / `RoleSplit` / `RoleMerged`, and lineage.
+- Role identity survives rebuilds: stable ids, `RoleRenamed` / `RoleSplit` / `RoleMerged`, and lineage.
 - Salary bands are per target location. A thin location shows a low-confidence band rather than hiding the Role.
 
 ### 2.6 Ingestion stays AI-free, answers included
@@ -291,7 +291,8 @@ flowchart LR
     InterviewReport
   end
   subgraph RoleMap["Role map (per user, user's key)"]
-    RoleSelection -->|top 10| Role
+    RoleCandidate[Candidate role] --> RoleSelection
+    RoleSelection -->|first 10 on the market| Role
     CustomRole[Role, origin custom] --> Role
     Role --> RoleRequirement
     EstimatedDifficulty
@@ -324,8 +325,7 @@ flowchart LR
   CustomRole -. company seeds board discovery .-> CrawlSource
   TargetLocation -->|scope| RoleSelection
   JobPosting -->|user's scope| RoleSelection
-  CareerProfile -->|embedding, no AI| RoleSelection
-  SkillAssessment -. built after analysis .-> RoleSelection
+  SkillAssessment -->|recommends| RoleCandidate
   EstimatedDifficulty -->|hiring bar, cold start| Role
   InterviewReport -->|hiring bar, aggregated| Role
   InterviewReport -. private outcome as .-> Evidence
@@ -378,7 +378,7 @@ flowchart LR
 flowchart LR
   SourceSynced --> ProfileUpdated
   ProfileUpdated -. explicit Analyze .-> AnalysisCostEstimated --> AnalysisCostConfirmed --> AssessmentRequested
-  AssessmentRequested --> AssessmentCompleted --> DimensionsChanged --> RoleFitsComputed
+  AssessmentRequested --> AssessmentCompleted --> DimensionsChanged
   AssessmentCompleted --> AnalysisFinished --> RoleMapBuildRequested
   TargetLocationsChanged --> CrawlCompleted
   CustomRoleAdded --> CrawlCompleted
@@ -388,7 +388,8 @@ flowchart LR
   CrawlCompleted --> PostingsExpired
   CrawlCompleted --> PostingsChanged --> RoleMapBuildRequested
   RoleMapBuildRequested --> RolesReclustered
-  RolesReclustered --> RoleRequirementsChanged --> RoleFitsComputed
+  RolesReclustered --> RoleRequirementsChanged
+  RolesReclustered --> RoleMapBuildFinished --> RoleFitsComputed
   RolesReclustered --> RoleSplitOrMerged --> SuccessorRoleSuggested --> TargetRetargeted
   RoleFitsComputed --> TargetSelected
   TargetSelected --> GapQuestionsWritten --> GapAnswersSubmitted
@@ -424,10 +425,10 @@ flowchart LR
 | JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a custom Role's JD is private to its owner. Tracks first/last seen and open/expired | Market |
 | Company | An employer seen in the market | Market |
 | InterviewReport | A user's report of an interview. The shared part is aggregated for the hiring bar when ≥3 users reported; the private part becomes the reporter's Evidence and calibrates their fit | Market |
-| RoleSelection | The local, no-AI ranking that keeps the ten recommended Roles closest to the user's profile | Role map |
-| Role | An AI-grouped cluster of postings in *one user's* scope (`origin: recommended`), or a role the user added (`origin: custom`); stable id and lineage, hiring bar, salary bands per target location, opening count | Role map |
+| RoleSelection | The local, no-AI matching that keeps the first ten candidate roles with openings in the user's scope, in the analysis's order | Role map |
+| Role | A candidate role found on the market, named from the postings in *one user's* scope that are its openings (`origin: recommended`), or a role the user added (`origin: custom`); stable id and lineage, hiring bar, salary bands per target location, opening count | Role map |
 | Custom role | A Role the user added by title, with an optional company and optional private JD; placed on the map beside the ten and never retired by reclustering | Role map |
-| Candidate role | v3's term for the recommended and custom Roles before the role map is built from them | Role map |
+| Candidate role | A role the latest SkillAssessment recommended from the user's strengths, best fit first, before the market is searched for it; placed on the Role it became, or left unplaced when the user's locations lack openings for it (ADR 0024) | Role map |
 | RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |
 | EstimatedDifficulty | AI estimate of interview difficulty from posting content, used until enough InterviewReports exist | Role map |
 | Hiring bar | A Role's interview difficulty (bubble chart X axis); blends estimate and reports, with sample size, confidence and basis | Role map |
@@ -472,7 +473,7 @@ flowchart LR
 | User subscribes to company jobs | **Changed:** removed (decision 22). A custom Role naming a company seeds that company's board. |
 | Fetched system wide | Shared JobPosting pool from a baseline crawl plus demand sources (decision 15) |
 | User-uploaded JD | The optional JD of a custom Role: a private JobPosting, the Role's requirement basis (decision 25) |
-| **Role Map:** top k similar roles from assessment and profile | RoleSelection (the ten closest Roles), built after each analysis → RoleFit; Top matched openings in those Roles |
+| **Role Map:** top k similar roles from assessment and profile | Candidate roles from the SkillAssessment → RoleSelection (the first ten the market has), built after each analysis → RoleFit; Top matched openings in those Roles |
 | User decides k | **Changed:** ten, decided by the system; the user adds custom Roles instead (decisions 23, 25) |
 | **Gap Plan:** generated for the role the user selected | Target → GapPlan → Milestone → Task, from SkillGap + UncoveredRequirement and the submitted answers |
 | Gap plan history can be revisited | GapPlan versions per Target; plan history across Targets |
@@ -483,7 +484,7 @@ flowchart LR
 | Default white background | Template (rendering, not domain) |
 | **User Login:** Google OAuth or own account | Account, with a PasswordCredential and/or a FederatedIdentity |
 | **AI:** user configures provider and key | ProviderCredential, AIUsageBudget |
-| AI for questions, profile and market analysis, résumé, gap plan | GapQuestion, SkillAssessment, Role clustering, FitEvaluator, GapPlan, RevisionThread — all on the user's key. Ingestion does not use AI (decision 18). |
+| AI for questions, profile and market analysis, résumé, gap plan | GapQuestion, SkillAssessment (with its candidate roles), Role naming, FitEvaluator, GapPlan, RevisionThread — all on the user's key. Ingestion does not use AI (decision 18). |
 
 ### 5.2 Prototype screens → concepts
 
@@ -514,12 +515,12 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | # | Date | Question | Decision | Where it changed the model |
 |---|---|---|---|---|
 | 1 | 2026-09-14 | Skill taxonomy | **Different per user** | FitEvaluator mapping, TargetProfile, UncoveredRequirement, stable dimension ids |
-| 2 | 2026-09-14 | Role catalog | **Grouped by AI from postings** | 2.5: RoleRequirement, stable Role ids with lineage |
+| 2 | 2026-09-14 | Role catalog | **Grouped by AI from postings** — *Superseded by 29* | 2.5: RoleRequirement, stable Role ids with lineage |
 | 3 | 2026-09-14 | API key location | **Stored encrypted on the server** | 2.10: write-only ProviderCredential, usage budget and ledger, failure handling |
 | 4 | 2026-09-14 | Multiple goals | **Yes** — *Superseded by 16* | CareerGoal with status and priority; removed |
 | 5 | 2026-09-14 | Hiring bar source | **Interview difficulty** | 2.5: InterviewReport + EstimatedDifficulty blend |
 | 6 | 2026-09-14 | Market data source | **In-house crawler**, limited to sources that permit it; no scraping of LinkedIn, Indeed or Glassdoor | 2.5: CrawlSource, dedup key |
-| 7 | 2026-09-14 | Who pays for shared AI work | **The user** | 2.5 / 2.10: Role clustering per user on the user's key; no platform AI credential |
+| 7 | 2026-09-14 | Who pays for shared AI work | **The user** | 2.5 / 2.10: Role naming per user on the user's key; no platform AI credential |
 | 8 | 2026-09-14 | Dimension count | **Bounded, 5–10** | Merge above 10; below 5, say the evidence is thin rather than invent dimensions |
 | 9 | 2026-09-14 | Launch markets | **User selects** — *Superseded by 21* | MarketPreference; replaced by TargetLocation |
 | 10 | 2026-09-14 | Goal when its role splits | **App suggests a successor** — *amended by 20* | 2.1 |
@@ -541,6 +542,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 26 | 2026-09-29 | What the Advisor aims at | **One Target: a Role (recommended or custom) and optionally an opening in it, chosen only on the role map** | 2.1: amends 16; the subscription and pasted-JD kinds are gone |
 | 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** | 2.8: Gap fill; the Analyzer no longer asks questions |
 | 28 | 2026-09-29 | Where profile confidence lives | **On the SkillAssessment, shown on 02 Strengths** | 2.7 |
+| 29 | 2026-09-30 | Where the recommended Roles come from | **The analysis recommends candidate roles from the strengths; the role map keeps the first ten the user's market has openings for, and fits are scored once per build** | 2.2: RoleCandidate, RoleSelection; supersedes 2 ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
 
 ### 6.2 Remaining questions
 

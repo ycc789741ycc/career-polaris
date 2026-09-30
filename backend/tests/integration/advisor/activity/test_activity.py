@@ -35,7 +35,6 @@ class _Services:
         self.rolemap: RoleMapService = create_rolemap_service(
             database,
             market=None,  # type: ignore[arg-type]
-            profile=self.profile,
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
         )

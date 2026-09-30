@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Activity, Fit, Role } from "../api/types";
+import type { Activity, Fit, Role, RoleCandidate } from "../api/types";
 import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
@@ -42,6 +42,22 @@ function fit(roleId: string, score: number): Fit {
   };
 }
 
+function candidate(
+  rank: number,
+  title: string,
+  roleId: string | null,
+): RoleCandidate {
+  return {
+    id: `c${rank}`,
+    rank,
+    title,
+    description: `${title} work.`,
+    dimension_keys: ["backend"],
+    role_id: roleId,
+    opening_count: roleId ? 4 : 1,
+  };
+}
+
 const yours = role("r3", "Staff Platform Engineer", {
   origin: "custom",
   company_name: "Meridian Labs",
@@ -77,8 +93,14 @@ function serve() {
         source_kind: "atsBoard",
       },
     ]),
+    "/role-candidates": page([
+      candidate(0, "Backend Engineer", "r1"),
+      candidate(1, "Platform Engineer", "r2"),
+      candidate(2, "Payments Engineer", null),
+    ]),
     "/roles/cost-estimate": {
-      max_clusters: 8,
+      max_roles: 8,
+      fits_cost_usd: "0.10",
       cost_usd: "0.40",
       model_id: "claude-opus-5",
       rate_is_published: true,
@@ -310,6 +332,37 @@ describe("ten roles, chosen by the system", () => {
   });
 });
 
+describe("roles from your strengths that the market lacks", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("names only the recommended roles that did not make the map", async () => {
+    renderRoles(null);
+
+    const list = await screen.findByRole("list", {
+      name: "Recommended roles without openings",
+    });
+    expect(within(list).getByText("Payments Engineer")).toBeInTheDocument();
+    expect(
+      within(list).queryByText("Backend Engineer"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the user to Sources to widen where they want to work", async () => {
+    const user = userEvent.setup();
+    const shell = renderRoles(null);
+
+    await user.click(
+      await screen.findByRole("button", { name: "where you want to work" }),
+    );
+
+    expect(shell.navigate).toHaveBeenCalledWith("sources");
+  });
+});
+
 describe("roles of your own", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
@@ -333,6 +386,7 @@ describe("roles of your own", () => {
         if (url === "/roles/custom/cost-estimate") {
           return Response.json({
             cost_usd: "0.08",
+            fits_cost_usd: "0.03",
             model_id: "claude-opus-5",
             matches: 3,
           });

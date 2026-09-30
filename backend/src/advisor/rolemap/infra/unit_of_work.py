@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.rolemap.domain import (
     CustomRoleAdded,
+    RoleMapBuildFinished,
     RoleMapEvent,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
@@ -24,6 +25,7 @@ from advisor.rolemap.domain import (
 from advisor.rolemap.infra.repositories import (
     SqlAlchemyBuildRunRepository,
     SqlAlchemyLineageEntryRepository,
+    SqlAlchemyRoleCandidateRepository,
     SqlAlchemyRoleMemberRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemyRoleRequirementRepository,
@@ -39,6 +41,7 @@ class SqlAlchemyOwnerRoleMap:
         self.requirements = SqlAlchemyRoleRequirementRepository(session, owner_id=owner_id)
         self.lineage = SqlAlchemyLineageEntryRepository(session, owner_id=owner_id)
         self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
+        self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:
@@ -86,6 +89,12 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
                         for c in event.changes
                     ]
                 },
+                event.owner_id,
+            )
+        case RoleMapBuildFinished():
+            return (
+                EventName.ROLE_MAP_BUILD_FINISHED,
+                {"build_id": str(event.build_id), "status": event.status},
                 event.owner_id,
             )
         case RolesReclustered():

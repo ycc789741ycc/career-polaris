@@ -54,12 +54,13 @@ function serve(latest: Assessment) {
     "/assessments/latest": latest,
     "/evidence": page([]),
     "/assessments/cost-estimate": {
-      cost_usd: "0.50",
+      cost_usd: "0.60",
       model_id: "claude-opus-5",
       input_tokens: 1200,
       rate_is_published: true,
       analysis_cost_usd: "0.10",
       role_map_cost_usd: "0.40",
+      fits_cost_usd: "0.10",
       max_roles: 10,
     },
   };
@@ -245,7 +246,7 @@ describe("Strengths", () => {
     expect(screen.getByRole("button", { name: "Re-analyse" })).toBeEnabled();
   });
 
-  it("prices the analysis with the role map built after it, in one confirmation", async () => {
+  it("prices the analysis with the role map and fits after it, in one confirmation", async () => {
     serve(assessment({}));
     renderStrengths();
 
@@ -253,9 +254,9 @@ describe("Strengths", () => {
 
     const dialog = await screen.findByText(/for the analysis/);
     expect(dialog).toHaveTextContent(
-      "$0.10 for the analysis, and at most $0.40 for the role map built after it, up to 10 roles",
+      "$0.10 for the analysis, at most $0.40 for the role map built after it, up to 10 roles, and at most $0.10 for scoring your fit against them.",
     );
-    expect(dialog).toHaveTextContent("$0.50");
+    expect(dialog).toHaveTextContent("$0.60");
   });
 
   it("shows the analysis's own profile confidence next to Re-analyse", async () => {

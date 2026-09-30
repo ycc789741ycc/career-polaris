@@ -315,7 +315,6 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
     rolemap = create_rolemap_service(
         database,
         market=market,
-        profile=profile,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
     )
@@ -361,16 +360,15 @@ async def test_the_role_map_estimate_runs_no_local_ml(
     crawled: Crawl,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The api prices a role map without embeddings or clustering — it has no
-    model cache, and a read-only filesystem to put one on."""
+    """The api prices a role map without embeddings — it has no model cache,
+    and a read-only filesystem to put one on."""
     import advisor.rolemap.service as rolemap_service
     from advisor.market import create_market_service
 
     def no_local_ml(*args: object, **kwargs: object) -> None:
-        raise AssertionError("the cost estimate must not embed or cluster")
+        raise AssertionError("the cost estimate must not embed")
 
     monkeypatch.setattr(rolemap_service, "embed", no_local_ml)
-    monkeypatch.setattr(rolemap_service, "cluster", no_local_ml)
 
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
@@ -386,20 +384,19 @@ async def test_the_role_map_estimate_runs_no_local_ml(
     rolemap = create_rolemap_service(
         database,
         market=market,
-        profile=profile,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
     )
 
     estimate = await rolemap.estimate_cost(account)
 
-    # Seven postings can form at most two clusters of three.
-    assert estimate["max_clusters"] == 2
+    # Seven postings can be openings for at most two roles of three.
+    assert estimate["max_roles"] == 2
     assert Decimal(estimate["cost_usd"]) > 0
     assert estimate["model_id"] == "claude-opus-5"
 
 
-async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
+async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     database: Database,
     identity: IdentityService,
     profile: ProfileService,
@@ -409,13 +406,15 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
     stub_provider: StubProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Twelve clusters, ten analysed: the key is spent on the closest ones only."""
+    """Fourteen candidates, two of them absent from the market: the key is spent
+    on the first ten the market has, in the analysis's order (ADR 0024)."""
     import json
     import re
 
     import advisor.rolemap.service as rolemap_service
     from advisor.market import create_market_service
-    from kernel.embeddings import EMBEDDING_DIMENSIONS, ClusterResult
+    from advisor.rolemap import CandidateInput
+    from kernel.embeddings import EMBEDDING_DIMENSIONS
 
     # A stand-in embedding: each "group-N" marker in a text adds weight on axis N.
     def fake_embed(texts: list[str], *, model_name: str) -> list[list[float]]:
@@ -427,11 +426,7 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
             vectors.append(vector)
         return vectors
 
-    def fake_cluster(vectors: list[list[float]], *, min_cluster_size: int) -> ClusterResult:
-        return ClusterResult(labels=[max(range(len(v)), key=v.__getitem__) for v in vectors])
-
     monkeypatch.setattr(rolemap_service, "embed", fake_embed)
-    monkeypatch.setattr(rolemap_service, "cluster", fake_cluster)
 
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
@@ -445,13 +440,8 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
         ]
     )
     await market.set_target_locations(account, [place])
-    # Closer to higher-numbered groups, and nowhere near groups 0 and 1.
-    await profile.record_answer(
-        account,
-        question_id="q1",
-        question="What have you worked on?",
-        answer=" ".join(f"group-{g} " * g for g in range(2, 12)),
-    )
+    # Groups 12 and 13 have no openings; 0 to 11 do, and only ten are kept.
+    order = [13, 12, *range(12)]
 
     for group in range(RECOMMENDED_ROLE_COUNT):
         stub_provider.replies.append(
@@ -471,9 +461,20 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
     rolemap = create_rolemap_service(
         database,
         market=market,
-        profile=profile,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
+    )
+    await rolemap.replace_candidates(
+        account,
+        uuid.uuid4(),
+        [
+            CandidateInput(
+                title=f"Candidate group-{group}",
+                description=f"The group-{group} work.",
+                dimension_keys=("backend",),
+            )
+            for group in order
+        ],
     )
     roles = await rolemap.recluster(account)
 
@@ -484,12 +485,92 @@ async def test_a_role_map_analyses_only_the_ten_clusters_closest_to_the_profile(
         for call in stub_provider.calls
         if (match := re.search(r"group-(\d+)", call.user)) is not None
     }
-    assert analysed == {str(g) for g in range(2, 12)}
+    assert analysed == {str(g) for g in range(10)}
+
+    candidates = await rolemap.candidates(account)
+    placed = {c.title.removeprefix("Candidate ") for c in candidates if c.role_id is not None}
+    assert placed == {f"group-{g}" for g in range(10)}
+    assert [c.opening_count for c in candidates[:2]] == [0, 0]
 
     # The same market again: the roles are kept and nothing is spent.
     again = await rolemap.recluster(account)
     assert {r.id for r in again} == {r.id for r in roles}
     assert len(stub_provider.calls) == 2 * RECOMMENDED_ROLE_COUNT
+
+
+async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
+    database: Database,
+    identity: IdentityService,
+    profile: ProfileService,
+    settings: Settings,
+    account: uuid.UUID,
+    stub_provider: StubProvider,
+) -> None:
+    """Assessment writes the candidates rolemap owns, in the user's own scope."""
+    import json
+
+    from advisor.assessment import create_assessment_service
+    from advisor.market import create_market_service
+
+    await identity.set_credential(
+        account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
+    )
+    await profile.record_answer(
+        account, question_id="q1", question="Anything?", answer="Yes, plenty."
+    )
+    gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
+    market = create_market_service(database)
+    rolemap = create_rolemap_service(
+        database,
+        market=market,
+        gateway=gateway,
+        embedding_model=settings.embedding_model_name,
+    )
+    assessment = create_assessment_service(
+        database,
+        profile=profile,
+        rolemap=rolemap,
+        market=market,
+        gateway=gateway,
+        confidence_threshold=settings.assessment_confidence_threshold,
+    )
+    stub_provider.replies.append(
+        json.dumps(
+            {
+                "dimensions": [
+                    {
+                        "id": f"d{i}",
+                        "name": f"Dimension {i}",
+                        "short_name": f"D{i}",
+                        "score": 70,
+                        "confidence": 0.9,
+                        "read": "A read.",
+                        "evidence_ids": ["E1"],
+                    }
+                    for i in range(5)
+                ],
+                "candidates": [
+                    {
+                        "title": "Platform Engineer",
+                        "description": "Runs the platform.",
+                        "dimension_ids": ["d0", "d3"],
+                    }
+                ],
+            }
+        )
+    )
+
+    stored = await assessment.run(account)
+
+    [candidate] = await rolemap.candidates(account)
+    assert (candidate.title, candidate.dimension_keys) == ("Platform Engineer", ("d0", "d3"))
+    assert candidate.role_id is None
+    async with database.for_user(account) as session:
+        recorded = await session.execute(
+            text("SELECT assessment_id FROM rolemap.role_candidate WHERE owner_id = :owner"),
+            {"owner": account},
+        )
+        assert recorded.scalar_one() == stored.id
 
 
 # -- ten roles, fixed (ADR 0020) ---------------------------------------------
@@ -516,12 +597,11 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
     rolemap = create_rolemap_service(
         database,
         market=market,
-        profile=profile,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
     )
 
     estimate = await rolemap.estimate_cost(account)
 
-    assert estimate["max_clusters"] == RECOMMENDED_ROLE_COUNT
+    assert estimate["max_roles"] == RECOMMENDED_ROLE_COUNT
     assert "role_count" not in estimate

@@ -1,4 +1,4 @@
-"""Local embeddings and clustering.
+"""Local embeddings.
 
 This is plain computation, so the platform pays for it — the user's key is
 spent only on generative work (domain decision 7). The model is loaded lazily

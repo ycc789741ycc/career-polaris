@@ -110,7 +110,6 @@ async def world(
     rolemap = create_rolemap_service(
         database,
         market=market,
-        profile=profile,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
     )

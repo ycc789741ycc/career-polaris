@@ -1,6 +1,6 @@
 # 0020. Analyse ten roles, fixed by the system, and build the role map after every analysis
 
-**Status:** Accepted — 2026-09-29. Supersedes [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md).
+**Status:** Accepted — 2026-09-29. Supersedes [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md). Amended by [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md).
 
 ## Context
 

@@ -787,6 +787,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/role-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Candidates
+         * @description The roles the latest analysis recommended, best fit first, each with the
+         *     role it became or none when the market lacks it (ADR 0024).
+         */
+        get: operations["list_candidates_api_v1_role_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -816,7 +837,8 @@ export interface paths {
         };
         /**
          * Cost Estimate
-         * @description Shown before a rebuild runs, so nothing is spent unasked.
+         * @description Shown before a rebuild runs, so nothing is spent unasked: the build, and
+         *     the fits scored once it ends.
          */
         get: operations["cost_estimate_api_v1_roles_cost_estimate_get"];
         put?: never;
@@ -1138,14 +1160,17 @@ export interface components {
         };
         /**
          * AnalysisEstimate
-         * @description The price of Analyze: the analysis and the role-map build that follows
-         *     it, confirmed once (domain decision 24). ``cost_usd`` is their sum.
+         * @description The price of Analyze: the analysis, the role-map build that follows it,
+         *     and the fits that build is scored with, confirmed once (domain decision 24,
+         *     ADR 0024). ``cost_usd`` is their sum.
          */
         AnalysisEstimate: {
             /** Analysis Cost Usd */
             analysis_cost_usd: string;
             /** Cost Usd */
             cost_usd: string;
+            /** Fits Cost Usd */
+            fits_cost_usd: string;
             /** Input Tokens */
             input_tokens: number;
             /** Max Roles */
@@ -1323,10 +1348,13 @@ export interface components {
         /**
          * CustomRoleEstimate
          * @description What adding a custom role will cost, shown before "Add to Role Map".
+         *     ``cost_usd`` includes scoring the fits once its build ends (ADR 0024).
          */
         CustomRoleEstimate: {
             /** Cost Usd */
             cost_usd: string;
+            /** Fits Cost Usd */
+            fits_cost_usd: string;
             /** Matches */
             matches: number;
             /** Model Id */
@@ -2192,14 +2220,52 @@ export interface components {
             };
         };
         /**
+         * RoleCandidate
+         * @description A role the latest analysis recommended from the user's strengths, and
+         *     what the last build made of it (ADR 0024).
+         */
+        RoleCandidate: {
+            /** Description */
+            description: string;
+            /** Dimension Keys */
+            dimension_keys: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Opening Count */
+            opening_count: number;
+            /** Rank */
+            rank: number;
+            /** Role Id */
+            role_id: string | null;
+            /** Title */
+            title: string;
+        };
+        /** RoleCandidatePage */
+        RoleCandidatePage: {
+            /** Items */
+            items: components["schemas"]["RoleCandidate"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
+        /**
          * RoleMapEstimate
-         * @description The most a role map can cost: a ceiling, not a prediction.
+         * @description The most a role map can cost: a ceiling, not a prediction. ``cost_usd``
+         *     includes scoring the fits once the build ends (ADR 0024).
          */
         RoleMapEstimate: {
             /** Cost Usd */
             cost_usd: string;
-            /** Max Clusters */
-            max_clusters: number;
+            /** Fits Cost Usd */
+            fits_cost_usd: string;
+            /** Max Roles */
+            max_roles: number;
             /** Model Id */
             model_id: string | null;
             /** Rate Is Published */
@@ -4802,6 +4868,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DownloadUrl"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_candidates_api_v1_role_candidates_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleCandidatePage"];
                 };
             };
             /** @description The request could not be read. */

@@ -67,12 +67,27 @@ from advisor.profile import (
     ProfileService,
     assert_citations_exist,
 )
-from advisor.rolemap import RequirementView, RoleMapService, RoleView
+from advisor.rolemap import (
+    CANDIDATE_ROLE_COUNT,
+    MAX_ROLE_REQUIREMENTS,
+    MAX_ROLE_TITLE,
+    RECOMMENDED_ROLE_COUNT,
+    CandidateInput,
+    RequirementView,
+    RoleMapService,
+    RoleView,
+)
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.errors import DimensionCountError as DimensionCountFailure
-from kernel.errors import DomainError, EvidenceNotOwnedError, NotFoundError, ValidationError
+from kernel.errors import (
+    DomainError,
+    EvidenceNotOwnedError,
+    NotFoundError,
+    OutputInvalidError,
+    ValidationError,
+)
 from kernel.logging import get_logger
 from kernel.paging import Page
 
@@ -101,8 +116,17 @@ class _Dimension(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class _Candidate(BaseModel):
+    """A role the strengths point to, for the role map to search for (ADR 0024)."""
+
+    title: str = Field(min_length=1, max_length=MAX_ROLE_TITLE)
+    description: str = Field(min_length=1, max_length=1000)
+    dimension_ids: list[str] = Field(min_length=1)
+
+
 class _Assessment(BaseModel):
     dimensions: list[_Dimension] = Field(min_length=MIN_DIMENSIONS, max_length=MAX_DIMENSIONS)
+    candidates: list[_Candidate] = Field(default_factory=list, max_length=CANDIDATE_ROLE_COUNT)
 
 
 class _Mapping(BaseModel):
@@ -241,8 +265,8 @@ class AssessmentService:
     # -- cost ---------------------------------------------------------------
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        """Priced before anything is spent: the analysis, and the role-map build
-        that follows it."""
+        """Priced before anything is spent: the analysis, the role-map build
+        that follows it, and the fits scored once that build ends."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError(
@@ -251,26 +275,59 @@ class AssessmentService:
         estimate = await self._gateway.estimate(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v1"),
+            template=load_template("skill_assessment", "v2"),
             inputs=_assessment_inputs(
                 snapshot, CitationHandles(e.id for e in snapshot.evidence), existing=()
             ),
             untrusted=frozenset({"evidence", "timeline"}),
         )
         # The role map is built after every analysis, so its cost is part of
-        # the one confirmation (domain decision 24, ADR 0020).
+        # the one confirmation (domain decision 24, ADR 0020), and so are the
+        # fits that build is scored with (ADR 0024).
         role_map = await self._rolemap.estimate_cost(owner_id)
         role_map_cost = Decimal(role_map["cost_usd"])
-        total = estimate.cost_usd + role_map_cost
+        fits = await self.estimate_fits(owner_id, recommended=role_map["max_roles"])
+        fits_cost = Decimal(fits["cost_usd"])
+        total = estimate.cost_usd + role_map_cost + fits_cost
         return {
             "cost_usd": str(total),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
             "rate_is_published": estimate.rate_is_published
-            and role_map.get("rate_is_published") is not False,
+            and role_map.get("rate_is_published") is not False
+            and fits["rate_is_published"],
             "analysis_cost_usd": str(estimate.cost_usd),
             "role_map_cost_usd": role_map["cost_usd"],
-            "max_roles": role_map["max_clusters"],
+            "fits_cost_usd": fits["cost_usd"],
+            "max_roles": role_map["max_roles"],
+        }
+
+    async def estimate_fits(
+        self, owner_id: uuid.UUID, *, recommended: int | None = None, extra_roles: int = 0
+    ) -> dict[str, Any]:
+        """The most scoring a build's fits can cost: one projection per role the
+        map will hold — ``recommended`` roles (by default the ones on the map
+        now), the user's own, and ``extra_roles`` about to be added — each with
+        the most dimensions and requirements there can be. A ceiling, since
+        nothing is known about the roles yet."""
+        live = await self._rolemap.roles(owner_id)
+        custom = sum(1 for role in live if role.is_custom)
+        if recommended is None:
+            recommended = len(live) - custom
+        roles = min(recommended, RECOMMENDED_ROLE_COUNT) + custom + extra_roles
+        if roles == 0:
+            return {"cost_usd": "0", "roles": 0, "rate_is_published": True}
+        estimate = await self._gateway.estimate(
+            owner_id,
+            task="assessment.fit",
+            template=load_template("fit_projection", "v1"),
+            inputs=_worst_case_fit_inputs(),
+            untrusted=frozenset({"requirements"}),
+        )
+        return {
+            "cost_usd": str(estimate.cost_usd * roles),
+            "roles": roles,
+            "rate_is_published": estimate.rate_is_published,
         }
 
     # -- the strength report ------------------------------------------------
@@ -363,7 +420,7 @@ class AssessmentService:
         result = await self._gateway.run(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v1"),
+            template=load_template("skill_assessment", "v2"),
             inputs=_assessment_inputs(snapshot, handles, existing=tuple(existing.items())),
             output_schema=_Assessment,
             untrusted=frozenset({"evidence", "timeline"}),
@@ -401,7 +458,9 @@ class AssessmentService:
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
 
-        await self._store(
+        candidates = _candidates_from(result.value.candidates, {d.dimension_id for d in dimensions})
+
+        assessment_id = await self._store(
             owner_id,
             snapshot_version=snapshot.version,
             dimensions=dimensions,
@@ -409,6 +468,9 @@ class AssessmentService:
             model_id=result.model_id,
             template_version=result.template_version,
         )
+        # The role map searches the market for these on the build that follows
+        # (ADR 0024); it owns them, so they are handed over, not stored here.
+        await self._rolemap.replace_candidates(owner_id, assessment_id, candidates)
 
         return await self.latest(owner_id) or _never()
 
@@ -878,6 +940,46 @@ def _dimensions_block(assessment: AssessmentView) -> str:
         f"- {d.key}: {d.name} — scored {d.score}/100 (confidence {d.confidence:.2f})"
         for d in assessment.dimensions
     )
+
+
+def _candidates_from(candidates: list[_Candidate], dimension_ids: set[str]) -> list[CandidateInput]:
+    """The analysis's candidate roles, each resting on dimensions it produced.
+
+    A candidate citing a dimension that is not in the same reply is the model
+    inventing a basis for it, so the whole reply is rejected, as an invented
+    evidence id is.
+    """
+    handed_over: list[CandidateInput] = []
+    for candidate in candidates:
+        invented = sorted(set(candidate.dimension_ids) - dimension_ids)
+        if invented:
+            raise OutputInvalidError(
+                "the analysis recommended a role on a dimension it did not produce",
+                invented=invented,
+            )
+        handed_over.append(
+            CandidateInput(
+                title=candidate.title.strip(),
+                description=candidate.description.strip(),
+                dimension_keys=tuple(dict.fromkeys(candidate.dimension_ids)),
+            )
+        )
+    return handed_over
+
+
+def _worst_case_fit_inputs() -> dict[str, str]:
+    """Inputs as large as a fit projection's can be, for pricing it before the
+    dimensions or the roles exist."""
+    return {
+        "dimensions": "\n".join(
+            f"- dimension-{i:02d}: {'x' * 60} — scored 100/100 (confidence 1.00)"
+            for i in range(MAX_DIMENSIONS)
+        ),
+        "role_name": "x" * MAX_ROLE_TITLE,
+        "requirements": "\n".join(
+            f"- {'x' * 160} (weight 1.0, expects senior)" for _ in range(MAX_ROLE_REQUIREMENTS)
+        ),
+    }
 
 
 def _fit_view(fit: RoleFit) -> FitView:

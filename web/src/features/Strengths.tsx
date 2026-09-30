@@ -178,12 +178,13 @@ export function Strengths() {
         >
           This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
           {estimate.model_id}, charged to your own provider: $
-          {estimate.analysis_cost_usd} for the analysis, and at most $
+          {estimate.analysis_cost_usd} for the analysis, at most $
           {estimate.role_map_cost_usd} for the role map built after it
           {estimate.max_roles > 0
             ? `, up to ${estimate.max_roles} roles`
             : ", which has no roles to name yet"}
-          .
+          , and at most ${estimate.fits_cost_usd} for scoring your fit against
+          them.
           {estimate.rate_is_published === false && (
             <>
               {" "}

@@ -46,7 +46,6 @@ class World:
         self.rolemap = RoleMapService(
             self.rolemaps,
             market=None,  # type: ignore[arg-type]
-            profile=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
         )

@@ -1,6 +1,6 @@
 # 0024. Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build
 
-**Status:** Proposed — 2026-09-30. Amends [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) once accepted.
+**Status:** Accepted — 2026-09-30. Amends [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md), and supersedes domain decision 2.
 
 ## Context
 
@@ -11,7 +11,8 @@ the reverse, market first, following domain decision 2 ("Role catalog: grouped
 by AI from postings") and ADR 0002:
 
 - `RoleMapService.recluster` clusters every posting in the user's target
-  locations with HDBSCAN, keeps the ten clusters whose embeddings are closest
+  locations with HDBSCAN (scikit-learn, used for nothing else), keeps the ten
+  clusters whose embeddings are closest
   to the user's raw evidence facts and position titles (`rank_by_fit`), and
   only then names each one on the user's key.
 - The strength assessment plays no part in choosing the ten. `rolemap` sits
@@ -46,16 +47,20 @@ projects every role on the user's key. After an analysis:
 
 - **The analysis recommends candidate roles.** The `skill_assessment`
   template (v2) also returns up to `CANDIDATE_ROLE_COUNT` (20) candidates, best
-  fit first, each with a title, two sentences on the work, and the dimension
-  ids it rests on. The gateway validates them with the rest of the output; a
-  candidate citing a dimension the assessment does not have rejects the
-  response, as an invented evidence id does. They are stored with the
-  assessment in `assessment.role_candidate` (owner zone, row-level security).
-  No extra call is made.
-- **`rolemap` still never imports `assessment`.** `activity`, which already
-  sits above both, reads the latest assessment's candidates and passes them to
-  `RoleMapService.build`. The `rolemap.recluster` task goes through
-  `activity`.
+  fit first, each with a title, a sentence or two on the work, and the
+  dimension ids it rests on. The gateway validates them with the rest of the
+  output; a candidate citing a dimension that is not in the same reply rejects
+  the whole reply (`ai_output_invalid`), as an invented evidence id does. No
+  extra call is made.
+- **`rolemap` owns the candidates.** The glossary already files "Candidate
+  role" under the role map. They live in `rolemap.role_candidate` (owner zone,
+  row-level security), one set per user, replaced by each analysis.
+  `assessment`, which already sits above `rolemap`, hands them over through
+  `RoleMapService.replace_candidates` once its scores are stored. The build
+  reads its own table, so `rolemap` never imports `assessment` and neither
+  `activity` nor the `rolemap.recluster` job changes. Each candidate records
+  the role the last build made of it, or none, and `GET /role-candidates`
+  lists them for the role map to name the ones the market lacks.
 - **"Search the market" means the crawled corpus.** No job platform is
   searched live (domain decision 6). Each candidate's title and description is
   embedded locally with the model the postings use. A posting in scope belongs
@@ -67,8 +72,10 @@ projects every role on the user's key. After an analysis:
 - **The ten that exist.** A candidate with at least `MIN_POSTINGS_FOR_A_ROLE`
   matches is on the market. The first `RECOMMENDED_ROLE_COUNT` (10) of those,
   in the analysis's order, become the recommended roles. Fewer than ten is a
-  valid map, and the role map says how many candidates the market had no
-  openings for.
+  valid map, and the role map names the candidates the market had no openings
+  for. A market with fewer than `MIN_POSTINGS_FOR_A_ROLE` postings says nothing
+  about the roles, so a build on one keeps them and the candidates as they
+  are.
 - **Identity, naming and the bar do not change.** `reconcile` still matches
   roles to their previous ids by posting membership. `_analyse` still names
   each role and reads its requirements and bar from its postings, so the name
@@ -76,19 +83,22 @@ projects every role on the user's key. After an analysis:
   postings have not changed costs nothing to keep.
 - **No assessment, no recommended roles.** A build before the first
   successful analysis places custom roles only.
-- **Per-user clustering goes.** `rank_by_fit`, `_profile_vectors` and the
-  HDBSCAN pass in `rolemap` are removed. The crawler keeps HDBSCAN for dedup.
+- **Per-user clustering goes.** `rank_by_fit`, `_profile_vectors`, the
+  HDBSCAN pass and `kernel.embeddings.cluster` are removed, and with them the
+  direct `scikit-learn` dependency: nothing else clusters. `rolemap` no longer
+  reads `profile`.
 - **Fits are scored once per build.** `rolemap` records
   `RoleMapBuildFinished(build, status)` when a build closes, `ready` or
   `failed`, and the dispatcher queues one `assessment.compute_fits` for it.
   `AssessmentCompleted`, `DimensionsChanged` and `RoleRequirementsChanged` no
-  longer queue it. `POST /fits/compute` stays for a manual re-score. The
-  Analyse estimate adds one `fit_projection` per role the map can hold: ten
-  plus the user's custom roles.
-- **On acceptance** a new domain decision supersedes decision 2, and the
-  glossary's `Role`, `RoleSelection` and `Candidate role`, `architecture.md`
-  (the `rolemap` row, section 5's local-ML rule, the build flows and T7) and
-  the fixtures change with the code.
+  longer queue it. `POST /fits/compute` stays for a manual re-score. Every
+  estimate that leads to a build — Analyse, "Rebuild role map" and adding a
+  custom role — adds `AssessmentService.estimate_fits`: one `fit_projection`
+  per role the build can leave on the map, priced at the largest input it can
+  have, and says so in `fits_cost_usd`. `RoleMapEstimate.max_clusters` is now
+  `max_roles`.
+- Domain decision 29 supersedes decision 2, and the glossary, the event flow
+  and `architecture.md` change with the code.
 
 ## Consequences
 
@@ -117,8 +127,14 @@ Harder:
 - A rebuild on a market change uses the last analysis's candidates. They go
   stale when the profile moves until the user re-analyses, which is already
   how the strength report behaves (ADR 0015).
-- A new table, a template version, and a new responsibility for `activity`,
-  which now hands data between stages as well as gating them.
+- A new table and a template version. `assessment` now writes to `rolemap`
+  after storing its scores, in a second transaction: if that write fails, the
+  run fails as `internal` with the scores kept, and the next build uses the
+  previous analysis's candidates.
+- A build already running when an analysis finishes is joined, not queued
+  again (ADR 0018), so it reads the previous candidates. The next build — the
+  next analysis, a market change or "Rebuild role map" — picks up the new
+  ones. Candidates an analysis replaced mid-build are left for that build.
 - The first build under the new rule reconciles against clusters, so most
   recommended roles retire and get new ids once. Plans and résumés aimed at
   them keep their snapshots, as for any retired role.
