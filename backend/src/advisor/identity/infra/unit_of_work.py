@@ -16,7 +16,10 @@ from typing import Any, assert_never
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.identity.domain import (
+    Authentication,
     IdentityEvent,
+    IdentityUnitOfWork,
+    OwnerIdentity,
     ProviderCredentialFailed,
     UsageBudgetExceeded,
 )
@@ -33,7 +36,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyAuthentication:
+class SqlAlchemyAuthentication(Authentication):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID | None = None) -> None:
         self.accounts = SqlAlchemyAccountRepository(session)
         self.passwords = SqlAlchemyPasswordCredentialRepository(session, owner_id=owner_id)
@@ -41,7 +44,7 @@ class SqlAlchemyAuthentication:
         self.refresh_tokens = SqlAlchemyRefreshTokenRepository(session, owner_id=owner_id)
 
 
-class SqlAlchemyOwnerIdentity(SqlAlchemyAuthentication):
+class SqlAlchemyOwnerIdentity(SqlAlchemyAuthentication, OwnerIdentity):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         super().__init__(session, owner_id)
         self.credentials = SqlAlchemyProviderCredentialRepository(session, owner_id=owner_id)
@@ -53,7 +56,7 @@ class SqlAlchemyOwnerIdentity(SqlAlchemyAuthentication):
         self.pending.append(event)
 
 
-class SqlAlchemyIdentityUnitOfWork:
+class SqlAlchemyIdentityUnitOfWork(IdentityUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

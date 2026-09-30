@@ -10,17 +10,25 @@ from dataclasses import dataclass, field
 from advisor.assessment.domain import (
     AnalysisRun,
     AnalysisRunFilter,
+    AnalysisRunRepository,
     AssessedScore,
     AssessedScoreFilter,
+    AssessedScoreRepository,
     AssessmentEvent,
+    AssessmentUnitOfWork,
     DimensionChange,
     DimensionChangeFilter,
+    DimensionChangeRepository,
+    OwnerAssessment,
     RoleFit,
     RoleFitFilter,
+    RoleFitRepository,
     SkillAssessment,
     SkillAssessmentFilter,
+    SkillAssessmentRepository,
     SkillDimension,
     SkillDimensionFilter,
+    SkillDimensionRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -36,7 +44,10 @@ class Store:
     events: list[AssessmentEvent] = field(default_factory=list)
 
 
-class FakeDimensions(FakeRepository[SkillDimension, SkillDimensionFilter]):
+class FakeDimensions(
+    FakeRepository[SkillDimension, SkillDimensionFilter],
+    SkillDimensionRepository,
+):
     owner_field = "owner_id"
     noun = "skill dimension"
 
@@ -44,7 +55,10 @@ class FakeDimensions(FakeRepository[SkillDimension, SkillDimensionFilter]):
         return filter.keys is None or entity.key in filter.keys
 
 
-class FakeAssessments(FakeRepository[SkillAssessment, SkillAssessmentFilter]):
+class FakeAssessments(
+    FakeRepository[SkillAssessment, SkillAssessmentFilter],
+    SkillAssessmentRepository,
+):
     updated_field = None
     owner_field = "owner_id"
     noun = "assessment"
@@ -53,7 +67,7 @@ class FakeAssessments(FakeRepository[SkillAssessment, SkillAssessmentFilter]):
         return True
 
 
-class FakeScores(FakeRepository[AssessedScore, AssessedScoreFilter]):
+class FakeScores(FakeRepository[AssessedScore, AssessedScoreFilter], AssessedScoreRepository):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -63,7 +77,10 @@ class FakeScores(FakeRepository[AssessedScore, AssessedScoreFilter]):
         return filter.assessment_id is None or entity.assessment_id == filter.assessment_id
 
 
-class FakeChanges(FakeRepository[DimensionChange, DimensionChangeFilter]):
+class FakeChanges(
+    FakeRepository[DimensionChange, DimensionChangeFilter],
+    DimensionChangeRepository,
+):
     created_field = "recorded_at"
     updated_field = None
     owner_field = "owner_id"
@@ -73,7 +90,7 @@ class FakeChanges(FakeRepository[DimensionChange, DimensionChangeFilter]):
         return filter.assessment_id is None or entity.assessment_id == filter.assessment_id
 
 
-class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter]):
+class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter], AnalysisRunRepository):
     created_field = "started_at"
     updated_field = None
     owner_field = "owner_id"
@@ -83,7 +100,7 @@ class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter]):
         return filter.status is None or entity.status is filter.status
 
 
-class FakeFits(FakeRepository[RoleFit, RoleFitFilter]):
+class FakeFits(FakeRepository[RoleFit, RoleFitFilter], RoleFitRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "fit"
@@ -99,7 +116,7 @@ class FakeFits(FakeRepository[RoleFit, RoleFitFilter]):
         )
 
 
-class FakeOwner:
+class FakeOwner(OwnerAssessment):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.dimensions = FakeDimensions(store.dimensions, owner_id=owner_id)
         self.assessments = FakeAssessments(store.assessments, owner_id=owner_id)
@@ -113,7 +130,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeAssessmentUnitOfWork:
+class FakeAssessmentUnitOfWork(AssessmentUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

@@ -12,19 +12,29 @@ from decimal import Decimal
 from advisor.identity.domain import (
     Account,
     AccountFilter,
+    AccountRepository,
     AiUsageBudget,
     AiUsageBudgetFilter,
+    AiUsageBudgetRepository,
     AiUsageEntry,
     AiUsageEntryFilter,
+    AiUsageEntryRepository,
+    Authentication,
     FederatedIdentity,
     FederatedIdentityFilter,
+    FederatedIdentityRepository,
     IdentityEvent,
+    IdentityUnitOfWork,
+    OwnerIdentity,
     PasswordCredential,
     PasswordCredentialFilter,
+    PasswordCredentialRepository,
     ProviderCredential,
     ProviderCredentialFilter,
+    ProviderCredentialRepository,
     RefreshToken,
     RefreshTokenFilter,
+    RefreshTokenRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -41,14 +51,17 @@ class Store:
     events: list[IdentityEvent] = field(default_factory=list)
 
 
-class FakeAccounts(FakeRepository[Account, AccountFilter]):
+class FakeAccounts(FakeRepository[Account, AccountFilter], AccountRepository):
     noun = "account"
 
     def matches(self, entity: Account, filter: AccountFilter) -> bool:
         return filter.email is None or entity.email == filter.email
 
 
-class FakePasswords(FakeRepository[PasswordCredential, PasswordCredentialFilter]):
+class FakePasswords(
+    FakeRepository[PasswordCredential, PasswordCredentialFilter],
+    PasswordCredentialRepository,
+):
     owner_field = "account_id"
     noun = "password"
 
@@ -56,7 +69,10 @@ class FakePasswords(FakeRepository[PasswordCredential, PasswordCredentialFilter]
         return filter.account_id is None or entity.account_id == filter.account_id
 
 
-class FakeFederated(FakeRepository[FederatedIdentity, FederatedIdentityFilter]):
+class FakeFederated(
+    FakeRepository[FederatedIdentity, FederatedIdentityFilter],
+    FederatedIdentityRepository,
+):
     owner_field = "account_id"
     noun = "linked identity"
 
@@ -68,7 +84,7 @@ class FakeFederated(FakeRepository[FederatedIdentity, FederatedIdentityFilter]):
         )
 
 
-class FakeRefreshTokens(FakeRepository[RefreshToken, RefreshTokenFilter]):
+class FakeRefreshTokens(FakeRepository[RefreshToken, RefreshTokenFilter], RefreshTokenRepository):
     updated_field = None
     owner_field = "account_id"
     noun = "refresh token"
@@ -96,7 +112,10 @@ class FakeRefreshTokens(FakeRepository[RefreshToken, RefreshTokenFilter]):
         return revoked
 
 
-class FakeCredentials(FakeRepository[ProviderCredential, ProviderCredentialFilter]):
+class FakeCredentials(
+    FakeRepository[ProviderCredential, ProviderCredentialFilter],
+    ProviderCredentialRepository,
+):
     owner_field = "owner_id"
     noun = "AI credential"
 
@@ -104,7 +123,7 @@ class FakeCredentials(FakeRepository[ProviderCredential, ProviderCredentialFilte
         return True
 
 
-class FakeBudgets(FakeRepository[AiUsageBudget, AiUsageBudgetFilter]):
+class FakeBudgets(FakeRepository[AiUsageBudget, AiUsageBudgetFilter], AiUsageBudgetRepository):
     owner_field = "owner_id"
     noun = "AI budget"
 
@@ -112,7 +131,7 @@ class FakeBudgets(FakeRepository[AiUsageBudget, AiUsageBudgetFilter]):
         return True
 
 
-class FakeUsage(FakeRepository[AiUsageEntry, AiUsageEntryFilter]):
+class FakeUsage(FakeRepository[AiUsageEntry, AiUsageEntryFilter], AiUsageEntryRepository):
     created_field = "occurred_at"
     updated_field = None
     owner_field = "owner_id"
@@ -128,7 +147,7 @@ class FakeUsage(FakeRepository[AiUsageEntry, AiUsageEntryFilter]):
         )
 
 
-class FakeAuthentication:
+class FakeAuthentication(Authentication):
     def __init__(self, store: Store, owner_id: uuid.UUID | None = None) -> None:
         self.accounts = FakeAccounts(store.accounts)
         self.passwords = FakePasswords(store.passwords, owner_id=owner_id)
@@ -136,7 +155,7 @@ class FakeAuthentication:
         self.refresh_tokens = FakeRefreshTokens(store.refresh_tokens, owner_id=owner_id)
 
 
-class FakeOwner(FakeAuthentication):
+class FakeOwner(FakeAuthentication, OwnerIdentity):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         super().__init__(store, owner_id)
         self.credentials = FakeCredentials(store.credentials, owner_id=owner_id)
@@ -148,7 +167,7 @@ class FakeOwner(FakeAuthentication):
         self.pending.append(event)
 
 
-class FakeIdentityUnitOfWork:
+class FakeIdentityUnitOfWork(IdentityUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

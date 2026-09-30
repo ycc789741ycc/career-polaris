@@ -70,14 +70,9 @@ class TaskRepository(Repository[Task, TaskFilter], Protocol): ...
 
 
 class OwnerGapPlans(Protocol):
-    @property
-    def plans(self) -> GapPlanRepository: ...
-
-    @property
-    def milestones(self) -> MilestoneRepository: ...
-
-    @property
-    def tasks(self) -> TaskRepository: ...
+    plans: GapPlanRepository
+    milestones: MilestoneRepository
+    tasks: TaskRepository
 
     def record(self, event: GapPlanEvent) -> None: ...
 

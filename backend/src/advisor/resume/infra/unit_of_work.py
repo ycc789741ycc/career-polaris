@@ -14,7 +14,13 @@ from typing import Any, assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from advisor.resume.domain import ResumeEvent, ResumeTailored, ResumeVersionSaved
+from advisor.resume.domain import (
+    OwnerResumes,
+    ResumeEvent,
+    ResumeTailored,
+    ResumeUnitOfWork,
+    ResumeVersionSaved,
+)
 from advisor.resume.infra.repositories import (
     SqlAlchemyExportRepository,
     SqlAlchemyResumeVersionRepository,
@@ -25,7 +31,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerResumes:
+class SqlAlchemyOwnerResumes(OwnerResumes):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.resumes = SqlAlchemyTailoredResumeRepository(session, owner_id=owner_id)
         self.versions = SqlAlchemyResumeVersionRepository(session, owner_id=owner_id)
@@ -37,7 +43,7 @@ class SqlAlchemyOwnerResumes:
         self.pending.append(event)
 
 
-class SqlAlchemyResumeUnitOfWork:
+class SqlAlchemyResumeUnitOfWork(ResumeUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

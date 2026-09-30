@@ -16,8 +16,12 @@ from typing import Any, assert_never
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.market.domain import (
+    FanoutMarket,
     MarketEvent,
+    MarketUnitOfWork,
+    OwnerMarket,
     PostingsChanged,
+    SharedMarket,
     TargetLocationsChanged,
 )
 from advisor.market.infra.repositories import (
@@ -46,7 +50,7 @@ class _Events:
         self.pending.clear()
 
 
-class SqlAlchemySharedMarket(_Events):
+class SqlAlchemySharedMarket(_Events, SharedMarket):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__()
         self.companies = SqlAlchemyCompanyRepository(session)
@@ -55,14 +59,14 @@ class SqlAlchemySharedMarket(_Events):
         self.embeddings = SqlAlchemyPostingEmbeddingRepository(session)
 
 
-class SqlAlchemyOwnerMarket(_Events):
+class SqlAlchemyOwnerMarket(_Events, OwnerMarket):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         super().__init__()
         self.markets = SqlAlchemyMarketPreferenceRepository(session, owner_id=owner_id)
         self.private_postings = SqlAlchemyPrivateJobPostingRepository(session, owner_id=owner_id)
 
 
-class SqlAlchemyFanoutMarket:
+class SqlAlchemyFanoutMarket(FanoutMarket):
     """Not bound to an owner: the fan-out policy lets this scope read every
     user's target locations, and write nothing."""
 
@@ -70,7 +74,7 @@ class SqlAlchemyFanoutMarket:
         self.markets = SqlAlchemyMarketPreferenceRepository(session)
 
 
-class SqlAlchemyMarketUnitOfWork:
+class SqlAlchemyMarketUnitOfWork(MarketUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

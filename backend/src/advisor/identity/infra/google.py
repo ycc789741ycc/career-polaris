@@ -146,7 +146,7 @@ class GoogleIdentityProvider(Protocol):
     async def claims_for(self, *, code: str, pending: PendingSignIn) -> IdTokenClaims: ...
 
 
-class GoogleOidc:
+class GoogleOidc(GoogleIdentityProvider):
     def __init__(
         self,
         endpoints: GoogleEndpoints,

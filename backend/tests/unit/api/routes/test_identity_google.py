@@ -24,6 +24,7 @@ from advisor.identity.domain import FederatedSignInRejectedError, IdTokenClaims,
 from advisor.identity.infra.google import (
     ATTEMPT_TTL_SECONDS,
     GoogleEndpoints,
+    GoogleIdentityProvider,
     GoogleOidc,
     PendingSignIn,
     code_challenge,
@@ -34,6 +35,7 @@ from advisor.identity.infra.google import (
 from api import errors
 from api.dependencies import REFRESH_COOKIE, get_container
 from api.routes.identity import GOOGLE_ATTEMPT_COOKIE, router
+from kernel.auth import SigningKeyResolver
 
 SECRET = "unit-test-signing-secret-long-enough-to-pass"
 CLIENT_ID = "client-123.apps.googleusercontent.test"
@@ -50,7 +52,7 @@ _KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-class StaticKeys:
+class StaticKeys(SigningKeyResolver):
     def get_key(self, token: str) -> Any:
         return _KEY.public_key()
 
@@ -191,7 +193,7 @@ def test_a_token_that_does_not_verify_is_refused(token: Any) -> None:
 # -- the flow, with a stand-in Google ------------------------------------------
 
 
-class FakeGoogle:
+class FakeGoogle(GoogleIdentityProvider):
     def __init__(self) -> None:
         self.claims: IdTokenClaims | None = None
         self.failure: SignInFailure | None = None

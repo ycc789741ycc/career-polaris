@@ -11,10 +11,15 @@ from advisor.gapplan.domain import (
     GapPlan,
     GapPlanEvent,
     GapPlanFilter,
+    GapPlanRepository,
+    GapPlanUnitOfWork,
     Milestone,
     MilestoneFilter,
+    MilestoneRepository,
+    OwnerGapPlans,
     Task,
     TaskFilter,
+    TaskRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -27,7 +32,7 @@ class Store:
     events: list[GapPlanEvent] = field(default_factory=list)
 
 
-class FakePlans(FakeRepository[GapPlan, GapPlanFilter]):
+class FakePlans(FakeRepository[GapPlan, GapPlanFilter], GapPlanRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "plan"
@@ -40,7 +45,7 @@ class FakePlans(FakeRepository[GapPlan, GapPlanFilter]):
         return not filter.role_only or entity.job_posting_id is None
 
 
-class FakeMilestones(FakeRepository[Milestone, MilestoneFilter]):
+class FakeMilestones(FakeRepository[Milestone, MilestoneFilter], MilestoneRepository):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -50,7 +55,7 @@ class FakeMilestones(FakeRepository[Milestone, MilestoneFilter]):
         return filter.plan_id is None or entity.plan_id == filter.plan_id
 
 
-class FakeTasks(FakeRepository[Task, TaskFilter]):
+class FakeTasks(FakeRepository[Task, TaskFilter], TaskRepository):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -62,7 +67,7 @@ class FakeTasks(FakeRepository[Task, TaskFilter]):
         )
 
 
-class FakeOwner:
+class FakeOwner(OwnerGapPlans):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.plans = FakePlans(store.plans, owner_id=owner_id)
         self.milestones = FakeMilestones(store.milestones, owner_id=owner_id)
@@ -73,7 +78,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeGapPlanUnitOfWork:
+class FakeGapPlanUnitOfWork(GapPlanUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

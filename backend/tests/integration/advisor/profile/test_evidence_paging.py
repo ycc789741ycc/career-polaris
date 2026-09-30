@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from advisor.profile import ProfileService, create_profile_service
-from advisor.profile.infra.connectors import EvidenceDraft
+from advisor.profile.infra.connectors import Connector, EvidenceDraft
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.storage import ObjectStore
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
 FACTS = 5
 
 
-class FakeJira:
+class FakeJira(Connector):
     kind = "jira"
     retired_refs: tuple[str, ...] = ()
     replaced_refs: tuple[str, ...] = ()

@@ -12,11 +12,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from kernel.ai_gateway.providers.anthropic import _raise_for_status
-from kernel.ai_gateway.providers.base import Completion, Request
+from kernel.ai_gateway.providers.base import Completion, Provider, Request
 from kernel.fetch import GuardedClient
 
 
-class OpenAICompatibleProvider:
+class OpenAICompatibleProvider(Provider):
     name = "openai"
     default_base_url = "https://api.openai.com/v1"
 

@@ -13,7 +13,11 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from advisor.gapplan.domain import GapPlanEvent
+from advisor.gapplan.domain import (
+    GapPlanEvent,
+    GapPlanUnitOfWork,
+    OwnerGapPlans,
+)
 from advisor.gapplan.infra.repositories import (
     SqlAlchemyGapPlanRepository,
     SqlAlchemyMilestoneRepository,
@@ -23,7 +27,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerGapPlans:
+class SqlAlchemyOwnerGapPlans(OwnerGapPlans):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.plans = SqlAlchemyGapPlanRepository(session, owner_id=owner_id)
         self.milestones = SqlAlchemyMilestoneRepository(session, owner_id=owner_id)
@@ -34,7 +38,7 @@ class SqlAlchemyOwnerGapPlans:
         self.pending.append(event)
 
 
-class SqlAlchemyGapPlanUnitOfWork:
+class SqlAlchemyGapPlanUnitOfWork(GapPlanUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

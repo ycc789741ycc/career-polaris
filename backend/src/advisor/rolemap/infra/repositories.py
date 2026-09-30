@@ -16,20 +16,25 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
+    BuildRunRepository,
     LineageEntry,
     LineageEntryFilter,
+    LineageEntryRepository,
     Role,
     RoleFilter,
     RoleMember,
     RoleMemberFilter,
+    RoleMemberRepository,
+    RoleRepository,
     RoleRequirement,
     RoleRequirementFilter,
+    RoleRequirementRepository,
 )
 from advisor.rolemap.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
-class SqlAlchemyRoleRepository(SqlAlchemyRepository[Role, models.Role, RoleFilter]):
+class SqlAlchemyRoleRepository(SqlAlchemyRepository[Role, models.Role, RoleFilter], RoleRepository):
     model = models.Role
     id_column = models.Role.id
     created_column = models.Role.created_at
@@ -60,7 +65,8 @@ class SqlAlchemyRoleRepository(SqlAlchemyRepository[Role, models.Role, RoleFilte
 
 
 class SqlAlchemyRoleMemberRepository(
-    SqlAlchemyRepository[RoleMember, models.RoleMember, RoleMemberFilter]
+    SqlAlchemyRepository[RoleMember, models.RoleMember, RoleMemberFilter],
+    RoleMemberRepository,
 ):
     model = models.RoleMember
     id_column = models.RoleMember.id
@@ -87,7 +93,8 @@ class SqlAlchemyRoleMemberRepository(
 
 
 class SqlAlchemyRoleRequirementRepository(
-    SqlAlchemyRepository[RoleRequirement, models.RoleRequirement, RoleRequirementFilter]
+    SqlAlchemyRepository[RoleRequirement, models.RoleRequirement, RoleRequirementFilter],
+    RoleRequirementRepository,
 ):
     model = models.RoleRequirement
     id_column = models.RoleRequirement.id
@@ -116,7 +123,8 @@ class SqlAlchemyRoleRequirementRepository(
 
 
 class SqlAlchemyLineageEntryRepository(
-    SqlAlchemyRepository[LineageEntry, models.RoleLineage, LineageEntryFilter]
+    SqlAlchemyRepository[LineageEntry, models.RoleLineage, LineageEntryFilter],
+    LineageEntryRepository,
 ):
     model = models.RoleLineage
     id_column = models.RoleLineage.id
@@ -142,7 +150,10 @@ class SqlAlchemyLineageEntryRepository(
         return [models.RoleLineage.role_id == filter.role_id]
 
 
-class SqlAlchemyBuildRunRepository(SqlAlchemyRepository[BuildRun, models.BuildRun, BuildRunFilter]):
+class SqlAlchemyBuildRunRepository(
+    SqlAlchemyRepository[BuildRun, models.BuildRun, BuildRunFilter],
+    BuildRunRepository,
+):
     model = models.BuildRun
     id_column = models.BuildRun.id
     created_column = models.BuildRun.requested_at

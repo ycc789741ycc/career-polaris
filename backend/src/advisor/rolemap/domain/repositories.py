@@ -90,20 +90,11 @@ class BuildRunRepository(Repository[BuildRun, BuildRunFilter], Protocol): ...
 
 
 class OwnerRoleMap(Protocol):
-    @property
-    def roles(self) -> RoleRepository: ...
-
-    @property
-    def members(self) -> RoleMemberRepository: ...
-
-    @property
-    def requirements(self) -> RoleRequirementRepository: ...
-
-    @property
-    def lineage(self) -> LineageEntryRepository: ...
-
-    @property
-    def builds(self) -> BuildRunRepository: ...
+    roles: RoleRepository
+    members: RoleMemberRepository
+    requirements: RoleRequirementRepository
+    lineage: LineageEntryRepository
+    builds: BuildRunRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 

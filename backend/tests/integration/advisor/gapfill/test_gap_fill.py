@@ -26,7 +26,7 @@ from advisor.profile import EvidenceSource, ProfileService, create_profile_servi
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Request
+from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import NotFoundError
@@ -39,7 +39,7 @@ ORG = "Demonstrated org-level influence"
 ORG_KEY = "req:demonstrated-org-level-influence"
 
 
-class StubProvider:
+class StubProvider(Provider):
     name = "anthropic"
     default_base_url = "https://llm.example.test"
 

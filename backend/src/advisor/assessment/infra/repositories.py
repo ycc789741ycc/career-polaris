@@ -16,23 +16,30 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.assessment.domain import (
     AnalysisRun,
     AnalysisRunFilter,
+    AnalysisRunRepository,
     AssessedScore,
     AssessedScoreFilter,
+    AssessedScoreRepository,
     DimensionChange,
     DimensionChangeFilter,
+    DimensionChangeRepository,
     RoleFit,
     RoleFitFilter,
+    RoleFitRepository,
     SkillAssessment,
     SkillAssessmentFilter,
+    SkillAssessmentRepository,
     SkillDimension,
     SkillDimensionFilter,
+    SkillDimensionRepository,
 )
 from advisor.assessment.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
 class SqlAlchemySkillDimensionRepository(
-    SqlAlchemyRepository[SkillDimension, models.SkillDimension, SkillDimensionFilter]
+    SqlAlchemyRepository[SkillDimension, models.SkillDimension, SkillDimensionFilter],
+    SkillDimensionRepository,
 ):
     model = models.SkillDimension
     id_column = models.SkillDimension.id
@@ -59,7 +66,8 @@ class SqlAlchemySkillDimensionRepository(
 
 
 class SqlAlchemySkillAssessmentRepository(
-    SqlAlchemyRepository[SkillAssessment, models.SkillAssessment, SkillAssessmentFilter]
+    SqlAlchemyRepository[SkillAssessment, models.SkillAssessment, SkillAssessmentFilter],
+    SkillAssessmentRepository,
 ):
     model = models.SkillAssessment
     id_column = models.SkillAssessment.id
@@ -86,7 +94,8 @@ class SqlAlchemySkillAssessmentRepository(
 
 
 class SqlAlchemyAssessedScoreRepository(
-    SqlAlchemyRepository[AssessedScore, models.DimensionScore, AssessedScoreFilter]
+    SqlAlchemyRepository[AssessedScore, models.DimensionScore, AssessedScoreFilter],
+    AssessedScoreRepository,
 ):
     model = models.DimensionScore
     id_column = models.DimensionScore.id
@@ -113,7 +122,8 @@ class SqlAlchemyAssessedScoreRepository(
 
 
 class SqlAlchemyDimensionChangeRepository(
-    SqlAlchemyRepository[DimensionChange, models.DimensionLineage, DimensionChangeFilter]
+    SqlAlchemyRepository[DimensionChange, models.DimensionLineage, DimensionChangeFilter],
+    DimensionChangeRepository,
 ):
     model = models.DimensionLineage
     id_column = models.DimensionLineage.id
@@ -142,7 +152,8 @@ class SqlAlchemyDimensionChangeRepository(
 
 
 class SqlAlchemyAnalysisRunRepository(
-    SqlAlchemyRepository[AnalysisRun, models.AnalysisRun, AnalysisRunFilter]
+    SqlAlchemyRepository[AnalysisRun, models.AnalysisRun, AnalysisRunFilter],
+    AnalysisRunRepository,
 ):
     model = models.AnalysisRun
     id_column = models.AnalysisRun.id
@@ -168,7 +179,10 @@ class SqlAlchemyAnalysisRunRepository(
         return [models.AnalysisRun.status == str(filter.status)]
 
 
-class SqlAlchemyRoleFitRepository(SqlAlchemyRepository[RoleFit, models.RoleFit, RoleFitFilter]):
+class SqlAlchemyRoleFitRepository(
+    SqlAlchemyRepository[RoleFit, models.RoleFit, RoleFitFilter],
+    RoleFitRepository,
+):
     model = models.RoleFit
     id_column = models.RoleFit.id
     created_column = models.RoleFit.created_at

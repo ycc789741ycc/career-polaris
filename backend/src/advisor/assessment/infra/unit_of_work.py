@@ -18,7 +18,9 @@ from advisor.assessment.domain import (
     AnalysisFinished,
     AssessmentCompleted,
     AssessmentEvent,
+    AssessmentUnitOfWork,
     DimensionsChanged,
+    OwnerAssessment,
     RoleFitsComputed,
 )
 from advisor.assessment.infra.repositories import (
@@ -33,7 +35,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerAssessment:
+class SqlAlchemyOwnerAssessment(OwnerAssessment):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.dimensions = SqlAlchemySkillDimensionRepository(session, owner_id=owner_id)
         self.assessments = SqlAlchemySkillAssessmentRepository(session, owner_id=owner_id)
@@ -47,7 +49,7 @@ class SqlAlchemyOwnerAssessment:
         self.pending.append(event)
 
 
-class SqlAlchemyAssessmentUnitOfWork:
+class SqlAlchemyAssessmentUnitOfWork(AssessmentUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

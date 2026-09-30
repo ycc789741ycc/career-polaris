@@ -78,17 +78,10 @@ class ExportRepository(Repository[Export, ExportFilter], Protocol): ...
 
 
 class OwnerResumes(Protocol):
-    @property
-    def resumes(self) -> TailoredResumeRepository: ...
-
-    @property
-    def versions(self) -> ResumeVersionRepository: ...
-
-    @property
-    def revisions(self) -> RevisionRepository: ...
-
-    @property
-    def exports(self) -> ExportRepository: ...
+    resumes: TailoredResumeRepository
+    versions: ResumeVersionRepository
+    revisions: RevisionRepository
+    exports: ExportRepository
 
     def record(self, event: ResumeEvent) -> None: ...
 

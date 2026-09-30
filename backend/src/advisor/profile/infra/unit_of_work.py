@@ -14,7 +14,13 @@ from typing import Any, assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from advisor.profile.domain import ProfileEvent, ProfileUpdated, SourceSynced
+from advisor.profile.domain import (
+    OwnerProfile,
+    ProfileEvent,
+    ProfileUnitOfWork,
+    ProfileUpdated,
+    SourceSynced,
+)
 from advisor.profile.infra.repositories import (
     SqlAlchemyCareerPositionRepository,
     SqlAlchemyEvidenceRepository,
@@ -26,7 +32,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerProfile:
+class SqlAlchemyOwnerProfile(OwnerProfile):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.connections = SqlAlchemySourceConnectionRepository(session, owner_id=owner_id)
         self.resumes = SqlAlchemyResumeFileRepository(session, owner_id=owner_id)
@@ -39,7 +45,7 @@ class SqlAlchemyOwnerProfile:
         self.pending.append(event)
 
 
-class SqlAlchemyProfileUnitOfWork:
+class SqlAlchemyProfileUnitOfWork(ProfileUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

@@ -39,7 +39,7 @@ class SigningKeyResolver(Protocol):
     def get_key(self, token: str) -> Any: ...
 
 
-class JwksResolver:
+class JwksResolver(SigningKeyResolver):
     """Fetches and caches the provider's public keys."""
 
     def __init__(self, jwks_url: str, cache_seconds: int) -> None:

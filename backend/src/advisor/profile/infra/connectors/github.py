@@ -16,7 +16,7 @@ from datetime import date
 from typing import Any
 
 from advisor.profile.domain import EvidenceGranularity
-from advisor.profile.infra.connectors.base import EvidenceDraft
+from advisor.profile.infra.connectors.base import Connector, EvidenceDraft
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
 from kernel.parsing import parse_date
@@ -34,7 +34,7 @@ _MAX_COMMITS = 1000
 _MAX_REVIEWS = 100
 
 
-class GitHubConnector:
+class GitHubConnector(Connector):
     kind = "github"
     # Shapes the pull-request version of this connector wrote. A sync deletes
     # them, so the same work never counts once as merged pull requests and

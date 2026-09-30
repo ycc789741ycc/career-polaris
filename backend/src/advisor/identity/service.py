@@ -33,8 +33,8 @@ from advisor.identity.domain import (
 )
 from advisor.identity.google import GoogleSignIn, GoogleStart
 from advisor.identity.infra.google import GoogleEndpoints, GoogleOidc
+from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, UsageRecord
 from kernel.ai_gateway.ports import ProviderCredential as GatewayCredential
-from kernel.ai_gateway.ports import UsageRecord
 from kernel.clock import utcnow
 from kernel.crypto import encrypt, last_four
 from kernel.errors import (
@@ -76,7 +76,7 @@ class BudgetView:
     remaining_usd: Decimal
 
 
-class IdentityService:
+class IdentityService(CredentialStore, BudgetGuard):
     """Accounts, the AI credential, and the budget that guards it.
 
     Registration and sign-in live in ``AuthService``, also exported here.

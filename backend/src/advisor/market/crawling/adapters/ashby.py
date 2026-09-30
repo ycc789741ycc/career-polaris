@@ -7,13 +7,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from advisor.market.crawling.adapters.base import parse_date, salary_from, strip_html
+from advisor.market.crawling.adapters.base import (
+    BoardAdapter,
+    parse_date,
+    salary_from,
+    strip_html,
+)
 from advisor.market.service import NormalizedPosting, SourceKind, salary_in_text
 
 BASE = "https://api.ashbyhq.com/posting-api/job-board"
 
 
-class AshbyAdapter:
+class AshbyAdapter(BoardAdapter):
     name = "ashby"
     source_kind = SourceKind.ATS_BOARD
 

@@ -10,10 +10,14 @@ from dataclasses import dataclass, field
 
 from advisor.gapfill.domain import (
     GapFillEvent,
+    GapFillUnitOfWork,
     GapQuestion,
     GapQuestionFilter,
+    GapQuestionRepository,
+    OwnerGapFill,
     QuestionSet,
     QuestionSetFilter,
+    QuestionSetRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -25,7 +29,7 @@ class Store:
     events: list[GapFillEvent] = field(default_factory=list)
 
 
-class FakeSets(FakeRepository[QuestionSet, QuestionSetFilter]):
+class FakeSets(FakeRepository[QuestionSet, QuestionSetFilter], QuestionSetRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "question set"
@@ -40,7 +44,7 @@ class FakeSets(FakeRepository[QuestionSet, QuestionSetFilter]):
         return filter.statuses is None or entity.status in filter.statuses
 
 
-class FakeQuestions(FakeRepository[GapQuestion, GapQuestionFilter]):
+class FakeQuestions(FakeRepository[GapQuestion, GapQuestionFilter], GapQuestionRepository):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -50,7 +54,7 @@ class FakeQuestions(FakeRepository[GapQuestion, GapQuestionFilter]):
         return filter.set_ids is None or entity.set_id in filter.set_ids
 
 
-class FakeOwner:
+class FakeOwner(OwnerGapFill):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.sets = FakeSets(store.sets, owner_id=owner_id)
         self.questions = FakeQuestions(store.questions, owner_id=owner_id)
@@ -60,7 +64,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeGapFillUnitOfWork:
+class FakeGapFillUnitOfWork(GapFillUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

@@ -18,7 +18,7 @@ from datetime import date
 from typing import Any
 
 from advisor.profile.domain import EvidenceGranularity
-from advisor.profile.infra.connectors.base import EvidenceDraft
+from advisor.profile.infra.connectors.base import Connector, EvidenceDraft
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
 from kernel.parsing import parse_date
@@ -56,7 +56,7 @@ class Epic:
         return f"{self.key} {self.summary}".strip()[:_SUBJECT_LIMIT]
 
 
-class JiraConnector:
+class JiraConnector(Connector):
     kind = "jira"
     # Tallies per project, which epics replaced.
     retired_refs: tuple[str, ...] = ("jira:*:project:*",)

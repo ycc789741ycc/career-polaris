@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.rolemap.domain import (
     CustomRoleAdded,
+    OwnerRoleMap,
     RoleMapEvent,
+    RoleMapUnitOfWork,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
     RolesReclustered,
@@ -32,7 +34,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerRoleMap:
+class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.roles = SqlAlchemyRoleRepository(session, owner_id=owner_id)
         self.members = SqlAlchemyRoleMemberRepository(session, owner_id=owner_id)
@@ -45,7 +47,7 @@ class SqlAlchemyOwnerRoleMap:
         self.pending.append(event)
 
 
-class SqlAlchemyRoleMapUnitOfWork:
+class SqlAlchemyRoleMapUnitOfWork(RoleMapUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 
