@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from advisor.market.crawling.adapters import BY_NAME
+from advisor.market.crawling.adapters import SOURCES
 from advisor.market.crawling.politeness import RateLimiter, RobotsCache, origin_of, robots_url_for
 from advisor.market.service import CrawlIngest, CrawlSourceView, NormalizedPosting
 from kernel.embeddings import embed
@@ -28,6 +28,9 @@ class CrawlOutcome:
     upserted: int
     expired: int
     error: str | None
+    # A search's place, when an opening there appeared or went: announced once
+    # per place after the run, not once per search (ADR 0025).
+    changed_market: str | None = None
 
 
 async def fetch_source(
@@ -37,7 +40,7 @@ async def fetch_source(
     robots: RobotsCache,
     limiter: RateLimiter,
 ) -> list[NormalizedPosting]:
-    adapter = BY_NAME.get(source.kind)
+    adapter = SOURCES.get(source.kind)
     if adapter is None:
         raise UpstreamFailedError(f"no adapter for source kind {source.kind!r}")
 
@@ -93,7 +96,50 @@ async def crawl_all(
     rate_limit_per_second: float,
     embedding_model: str,
 ) -> list[CrawlOutcome]:
-    sources = await ingest.due_sources()
+    """The weekly run: every active source."""
+    return await _crawl(
+        ingest,
+        await ingest.due_sources(),
+        user_agent=user_agent,
+        timeout_seconds=timeout_seconds,
+        rate_limit_per_second=rate_limit_per_second,
+        embedding_model=embedding_model,
+    )
+
+
+async def crawl_new(
+    ingest: CrawlIngest,
+    *,
+    user_agent: str,
+    timeout_seconds: float,
+    rate_limit_per_second: float,
+    embedding_model: str,
+) -> list[CrawlOutcome]:
+    """Between weekly runs: only the sources no crawl has fetched yet, so a
+    search a user's candidates asked for is read within minutes (ADR 0025).
+    A source that fails is marked fetched too, and waits for the weekly run."""
+    sources = await ingest.new_sources()
+    if not sources:
+        return []
+    return await _crawl(
+        ingest,
+        sources,
+        user_agent=user_agent,
+        timeout_seconds=timeout_seconds,
+        rate_limit_per_second=rate_limit_per_second,
+        embedding_model=embedding_model,
+    )
+
+
+async def _crawl(
+    ingest: CrawlIngest,
+    sources: list[CrawlSourceView],
+    *,
+    user_agent: str,
+    timeout_seconds: float,
+    rate_limit_per_second: float,
+    embedding_model: str,
+) -> list[CrawlOutcome]:
     robots = RobotsCache(user_agent)
     limiter = RateLimiter(per_second=rate_limit_per_second)
     outcomes: list[CrawlOutcome] = []
@@ -122,6 +168,10 @@ async def crawl_all(
                 )
 
     await embed_new_postings(ingest, embedding_model)
+    # After embedding, so the rebuild an announcement starts finds the vectors.
+    changed = {o.changed_market for o in outcomes if o.changed_market}
+    if changed:
+        await ingest.announce_markets(changed)
     return outcomes
 
 
@@ -129,9 +179,18 @@ async def _store(
     ingest: CrawlIngest, source: CrawlSourceView, postings: list[NormalizedPosting]
 ) -> CrawlOutcome:
     """Store one source's postings. A source whose postings cannot be stored is
-    recorded as failed, so one bad board costs its own run and not everyone's."""
+    recorded as failed, so one bad board costs its own run and not everyone's.
+
+    A board announces its own change. A search of a place is stored quietly:
+    a place has many searches, and each announcement is a role-map rebuild on
+    somebody's key, so the run announces the place once."""
+    changed_market: str | None = None
     try:
-        upserted, expired = await ingest.record_crawl(source.id, postings)
+        if source.company_id is None and source.market:
+            upserted, expired, changed = await ingest.record_search_crawl(source.id, postings)
+            changed_market = source.market if changed else None
+        else:
+            upserted, expired = await ingest.record_crawl(source.id, postings)
     except Exception as exc:
         # The storing transaction rolled back as a whole; nothing half-written
         # remains. Record why on the source and let the run go on.
@@ -139,7 +198,7 @@ async def _store(
         log.exception("crawl.source_store_failed", source_id=str(source.id), reason=reason)
         await ingest.record_crawl(source.id, [], error=reason)
         return CrawlOutcome(source.id, 0, 0, reason)
-    return CrawlOutcome(source.id, upserted, expired, None)
+    return CrawlOutcome(source.id, upserted, expired, None, changed_market)
 
 
 async def embed_new_postings(ingest: CrawlIngest, model_name: str, batch: int = 200) -> int:

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from advisor.rolemap.domain import (
     CustomRoleAdded,
     OwnerRoleMap,
+    RoleCandidatesReplaced,
     RoleMapBuildFinished,
     RoleMapEvent,
     RoleMapUnitOfWork,
@@ -91,6 +92,12 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
                         for c in event.changes
                     ]
                 },
+                event.owner_id,
+            )
+        case RoleCandidatesReplaced():
+            return (
+                EventName.ROLE_CANDIDATES_REPLACED,
+                {"titles": list(event.titles)},
                 event.owner_id,
             )
         case RoleMapBuildFinished():

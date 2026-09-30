@@ -16,6 +16,7 @@ const matched: AdvisorTarget = {
   location: null,
   postingTitle: "Senior Backend Engineer",
   url: null,
+  creditedTo: null,
   fit: 88,
   band: "USD 178k–196k",
   isCustom: false,

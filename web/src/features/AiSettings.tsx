@@ -24,11 +24,11 @@ const USES = [
   },
   {
     title: "Skill analysis",
-    note: "Reads your evidence into your own dimensions, citing each fact.",
+    note: "Reads your evidence into your own dimensions, citing each fact, and recommends the roles they point to.",
   },
   {
     title: "Role map",
-    note: "Names the roles grouped from real postings and reads out what they require.",
+    note: "Names the recommended roles that have real openings, reads out what they require, and scores your fit.",
   },
   {
     title: "Advisor",
@@ -227,8 +227,17 @@ export function AiSettings() {
             className="callout-note"
             style={{ fontSize: 12.5, lineHeight: 1.55, margin: "14px 0 0" }}
           >
-            Crawling, parsing, embedding and clustering run on our side and need
+            Crawling, parsing, embedding and matching run on our side and need
             no model.
+          </p>
+          <p
+            className="callout-note"
+            style={{ fontSize: 12.5, lineHeight: 1.55, margin: "8px 0 0" }}
+          >
+            To find openings, the job titles your analysis recommends are
+            searched on Himalayas, a public remote-jobs site, for the places you
+            want to work. Only the title and the place are sent: nothing else
+            from your profile, and nothing that says it is you.
           </p>
         </div>
 

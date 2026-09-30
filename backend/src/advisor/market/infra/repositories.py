@@ -16,6 +16,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.market.domain import (
     ACCENT_FOLDS,
+    WORLDWIDE_WORDS,
     Company,
     CompanyFilter,
     CompanyRepository,
@@ -38,6 +39,7 @@ from advisor.market.domain import (
     PrivateJobPostingRepository,
     SourceOrigin,
     market_words,
+    search_scope,
 )
 from advisor.market.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
@@ -109,6 +111,11 @@ class SqlAlchemyCrawlSourceRepository(
             found.append(source.kind == filter.kind)
         if filter.endpoint is not None:
             found.append(source.endpoint == filter.endpoint)
+        if filter.is_unfetched is not None:
+            unfetched = source.last_fetched_at.is_(None)
+            found.append(unfetched if filter.is_unfetched else ~unfetched)
+        if filter.requested_before is not None:
+            found.append(source.last_requested_at < filter.requested_before)
         return found
 
 
@@ -173,7 +180,11 @@ class SqlAlchemyJobPostingRepository(
         either: list[ColumnElement[bool]] = []
         for market in scope.markets:
             if words := market_words(market):
-                either.append(_location_in_market(words))
+                either.append(_names_every_word(posting.location, words))
+        if any(search_scope(market) is not None for market in scope.markets):
+            # Remote work open to anyone is in every place a search can be
+            # scoped to, though its location names none of them (ADR 0025).
+            either.append(_names_every_word(posting.location, WORLDWIDE_WORDS))
         if scope.includes_baseline:
             either.append(
                 posting.crawl_source_id.in_(
@@ -192,11 +203,14 @@ class SqlAlchemyJobPostingRepository(
         return [mappers.job_posting(row) for row in rows.scalars()]
 
 
-def _location_in_market(words: tuple[str, ...]) -> ColumnElement[bool]:
-    """``in_market`` in SQL: the location, lowercased and folded to ASCII the
-    way ``normalize`` folds it, contains each of the market's words whole.
-    The words are ASCII letters and digits, so they are safe in the pattern."""
-    folded = func.translate(func.lower(models.JobPosting.location), *ACCENT_FOLDS)
+def _names_every_word(
+    column: InstrumentedAttribute[str] | InstrumentedAttribute[str | None],
+    words: tuple[str, ...],
+) -> ColumnElement[bool]:
+    """``names_every_word`` in SQL: the text, lowercased and folded to ASCII
+    the way ``normalize`` folds it, contains each of the words whole. The words
+    are ASCII letters and digits, so they are safe in the pattern."""
+    folded = func.translate(func.lower(column), *ACCENT_FOLDS)
     return and_(*(folded.regexp_match(rf"\m{word}\M") for word in words))
 
 
@@ -259,9 +273,19 @@ class SqlAlchemyMarketPreferenceRepository(
         return entity.id
 
     def conditions(self, filter: MarketPreferenceFilter) -> list[ColumnElement[bool]]:
-        if filter.market is None:
-            return []
-        return [models.MarketPreference.market == filter.market]
+        preference = models.MarketPreference
+        found: list[ColumnElement[bool]] = []
+        if filter.market is not None:
+            found.append(preference.market == filter.market)
+        if filter.names_any_of is not None:
+            named = [
+                _names_every_word(preference.market, words)
+                for name in filter.names_any_of
+                if (words := market_words(name))
+            ]
+            # No usable name matches nobody, rather than everybody.
+            found.append(or_(*named) if named else preference.id.is_(None))
+        return found
 
 
 class SqlAlchemyPrivateJobPostingRepository(

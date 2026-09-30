@@ -62,7 +62,9 @@ Design choices that are deliberate:
   estimates cost, checks the budget, decrypts the key for exactly one call,
   validates the output against a schema and writes a ledger row.
 - **Glassdoor, Indeed and LinkedIn are not crawled.** Market data comes from
-  public ATS boards, schema.org JSON-LD career pages and JDs that users paste.
+  public ATS boards, schema.org JSON-LD career pages, the Himalayas public API
+  for remote work ([ADR 0025](docs/decisions/0025-search-himalayas-for-the-candidate-roles.md))
+  and JDs that users paste.
 
 **Stack:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 and Alembic on
 Postgres. Procrastinate for jobs (no Redis). sentence-transformers

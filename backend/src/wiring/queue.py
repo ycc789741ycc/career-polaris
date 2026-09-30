@@ -56,6 +56,10 @@ def _register(app: App) -> None:
     async def discover_board(company_id: str, company_name: str) -> None:
         await market_jobs.discover_board(deps(), company_id=company_id, company_name=company_name)
 
+    @app.task(name="market.request_searches", queue=str(Queue.SYNC))
+    async def request_searches(titles: list[str], locations: list[str]) -> None:
+        await market_jobs.request_searches(deps(), titles=titles, locations=locations)
+
     @app.task(name="rolemap.recluster", queue=str(Queue.AI))
     async def recluster(owner_id: str, build_id: str) -> None:
         await rolemap_jobs.recluster(deps(), owner_id=owner_id, build_id=build_id)

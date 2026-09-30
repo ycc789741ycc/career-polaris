@@ -37,6 +37,7 @@ from advisor.rolemap.domain import (
     Role,
     RoleCandidate,
     RoleCandidateFilter,
+    RoleCandidatesReplaced,
     RoleChange,
     RoleFilter,
     RoleMapBuildFinished,
@@ -254,8 +255,9 @@ class RoleMapService:
         """The roles an analysis recommended, replacing the last analysis's.
 
         Called by ``assessment`` once its scores are stored; the next build
-        searches the market for these. At most ``CANDIDATE_ROLE_COUNT``, in the
-        analysis's order.
+        looks for these among the crawled postings, and the announcement sends
+        their titles to be searched for. At most ``CANDIDATE_ROLE_COUNT``, in
+        the analysis's order.
         """
         if len(candidates) > CANDIDATE_ROLE_COUNT:
             raise ValidationError(
@@ -279,6 +281,11 @@ class RoleMapService:
                 )
                 for rank, candidate in enumerate(candidates)
             ]
+            if stored:
+                # The market is searched for them, by title alone (ADR 0025).
+                mine.record(
+                    RoleCandidatesReplaced(owner_id=owner_id, titles=tuple(c.title for c in stored))
+                )
         log.info("rolemap.candidates_replaced", candidates=len(stored))
         return [_candidate_view(c) for c in stored]
 

@@ -1,0 +1,56 @@
+{
+  "comments": "A saved search response, in the shape the API returns.",
+  "updatedAt": 1790513191,
+  "offset": 0,
+  "limit": 20,
+  "totalCount": 3,
+  "jobs": [
+    {
+      "title": "Senior Data Engineer",
+      "excerpt": "Own the pipelines behind our ledger.",
+      "companyName": "Northwind Pay",
+      "companySlug": "northwind-pay",
+      "companyLogo": "https://cdn.example.test/northwind.png",
+      "employmentType": "Full Time",
+      "minSalary": 90000,
+      "maxSalary": 120000,
+      "salaryPeriod": "annual",
+      "seniority": ["Senior"],
+      "currency": "USD",
+      "locationRestrictions": ["Taiwan", "Singapore"],
+      "timezoneRestrictions": [8],
+      "categories": ["Data-Engineering"],
+      "parentCategories": [],
+      "description": "<div><p><strong>About the role</strong></p><p>You will own the ledger pipelines.</p></div>",
+      "pubDate": 1789717501,
+      "expiryDate": 1794901500,
+      "applicationLink": "https://himalayas.app/companies/northwind-pay/jobs/senior-data-engineer",
+      "guid": "https://himalayas.app/companies/northwind-pay/jobs/senior-data-engineer"
+    },
+    {
+      "title": "Platform Engineer",
+      "excerpt": "Run the platform.",
+      "companyName": "Kestrel Labs",
+      "companySlug": "kestrel-labs",
+      "employmentType": "Contractor",
+      "minSalary": 60,
+      "maxSalary": 80,
+      "salaryPeriod": "hourly",
+      "currency": "USD",
+      "locationRestrictions": [],
+      "timezoneRestrictions": [],
+      "categories": ["Platform-Engineering"],
+      "description": "<p>Keep the clusters healthy.</p>",
+      "pubDate": 1789800000,
+      "applicationLink": "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
+      "guid": "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer"
+    },
+    {
+      "title": "",
+      "companyName": "Nameless",
+      "locationRestrictions": [],
+      "description": "<p>No title, so not a posting.</p>",
+      "guid": "https://himalayas.app/companies/nameless/jobs/untitled"
+    }
+  ]
+}

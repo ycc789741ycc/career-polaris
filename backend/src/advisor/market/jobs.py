@@ -37,4 +37,35 @@ async def discover_board(deps: Any, *, company_id: str, company_name: str) -> No
     log.info("market.board_discovered", company=name, found=found is not None)
 
 
-__all__ = ["discover_board"]
+async def request_searches(deps: Any, *, titles: list[str], locations: list[str]) -> None:
+    """Make sure a public job API is searched for each title in each place
+    (ADR 0025), as ``demand`` sources with no owner.
+
+    Only titles and places reach here. A place a search cannot be scoped to —
+    a city, a region — adds none: its postings come from company boards. The
+    crawler reads a new search within minutes, and its postings then rebuild
+    the role maps of whoever wants to work there.
+    """
+    from advisor.market.crawling.adapters import SEARCH_ADAPTERS
+    from advisor.market.domain import search_scope
+
+    scopes = {scope for place in locations if (scope := search_scope(place)) is not None}
+    created = 0
+    for adapter in SEARCH_ADAPTERS:
+        searches: dict[str, str] = {}
+        for scope in scopes:
+            for title in titles:
+                endpoint = adapter.search_endpoint(title, scope)
+                if endpoint is not None:
+                    searches[endpoint] = scope.label
+        if searches:
+            created += await deps.market.request_searches(kind=adapter.name, searches=searches)
+    log.info(
+        "market.searches_requested",
+        titles=len(titles),
+        places=len(scopes),
+        new_sources=created,
+    )
+
+
+__all__ = ["discover_board", "request_searches"]

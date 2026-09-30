@@ -33,7 +33,6 @@ from advisor.market.domain.posting import (
     canonical_key,
     clip,
     expired_keys,
-    in_market,
     market_words,
     names_every_word,
     normalize,
@@ -59,6 +58,18 @@ from advisor.market.domain.repositories import (
     SharedMarket,
 )
 from advisor.market.domain.salary import CONFIDENT_SAMPLE_SIZE, SalaryBand, band_from
+from advisor.market.domain.search import (
+    SEARCH_SOURCE_IDLE_WEEKS,
+    WORLDWIDE_WORDS,
+    SearchScope,
+    credited_source,
+    in_market,
+    in_search_scope,
+    is_open_worldwide,
+    remote_location,
+    scope_names,
+    search_scope,
+)
 
 __all__ = [
     "ACCENT_FOLDS",
@@ -69,6 +80,8 @@ __all__ = [
     "MAX_TARGET_LOCATION",
     "MAX_TARGET_LOCATIONS",
     "MAX_TITLE",
+    "SEARCH_SOURCE_IDLE_WEEKS",
+    "WORLDWIDE_WORDS",
     "Company",
     "CompanyFilter",
     "CompanyRepository",
@@ -98,6 +111,7 @@ __all__ = [
     "Repository",
     "SalaryBand",
     "SalaryRange",
+    "SearchScope",
     "SharedMarket",
     "SourceKind",
     "SourceOrigin",
@@ -109,11 +123,17 @@ __all__ = [
     "canonical_key",
     "chosen_target_locations",
     "clip",
+    "credited_source",
     "expired_keys",
     "in_market",
+    "in_search_scope",
+    "is_open_worldwide",
     "market_words",
     "names_every_word",
     "normalize",
     "normalize_title",
+    "remote_location",
     "salary_in_text",
+    "scope_names",
+    "search_scope",
 ]

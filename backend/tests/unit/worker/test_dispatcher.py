@@ -1,6 +1,7 @@
 """The outbox dispatcher: submitted answers into regenerations (ADR 0023),
 finished analyses into the role-map builds that follow them (ADR 0018, 0020),
-and finished builds into one scoring of the fits (ADR 0024).
+finished builds into one scoring of the fits (ADR 0024), and recommended
+roles into ownerless searches for them (ADR 0025).
 
 Calls the dispatcher's handler directly with stand-in services and a recorded
 queue — no database, no job runner.
@@ -154,6 +155,16 @@ async def test_new_postings_rebuild_only_a_role_map_that_is_not_waiting_or_runni
     assert activity.requests == [OWNER] and len(queued) == expected
 
 
+class FakeRoleMap:
+    """The roles the user's last analysis recommended."""
+
+    def __init__(self, titles: list[str] | None = None) -> None:
+        self.titles = titles or []
+
+    async def candidates(self, owner_id: uuid.UUID) -> list[Any]:
+        return [SimpleNamespace(title=title) for title in self.titles]
+
+
 def _target_locations_changed() -> OutboxEvent:
     return OutboxEvent(
         name=str(EventName.TARGET_LOCATIONS_CHANGED),
@@ -168,7 +179,9 @@ async def test_new_target_locations_rebuild_the_role_map_on_the_new_scope(
     build = SimpleNamespace(id=uuid.uuid4())
     activity = FakeActivity(requested=SimpleNamespace(build=build, should_queue=True))
 
-    await dispatcher._handle(_container(activity=activity), _target_locations_changed())
+    await dispatcher._handle(
+        _container(activity=activity, rolemap=FakeRoleMap()), _target_locations_changed()
+    )
 
     assert activity.requests == [OWNER]
     assert queued == [
@@ -181,15 +194,40 @@ async def test_new_target_locations_queue_nothing_without_a_role_map_to_rebuild(
 ) -> None:
     activity = FakeActivity(requested=None)
 
-    await dispatcher._handle(_container(activity=activity), _target_locations_changed())
+    await dispatcher._handle(
+        _container(activity=activity, rolemap=FakeRoleMap()), _target_locations_changed()
+    )
 
     assert activity.requests == [OWNER] and queued == []
 
 
+async def test_new_target_locations_search_the_recommended_roles_there(
+    queued: list[dict[str, Any]],
+) -> None:
+    activity = FakeActivity(requested=None)
+    rolemap = FakeRoleMap(["Data Engineer", "Platform Engineer"])
+
+    await dispatcher._handle(
+        _container(activity=activity, rolemap=rolemap), _target_locations_changed()
+    )
+
+    assert queued == [
+        {
+            "name": "market.request_searches",
+            "titles": ["Data Engineer", "Platform Engineer"],
+            "locations": ["Berlin", "Remote EU"],
+        }
+    ]
+
+
 class FakeMarket:
-    def __init__(self) -> None:
+    def __init__(self, locations: list[str] | None = None) -> None:
         self.named: list[str] = []
         self.company_id = uuid.uuid4()
+        self.locations = locations or []
+
+    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
+        return self.locations
 
     async def company_named(self, name: str) -> uuid.UUID:
         self.named.append(name)
@@ -261,5 +299,54 @@ async def test_scores_and_requirements_changing_do_not_score_fits_on_their_own(
     """Each would score every role again, just before the build replaces them;
     the build that follows scores them once when it closes."""
     await dispatcher._handle(_container(), OutboxEvent(name=str(name), owner_id=OWNER, payload={}))
+
+    assert queued == []
+
+
+# --- Searching for the recommended roles (ADR 0025) -------------------------
+
+
+def _candidates_replaced(titles: list[str]) -> OutboxEvent:
+    return OutboxEvent(
+        name=str(EventName.ROLE_CANDIDATES_REPLACED), owner_id=OWNER, payload={"titles": titles}
+    )
+
+
+async def test_recommended_roles_are_searched_for_where_the_user_wants_to_work(
+    queued: list[dict[str, Any]],
+) -> None:
+    market = FakeMarket(["Remote", "Taiwan"])
+
+    await dispatcher._handle(_container(market=market), _candidates_replaced(["Data Engineer"]))
+
+    assert queued == [
+        {
+            "name": "market.request_searches",
+            "titles": ["Data Engineer"],
+            "locations": ["Remote", "Taiwan"],
+        }
+    ]
+
+
+async def test_a_search_request_carries_nothing_about_who_it_is_for(
+    queued: list[dict[str, Any]],
+) -> None:
+    """Only titles and places cross over, so the sources it leaves have no owner."""
+    market = FakeMarket(["Taiwan"])
+
+    await dispatcher._handle(_container(market=market), _candidates_replaced(["Data Engineer"]))
+
+    (job,) = queued
+    assert set(job) == {"name", "titles", "locations"}
+    assert str(OWNER) not in repr(job)
+
+
+@pytest.mark.parametrize(
+    ("titles", "locations"), [([], ["Taiwan"]), (["Data Engineer"], []), ([], [])]
+)
+async def test_nothing_to_search_for_or_nowhere_to_search_queues_nothing(
+    titles: list[str], locations: list[str], queued: list[dict[str, Any]]
+) -> None:
+    await dispatcher._handle(_container(market=FakeMarket(locations)), _candidates_replaced(titles))
 
     assert queued == []

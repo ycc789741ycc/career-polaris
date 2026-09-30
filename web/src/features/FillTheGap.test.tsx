@@ -16,6 +16,7 @@ const target: AdvisorTarget = {
   location: null,
   postingTitle: null,
   url: null,
+  creditedTo: null,
   fit: 86,
   band: null,
   isCustom: false,

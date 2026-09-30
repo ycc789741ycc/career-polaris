@@ -357,3 +357,158 @@ async def test_a_market_event_carries_no_owner(
         owner_id, payload = rows.one()
     assert owner_id is None
     assert payload == {"company_id": None, "market": market, "seen": 2, "expired": 1}
+
+
+# --- searches of a public job API (ADR 0025) --------------------------------
+
+
+async def test_a_search_source_round_trips_and_is_found_while_unfetched_or_idle(
+    crawler_database: Database,
+) -> None:
+    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
+    asked = datetime(2026, 9, 1, 12, tzinfo=UTC)
+    endpoint = f"https://himalayas.app/jobs/api/search?q={uuid.uuid4().hex}&country=TW"
+    async with uow.shared() as market:
+        source = await market.sources.create(
+            CrawlSource.search(kind="himalayas", endpoint=endpoint, market="Taiwan", at=asked)
+        )
+    try:
+        async with uow.shared() as market:
+            [loaded] = await market.sources.get_list(CrawlSourceFilter(endpoint=endpoint))
+            assert loaded == source
+            assert (loaded.last_requested_at, loaded.company_id) == (asked, None)
+            assert (loaded.origin, loaded.market) == (SourceOrigin.DEMAND, "Taiwan")
+
+            unfetched = CrawlSourceFilter(endpoint=endpoint, is_unfetched=True)
+            fetched = CrawlSourceFilter(endpoint=endpoint, is_unfetched=False)
+            assert await market.sources.get_count(unfetched) == 1
+            assert await market.sources.get_count(fetched) == 0
+
+            idle = CrawlSourceFilter(
+                endpoint=endpoint, requested_before=datetime(2026, 9, 2, tzinfo=UTC)
+            )
+            wanted = CrawlSourceFilter(endpoint=endpoint, requested_before=asked)
+            assert await market.sources.get_count(idle) == 1
+            assert await market.sources.get_count(wanted) == 0
+
+            loaded.record_fetch(datetime(2026, 9, 3, tzinfo=UTC), None)
+            await market.sources.update(loaded)
+            assert await market.sources.get_count(unfetched) == 0
+            assert await market.sources.get_count(fetched) == 1
+    finally:
+        async with crawler_database.shared() as session:
+            await session.execute(
+                text("DELETE FROM market.crawl_source WHERE id = :id"), {"id": source.id}
+            )
+
+
+async def test_a_board_is_never_idle_for_lack_of_demand(crawler_database: Database) -> None:
+    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
+    endpoint = f"https://boards.test/{uuid.uuid4()}"
+    async with uow.shared() as market:
+        company = await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
+        board = await market.sources.create(
+            CrawlSource.board(
+                kind="greenhouse",
+                endpoint=endpoint,
+                company_id=company.id,
+                origin=SourceOrigin.DEMAND,
+            )
+        )
+    try:
+        async with uow.shared() as market:
+            far_future = CrawlSourceFilter(
+                endpoint=endpoint, requested_before=datetime(2999, 1, 1, tzinfo=UTC)
+            )
+            assert await market.sources.get_count(far_future) == 0
+    finally:
+        async with crawler_database.shared() as session:
+            await session.execute(
+                text("DELETE FROM market.crawl_source WHERE id = :id"), {"id": board.id}
+            )
+
+
+async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
+    crawler_database: Database,
+) -> None:
+    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
+    seen_at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    async with uow.shared() as market:
+        company = await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
+        source = await market.sources.create(
+            CrawlSource.search(
+                kind="himalayas",
+                endpoint=f"https://himalayas.app/jobs/api/search?q={uuid.uuid4().hex}&country=TW",
+                market="Taiwan",
+                at=seen_at,
+            )
+        )
+
+    def seen(title: str, location: str) -> NormalizedPosting:
+        return NormalizedPosting(
+            external_id=title,
+            company_name=company.name,
+            title=title,
+            location=location,
+            description="Build things.",
+            url=f"https://himalayas.app/companies/repo/jobs/{title}",
+            source_kind=SourceKind.PUBLIC_API,
+            posted_on=date(2026, 9, 1),
+            salary=None,
+        )
+
+    try:
+        postings = {}
+        async with uow.shared() as market:
+            for title, location in (
+                ("anyone", "Remote, Worldwide"),
+                ("taiwan", "Remote, Taiwan, Japan"),
+                ("elsewhere", "Remote, Argentina"),
+            ):
+                postings[title] = await market.postings.create(
+                    JobPosting.first_seen(
+                        seen(title, location),
+                        company_id=company.id,
+                        source_id=source.id,
+                        at=seen_at,
+                    )
+                )
+
+        async def in_scope(*markets: str) -> set[str]:
+            async with uow.shared() as market:
+                found = await market.postings.get_open_in_scope(PostingScope(markets=markets))
+            mine = {p.id: title for title, p in postings.items()}
+            return {mine[p.id] for p in found if p.id in mine}
+
+        assert await in_scope("Taiwan") == {"anyone", "taiwan"}
+        assert await in_scope("Remote Taiwan") == {"anyone", "taiwan"}
+        assert await in_scope("Remote") == {"anyone", "taiwan", "elsewhere"}
+        assert await in_scope("Singapore") == {"anyone"}
+        # A city is no place a search covers, so worldwide work is not in it.
+        assert await in_scope("Taipei") == set()
+    finally:
+        async with crawler_database.shared() as session:
+            for table, column in (
+                ("market.job_posting", "crawl_source_id"),
+                ("market.crawl_source", "id"),
+            ):
+                await session.execute(
+                    text(f"DELETE FROM {table} WHERE {column} = :id"), {"id": source.id}
+                )
+
+
+async def test_the_fan_out_finds_users_by_any_name_for_the_place(
+    database: Database, account: uuid.UUID
+) -> None:
+    from advisor.market import create_market_service
+
+    market = create_market_service(database)
+    tag = uuid.uuid4().hex[:8]
+    await market.set_target_locations(account, ["Remote Taiwan", f"Zyx{tag} UK"])
+
+    assert account in await market.owners_affected_by(market="Taiwan")
+    assert account in await market.owners_affected_by(market="United Kingdom")
+    assert account in await market.owners_affected_by(market="Remote")
+    assert account not in await market.owners_affected_by(market="Singapore")
+    assert await market.owners_affected_by(market=f"Nowhere{tag}") == []
+    assert await market.owners_affected_by(market="---") == []

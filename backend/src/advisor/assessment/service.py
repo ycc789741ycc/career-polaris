@@ -242,6 +242,9 @@ class MatchedPostingView:
     # The crawl source kind (atsBoard, jsonLd, publicApi); never a site that
     # forbids crawling (domain decision 6).
     source_kind: str | None = None
+    # The job site to credit beside the opening's link, when it was found
+    # through that site's API (ADR 0025).
+    credited_to: str | None = None
 
 
 class AssessmentService:
@@ -661,6 +664,7 @@ class AssessmentService:
                     salary=posting.salary,
                     fit=candidate.fit,
                     source_kind=posting.source_kind,
+                    credited_to=posting.credited_to,
                 )
             )
         return matched

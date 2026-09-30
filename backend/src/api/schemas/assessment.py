@@ -122,6 +122,9 @@ class MatchedPosting(ApiModel):
     fit_basis: Literal["role"] = "role"
     # atsBoard, jsonLd or publicApi; never a site that forbids crawling.
     source_kind: str | None
+    # The job site whose API found this opening, to be named beside its link
+    # wherever the opening is shown (ADR 0025); null for an employer's board.
+    credited_to: str | None
 
     @classmethod
     def from_view(cls, m: MatchedPostingView) -> MatchedPosting:
@@ -136,6 +139,7 @@ class MatchedPosting(ApiModel):
             salary=Salary.of(m.salary),
             fit=m.fit,
             source_kind=m.source_kind,
+            credited_to=m.credited_to,
         )
 
 

@@ -116,15 +116,28 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
             )
         return
 
+    if name == EventName.ROLE_CANDIDATES_REPLACED and owner_id:
+        # An analysis recommended roles: the market is searched for them in the
+        # places this user wants to work (ADR 0025).
+        await _request_searches(
+            titles=event.payload.get("titles") or [],
+            locations=await deps.market.target_locations(owner_id),
+        )
+        return
+
     if name == EventName.TARGET_LOCATIONS_CHANGED and owner_id:
         # A new scope: a role map the user already has is rebuilt on it, with
-        # ADR 0018's gating. Nothing is materialised for the locations yet —
-        # there is no public job API adapter to crawl them with.
+        # ADR 0018's gating, and the roles their last analysis recommended are
+        # searched for in the new places (ADR 0025).
         rebuild = await deps.activity.rebuild_role_map(owner_id)
         if rebuild is not None and rebuild.should_queue:
             await enqueue(
                 "rolemap.recluster", owner_id=str(owner_id), build_id=str(rebuild.build.id)
             )
+        await _request_searches(
+            titles=[candidate.title for candidate in await deps.rolemap.candidates(owner_id)],
+            locations=event.payload.get("locations") or [],
+        )
         return
 
     if name == EventName.POSTINGS_CHANGED:
@@ -136,6 +149,14 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
                     "rolemap.recluster", owner_id=str(affected), build_id=str(requested.build.id)
                 )
         return
+
+
+async def _request_searches(*, titles: list[str], locations: list[str]) -> None:
+    """Queue the searches for some job titles in some places. Only the titles
+    and the places cross over: the job, and the crawl sources it leaves, carry
+    nothing about whose analysis or locations they came from (ADR 0025)."""
+    if titles and locations:
+        await enqueue("market.request_searches", titles=list(titles), locations=list(locations))
 
 
 async def _users_affected_by(deps: Container, payload: dict[str, Any]) -> list[uuid.UUID]:

@@ -14,6 +14,7 @@ from advisor.rolemap.domain.entities import (
 )
 from advisor.rolemap.domain.events import (
     CustomRoleAdded,
+    RoleCandidatesReplaced,
     RoleMapBuildFinished,
     RoleMapEvent,
     RoleRequirementsChanged,
@@ -84,6 +85,7 @@ __all__ = [
     "RoleCandidate",
     "RoleCandidateFilter",
     "RoleCandidateRepository",
+    "RoleCandidatesReplaced",
     "RoleChange",
     "RoleFilter",
     "RoleLineage",

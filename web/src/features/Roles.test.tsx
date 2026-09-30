@@ -91,6 +91,21 @@ function serve() {
         fit: 62,
         fit_basis: "role",
         source_kind: "atsBoard",
+        credited_to: null,
+      },
+      {
+        posting_id: "p2",
+        role_id: "r2",
+        role_name: "Platform Engineer",
+        title: "Platform Engineer, Clusters",
+        company_name: "Kestrel Labs",
+        location: "Remote, Worldwide",
+        url: "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
+        salary: null,
+        fit: 84,
+        fit_basis: "role",
+        source_kind: "publicApi",
+        credited_to: "Himalayas",
       },
     ]),
     "/role-candidates": page([
@@ -276,6 +291,35 @@ describe("the role map while an analysis runs", () => {
     expect(
       await screen.findByRole("button", { name: "Waiting for analysis…" }),
     ).toBeDisabled();
+  });
+});
+
+describe("an opening found through a job site", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("names the site and links back to the opening there", async () => {
+    renderRoles(null);
+
+    const credit = await screen.findByRole("link", { name: "Himalayas" });
+    expect(credit).toHaveAttribute(
+      "href",
+      "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
+    );
+    expect(credit.parentElement).toHaveTextContent("via Himalayas");
+  });
+
+  it("credits nobody for an opening from the employer's own board", async () => {
+    renderRoles(null);
+
+    await screen.findByRole("link", { name: "Himalayas" });
+    expect(screen.getAllByRole("link", { name: "Himalayas" })).toHaveLength(1);
+    for (const row of screen.getAllByText(/Staff Engineer, Ledger/)) {
+      expect(row).not.toHaveTextContent("via");
+    }
   });
 });
 

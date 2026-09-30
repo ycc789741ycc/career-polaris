@@ -61,8 +61,26 @@ class CrawlSource:
     status: SourceStatus
     last_fetched_at: datetime | None = None
     last_error: str | None = None
+    # A search only: when a user's candidates last asked for it. Never who.
+    last_requested_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @classmethod
+    def search(cls, *, kind: str, endpoint: str, market: str, at: datetime) -> CrawlSource:
+        """A search of a public job API for one job title in one place (ADR
+        0025): a ``demand`` source with no company and no owner, filed under
+        the place it searches."""
+        return cls(
+            id=uuid.uuid4(),
+            kind=kind,
+            endpoint=endpoint,
+            company_id=None,
+            market=market,
+            origin=SourceOrigin.DEMAND,
+            status=SourceStatus.ACTIVE,
+            last_requested_at=at,
+        )
 
     @classmethod
     def board(
@@ -94,6 +112,18 @@ class CrawlSource:
             return False
         self.status = SourceStatus.RETIRED
         return True
+
+    @property
+    def is_search(self) -> bool:
+        return self.last_requested_at is not None
+
+    def requested(self, at: datetime) -> None:
+        """Someone's candidates ask for this search again: it stays crawled,
+        and one retired for lack of demand is crawled afresh."""
+        self.last_requested_at = at
+        if self.status is SourceStatus.RETIRED:
+            self.status = SourceStatus.ACTIVE
+            self.last_fetched_at = None
 
 
 @dataclass(slots=True)

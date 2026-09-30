@@ -444,6 +444,7 @@ export function Roles() {
                       match.title
                     )}
                     {match.location ? ` · ${match.location}` : ""}
+                    <Credit to={match.credited_to} url={match.url} />
                   </div>
                 </div>
               </div>
@@ -582,5 +583,32 @@ function UnplacedCandidates({
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Names the job site an opening was found through, linked to the opening
+ * there: that site's terms ask for both wherever the opening is shown
+ * (ADR 0025). Nothing for an opening from the employer's own board.
+ */
+export function Credit({
+  to,
+  url,
+}: {
+  to: string | null | undefined;
+  url: string | null;
+}) {
+  if (!to) return null;
+  return (
+    <>
+      {" · via "}
+      {url ? (
+        <a href={url} rel="noreferrer" target="_blank">
+          {to}
+        </a>
+      ) : (
+        to
+      )}
+    </>
   );
 }

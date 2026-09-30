@@ -17,12 +17,15 @@ crawler may not import ``advisor.market.domain`` directly.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from advisor.market.baseline import BASELINE_SOURCES, BaselineSource
 from advisor.market.domain import (
     MAX_TARGET_LOCATION,
     MAX_TARGET_LOCATIONS,
+    SEARCH_SOURCE_IDLE_WEEKS,
     Company,
     CompanyFilter,
     CrawlSource,
@@ -42,6 +45,7 @@ from advisor.market.domain import (
     PrivateJobPostingFilter,
     SalaryBand,
     SalaryRange,
+    SearchScope,
     SharedMarket,
     SourceKind,
     SourceOrigin,
@@ -52,10 +56,15 @@ from advisor.market.domain import (
     band_from,
     canonical_key,
     chosen_target_locations,
+    credited_source,
     in_market,
     names_every_word,
     normalize,
+    normalize_title,
+    remote_location,
     salary_in_text,
+    scope_names,
+    search_scope,
 )
 from kernel.clock import utcnow
 from kernel.errors import NotFoundError, ValidationError
@@ -74,6 +83,7 @@ __all__ = [
     "PostingView",
     "SalaryBand",
     "SalaryRange",
+    "SearchScope",
     "SourceKind",
     "SourceOrigin",
     "Visibility",
@@ -81,7 +91,10 @@ __all__ = [
     "canonical_key",
     "in_market",
     "names_every_word",
+    "normalize_title",
+    "remote_location",
     "salary_in_text",
+    "search_scope",
 ]
 
 
@@ -119,6 +132,9 @@ class PostingView:
     # Which kind of source it was crawled from (atsBoard, jsonLd, publicApi);
     # None for a pasted JD, which was not crawled at all.
     source_kind: str | None = None
+    # The job site this opening must be credited to wherever it is shown, with
+    # its link (ADR 0025); None when the link is the employer's own.
+    credited_to: str | None = None
 
 
 class CrawlIngest:
@@ -128,9 +144,18 @@ class CrawlIngest:
         self._uow = uow
 
     async def due_sources(self) -> list[CrawlSourceView]:
+        # Every active source is crawled each run, so the set is read whole.
+        return await self._sources(CrawlSourceFilter(status=SourceStatus.ACTIVE))
+
+    async def new_sources(self) -> list[CrawlSourceView]:
+        """Active sources no crawl has fetched yet: a search a user's
+        candidates just asked for, or a board discovery just found. Crawled
+        between the weekly runs, so nobody waits a week for them (ADR 0025)."""
+        return await self._sources(CrawlSourceFilter(status=SourceStatus.ACTIVE, is_unfetched=True))
+
+    async def _sources(self, filter: CrawlSourceFilter) -> list[CrawlSourceView]:
         async with self._uow.shared() as market:
-            # Every active source is crawled each run, so the set is read whole.
-            sources = await market.sources.get_list(CrawlSourceFilter(status=SourceStatus.ACTIVE))
+            sources = await market.sources.get_list(filter)
             names = await _company_names(market, {s.company_id for s in sources})
         return [
             CrawlSourceView(
@@ -144,6 +169,38 @@ class CrawlIngest:
             for source in sources
         ]
 
+    async def retire_idle_searches(self, now: datetime) -> int:
+        """Stop crawling the searches nobody's candidates have asked for in
+        ``SEARCH_SOURCE_IDLE_WEEKS``, and expire what they found: with no
+        crawl left to notice a posting closing, it would stay open for ever.
+        Returns how many were retired."""
+        idle_since = now - timedelta(weeks=SEARCH_SOURCE_IDLE_WEEKS)
+        retired = 0
+        async with self._uow.shared() as market:
+            for source in await market.sources.get_list(
+                CrawlSourceFilter(status=SourceStatus.ACTIVE, requested_before=idle_since)
+            ):
+                if not source.retire():
+                    continue
+                await market.sources.update(source)
+                expired = await market.postings.expire_unseen(source.id, set())
+                if expired and source.market:
+                    market.record(
+                        PostingsChanged(
+                            company_id=None, market=source.market, seen=0, expired=expired
+                        )
+                    )
+                retired += 1
+        return retired
+
+    async def announce_markets(self, markets: Iterable[str]) -> None:
+        """Say once per place that its postings changed, for the searches
+        stored with ``record_search_crawl``: a place's searches are crawled
+        together, and one announcement is one role-map rebuild."""
+        async with self._uow.shared() as market:
+            for name in sorted(set(markets)):
+                market.record(PostingsChanged(company_id=None, market=name, seen=0, expired=0))
+
     async def record_crawl(
         self,
         source_id: uuid.UUID,
@@ -151,7 +208,35 @@ class CrawlIngest:
         *,
         error: str | None = None,
     ) -> tuple[int, int]:
-        """Upsert what was seen, expire what was not. Returns (upserted, expired)."""
+        """Upsert what was seen, expire what was not, and announce it.
+        Returns (upserted, expired)."""
+        seen, expired, _new = await self._record(source_id, postings, error=error, announce=True)
+        return (seen, expired)
+
+    async def record_search_crawl(
+        self,
+        source_id: uuid.UUID,
+        postings: list[NormalizedPosting],
+        *,
+        error: str | None = None,
+    ) -> tuple[int, int, bool]:
+        """Store one search's postings without announcing them. Returns
+        (upserted, expired, changed): ``changed`` is whether an opening
+        appeared or went, which is when the place is worth announcing, once,
+        with ``announce_markets``. A crawl that finds the same openings again
+        rebuilds nobody's role map."""
+        seen, expired, new = await self._record(source_id, postings, error=error, announce=False)
+        return (seen, expired, bool(new or expired))
+
+    async def _record(
+        self,
+        source_id: uuid.UUID,
+        postings: list[NormalizedPosting],
+        *,
+        error: str | None,
+        announce: bool,
+    ) -> tuple[int, int, int]:
+        """(seen, expired, new) for one source's crawl."""
         async with self._uow.shared() as market:
             source = await market.sources.get(source_id)
             if source is None:
@@ -159,25 +244,27 @@ class CrawlIngest:
             source.record_fetch(utcnow(), error)
             await market.sources.update(source)
             if error is not None:
-                return (0, 0)
+                return (0, 0, 0)
 
             seen_keys: set[str] = set()
+            new = 0
             for posting in postings:
                 company = await _ensure_company(market, posting.company_name)
-                await _upsert_posting(market, source_id, company.id, posting)
+                new += await _upsert_posting(market, source_id, company.id, posting)
                 seen_keys.add(posting.canonical_key)
 
             expired = await market.postings.expire_unseen(source_id, seen_keys)
 
-            market.record(
-                PostingsChanged(
-                    company_id=source.company_id,
-                    market=source.market,
-                    seen=len(seen_keys),
-                    expired=expired,
+            if announce:
+                market.record(
+                    PostingsChanged(
+                        company_id=source.company_id,
+                        market=source.market,
+                        seen=len(seen_keys),
+                        expired=expired,
+                    )
                 )
-            )
-            return (len(seen_keys), expired)
+            return (len(seen_keys), expired, new)
 
     async def postings_needing_embeddings(
         self, model_name: str, limit: int = 200
@@ -206,7 +293,12 @@ class MarketService:
         self._uow = uow
 
     async def owners_affected_by(self, *, market: str | None = None) -> list[uuid.UUID]:
-        """The users whose target locations include this market.
+        """The users whose target locations name this market.
+
+        A location names it when it contains every word of the market, or of
+        another name for the same country: "Remote Taiwan" names "Taiwan", and
+        "UK" names "United Kingdom". A search is filed under one name for a
+        place that users spell several ways (ADR 0025).
 
         The only cross-user read in the system, through the fan-out transaction
         and its SELECT-only policy. The crawler cannot answer this — it has no
@@ -216,7 +308,9 @@ class MarketService:
         if not market:
             return []
         async with self._uow.fanout() as everyone:
-            choosing = await everyone.markets.get_list(MarketPreferenceFilter(market=market))
+            choosing = await everyone.markets.get_list(
+                MarketPreferenceFilter(names_any_of=scope_names(market))
+            )
         return sorted({m.owner_id for m in choosing})
 
     async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
@@ -396,6 +490,36 @@ class MarketService:
                     )
                 )
 
+    async def request_searches(
+        self, *, kind: str, searches: Mapping[str, str], at: datetime | None = None
+    ) -> int:
+        """Make sure each search is crawled: ``searches`` maps a search
+        endpoint to the place it searches (ADR 0025). Returns how many are new.
+
+        A search is a ``demand`` source with no owner. One that exists is only
+        marked as asked for again, which keeps it crawled, so two users whose
+        analyses recommend the same title in the same place share it and the
+        row says nothing about either.
+        """
+        now = at or utcnow()
+        created = 0
+        async with self._uow.shared() as market:
+            for endpoint, place in sorted(searches.items()):
+                source = _first(
+                    await market.sources.get_list(
+                        CrawlSourceFilter(kind=kind, endpoint=endpoint), page_size=1
+                    )
+                )
+                if source is None:
+                    await market.sources.create(
+                        CrawlSource.search(kind=kind, endpoint=endpoint, market=place, at=now)
+                    )
+                    created += 1
+                else:
+                    source.requested(now)
+                    await market.sources.update(source)
+        return created
+
     async def company_named(self, name: str) -> uuid.UUID:
         """The shared company with this name, recorded if it is new. A company
         holds no user data, so naming one leaves no trace of who named it."""
@@ -453,7 +577,8 @@ async def _upsert_posting(
     source_id: uuid.UUID,
     company_id: uuid.UUID,
     posting: NormalizedPosting,
-) -> None:
+) -> bool:
+    """Store one posting. Returns whether it is new or open again."""
     now = utcnow()
     existing = _first(
         await market.postings.get_list(
@@ -464,9 +589,11 @@ async def _upsert_posting(
         await market.postings.create(
             JobPosting.first_seen(posting, company_id=company_id, source_id=source_id, at=now)
         )
-        return
+        return True
+    reopened = existing.status is not PostingStatus.OPEN
     existing.seen_again(posting, source_id=source_id, at=now)
     await market.postings.update(existing)
+    return reopened
 
 
 def _embedding_parts(posting: JobPosting) -> tuple[str | None, ...]:
@@ -485,6 +612,7 @@ def _shared_posting_view(posting: JobPosting, company_name: str) -> PostingView:
         salary=posting.salary,
         company_id=posting.company_id,
         source_kind=posting.source_kind,
+        credited_to=credited_source(posting.url),
     )
 
 

@@ -10,14 +10,18 @@ from pathlib import Path
 
 import pytest
 
-from advisor.market import SourceKind
+from advisor.market import SalaryRange, SourceKind
 from advisor.market.crawling.adapters import (
+    BY_NAME,
+    SOURCES,
     AshbyAdapter,
     GreenhouseAdapter,
+    HimalayasAdapter,
     JsonLdAdapter,
     LeverAdapter,
     strip_html,
 )
+from advisor.market.domain import SearchScope
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -179,3 +183,85 @@ def test_every_adapter_builds_an_endpoint_from_a_slug() -> None:
 def test_an_empty_payload_is_handled_rather_than_raising() -> None:
     for adapter in (GreenhouseAdapter(), LeverAdapter(), AshbyAdapter()):
         assert adapter.parse(None, company_name="x") == []
+
+
+# -- Himalayas (ADR 0025) -----------------------------------------------------
+
+TAIWAN = SearchScope(label="Taiwan", country_code="TW")
+ANYWHERE = SearchScope(label="Remote", country_code=None)
+
+
+def test_himalayas_normalises_a_remote_posting_open_to_named_countries() -> None:
+    senior = HimalayasAdapter().parse(load("himalayas.json"), company_name="Unknown")[0]
+
+    assert (senior.title, senior.company_name) == ("Senior Data Engineer", "Northwind Pay")
+    assert senior.location == "Remote, Taiwan, Singapore"
+    assert senior.source_kind is SourceKind.PUBLIC_API
+    assert "You will own the ledger pipelines." in senior.description
+    assert "<" not in senior.description
+    assert senior.posted_on is not None and senior.posted_on.year == 2026
+    assert senior.salary == SalaryRange(min_amount=90_000, max_amount=120_000, currency="USD")
+
+
+def test_a_himalayas_posting_links_back_to_himalayas_as_its_terms_ask() -> None:
+    postings = HimalayasAdapter().parse(load("himalayas.json"), company_name="Unknown")
+
+    assert all(p.url.startswith("https://himalayas.app/companies/") for p in postings)
+    assert all(p.external_id == p.url for p in postings)
+
+
+def test_a_himalayas_posting_open_to_anyone_is_remote_worldwide() -> None:
+    platform = HimalayasAdapter().parse(load("himalayas.json"), company_name="Unknown")[1]
+
+    assert platform.location == "Remote, Worldwide"
+
+
+def test_an_hourly_rate_is_not_read_as_a_salary() -> None:
+    platform = HimalayasAdapter().parse(load("himalayas.json"), company_name="Unknown")[1]
+
+    assert platform.salary is None
+
+
+def test_a_himalayas_job_without_a_title_is_skipped() -> None:
+    postings = HimalayasAdapter().parse(load("himalayas.json"), company_name="Unknown")
+
+    assert [p.title for p in postings] == ["Senior Data Engineer", "Platform Engineer"]
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"jobs": None}, "<html>rate limited</html>", []])
+def test_himalayas_reads_nothing_from_a_reply_that_is_not_a_search_result(payload: object) -> None:
+    assert HimalayasAdapter().parse(payload, company_name="Unknown") == []
+
+
+def test_a_search_sends_only_the_title_folded_to_plain_words() -> None:
+    adapter = HimalayasAdapter()
+
+    assert (
+        adapter.search_endpoint("Senior Data Engineer (m/f/d)", TAIWAN)
+        == "https://himalayas.app/jobs/api/search?q=senior%20data%20engineer&country=TW"
+    )
+    assert (
+        adapter.search_endpoint("Data Engineer", ANYWHERE)
+        == "https://himalayas.app/jobs/api/search?q=data%20engineer&worldwide=true"
+    )
+
+
+def test_the_same_title_written_two_ways_is_one_search() -> None:
+    adapter = HimalayasAdapter()
+
+    assert adapter.search_endpoint("Data  Engineer", TAIWAN) == adapter.search_endpoint(
+        "data engineer", TAIWAN
+    )
+
+
+def test_a_title_with_no_words_is_not_searched_for() -> None:
+    assert HimalayasAdapter().search_endpoint(" — ", TAIWAN) is None
+
+
+def test_a_search_asks_for_the_first_page_only() -> None:
+    """The site's robots.txt disallows ``/jobs*&page=``."""
+    assert "page=" not in (HimalayasAdapter().search_endpoint("Data Engineer", TAIWAN) or "")
+
+
+def test_a_search_api_is_crawled_but_never_probed_as_a_company_board() -> None:
+    assert "himalayas" in SOURCES and "himalayas" not in BY_NAME

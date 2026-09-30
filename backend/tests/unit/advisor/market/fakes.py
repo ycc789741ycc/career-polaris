@@ -42,6 +42,7 @@ from advisor.market.domain import (
     SharedMarket,
     SourceOrigin,
     in_market,
+    names_every_word,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -84,6 +85,17 @@ class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter], CrawlSourceRep
             and _set(entity.company_id, filter.company_id)
             and _set(entity.kind, filter.kind)
             and _set(entity.endpoint, filter.endpoint)
+            and (
+                filter.is_unfetched is None
+                or (entity.last_fetched_at is None) == filter.is_unfetched
+            )
+            and (
+                filter.requested_before is None
+                or (
+                    entity.last_requested_at is not None
+                    and entity.last_requested_at < filter.requested_before
+                )
+            )
         )
 
 
@@ -157,7 +169,10 @@ class FakeMarkets(
     noun = "market preference"
 
     def matches(self, entity: MarketPreference, filter: MarketPreferenceFilter) -> bool:
-        return _set(entity.market, filter.market)
+        return _set(entity.market, filter.market) and (
+            filter.names_any_of is None
+            or any(names_every_word(entity.market, name) for name in filter.names_any_of)
+        )
 
 
 class FakePrivatePostings(

@@ -12,6 +12,7 @@ import only what is listed here (import-linter contract
 from advisor.market import jobs
 from advisor.market.crawling.run import (
     crawl_all,
+    crawl_new,
 )
 from advisor.market.factory import (
     create_crawl_ingest,
@@ -60,6 +61,7 @@ __all__ = [
     "band_from",
     "canonical_key",
     "crawl_all",
+    "crawl_new",
     "create_crawl_ingest",
     "create_market_service",
     "in_market",
