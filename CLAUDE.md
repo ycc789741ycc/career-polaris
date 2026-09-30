@@ -11,7 +11,6 @@ that needs no model: crawling, parsing, embedding, clustering.
 
 | Document | What it settles |
 |---|---|
-| `docs/intent.md` | What the product is for |
 | `docs/domain_model.md` | The domain model, bounded contexts and the 14 decisions behind them |
 | `docs/architecture.md` | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
 | `docs/plan.md` | Phase 1 / 2 / 3 scope |
