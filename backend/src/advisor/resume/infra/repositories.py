@@ -16,19 +16,24 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.resume.domain import (
     Export,
     ExportFilter,
+    ExportRepository,
     ResumeVersion,
     ResumeVersionFilter,
+    ResumeVersionRepository,
     Revision,
     RevisionFilter,
+    RevisionRepository,
     TailoredResume,
     TailoredResumeFilter,
+    TailoredResumeRepository,
 )
 from advisor.resume.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
 class SqlAlchemyTailoredResumeRepository(
-    SqlAlchemyRepository[TailoredResume, models.Resume, TailoredResumeFilter]
+    SqlAlchemyRepository[TailoredResume, models.Resume, TailoredResumeFilter],
+    TailoredResumeRepository,
 ):
     model = models.Resume
     id_column = models.Resume.id
@@ -53,7 +58,8 @@ class SqlAlchemyTailoredResumeRepository(
 
 
 class SqlAlchemyResumeVersionRepository(
-    SqlAlchemyRepository[ResumeVersion, models.ResumeVersion, ResumeVersionFilter]
+    SqlAlchemyRepository[ResumeVersion, models.ResumeVersion, ResumeVersionFilter],
+    ResumeVersionRepository,
 ):
     model = models.ResumeVersion
     id_column = models.ResumeVersion.id
@@ -91,7 +97,10 @@ class SqlAlchemyResumeVersionRepository(
         return {resume_id: number for resume_id, number in rows.tuples().all()}
 
 
-class SqlAlchemyRevisionRepository(SqlAlchemyRepository[Revision, models.Revision, RevisionFilter]):
+class SqlAlchemyRevisionRepository(
+    SqlAlchemyRepository[Revision, models.Revision, RevisionFilter],
+    RevisionRepository,
+):
     model = models.Revision
     id_column = models.Revision.id
     created_column = models.Revision.created_at
@@ -116,7 +125,10 @@ class SqlAlchemyRevisionRepository(SqlAlchemyRepository[Revision, models.Revisio
         return [models.Revision.resume_id == filter.resume_id]
 
 
-class SqlAlchemyExportRepository(SqlAlchemyRepository[Export, models.Export, ExportFilter]):
+class SqlAlchemyExportRepository(
+    SqlAlchemyRepository[Export, models.Export, ExportFilter],
+    ExportRepository,
+):
     model = models.Export
     id_column = models.Export.id
     created_column = models.Export.created_at

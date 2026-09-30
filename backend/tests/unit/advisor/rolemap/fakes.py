@@ -10,17 +10,25 @@ from dataclasses import dataclass, field
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
+    BuildRunRepository,
     LineageEntry,
     LineageEntryFilter,
+    LineageEntryRepository,
+    OwnerRoleMap,
     Role,
     RoleCandidate,
     RoleCandidateFilter,
+    RoleCandidateRepository,
     RoleFilter,
     RoleMapEvent,
+    RoleMapUnitOfWork,
     RoleMember,
     RoleMemberFilter,
+    RoleMemberRepository,
+    RoleRepository,
     RoleRequirement,
     RoleRequirementFilter,
+    RoleRequirementRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -36,7 +44,7 @@ class Store:
     events: list[RoleMapEvent] = field(default_factory=list)
 
 
-class FakeRoles(FakeRepository[Role, RoleFilter]):
+class FakeRoles(FakeRepository[Role, RoleFilter], RoleRepository):
     owner_field = "owner_id"
     noun = "role"
 
@@ -46,7 +54,7 @@ class FakeRoles(FakeRepository[Role, RoleFilter]):
         ) and (filter.origin is None or entity.origin is filter.origin)
 
 
-class FakeMembers(FakeRepository[RoleMember, RoleMemberFilter]):
+class FakeMembers(FakeRepository[RoleMember, RoleMemberFilter], RoleMemberRepository):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -56,7 +64,10 @@ class FakeMembers(FakeRepository[RoleMember, RoleMemberFilter]):
         return filter.role_ids is None or entity.role_id in filter.role_ids
 
 
-class FakeRequirements(FakeRepository[RoleRequirement, RoleRequirementFilter]):
+class FakeRequirements(
+    FakeRepository[RoleRequirement, RoleRequirementFilter],
+    RoleRequirementRepository,
+):
     created_field = "id"
     updated_field = None
     owner_field = "owner_id"
@@ -66,7 +77,7 @@ class FakeRequirements(FakeRepository[RoleRequirement, RoleRequirementFilter]):
         return filter.role_ids is None or entity.role_id in filter.role_ids
 
 
-class FakeLineage(FakeRepository[LineageEntry, LineageEntryFilter]):
+class FakeLineage(FakeRepository[LineageEntry, LineageEntryFilter], LineageEntryRepository):
     created_field = "recorded_at"
     updated_field = None
     owner_field = "owner_id"
@@ -76,7 +87,7 @@ class FakeLineage(FakeRepository[LineageEntry, LineageEntryFilter]):
         return filter.role_id is None or entity.role_id == filter.role_id
 
 
-class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter]):
+class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter], BuildRunRepository):
     created_field = "requested_at"
     updated_field = None
     owner_field = "owner_id"
@@ -86,7 +97,10 @@ class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter]):
         return filter.statuses is None or entity.status in filter.statuses
 
 
-class FakeCandidates(FakeRepository[RoleCandidate, RoleCandidateFilter]):
+class FakeCandidates(
+    FakeRepository[RoleCandidate, RoleCandidateFilter],
+    RoleCandidateRepository,
+):
     updated_field = None
     owner_field = "owner_id"
     noun = "role candidate"
@@ -95,7 +109,7 @@ class FakeCandidates(FakeRepository[RoleCandidate, RoleCandidateFilter]):
         return True
 
 
-class FakeOwner:
+class FakeOwner(OwnerRoleMap):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.roles = FakeRoles(store.roles, owner_id=owner_id)
         self.members = FakeMembers(store.members, owner_id=owner_id)
@@ -109,7 +123,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeRoleMapUnitOfWork:
+class FakeRoleMapUnitOfWork(RoleMapUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

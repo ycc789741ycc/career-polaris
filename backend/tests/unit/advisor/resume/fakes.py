@@ -11,13 +11,19 @@ from dataclasses import dataclass, field
 from advisor.resume.domain import (
     Export,
     ExportFilter,
+    ExportRepository,
+    OwnerResumes,
     ResumeEvent,
+    ResumeUnitOfWork,
     ResumeVersion,
     ResumeVersionFilter,
+    ResumeVersionRepository,
     Revision,
     RevisionFilter,
+    RevisionRepository,
     TailoredResume,
     TailoredResumeFilter,
+    TailoredResumeRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -31,7 +37,7 @@ class Store:
     events: list[ResumeEvent] = field(default_factory=list)
 
 
-class FakeResumes(FakeRepository[TailoredResume, TailoredResumeFilter]):
+class FakeResumes(FakeRepository[TailoredResume, TailoredResumeFilter], TailoredResumeRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "résumé"
@@ -40,7 +46,7 @@ class FakeResumes(FakeRepository[TailoredResume, TailoredResumeFilter]):
         return True
 
 
-class FakeVersions(FakeRepository[ResumeVersion, ResumeVersionFilter]):
+class FakeVersions(FakeRepository[ResumeVersion, ResumeVersionFilter], ResumeVersionRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "version"
@@ -57,7 +63,7 @@ class FakeVersions(FakeRepository[ResumeVersion, ResumeVersionFilter]):
         return latest
 
 
-class FakeRevisions(FakeRepository[Revision, RevisionFilter]):
+class FakeRevisions(FakeRepository[Revision, RevisionFilter], RevisionRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "revision"
@@ -66,7 +72,7 @@ class FakeRevisions(FakeRepository[Revision, RevisionFilter]):
         return filter.resume_id is None or entity.resume_id == filter.resume_id
 
 
-class FakeExports(FakeRepository[Export, ExportFilter]):
+class FakeExports(FakeRepository[Export, ExportFilter], ExportRepository):
     updated_field = None
     owner_field = "owner_id"
     noun = "export"
@@ -75,7 +81,7 @@ class FakeExports(FakeRepository[Export, ExportFilter]):
         return filter.version_id is None or entity.version_id == filter.version_id
 
 
-class FakeOwner:
+class FakeOwner(OwnerResumes):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.resumes = FakeResumes(store.resumes, owner_id=owner_id)
         self.versions = FakeVersions(store.versions, owner_id=owner_id)
@@ -87,7 +93,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeResumeUnitOfWork:
+class FakeResumeUnitOfWork(ResumeUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

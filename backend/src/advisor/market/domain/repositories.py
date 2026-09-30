@@ -129,17 +129,10 @@ class PostingEmbeddingRepository(Repository[PostingEmbedding, PostingEmbeddingFi
 
 
 class SharedMarket(Protocol):
-    @property
-    def companies(self) -> CompanyRepository: ...
-
-    @property
-    def sources(self) -> CrawlSourceRepository: ...
-
-    @property
-    def postings(self) -> JobPostingRepository: ...
-
-    @property
-    def embeddings(self) -> PostingEmbeddingRepository: ...
+    companies: CompanyRepository
+    sources: CrawlSourceRepository
+    postings: JobPostingRepository
+    embeddings: PostingEmbeddingRepository
 
     def record(self, event: MarketEvent) -> None: ...
 
@@ -169,11 +162,8 @@ class PrivateJobPostingRepository(
 
 
 class OwnerMarket(Protocol):
-    @property
-    def markets(self) -> MarketPreferenceRepository: ...
-
-    @property
-    def private_postings(self) -> PrivateJobPostingRepository: ...
+    markets: MarketPreferenceRepository
+    private_postings: PrivateJobPostingRepository
 
     def record(self, event: MarketEvent) -> None: ...
 
@@ -188,8 +178,7 @@ class FanoutMarket(Protocol):
     write through these repositories fails at the database.
     """
 
-    @property
-    def markets(self) -> MarketPreferenceRepository: ...
+    markets: MarketPreferenceRepository
 
 
 # --- unit of work ----------------------------------------------------------

@@ -19,14 +19,14 @@ from advisor.identity import IdentityService, create_identity_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.rolemap import RECOMMENDED_ROLE_COUNT, create_rolemap_service
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Request
+from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
 
 pytestmark = pytest.mark.integration
 
 
-class StubProvider:
+class StubProvider(Provider):
     """Stands in for a real model. Returns whatever the test queued.
 
     It replaces the *anthropic* registry entry rather than adding a new one, so

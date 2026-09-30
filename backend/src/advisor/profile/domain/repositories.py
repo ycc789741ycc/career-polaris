@@ -98,20 +98,11 @@ class ProfileVersionRepository(Repository[ProfileVersion, ProfileVersionFilter],
 
 
 class OwnerProfile(Protocol):
-    @property
-    def connections(self) -> SourceConnectionRepository: ...
-
-    @property
-    def resumes(self) -> ResumeFileRepository: ...
-
-    @property
-    def evidence(self) -> EvidenceRepository: ...
-
-    @property
-    def positions(self) -> CareerPositionRepository: ...
-
-    @property
-    def versions(self) -> ProfileVersionRepository: ...
+    connections: SourceConnectionRepository
+    resumes: ResumeFileRepository
+    evidence: EvidenceRepository
+    positions: CareerPositionRepository
+    versions: ProfileVersionRepository
 
     def record(self, event: ProfileEvent) -> None: ...
 

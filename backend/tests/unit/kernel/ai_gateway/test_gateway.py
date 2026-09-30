@@ -12,8 +12,8 @@ from pydantic import BaseModel
 
 from kernel.ai_gateway import templates
 from kernel.ai_gateway.gateway import AiGateway
-from kernel.ai_gateway.ports import ProviderCredential, UsageRecord
-from kernel.ai_gateway.providers import REGISTRY, Completion, Request
+from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, ProviderCredential, UsageRecord
+from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import get_settings
 from kernel.crypto import encrypt
 from kernel.errors import (
@@ -30,7 +30,7 @@ class Answer(BaseModel):
     score: int
 
 
-class StubCredentials:
+class StubCredentials(CredentialStore):
     def __init__(self, encrypted_key: str) -> None:
         self.failures: list[str] = []
         self._credential = ProviderCredential(
@@ -48,7 +48,7 @@ class StubCredentials:
         self.failures.append(reason)
 
 
-class StubBudget:
+class StubBudget(BudgetGuard):
     def __init__(self, *, cap: Decimal | None = None) -> None:
         self.cap = cap
         self.recorded: list[UsageRecord] = []
@@ -63,7 +63,7 @@ class StubBudget:
         self.recorded.append(usage)
 
 
-class StubProvider:
+class StubProvider(Provider):
     name = "stub"
     default_base_url = "https://llm.example.com"
 

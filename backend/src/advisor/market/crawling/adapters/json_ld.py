@@ -10,7 +10,12 @@ import json
 import re
 from typing import Any
 
-from advisor.market.crawling.adapters.base import parse_date, salary_from, strip_html
+from advisor.market.crawling.adapters.base import (
+    BoardAdapter,
+    parse_date,
+    salary_from,
+    strip_html,
+)
 from advisor.market.service import NormalizedPosting, SourceKind, salary_in_text
 
 _SCRIPT = re.compile(
@@ -36,7 +41,7 @@ def _walk(node: Any) -> list[dict[str, Any]]:
     return found
 
 
-class JsonLdAdapter:
+class JsonLdAdapter(BoardAdapter):
     name = "json-ld"
     source_kind = SourceKind.JSON_LD
 

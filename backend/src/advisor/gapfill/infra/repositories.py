@@ -16,15 +16,18 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.gapfill.domain import (
     GapQuestion,
     GapQuestionFilter,
+    GapQuestionRepository,
     QuestionSet,
     QuestionSetFilter,
+    QuestionSetRepository,
 )
 from advisor.gapfill.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
 class SqlAlchemyQuestionSetRepository(
-    SqlAlchemyRepository[QuestionSet, models.QuestionSet, QuestionSetFilter]
+    SqlAlchemyRepository[QuestionSet, models.QuestionSet, QuestionSetFilter],
+    QuestionSetRepository,
 ):
     model = models.QuestionSet
     id_column = models.QuestionSet.id
@@ -59,7 +62,8 @@ class SqlAlchemyQuestionSetRepository(
 
 
 class SqlAlchemyGapQuestionRepository(
-    SqlAlchemyRepository[GapQuestion, models.Question, GapQuestionFilter]
+    SqlAlchemyRepository[GapQuestion, models.Question, GapQuestionFilter],
+    GapQuestionRepository,
 ):
     model = models.Question
     id_column = models.Question.id

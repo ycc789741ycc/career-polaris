@@ -15,22 +15,28 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.profile.domain import (
     CareerPosition,
     CareerPositionFilter,
+    CareerPositionRepository,
     Evidence,
     EvidenceFilter,
+    EvidenceRepository,
     ProfileVersion,
     ProfileVersionFilter,
+    ProfileVersionRepository,
     ResumeFile,
     ResumeFileFilter,
+    ResumeFileRepository,
     ResumeStatus,
     SourceConnection,
     SourceConnectionFilter,
+    SourceConnectionRepository,
 )
 from advisor.profile.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
 class SqlAlchemySourceConnectionRepository(
-    SqlAlchemyRepository[SourceConnection, models.SourceConnection, SourceConnectionFilter]
+    SqlAlchemyRepository[SourceConnection, models.SourceConnection, SourceConnectionFilter],
+    SourceConnectionRepository,
 ):
     model = models.SourceConnection
     id_column = models.SourceConnection.id
@@ -59,7 +65,8 @@ class SqlAlchemySourceConnectionRepository(
 
 
 class SqlAlchemyResumeFileRepository(
-    SqlAlchemyRepository[ResumeFile, models.ResumeFile, ResumeFileFilter]
+    SqlAlchemyRepository[ResumeFile, models.ResumeFile, ResumeFileFilter],
+    ResumeFileRepository,
 ):
     model = models.ResumeFile
     id_column = models.ResumeFile.id
@@ -95,7 +102,10 @@ class SqlAlchemyResumeFileRepository(
         return mappers.resume_file(row) if row is not None else None
 
 
-class SqlAlchemyEvidenceRepository(SqlAlchemyRepository[Evidence, models.Evidence, EvidenceFilter]):
+class SqlAlchemyEvidenceRepository(
+    SqlAlchemyRepository[Evidence, models.Evidence, EvidenceFilter],
+    EvidenceRepository,
+):
     model = models.Evidence
     id_column = models.Evidence.id
     created_column = models.Evidence.created_at
@@ -126,7 +136,8 @@ class SqlAlchemyEvidenceRepository(SqlAlchemyRepository[Evidence, models.Evidenc
 
 
 class SqlAlchemyCareerPositionRepository(
-    SqlAlchemyRepository[CareerPosition, models.Position, CareerPositionFilter]
+    SqlAlchemyRepository[CareerPosition, models.Position, CareerPositionFilter],
+    CareerPositionRepository,
 ):
     model = models.Position
     id_column = models.Position.id
@@ -151,7 +162,8 @@ class SqlAlchemyCareerPositionRepository(
 
 
 class SqlAlchemyProfileVersionRepository(
-    SqlAlchemyRepository[ProfileVersion, models.ProfileVersion, ProfileVersionFilter]
+    SqlAlchemyRepository[ProfileVersion, models.ProfileVersion, ProfileVersionFilter],
+    ProfileVersionRepository,
 ):
     model = models.ProfileVersion
     id_column = models.ProfileVersion.id

@@ -16,16 +16,22 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.gapplan.domain import (
     GapPlan,
     GapPlanFilter,
+    GapPlanRepository,
     Milestone,
     MilestoneFilter,
+    MilestoneRepository,
     Task,
     TaskFilter,
+    TaskRepository,
 )
 from advisor.gapplan.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
-class SqlAlchemyGapPlanRepository(SqlAlchemyRepository[GapPlan, models.GapPlan, GapPlanFilter]):
+class SqlAlchemyGapPlanRepository(
+    SqlAlchemyRepository[GapPlan, models.GapPlan, GapPlanFilter],
+    GapPlanRepository,
+):
     model = models.GapPlan
     id_column = models.GapPlan.id
     created_column = models.GapPlan.created_at
@@ -57,7 +63,8 @@ class SqlAlchemyGapPlanRepository(SqlAlchemyRepository[GapPlan, models.GapPlan, 
 
 
 class SqlAlchemyMilestoneRepository(
-    SqlAlchemyRepository[Milestone, models.Milestone, MilestoneFilter]
+    SqlAlchemyRepository[Milestone, models.Milestone, MilestoneFilter],
+    MilestoneRepository,
 ):
     model = models.Milestone
     id_column = models.Milestone.id
@@ -83,7 +90,7 @@ class SqlAlchemyMilestoneRepository(
         return [models.Milestone.plan_id == filter.plan_id]
 
 
-class SqlAlchemyTaskRepository(SqlAlchemyRepository[Task, models.Task, TaskFilter]):
+class SqlAlchemyTaskRepository(SqlAlchemyRepository[Task, models.Task, TaskFilter], TaskRepository):
     model = models.Task
     id_column = models.Task.id
     created_column = models.Task.id

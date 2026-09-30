@@ -18,7 +18,7 @@ from advisor.profile.domain import (
     ResumeStatus,
     SourceSynced,
 )
-from advisor.profile.infra.connectors import EvidenceDraft
+from advisor.profile.infra.connectors import Connector, EvidenceDraft
 from kernel.crypto import decrypt
 from kernel.errors import NotFoundError, UpstreamFailedError, ValidationError
 from tests.unit.advisor.profile.fakes import FakeObjectStore, FakeProfileUnitOfWork
@@ -29,7 +29,9 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 pytestmark = pytest.mark.usefixtures("clean_env")
 
 
-class FakeConnector:
+class FakeConnector(Connector):
+    kind = "github"
+
     def __init__(
         self,
         drafts: list[EvidenceDraft] | None = None,
@@ -73,7 +75,7 @@ def _service(
     return ProfileService(
         uow,
         object_store=FakeObjectStore(),  # type: ignore[arg-type]
-        connectors={"github": connector or FakeConnector()},  # type: ignore[dict-item]
+        connectors={"github": connector or FakeConnector()},
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -425,7 +427,7 @@ def _service_with_store(uow: FakeProfileUnitOfWork) -> tuple[ProfileService, Fak
     profile = ProfileService(
         uow,
         object_store=store,  # type: ignore[arg-type]
-        connectors={"github": FakeConnector([_draft("pr/1")])},  # type: ignore[dict-item]
+        connectors={"github": FakeConnector([_draft("pr/1")])},
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,

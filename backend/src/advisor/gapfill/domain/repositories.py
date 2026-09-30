@@ -62,11 +62,8 @@ class GapQuestionRepository(Repository[GapQuestion, GapQuestionFilter], Protocol
 
 
 class OwnerGapFill(Protocol):
-    @property
-    def sets(self) -> QuestionSetRepository: ...
-
-    @property
-    def questions(self) -> GapQuestionRepository: ...
+    sets: QuestionSetRepository
+    questions: GapQuestionRepository
 
     def record(self, event: GapFillEvent) -> None: ...
 

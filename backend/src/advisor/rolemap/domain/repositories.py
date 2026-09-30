@@ -99,23 +99,12 @@ class RoleCandidateRepository(Repository[RoleCandidate, RoleCandidateFilter], Pr
 
 
 class OwnerRoleMap(Protocol):
-    @property
-    def roles(self) -> RoleRepository: ...
-
-    @property
-    def members(self) -> RoleMemberRepository: ...
-
-    @property
-    def requirements(self) -> RoleRequirementRepository: ...
-
-    @property
-    def lineage(self) -> LineageEntryRepository: ...
-
-    @property
-    def builds(self) -> BuildRunRepository: ...
-
-    @property
-    def candidates(self) -> RoleCandidateRepository: ...
+    roles: RoleRepository
+    members: RoleMemberRepository
+    requirements: RoleRequirementRepository
+    lineage: LineageEntryRepository
+    builds: BuildRunRepository
+    candidates: RoleCandidateRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 

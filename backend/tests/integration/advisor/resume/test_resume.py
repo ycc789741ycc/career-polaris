@@ -34,7 +34,7 @@ from advisor.resume import (
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Request
+from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import EvidenceNotOwnedError, NotFoundError
@@ -49,7 +49,7 @@ ORG = "Demonstrated org-level influence"
 CITED = "E1"
 
 
-class StubProvider:
+class StubProvider(Provider):
     """Completions and streams, each from what the test queued."""
 
     name = "anthropic"

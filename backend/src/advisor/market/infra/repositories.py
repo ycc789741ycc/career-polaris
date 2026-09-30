@@ -18,18 +18,24 @@ from advisor.market.domain import (
     ACCENT_FOLDS,
     Company,
     CompanyFilter,
+    CompanyRepository,
     CrawlSource,
     CrawlSourceFilter,
+    CrawlSourceRepository,
     JobPosting,
     JobPostingFilter,
+    JobPostingRepository,
     MarketPreference,
     MarketPreferenceFilter,
+    MarketPreferenceRepository,
     PostingEmbedding,
     PostingEmbeddingFilter,
+    PostingEmbeddingRepository,
     PostingScope,
     PostingStatus,
     PrivateJobPosting,
     PrivateJobPostingFilter,
+    PrivateJobPostingRepository,
     SourceOrigin,
     market_words,
 )
@@ -39,7 +45,10 @@ from kernel.db.repository import SqlAlchemyRepository
 # --- shared zone -----------------------------------------------------------
 
 
-class SqlAlchemyCompanyRepository(SqlAlchemyRepository[Company, models.Company, CompanyFilter]):
+class SqlAlchemyCompanyRepository(
+    SqlAlchemyRepository[Company, models.Company, CompanyFilter],
+    CompanyRepository,
+):
     model = models.Company
     id_column = models.Company.id
     created_column = models.Company.created_at
@@ -67,7 +76,8 @@ class SqlAlchemyCompanyRepository(SqlAlchemyRepository[Company, models.Company, 
 
 
 class SqlAlchemyCrawlSourceRepository(
-    SqlAlchemyRepository[CrawlSource, models.CrawlSource, CrawlSourceFilter]
+    SqlAlchemyRepository[CrawlSource, models.CrawlSource, CrawlSourceFilter],
+    CrawlSourceRepository,
 ):
     model = models.CrawlSource
     id_column = models.CrawlSource.id
@@ -103,7 +113,8 @@ class SqlAlchemyCrawlSourceRepository(
 
 
 class SqlAlchemyJobPostingRepository(
-    SqlAlchemyRepository[JobPosting, models.JobPosting, JobPostingFilter]
+    SqlAlchemyRepository[JobPosting, models.JobPosting, JobPostingFilter],
+    JobPostingRepository,
 ):
     model = models.JobPosting
     id_column = models.JobPosting.id
@@ -190,7 +201,8 @@ def _location_in_market(words: tuple[str, ...]) -> ColumnElement[bool]:
 
 
 class SqlAlchemyPostingEmbeddingRepository(
-    SqlAlchemyRepository[PostingEmbedding, models.PostingEmbedding, PostingEmbeddingFilter]
+    SqlAlchemyRepository[PostingEmbedding, models.PostingEmbedding, PostingEmbeddingFilter],
+    PostingEmbeddingRepository,
 ):
     model = models.PostingEmbedding
     id_column = models.PostingEmbedding.job_posting_id
@@ -223,7 +235,8 @@ class SqlAlchemyPostingEmbeddingRepository(
 
 
 class SqlAlchemyMarketPreferenceRepository(
-    SqlAlchemyRepository[MarketPreference, models.MarketPreference, MarketPreferenceFilter]
+    SqlAlchemyRepository[MarketPreference, models.MarketPreference, MarketPreferenceFilter],
+    MarketPreferenceRepository,
 ):
     model = models.MarketPreference
     id_column = models.MarketPreference.id
@@ -252,7 +265,8 @@ class SqlAlchemyMarketPreferenceRepository(
 
 
 class SqlAlchemyPrivateJobPostingRepository(
-    SqlAlchemyRepository[PrivateJobPosting, models.PrivateJobPosting, PrivateJobPostingFilter]
+    SqlAlchemyRepository[PrivateJobPosting, models.PrivateJobPosting, PrivateJobPostingFilter],
+    PrivateJobPostingRepository,
 ):
     model = models.PrivateJobPosting
     id_column = models.PrivateJobPosting.id

@@ -20,24 +20,34 @@ from sqlalchemy.sql.elements import ColumnElement
 from advisor.identity.domain import (
     Account,
     AccountFilter,
+    AccountRepository,
     AiUsageBudget,
     AiUsageBudgetFilter,
+    AiUsageBudgetRepository,
     AiUsageEntry,
     AiUsageEntryFilter,
+    AiUsageEntryRepository,
     FederatedIdentity,
     FederatedIdentityFilter,
+    FederatedIdentityRepository,
     PasswordCredential,
     PasswordCredentialFilter,
+    PasswordCredentialRepository,
     ProviderCredential,
     ProviderCredentialFilter,
+    ProviderCredentialRepository,
     RefreshToken,
     RefreshTokenFilter,
+    RefreshTokenRepository,
 )
 from advisor.identity.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
 
 
-class SqlAlchemyAccountRepository(SqlAlchemyRepository[Account, models.Account, AccountFilter]):
+class SqlAlchemyAccountRepository(
+    SqlAlchemyRepository[Account, models.Account, AccountFilter],
+    AccountRepository,
+):
     model = models.Account
     id_column = models.Account.id
     created_column = models.Account.created_at
@@ -62,7 +72,8 @@ class SqlAlchemyAccountRepository(SqlAlchemyRepository[Account, models.Account, 
 
 
 class SqlAlchemyPasswordCredentialRepository(
-    SqlAlchemyRepository[PasswordCredential, models.PasswordCredential, PasswordCredentialFilter]
+    SqlAlchemyRepository[PasswordCredential, models.PasswordCredential, PasswordCredentialFilter],
+    PasswordCredentialRepository,
 ):
     model = models.PasswordCredential
     id_column = models.PasswordCredential.id
@@ -91,7 +102,8 @@ class SqlAlchemyPasswordCredentialRepository(
 
 
 class SqlAlchemyFederatedIdentityRepository(
-    SqlAlchemyRepository[FederatedIdentity, models.FederatedIdentity, FederatedIdentityFilter]
+    SqlAlchemyRepository[FederatedIdentity, models.FederatedIdentity, FederatedIdentityFilter],
+    FederatedIdentityRepository,
 ):
     model = models.FederatedIdentity
     id_column = models.FederatedIdentity.id
@@ -126,7 +138,8 @@ class SqlAlchemyFederatedIdentityRepository(
 
 
 class SqlAlchemyRefreshTokenRepository(
-    SqlAlchemyRepository[RefreshToken, models.RefreshToken, RefreshTokenFilter]
+    SqlAlchemyRepository[RefreshToken, models.RefreshToken, RefreshTokenFilter],
+    RefreshTokenRepository,
 ):
     model = models.RefreshToken
     id_column = models.RefreshToken.id
@@ -177,7 +190,8 @@ class SqlAlchemyRefreshTokenRepository(
 
 
 class SqlAlchemyProviderCredentialRepository(
-    SqlAlchemyRepository[ProviderCredential, models.ProviderCredential, ProviderCredentialFilter]
+    SqlAlchemyRepository[ProviderCredential, models.ProviderCredential, ProviderCredentialFilter],
+    ProviderCredentialRepository,
 ):
     model = models.ProviderCredential
     id_column = models.ProviderCredential.id
@@ -204,7 +218,8 @@ class SqlAlchemyProviderCredentialRepository(
 
 
 class SqlAlchemyAiUsageBudgetRepository(
-    SqlAlchemyRepository[AiUsageBudget, models.AiUsageBudget, AiUsageBudgetFilter]
+    SqlAlchemyRepository[AiUsageBudget, models.AiUsageBudget, AiUsageBudgetFilter],
+    AiUsageBudgetRepository,
 ):
     model = models.AiUsageBudget
     id_column = models.AiUsageBudget.id
@@ -229,7 +244,8 @@ class SqlAlchemyAiUsageBudgetRepository(
 
 
 class SqlAlchemyAiUsageEntryRepository(
-    SqlAlchemyRepository[AiUsageEntry, models.AiUsageLedger, AiUsageEntryFilter]
+    SqlAlchemyRepository[AiUsageEntry, models.AiUsageLedger, AiUsageEntryFilter],
+    AiUsageEntryRepository,
 ):
     model = models.AiUsageLedger
     id_column = models.AiUsageLedger.id

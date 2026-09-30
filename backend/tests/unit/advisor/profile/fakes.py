@@ -10,16 +10,23 @@ from dataclasses import dataclass, field
 from advisor.profile.domain import (
     CareerPosition,
     CareerPositionFilter,
+    CareerPositionRepository,
     Evidence,
     EvidenceFilter,
+    EvidenceRepository,
+    OwnerProfile,
     ProfileEvent,
+    ProfileUnitOfWork,
     ProfileVersion,
     ProfileVersionFilter,
+    ProfileVersionRepository,
     ResumeFile,
     ResumeFileFilter,
+    ResumeFileRepository,
     ResumeStatus,
     SourceConnection,
     SourceConnectionFilter,
+    SourceConnectionRepository,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -34,7 +41,10 @@ class Store:
     events: list[ProfileEvent] = field(default_factory=list)
 
 
-class FakeConnections(FakeRepository[SourceConnection, SourceConnectionFilter]):
+class FakeConnections(
+    FakeRepository[SourceConnection, SourceConnectionFilter],
+    SourceConnectionRepository,
+):
     owner_field = "owner_id"
     noun = "connection"
 
@@ -42,7 +52,7 @@ class FakeConnections(FakeRepository[SourceConnection, SourceConnectionFilter]):
         return filter.kind is None or entity.kind == filter.kind
 
 
-class FakeResumes(FakeRepository[ResumeFile, ResumeFileFilter]):
+class FakeResumes(FakeRepository[ResumeFile, ResumeFileFilter], ResumeFileRepository):
     owner_field = "owner_id"
     noun = "resume"
 
@@ -58,7 +68,7 @@ class FakeResumes(FakeRepository[ResumeFile, ResumeFileFilter]):
         return max(parsed, key=lambda r: (r.parsed_at, r.id), default=None)
 
 
-class FakeEvidence(FakeRepository[Evidence, EvidenceFilter]):
+class FakeEvidence(FakeRepository[Evidence, EvidenceFilter], EvidenceRepository):
     owner_field = "owner_id"
     noun = "evidence"
 
@@ -70,7 +80,7 @@ class FakeEvidence(FakeRepository[Evidence, EvidenceFilter]):
         )
 
 
-class FakePositions(FakeRepository[CareerPosition, CareerPositionFilter]):
+class FakePositions(FakeRepository[CareerPosition, CareerPositionFilter], CareerPositionRepository):
     owner_field = "owner_id"
     noun = "position"
 
@@ -78,7 +88,7 @@ class FakePositions(FakeRepository[CareerPosition, CareerPositionFilter]):
         return True
 
 
-class FakeVersions(FakeRepository[ProfileVersion, ProfileVersionFilter]):
+class FakeVersions(FakeRepository[ProfileVersion, ProfileVersionFilter], ProfileVersionRepository):
     created_field = "updated_at"
     updated_field = None
     owner_field = "owner_id"
@@ -88,7 +98,7 @@ class FakeVersions(FakeRepository[ProfileVersion, ProfileVersionFilter]):
         return True
 
 
-class FakeOwner:
+class FakeOwner(OwnerProfile):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.connections = FakeConnections(store.connections, owner_id=owner_id)
         self.resumes = FakeResumes(store.resumes, owner_id=owner_id)
@@ -101,7 +111,7 @@ class FakeOwner:
         self.pending.append(event)
 
 
-class FakeProfileUnitOfWork:
+class FakeProfileUnitOfWork(ProfileUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

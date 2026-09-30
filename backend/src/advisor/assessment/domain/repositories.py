@@ -98,23 +98,12 @@ class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
 
 
 class OwnerAssessment(Protocol):
-    @property
-    def dimensions(self) -> SkillDimensionRepository: ...
-
-    @property
-    def assessments(self) -> SkillAssessmentRepository: ...
-
-    @property
-    def scores(self) -> AssessedScoreRepository: ...
-
-    @property
-    def changes(self) -> DimensionChangeRepository: ...
-
-    @property
-    def runs(self) -> AnalysisRunRepository: ...
-
-    @property
-    def fits(self) -> RoleFitRepository: ...
+    dimensions: SkillDimensionRepository
+    assessments: SkillAssessmentRepository
+    scores: AssessedScoreRepository
+    changes: DimensionChangeRepository
+    runs: AnalysisRunRepository
+    fits: RoleFitRepository
 
     def record(self, event: AssessmentEvent) -> None: ...
 

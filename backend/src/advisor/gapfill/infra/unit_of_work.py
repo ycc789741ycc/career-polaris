@@ -13,7 +13,11 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from advisor.gapfill.domain import GapFillEvent
+from advisor.gapfill.domain import (
+    GapFillEvent,
+    GapFillUnitOfWork,
+    OwnerGapFill,
+)
 from advisor.gapfill.infra.repositories import (
     SqlAlchemyGapQuestionRepository,
     SqlAlchemyQuestionSetRepository,
@@ -22,7 +26,7 @@ from kernel.db import Database
 from kernel.outbox import EventName, emit
 
 
-class SqlAlchemyOwnerGapFill:
+class SqlAlchemyOwnerGapFill(OwnerGapFill):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         self.sets = SqlAlchemyQuestionSetRepository(session, owner_id=owner_id)
         self.questions = SqlAlchemyGapQuestionRepository(session, owner_id=owner_id)
@@ -32,7 +36,7 @@ class SqlAlchemyOwnerGapFill:
         self.pending.append(event)
 
 
-class SqlAlchemyGapFillUnitOfWork:
+class SqlAlchemyGapFillUnitOfWork(GapFillUnitOfWork):
     def __init__(self, database: Database) -> None:
         self._db = database
 

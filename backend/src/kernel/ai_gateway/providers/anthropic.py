@@ -6,14 +6,14 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-from kernel.ai_gateway.providers.base import Completion, Request
+from kernel.ai_gateway.providers.base import Completion, Provider, Request
 from kernel.errors import CredentialFailedError, ProviderUnavailableError
 from kernel.fetch import GuardedClient
 
 API_VERSION = "2023-06-01"
 
 
-class AnthropicProvider:
+class AnthropicProvider(Provider):
     name = "anthropic"
     default_base_url = "https://api.anthropic.com"
 

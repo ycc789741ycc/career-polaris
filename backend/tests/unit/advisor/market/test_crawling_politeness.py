@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+from advisor.market import NormalizedPosting, SourceKind
+from advisor.market.crawling.adapters import BoardAdapter
 from advisor.market.crawling.discovery import (
     BoardRef,
     board_from_url,
@@ -99,8 +103,9 @@ class StubClient:
         return self.responses[url]
 
 
-class StubAdapter:
+class StubAdapter(BoardAdapter):
     name = "stub"
+    source_kind = SourceKind.ATS_BOARD
 
     def __init__(self, url: str) -> None:
         self._url = url
@@ -108,7 +113,7 @@ class StubAdapter:
     def endpoint_for(self, slug: str) -> str:
         return f"{self._url}/{slug}"
 
-    def parse(self, payload: object, *, company_name: str) -> list[object]:
+    def parse(self, payload: Any, *, company_name: str) -> list[NormalizedPosting]:
         return list(payload) if isinstance(payload, list) else []
 
 
@@ -201,7 +206,7 @@ async def test_an_empty_board_behind_a_link_falls_back_to_guessing() -> None:
         client,  # type: ignore[arg-type]
         "Acme",
         url="https://jobs.lever.co/acme-old",
-        adapters=(adapter,),  # type: ignore[arg-type]
+        adapters=(adapter,),
     )
     assert found is not None and found.adapter_name == "stub"
 

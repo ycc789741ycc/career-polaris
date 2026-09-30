@@ -133,30 +133,18 @@ class AiUsageEntryRepository(Repository[AiUsageEntry, AiUsageEntryFilter], Proto
 class Authentication(Protocol):
     """The authentication tables, reachable before anyone is signed in."""
 
-    @property
-    def accounts(self) -> AccountRepository: ...
-
-    @property
-    def passwords(self) -> PasswordCredentialRepository: ...
-
-    @property
-    def federated(self) -> FederatedIdentityRepository: ...
-
-    @property
-    def refresh_tokens(self) -> RefreshTokenRepository: ...
+    accounts: AccountRepository
+    passwords: PasswordCredentialRepository
+    federated: FederatedIdentityRepository
+    refresh_tokens: RefreshTokenRepository
 
 
 class OwnerIdentity(Authentication, Protocol):
     """One user's identity data, under row-level security."""
 
-    @property
-    def credentials(self) -> ProviderCredentialRepository: ...
-
-    @property
-    def budgets(self) -> AiUsageBudgetRepository: ...
-
-    @property
-    def usage(self) -> AiUsageEntryRepository: ...
+    credentials: ProviderCredentialRepository
+    budgets: AiUsageBudgetRepository
+    usage: AiUsageEntryRepository
 
     def record(self, event: IdentityEvent) -> None: ...
 

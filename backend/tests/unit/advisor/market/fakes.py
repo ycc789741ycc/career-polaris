@@ -17,19 +17,29 @@ from typing import Any
 from advisor.market.domain import (
     Company,
     CompanyFilter,
+    CompanyRepository,
     CrawlSource,
     CrawlSourceFilter,
+    CrawlSourceRepository,
+    FanoutMarket,
     JobPosting,
     JobPostingFilter,
+    JobPostingRepository,
     MarketEvent,
     MarketPreference,
     MarketPreferenceFilter,
+    MarketPreferenceRepository,
+    MarketUnitOfWork,
+    OwnerMarket,
     PostingEmbedding,
     PostingEmbeddingFilter,
+    PostingEmbeddingRepository,
     PostingScope,
     PostingStatus,
     PrivateJobPosting,
     PrivateJobPostingFilter,
+    PrivateJobPostingRepository,
+    SharedMarket,
     SourceOrigin,
     in_market,
 )
@@ -55,7 +65,7 @@ def _set(value: Any, expected: Any) -> bool:
 # --- shared zone -----------------------------------------------------------
 
 
-class FakeCompanies(FakeRepository[Company, CompanyFilter]):
+class FakeCompanies(FakeRepository[Company, CompanyFilter], CompanyRepository):
     noun = "company"
 
     def matches(self, entity: Company, filter: CompanyFilter) -> bool:
@@ -64,7 +74,7 @@ class FakeCompanies(FakeRepository[Company, CompanyFilter]):
         )
 
 
-class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter]):
+class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter], CrawlSourceRepository):
     noun = "crawl source"
 
     def matches(self, entity: CrawlSource, filter: CrawlSourceFilter) -> bool:
@@ -77,7 +87,7 @@ class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter]):
         )
 
 
-class FakePostings(FakeRepository[JobPosting, JobPostingFilter]):
+class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepository):
     noun = "job posting"
 
     def __init__(self, store: Store) -> None:
@@ -121,7 +131,10 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter]):
         ]
 
 
-class FakeEmbeddings(FakeRepository[PostingEmbedding, PostingEmbeddingFilter]):
+class FakeEmbeddings(
+    FakeRepository[PostingEmbedding, PostingEmbeddingFilter],
+    PostingEmbeddingRepository,
+):
     id_field = "posting_id"
     created_field = "computed_at"
     updated_field = None
@@ -136,7 +149,10 @@ class FakeEmbeddings(FakeRepository[PostingEmbedding, PostingEmbeddingFilter]):
 # --- owner zone ------------------------------------------------------------
 
 
-class FakeMarkets(FakeRepository[MarketPreference, MarketPreferenceFilter]):
+class FakeMarkets(
+    FakeRepository[MarketPreference, MarketPreferenceFilter],
+    MarketPreferenceRepository,
+):
     owner_field = "owner_id"
     noun = "market preference"
 
@@ -144,7 +160,10 @@ class FakeMarkets(FakeRepository[MarketPreference, MarketPreferenceFilter]):
         return _set(entity.market, filter.market)
 
 
-class FakePrivatePostings(FakeRepository[PrivateJobPosting, PrivateJobPostingFilter]):
+class FakePrivatePostings(
+    FakeRepository[PrivateJobPosting, PrivateJobPostingFilter],
+    PrivateJobPostingRepository,
+):
     owner_field = "owner_id"
     noun = "job description"
 
@@ -163,7 +182,7 @@ class _Scope:
         self.pending.append(event)
 
 
-class FakeShared(_Scope):
+class FakeShared(_Scope, SharedMarket):
     def __init__(self, store: Store) -> None:
         super().__init__()
         self.companies = FakeCompanies(store.companies)
@@ -172,19 +191,19 @@ class FakeShared(_Scope):
         self.embeddings = FakeEmbeddings(store.embeddings)
 
 
-class FakeOwner(_Scope):
+class FakeOwner(_Scope, OwnerMarket):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         super().__init__()
         self.markets = FakeMarkets(store.markets, owner_id=owner_id)
         self.private_postings = FakePrivatePostings(store.private_postings, owner_id=owner_id)
 
 
-class FakeFanout:
+class FakeFanout(FanoutMarket):
     def __init__(self, store: Store) -> None:
         self.markets = FakeMarkets(store.markets)
 
 
-class FakeMarketUnitOfWork:
+class FakeMarketUnitOfWork(MarketUnitOfWork):
     def __init__(self, store: Store | None = None) -> None:
         self.store = store or Store()
 

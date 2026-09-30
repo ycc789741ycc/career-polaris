@@ -19,10 +19,12 @@ from typing import Any
 
 import jwt
 
+from kernel.auth.jwt import SigningKeyResolver
+
 ALGORITHM = "HS256"
 
 
-class StaticSecretResolver:
+class StaticSecretResolver(SigningKeyResolver):
     """Supplies the one key this application signs and verifies with."""
 
     def __init__(self, secret: str) -> None:

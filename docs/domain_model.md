@@ -1,6 +1,6 @@
 # Domain Model: Job Searching Advisor
 
-A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.excalidraw`, checked against the system intent (`intent.md`) and the prototype in [`../prototype/`](../prototype/README.md): one screen per file under `screens/`, and its spec, `career-advisor-domain-spec.md`.
+A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.excalidraw`, checked against the original product requirements summarized in section 5.1 and the prototype in [`../prototype/`](../prototype/README.md): one screen per file under `screens/`, and its spec, `career-advisor-domain-spec.md`.
 
 Earlier reviews covered v1 (`job_searching_advisor_domain_concepts.excalidraw`) and v2 (`…_v2.excalidraw`). Their decisions still stand unless section 6 marks them superseded. This version reviews v3 and keeps the settled material the model still depends on.
 
@@ -258,13 +258,13 @@ The rest is unchanged:
   - Resume Writer → Assessment (2.9).
 - **The Job Platform boxes** should read ATS boards / JSON-LD pages / public job APIs.
 
-### 2.12 Where the intent and prototype drift from the model
+### 2.12 Where the original requirements and prototype drift from the model
 | Where | Says | Model |
 |---|---|---|
-| `intent.md` Role Map | "User can decide the number of k by themself" | Ten, chosen by the system, plus the user's custom Roles (decisions 23, 25) |
-| `intent.md` Follow Up Questions, AI | Questions after profile analysis when the context isn't enough | Questions per gap of the Target, in the Advisor (decision 27) |
-| `intent.md` Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
-| `intent.md` User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
+| Original requirements: Role Map | "User can decide the number of k by themself" | Ten, chosen by the system, plus the user's custom Roles (decisions 23, 25) |
+| Original requirements: Follow Up Questions, AI | Questions after profile analysis when the context isn't enough | Questions per gap of the Target, in the Advisor (decision 27) |
+| Original requirements: Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
+| Original requirements: User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
 | prototype `Model.dc.html` "What runs on your key" | Follow-up questions are "written when the evidence leaves a score uncertain" | Written per gap of the target role (decision 27) |
 | prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google and any OpenAI-compatible base URL |
 | prototype `Roles.dc.html` vs `Gaps.dc.html` | 81% fit and 160–196k on the role; 86% and 165–190k in the Advisor | Correct: role fit versus opening fit (2.2). The Advisor shows the opening's, because the Target has one. |
@@ -460,9 +460,12 @@ flowchart LR
 
 ## 5. Traceability
 
-### 5.1 `intent.md` → concepts
+### 5.1 Original product requirements → concepts
 
-| Intent requirement | Concepts |
+This summary preserves the original requirements and records how the model evolved.
+The current model and decisions govern implementation.
+
+| Original requirement | Concepts |
 |---|---|
 | **Profile Analysis:** Jira, GitHub, LinkedIn (OAuth), personal website | SourceConnection → Ingester → Evidence |
 | Follow-up questions to complete the evidence | **Changed:** GapQuestion per gap of the Target → Answer → Evidence (decision 27) |

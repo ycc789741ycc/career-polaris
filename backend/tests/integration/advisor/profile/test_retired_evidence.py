@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from advisor.profile import EvidenceSource, ProfileService, create_profile_service
-from advisor.profile.infra.connectors import EvidenceDraft
+from advisor.profile.infra.connectors import Connector, EvidenceDraft
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.storage import ObjectStore
@@ -31,7 +31,7 @@ def _draft(ref: str) -> EvidenceDraft:
     )
 
 
-class FakeGitHub:
+class FakeGitHub(Connector):
     kind = "github"
 
     def __init__(self) -> None:
