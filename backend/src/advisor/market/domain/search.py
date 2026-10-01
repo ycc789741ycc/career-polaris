@@ -30,10 +30,6 @@ WORLDWIDE = "Worldwide"
 WORLDWIDE_LOCATION = f"{REMOTE}, {WORLDWIDE}"
 WORLDWIDE_WORDS = market_words(WORLDWIDE_LOCATION)
 
-# A search with no demand is dropped: no analysis or change of locations has
-# asked for it in this many weeks (ADR 0025).
-SEARCH_SOURCE_IDLE_WEEKS = 8
-
 # Job sites whose terms ask that an opening found through their API links back
 # to them and names them as its source (ADR 0025), by the host of that link.
 _CREDITED_HOSTS: dict[str, str] = {"himalayas.app": "Himalayas"}
@@ -45,7 +41,7 @@ class SearchScope:
 
     ``label`` is the place as the platform names it, the same for every user
     whose target location means it: the country, or "Remote". It is what a
-    search source is filed under and what ``PostingsChanged`` announces.
+    search source is filed under.
     ``country_code`` is ``None`` for remote work open to anyone.
     """
 

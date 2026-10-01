@@ -1,6 +1,6 @@
 # 0024. Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build
 
-**Status:** Accepted — 2026-09-30. Amends [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md), and supersedes domain decision 2.
+**Status:** Accepted — 2026-09-30. Amends [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md), and supersedes domain decision 2. Amended by [0027](0027-fetch-the-market-only-when-a-build-needs-it.md).
 
 ## Context
 

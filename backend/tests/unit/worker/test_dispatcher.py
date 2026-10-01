@@ -1,7 +1,7 @@
 """The outbox dispatcher: submitted answers into regenerations (ADR 0023),
 finished analyses into the role-map builds that follow them (ADR 0018, 0020),
-finished builds into one scoring of the fits (ADR 0024), and recommended
-roles into ownerless searches for them (ADR 0025).
+and finished builds into one scoring of the fits (ADR 0024). Nothing the
+market does, and no change of locations, builds a map (ADR 0027).
 
 Calls the dispatcher's handler directly with stand-in services and a recorded
 queue — no database, no job runner.
@@ -28,7 +28,11 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     async def enqueue(name: str, **kwargs: Any) -> None:
         calls.append({"name": name, **kwargs})
 
+    async def queue_build(owner_id: uuid.UUID, requested: Any) -> None:
+        calls.append({"name": "queue_build", "owner_id": owner_id, "requested": requested})
+
     monkeypatch.setattr(dispatcher, "enqueue", enqueue)
+    monkeypatch.setattr(dispatcher, "queue_build", queue_build)
     return calls
 
 
@@ -93,10 +97,6 @@ class FakeActivity:
         self.requests.append(owner_id)
         return self.requested
 
-    async def rebuild_role_map(self, owner_id: uuid.UUID) -> Any:
-        self.requests.append(owner_id)
-        return self.requested
-
 
 def _container(**services: Any) -> Any:
     return SimpleNamespace(**services)
@@ -114,15 +114,14 @@ def _analysis_finished(status: str) -> OutboxEvent:
 async def test_a_finished_analysis_queues_the_build_activity_hands_back(
     status: str, succeeded: bool, queued: list[dict[str, Any]]
 ) -> None:
-    build_id = uuid.uuid4()
-    activity = FakeActivity(released=SimpleNamespace(id=build_id))
+    requested = SimpleNamespace(build=SimpleNamespace(id=uuid.uuid4()), should_queue=True)
+    activity = FakeActivity(released=requested)
 
     await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
     assert activity.releases == [(OWNER, succeeded)]
-    assert queued == [
-        {"name": "rolemap.recluster", "owner_id": str(OWNER), "build_id": str(build_id)}
-    ]
+    # Queued, or set waiting for the market, by the one helper the routes use too.
+    assert queued == [{"name": "queue_build", "owner_id": OWNER, "requested": requested}]
 
 
 async def test_a_finished_analysis_queues_nothing_when_there_is_no_build_to_start(
@@ -135,26 +134,6 @@ async def test_a_finished_analysis_queues_nothing_when_there_is_no_build_to_star
     assert activity.releases == [(OWNER, False)] and queued == []
 
 
-@pytest.mark.parametrize(("should_queue", "expected"), [(True, 1), (False, 0)])
-async def test_new_postings_rebuild_only_a_role_map_that_is_not_waiting_or_running(
-    should_queue: bool,
-    expected: int,
-    queued: list[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def affected(deps: Any, payload: dict[str, Any]) -> list[uuid.UUID]:
-        return [OWNER]
-
-    monkeypatch.setattr(dispatcher, "_users_affected_by", affected)
-    build = SimpleNamespace(id=uuid.uuid4())
-    activity = FakeActivity(requested=SimpleNamespace(build=build, should_queue=should_queue))
-    event = OutboxEvent(name=str(EventName.POSTINGS_CHANGED), owner_id=None, payload={})
-
-    await dispatcher._handle(_container(activity=activity), event)
-
-    assert activity.requests == [OWNER] and len(queued) == expected
-
-
 class FakeRoleMap:
     """The roles the user's last analysis recommended."""
 
@@ -165,59 +144,23 @@ class FakeRoleMap:
         return [SimpleNamespace(title=title) for title in self.titles]
 
 
-def _target_locations_changed() -> OutboxEvent:
-    return OutboxEvent(
+async def test_new_target_locations_build_nothing_and_search_nothing(
+    queued: list[dict[str, Any]],
+) -> None:
+    """A build spends the user's key, so it waits until they ask; the next one
+    searches the new places (ADR 0027)."""
+    activity = FakeActivity()
+    event = OutboxEvent(
         name=str(EventName.TARGET_LOCATIONS_CHANGED),
         owner_id=OWNER,
-        payload={"locations": ["Berlin", "Remote EU"]},
+        payload={"locations": ["Taiwan", "Remote"]},
     )
-
-
-async def test_new_target_locations_rebuild_the_role_map_on_the_new_scope(
-    queued: list[dict[str, Any]],
-) -> None:
-    build = SimpleNamespace(id=uuid.uuid4())
-    activity = FakeActivity(requested=SimpleNamespace(build=build, should_queue=True))
 
     await dispatcher._handle(
-        _container(activity=activity, rolemap=FakeRoleMap()), _target_locations_changed()
+        _container(activity=activity, rolemap=FakeRoleMap(["Data Engineer"])), event
     )
 
-    assert activity.requests == [OWNER]
-    assert queued == [
-        {"name": "rolemap.recluster", "owner_id": str(OWNER), "build_id": str(build.id)}
-    ]
-
-
-async def test_new_target_locations_queue_nothing_without_a_role_map_to_rebuild(
-    queued: list[dict[str, Any]],
-) -> None:
-    activity = FakeActivity(requested=None)
-
-    await dispatcher._handle(
-        _container(activity=activity, rolemap=FakeRoleMap()), _target_locations_changed()
-    )
-
-    assert activity.requests == [OWNER] and queued == []
-
-
-async def test_new_target_locations_search_the_recommended_roles_there(
-    queued: list[dict[str, Any]],
-) -> None:
-    activity = FakeActivity(requested=None)
-    rolemap = FakeRoleMap(["Data Engineer", "Platform Engineer"])
-
-    await dispatcher._handle(
-        _container(activity=activity, rolemap=rolemap), _target_locations_changed()
-    )
-
-    assert queued == [
-        {
-            "name": "market.request_searches",
-            "titles": ["Data Engineer", "Platform Engineer"],
-            "locations": ["Berlin", "Remote EU"],
-        }
-    ]
+    assert activity.requests == [] and queued == []
 
 
 class FakeMarket:
@@ -299,54 +242,5 @@ async def test_scores_and_requirements_changing_do_not_score_fits_on_their_own(
     """Each would score every role again, just before the build replaces them;
     the build that follows scores them once when it closes."""
     await dispatcher._handle(_container(), OutboxEvent(name=str(name), owner_id=OWNER, payload={}))
-
-    assert queued == []
-
-
-# --- Searching for the recommended roles (ADR 0025) -------------------------
-
-
-def _candidates_replaced(titles: list[str]) -> OutboxEvent:
-    return OutboxEvent(
-        name=str(EventName.ROLE_CANDIDATES_REPLACED), owner_id=OWNER, payload={"titles": titles}
-    )
-
-
-async def test_recommended_roles_are_searched_for_where_the_user_wants_to_work(
-    queued: list[dict[str, Any]],
-) -> None:
-    market = FakeMarket(["Remote", "Taiwan"])
-
-    await dispatcher._handle(_container(market=market), _candidates_replaced(["Data Engineer"]))
-
-    assert queued == [
-        {
-            "name": "market.request_searches",
-            "titles": ["Data Engineer"],
-            "locations": ["Remote", "Taiwan"],
-        }
-    ]
-
-
-async def test_a_search_request_carries_nothing_about_who_it_is_for(
-    queued: list[dict[str, Any]],
-) -> None:
-    """Only titles and places cross over, so the sources it leaves have no owner."""
-    market = FakeMarket(["Taiwan"])
-
-    await dispatcher._handle(_container(market=market), _candidates_replaced(["Data Engineer"]))
-
-    (job,) = queued
-    assert set(job) == {"name", "titles", "locations"}
-    assert str(OWNER) not in repr(job)
-
-
-@pytest.mark.parametrize(
-    ("titles", "locations"), [([], ["Taiwan"]), (["Data Engineer"], []), ([], [])]
-)
-async def test_nothing_to_search_for_or_nowhere_to_search_queues_nothing(
-    titles: list[str], locations: list[str], queued: list[dict[str, Any]]
-) -> None:
-    await dispatcher._handle(_container(market=FakeMarket(locations)), _candidates_replaced(titles))
 
     assert queued == []

@@ -1,6 +1,6 @@
 # 0025. Search Himalayas for the analysis's candidate roles, as ownerless demand sources
 
-**Status:** Accepted — 2026-09-30. Amended by 0026.
+**Status:** Accepted — 2026-09-30. Amended by [0026](0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md) and [0027](0027-fetch-the-market-only-when-a-build-needs-it.md).
 
 ## Context
 

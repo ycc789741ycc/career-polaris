@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 
 from advisor.market.domain.places import target_location_option
@@ -29,9 +29,21 @@ from advisor.market.domain.posting import (
 
 class SourceStatus(StrEnum):
     ACTIVE = "active"
-    # No longer crawled. Kept, never deleted, so the postings it found still
-    # have a source that can expire them.
+    # No longer fetched. Kept, never deleted, so the postings it found still
+    # have a source that says where they came from.
     RETIRED = "retired"
+
+
+@dataclass(frozen=True, slots=True)
+class FreshWindows:
+    """How long a fetch is reused before a build asks for it again (ADR 0027).
+
+    A search is a request to one shared, rate-limited API, so it is reused
+    longer than a board, which is one cheap request listing everything.
+    """
+
+    search: timedelta
+    board: timedelta
 
 
 # --- shared zone -----------------------------------------------------------
@@ -62,8 +74,10 @@ class CrawlSource:
     status: SourceStatus
     last_fetched_at: datetime | None = None
     last_error: str | None = None
-    # A search only: when a user's candidates last asked for it. Never who.
+    # When a build last needed it. Never who.
     last_requested_at: datetime | None = None
+    # Set while a build waits for it to be fetched; cleared once it has been.
+    due_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -101,6 +115,36 @@ class CrawlSource:
         self.last_fetched_at = at
         self.last_error = error
 
+    def fetched(self) -> None:
+        """Its fetch is stored and embedded: no build waits for it any more."""
+        self.due_at = None
+
+    @property
+    def is_due(self) -> bool:
+        return self.due_at is not None
+
+    def is_fresh(self, at: datetime, windows: FreshWindows) -> bool:
+        """Fetched recently enough to be reused, by its own window."""
+        if self.last_fetched_at is None:
+            return False
+        window = windows.search if self.is_search else windows.board
+        return at - self.last_fetched_at <= window
+
+    def needed(self, at: datetime, windows: FreshWindows) -> bool:
+        """A build needs this source. It is marked asked for, and due when it
+        isn't fresh. Returns whether that build has to wait for it.
+
+        A retired search is fetched afresh; marking is idempotent, so two
+        builds that need the same stale source wait on one fetch.
+        """
+        self.last_requested_at = at
+        if self.status is SourceStatus.RETIRED:
+            self.status = SourceStatus.ACTIVE
+            self.last_fetched_at = None
+        if self.due_at is None and not self.is_fresh(at, windows):
+            self.due_at = at
+        return self.due_at is not None
+
     def make_baseline(self, company_id: uuid.UUID) -> None:
         """A listed board is a baseline one, whoever asked for it first."""
         self.origin = SourceOrigin.BASELINE
@@ -116,15 +160,17 @@ class CrawlSource:
 
     @property
     def is_search(self) -> bool:
-        return self.last_requested_at is not None
+        """A search of a job API is filed under the place it searches; a
+        company's board has no place."""
+        return self.market is not None
 
-    def requested(self, at: datetime) -> None:
-        """Someone's candidates ask for this search again: it stays crawled,
-        and one retired for lack of demand is crawled afresh."""
-        self.last_requested_at = at
-        if self.status is SourceStatus.RETIRED:
-            self.status = SourceStatus.ACTIVE
-            self.last_fetched_at = None
+    def retire_idle(self) -> bool:
+        """Retire a search no build has needed in a while. Returns whether it
+        was one to retire."""
+        if not self.is_search:
+            return False
+        self.due_at = None
+        return self.retire()
 
 
 @dataclass(slots=True)
@@ -145,6 +191,9 @@ class JobPosting:
     status: PostingStatus
     first_seen_at: datetime
     last_seen_at: datetime
+    # When its description and embedding were dropped because nothing held it
+    # any more (ADR 0027). The row stays for Targets and salary history.
+    thinned_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -186,8 +235,22 @@ class JobPosting:
         self.title = posting.title
         self.description = posting.description
         self.url = posting.url
+        self.thinned_at = None
         if posting.salary is not None:
             self.salary = posting.salary
+
+
+@dataclass(slots=True)
+class SearchResult:
+    """One posting on a search's current result list: what the search returned
+    the last time it was fetched, in its order (ADR 0027). A fetch replaces the
+    whole list."""
+
+    id: uuid.UUID
+    crawl_source_id: uuid.UUID
+    job_posting_id: uuid.UUID
+    rank: int
+    fetched_at: datetime
 
 
 @dataclass(slots=True)
@@ -208,6 +271,10 @@ class PostingScope:
     with none also gets the platform's baseline postings, so a first role map
     has something to group; with locations chosen, baseline postings in them
     are already in scope through the location match.
+
+    A posting a search found counts only while it is on that search's current
+    result list (ADR 0027): a search sees one page, so a job missing from the
+    next fetch was usually pushed off it, not closed.
     """
 
     markets: tuple[str, ...]

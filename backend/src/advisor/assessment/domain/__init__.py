@@ -1,3 +1,4 @@
+from advisor.assessment.domain.agreement import spearman
 from advisor.assessment.domain.dimensions import (
     MAX_DIMENSIONS,
     MIN_DIMENSIONS,
@@ -115,5 +116,6 @@ __all__ = [
     "evaluate",
     "profile_confidence",
     "rank_matches",
+    "spearman",
     "thin_evidence",
 ]

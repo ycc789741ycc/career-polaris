@@ -10,7 +10,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from advisor.rolemap import MAX_COMPANY_NAME, MAX_ROLE_TITLE, RoleCandidateView, RoleView
-from api.schemas.common import ApiModel, Page, RequestModel
+from api.schemas.common import ApiModel, Page, RequestModel, Timestamp
 
 
 class SalaryBand(ApiModel):
@@ -97,6 +97,18 @@ class RoleMapEstimate(ApiModel):
 
 class RolePage(Page[Role]):
     pass
+
+
+class RoleMapState(ApiModel):
+    """How current the map on screen is (ADR 0027). It is built only when the
+    user asks, so it says how old its market is, and whether the target
+    locations changed since. Both are null before the first map."""
+
+    # The oldest fetch among the sources its last build read.
+    market_data_at: Timestamp | None
+    # The target locations it was built for.
+    built_for_locations: list[str] | None
+    locations_changed: bool
 
 
 class RoleCandidate(ApiModel):

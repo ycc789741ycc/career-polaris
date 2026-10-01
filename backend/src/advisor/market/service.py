@@ -17,19 +17,20 @@ crawler may not import ``advisor.market.domain`` directly.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Protocol
 
 from advisor.market.baseline import BASELINE_SOURCES, BaselineSource
 from advisor.market.domain import (
     MAX_TARGET_LOCATION,
     MAX_TARGET_LOCATIONS,
-    SEARCH_SOURCE_IDLE_WEEKS,
     Company,
     CompanyFilter,
     CrawlSource,
     CrawlSourceFilter,
+    FreshWindows,
     JobPosting,
     JobPostingFilter,
     MarketPreference,
@@ -38,13 +39,13 @@ from advisor.market.domain import (
     NormalizedPosting,
     PostingEmbedding,
     PostingEmbeddingFilter,
-    PostingsChanged,
     PostingScope,
     PostingStatus,
     PrivateJobPosting,
     PrivateJobPostingFilter,
     SalaryBand,
     SalaryRange,
+    SearchResultFilter,
     SearchScope,
     SharedMarket,
     SourceKind,
@@ -63,12 +64,14 @@ from advisor.market.domain import (
     normalize_title,
     remote_location,
     salary_in_text,
-    scope_names,
     search_scope,
     target_location_options,
 )
 from kernel.clock import utcnow
 from kernel.errors import NotFoundError, ValidationError
+from kernel.logging import get_logger
+
+log = get_logger(__name__)
 
 __all__ = [
     "BASELINE_SOURCES",
@@ -77,6 +80,7 @@ __all__ = [
     "BaselineSource",
     "CrawlIngest",
     "CrawlSourceView",
+    "FreshWindows",
     "MarketScopeView",
     "MarketService",
     "NormalizedPosting",
@@ -87,6 +91,7 @@ __all__ = [
     "SearchScope",
     "SourceKind",
     "SourceOrigin",
+    "SourcesRequestView",
     "TargetLocationOptionView",
     "Visibility",
     "band_from",
@@ -119,6 +124,15 @@ class TargetLocationOptionView:
 
 
 @dataclass(frozen=True, slots=True)
+class SourcesRequestView:
+    """What one build needs from the market: every source it reads, and those
+    of them it has to wait for (ADR 0027)."""
+
+    needed: tuple[uuid.UUID, ...]
+    due: tuple[uuid.UUID, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class MarketScopeView:
     """The user's target locations and the open postings they take in. With
     none chosen, the scope is the platform's baseline."""
@@ -148,20 +162,20 @@ class PostingView:
 
 
 class CrawlIngest:
-    """What the crawler may do. Shared zone only; no user data, ever."""
+    """What the crawler may do. Shared zone only; no user data, ever.
+
+    The crawler fetches only what a build is waiting for (ADR 0027): a source
+    is due while a build needs it and its last fetch is too old to reuse.
+    Nothing it stores is announced, because nothing it learns is resolved to
+    the users it concerns.
+    """
 
     def __init__(self, uow: MarketUnitOfWork) -> None:
         self._uow = uow
 
     async def due_sources(self) -> list[CrawlSourceView]:
-        # Every active source is crawled each run, so the set is read whole.
-        return await self._sources(CrawlSourceFilter(status=SourceStatus.ACTIVE))
-
-    async def new_sources(self) -> list[CrawlSourceView]:
-        """Active sources no crawl has fetched yet: a search a user's
-        candidates just asked for, or a board discovery just found. Crawled
-        between the weekly runs, so nobody waits a week for them (ADR 0025)."""
-        return await self._sources(CrawlSourceFilter(status=SourceStatus.ACTIVE, is_unfetched=True))
+        """Active sources a build is waiting for."""
+        return await self._sources(CrawlSourceFilter(status=SourceStatus.ACTIVE, is_due=True))
 
     async def _sources(self, filter: CrawlSourceFilter) -> list[CrawlSourceView]:
         async with self._uow.shared() as market:
@@ -179,38 +193,6 @@ class CrawlIngest:
             for source in sources
         ]
 
-    async def retire_idle_searches(self, now: datetime) -> int:
-        """Stop crawling the searches nobody's candidates have asked for in
-        ``SEARCH_SOURCE_IDLE_WEEKS``, and expire what they found: with no
-        crawl left to notice a posting closing, it would stay open for ever.
-        Returns how many were retired."""
-        idle_since = now - timedelta(weeks=SEARCH_SOURCE_IDLE_WEEKS)
-        retired = 0
-        async with self._uow.shared() as market:
-            for source in await market.sources.get_list(
-                CrawlSourceFilter(status=SourceStatus.ACTIVE, requested_before=idle_since)
-            ):
-                if not source.retire():
-                    continue
-                await market.sources.update(source)
-                expired = await market.postings.expire_unseen(source.id, set())
-                if expired and source.market:
-                    market.record(
-                        PostingsChanged(
-                            company_id=None, market=source.market, seen=0, expired=expired
-                        )
-                    )
-                retired += 1
-        return retired
-
-    async def announce_markets(self, markets: Iterable[str]) -> None:
-        """Say once per place that its postings changed, for the searches
-        stored with ``record_search_crawl``: a place's searches are crawled
-        together, and one announcement is one role-map rebuild."""
-        async with self._uow.shared() as market:
-            for name in sorted(set(markets)):
-                market.record(PostingsChanged(company_id=None, market=name, seen=0, expired=0))
-
     async def record_crawl(
         self,
         source_id: uuid.UUID,
@@ -218,63 +200,72 @@ class CrawlIngest:
         *,
         error: str | None = None,
     ) -> tuple[int, int]:
-        """Upsert what was seen, expire what was not, and announce it.
-        Returns (upserted, expired)."""
-        seen, expired, _new = await self._record(source_id, postings, error=error, announce=True)
-        return (seen, expired)
+        """Store one fetch. Returns (upserted, expired).
 
-    async def record_search_crawl(
-        self,
-        source_id: uuid.UUID,
-        postings: list[NormalizedPosting],
-        *,
-        error: str | None = None,
-    ) -> tuple[int, int, bool]:
-        """Store one search's postings without announcing them. Returns
-        (upserted, expired, changed): ``changed`` is whether an opening
-        appeared or went, which is when the place is worth announcing, once,
-        with ``announce_markets``. A crawl that finds the same openings again
-        rebuilds nobody's role map."""
-        seen, expired, new = await self._record(source_id, postings, error=error, announce=False)
-        return (seen, expired, bool(new or expired))
-
-    async def _record(
-        self,
-        source_id: uuid.UUID,
-        postings: list[NormalizedPosting],
-        *,
-        error: str | None,
-        announce: bool,
-    ) -> tuple[int, int, int]:
-        """(seen, expired, new) for one source's crawl."""
+        A board lists everything its company has, so what it no longer lists
+        is expired. A search shows one page, so its fetch replaces its result
+        list instead and expires nothing: a job missing from the page was
+        usually pushed off it, not closed (ADR 0027). A failed fetch changes
+        neither.
+        """
+        now = utcnow()
         async with self._uow.shared() as market:
             source = await market.sources.get(source_id)
             if source is None:
                 raise NotFoundError("crawl source not found", source_id=str(source_id))
-            source.record_fetch(utcnow(), error)
+            source.record_fetch(now, error)
             await market.sources.update(source)
             if error is not None:
-                return (0, 0, 0)
+                return (0, 0)
 
-            seen_keys: set[str] = set()
-            new = 0
+            seen: dict[str, uuid.UUID] = {}
             for posting in postings:
                 company = await _ensure_company(market, posting.company_name)
-                new += await _upsert_posting(market, source_id, company.id, posting)
-                seen_keys.add(posting.canonical_key)
+                stored = await _upsert_posting(market, source_id, company.id, posting)
+                seen.setdefault(posting.canonical_key, stored)
 
-            expired = await market.postings.expire_unseen(source_id, seen_keys)
+            if source.is_search:
+                await market.search_results.replace(source_id, list(seen.values()), at=now)
+                return (len(seen), 0)
+            expired = await market.postings.expire_unseen(source_id, set(seen))
+            return (len(seen), expired)
 
-            if announce:
-                market.record(
-                    PostingsChanged(
-                        company_id=source.company_id,
-                        market=source.market,
-                        seen=len(seen_keys),
-                        expired=expired,
-                    )
+    async def mark_fetched(self, source_ids: Iterable[uuid.UUID]) -> None:
+        """These sources' fetches are stored and embedded: the builds waiting
+        for them may start (ADR 0027)."""
+        wanted = tuple(source_ids)
+        if not wanted:
+            return
+        async with self._uow.shared() as market:
+            for source in await market.sources.get_list(CrawlSourceFilter(ids=wanted)):
+                if source.is_due:
+                    source.fetched()
+                    await market.sources.update(source)
+
+    async def retire_idle_searches(self, *, idle_since: datetime) -> int:
+        """Stop fetching the searches no build has needed since ``idle_since``,
+        and empty their result lists, so what they found leaves every scope
+        and is thinned later. Returns how many were retired."""
+        retired = 0
+        async with self._uow.shared() as market:
+            for source in await market.sources.get_list(
+                CrawlSourceFilter(
+                    status=SourceStatus.ACTIVE, is_search=True, requested_before=idle_since
                 )
-            return (len(seen_keys), expired, new)
+            ):
+                if not source.retire_idle():
+                    continue
+                await market.sources.update(source)
+                await market.search_results.replace(source.id, [], at=utcnow())
+                retired += 1
+        return retired
+
+    async def thin_unheld_postings(self, *, unseen_since: datetime) -> int:
+        """Drop the description and embedding of postings nothing holds and
+        nobody has seen since ``unseen_since``. The rows stay, so a Target
+        that names one still finds it (ADR 0027). Returns how many."""
+        async with self._uow.shared() as market:
+            return await market.postings.thin_unheld(unseen_since=unseen_since, at=utcnow())
 
     async def postings_needing_embeddings(
         self, model_name: str, limit: int = 200
@@ -297,31 +288,11 @@ class CrawlIngest:
 
 
 class MarketService:
-    """Target locations and pasted JDs. Owner zone."""
+    """Target locations and pasted JDs, and the sources a build needs."""
 
-    def __init__(self, uow: MarketUnitOfWork) -> None:
+    def __init__(self, uow: MarketUnitOfWork, *, windows: FreshWindows) -> None:
         self._uow = uow
-
-    async def owners_affected_by(self, *, market: str | None = None) -> list[uuid.UUID]:
-        """The users whose target locations name this market.
-
-        A location names it when it contains every word of the market, or of
-        another name for the same country: "Remote Taiwan" names "Taiwan", and
-        "UK" names "United Kingdom". A search is filed under one name for a
-        place that users spell several ways (ADR 0025).
-
-        The only cross-user read in the system, through the fan-out transaction
-        and its SELECT-only policy. The crawler cannot answer this — it has no
-        grant on any user schema — so the worker's dispatcher asks here when a
-        market changes (docs/architecture.md section 2).
-        """
-        if not market:
-            return []
-        async with self._uow.fanout() as everyone:
-            choosing = await everyone.markets.get_list(
-                MarketPreferenceFilter(names_any_of=scope_names(market))
-            )
-        return sorted({m.owner_id for m in choosing})
+        self._windows = windows
 
     def target_location_options(self) -> list[TargetLocationOptionView]:
         """The places a user may pick from: "Remote", the regions, then the
@@ -359,6 +330,12 @@ class MarketService:
                 await mine.markets.create(MarketPreference.chosen(owner_id=owner_id, market=value))
             mine.record(TargetLocationsChanged(owner_id=owner_id, locations=wanted))
         return list(wanted)
+
+    async def has_searchable_place(self, owner_id: uuid.UUID) -> bool:
+        """Whether a build for this user searches a job API: one of their
+        target locations is a country or "Remote" (ADR 0026)."""
+        places = await self.target_locations(owner_id)
+        return any(search_scope(place) is not None for place in places)
 
     async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
         """How much of the market the user's target locations take in."""
@@ -509,35 +486,101 @@ class MarketService:
                     )
                 )
 
-    async def request_searches(
-        self, *, kind: str, searches: Mapping[str, str], at: datetime | None = None
-    ) -> int:
-        """Make sure each search is crawled: ``searches`` maps a search
-        endpoint to the place it searches (ADR 0025). Returns how many are new.
+    async def request_sources(
+        self,
+        *,
+        titles: Sequence[str],
+        places: Sequence[str],
+        company_ids: Sequence[uuid.UUID],
+        at: datetime | None = None,
+    ) -> SourcesRequestView:
+        """The sources one build needs, each marked asked for, and due when it
+        isn't fresh (ADR 0027).
 
-        A search is a ``demand`` source with no owner. One that exists is only
-        marked as asked for again, which keeps it crawled, so two users whose
-        analyses recommend the same title in the same place share it and the
-        row says nothing about either.
+        They are a search of each job title in each place a search covers (a
+        country, or "Remote"; a region adds none), the baseline boards, and the
+        boards of the companies named. A search that does not exist yet is made
+        as an ownerless ``demand`` source: only titles, places and company ids
+        reach here, never who asked.
         """
+        from advisor.market.crawling.adapters import SEARCH_ADAPTERS
+
         now = at or utcnow()
-        created = 0
+        searches = _searches(SEARCH_ADAPTERS, titles, places)
+        needed: list[uuid.UUID] = []
+        due: list[uuid.UUID] = []
         async with self._uow.shared() as market:
-            for endpoint, place in sorted(searches.items()):
-                source = _first(
-                    await market.sources.get_list(
-                        CrawlSourceFilter(kind=kind, endpoint=endpoint), page_size=1
-                    )
+            for (kind, endpoint), place in sorted(searches.items()):
+                await market.sources.create_if_absent(
+                    CrawlSource.search(kind=kind, endpoint=endpoint, market=place, at=now)
                 )
-                if source is None:
-                    await market.sources.create(
-                        CrawlSource.search(kind=kind, endpoint=endpoint, market=place, at=now)
+            sources = [
+                source
+                for (kind, endpoint) in sorted(searches)
+                for source in await market.sources.get_list(
+                    CrawlSourceFilter(kind=kind, endpoint=endpoint), page_size=1
+                )
+            ]
+            sources += await market.sources.get_list(
+                CrawlSourceFilter(status=SourceStatus.ACTIVE, origin=SourceOrigin.BASELINE)
+            )
+            for company_id in sorted(set(company_ids)):
+                sources += await market.sources.get_list(
+                    CrawlSourceFilter(status=SourceStatus.ACTIVE, company_id=company_id)
+                )
+            for source in {source.id: source for source in sources}.values():
+                needed.append(source.id)
+                if source.needed(now, self._windows):
+                    due.append(source.id)
+                await market.sources.update(source)
+        log.info("market.sources_requested", needed=len(needed), due=len(due))
+        return SourcesRequestView(needed=tuple(needed), due=tuple(due))
+
+    async def pending_sources(self, source_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
+        """Which of these sources are still waiting to be fetched."""
+        if not source_ids:
+            return ()
+        async with self._uow.shared() as market:
+            waiting = await market.sources.get_list(
+                CrawlSourceFilter(ids=tuple(source_ids), is_due=True)
+            )
+        return tuple(source.id for source in waiting)
+
+    async def oldest_fetch(self, source_ids: Sequence[uuid.UUID]) -> datetime | None:
+        """When the stalest of these sources was last fetched: how old the
+        market a build used is. ``None`` when none has been fetched."""
+        if not source_ids:
+            return None
+        async with self._uow.shared() as market:
+            found = await market.sources.get_list(CrawlSourceFilter(ids=tuple(source_ids)))
+        fetched = [s.last_fetched_at for s in found if s.last_fetched_at is not None]
+        return min(fetched) if fetched else None
+
+    async def search_results(
+        self, *, titles: Sequence[str], places: Sequence[str]
+    ) -> dict[str, list[uuid.UUID]]:
+        """For each title, the postings on the current result lists of its
+        searches in these places, best first: what the search found for it."""
+        from advisor.market.crawling.adapters import SEARCH_ADAPTERS
+
+        by_title: dict[str, list[uuid.UUID]] = {title: [] for title in titles}
+        async with self._uow.shared() as market:
+            for title in titles:
+                for kind, endpoint in _searches(SEARCH_ADAPTERS, [title], places):
+                    source = _first(
+                        await market.sources.get_list(
+                            CrawlSourceFilter(kind=kind, endpoint=endpoint), page_size=1
+                        )
                     )
-                    created += 1
-                else:
-                    source.requested(now)
-                    await market.sources.update(source)
-        return created
+                    if source is None:
+                        continue
+                    listed = await market.search_results.get_list(
+                        SearchResultFilter(crawl_source_ids=(source.id,))
+                    )
+                    for result in sorted(listed, key=lambda r: r.rank):
+                        if result.job_posting_id not in by_title[title]:
+                            by_title[title].append(result.job_posting_id)
+        return by_title
 
     async def company_named(self, name: str) -> uuid.UUID:
         """The shared company with this name, recorded if it is new. A company
@@ -596,8 +639,8 @@ async def _upsert_posting(
     source_id: uuid.UUID,
     company_id: uuid.UUID,
     posting: NormalizedPosting,
-) -> bool:
-    """Store one posting. Returns whether it is new or open again."""
+) -> uuid.UUID:
+    """Store one posting, new or seen again. Returns its id."""
     now = utcnow()
     existing = _first(
         await market.postings.get_list(
@@ -605,14 +648,35 @@ async def _upsert_posting(
         )
     )
     if existing is None:
-        await market.postings.create(
+        created = await market.postings.create(
             JobPosting.first_seen(posting, company_id=company_id, source_id=source_id, at=now)
         )
-        return True
-    reopened = existing.status is not PostingStatus.OPEN
+        return created.id
     existing.seen_again(posting, source_id=source_id, at=now)
     await market.postings.update(existing)
-    return reopened
+    return existing.id
+
+
+class _SearchAdapter(Protocol):
+    name: str
+
+    def search_endpoint(self, title: str, scope: SearchScope) -> str | None: ...
+
+
+def _searches(
+    adapters: Iterable[_SearchAdapter], titles: Iterable[str], places: Iterable[str]
+) -> dict[tuple[str, str], str]:
+    """Every (kind, endpoint) to search for these titles in these places,
+    with the place each is filed under. A place no search covers adds none."""
+    scopes = {scope for place in places if (scope := search_scope(place)) is not None}
+    found: dict[tuple[str, str], str] = {}
+    for adapter in adapters:
+        for scope in sorted(scopes, key=lambda s: s.label):
+            for title in titles:
+                endpoint = adapter.search_endpoint(title, scope)
+                if endpoint is not None:
+                    found[(adapter.name, endpoint)] = scope.label
+    return found
 
 
 def _embedding_parts(posting: JobPosting) -> tuple[str | None, ...]:

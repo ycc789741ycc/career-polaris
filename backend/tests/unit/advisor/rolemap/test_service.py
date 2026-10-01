@@ -5,18 +5,24 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
 
 from advisor.market import PostingView, SalaryRange, Visibility
-from advisor.rolemap import CANDIDATE_ROLE_COUNT, CandidateInput, RoleMapService
+from advisor.rolemap import (
+    CANDIDATE_ROLE_COUNT,
+    CandidateInput,
+    MarketWait,
+    RoleMapService,
+    StrengthInput,
+)
 from advisor.rolemap import service as rolemap_service
 from advisor.rolemap.domain import (
     BarBasis,
     CustomRoleAdded,
     HiringBar,
-    RoleCandidatesReplaced,
     RoleChange,
     RoleLineage,
     RoleMapBuildFinished,
@@ -27,39 +33,10 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.service import _RoleExtraction
 from kernel.errors import NotFoundError, ValidationError
-from tests.unit.advisor.rolemap.fakes import FakeRoleMapUnitOfWork
+from tests.unit.advisor.rolemap.fakes import MARKET_AS_OF, FakeMarket, FakeRoleMapUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
-
-
-class FakeMarket:
-    def __init__(
-        self,
-        postings: list[PostingView] | None = None,
-        markets: list[str] | None = None,
-        pasted: list[PostingView] | None = None,
-    ) -> None:
-        self.postings = postings or []
-        self.chosen = markets or []
-        self.pasted = {p.id: p for p in pasted or []}
-
-    async def private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> PostingView:
-        if posting_id not in self.pasted:
-            raise NotFoundError("job description not found")
-        return self.pasted[posting_id]
-
-    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
-        return self.chosen
-
-    async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
-        return self.postings
-
-    async def scope_with_vectors(
-        self, owner_id: uuid.UUID, model_name: str
-    ) -> list[tuple[str, PostingView, list[float] | None]]:
-        # None: nothing embedded yet, so the service embeds them itself.
-        return [(str(p.id), p, None) for p in self.postings]
 
 
 def _service(
@@ -207,31 +184,89 @@ async def test_lineage_retires_what_is_gone_and_announces_splits() -> None:
 # --- builds (ADR 0006, ADR 0018) -------------------------------------------
 
 
-async def test_a_build_asked_for_now_runs_and_is_queued_once() -> None:
-    service = _service(FakeRoleMapUnitOfWork())
+async def test_a_build_with_nothing_due_runs_now_and_is_queued_once() -> None:
+    market = FakeMarket(markets=["Taiwan"])
+    service = _service(FakeRoleMapUnitOfWork(), market)
 
     first = await service.request_build(OWNER, wait=False)
     again = await service.request_build(OWNER, wait=False)
 
-    assert first.should_queue and first.build.status == "running"
+    assert first.should_queue and not first.should_await_market
+    assert first.build.status == "running" and first.build.locations == ("Taiwan",)
     assert not again.should_queue and again.build.id == first.build.id
+    # Asked once: the second request joined the open build.
+    assert len(market.asked) == 1
 
 
-async def test_a_build_asked_for_during_an_analysis_waits_until_it_is_started() -> None:
-    service = _service(FakeRoleMapUnitOfWork())
+async def test_a_build_asks_the_market_for_its_titles_places_and_companies() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    market = FakeMarket(markets=["Taiwan", "Europe"])
+    service = _service(uow, market)
+    await service.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Data Engineer", "d"), _candidate("ML Engineer", "m")]
+    )
+    await service.add_custom_role(
+        OWNER, title="Staff", company_name="Kestrel", private_posting_id=None
+    )
+
+    await service.request_build(OWNER, wait=False)
+
+    (asked,) = market.asked
+    assert asked == {
+        "titles": ["Data Engineer", "ML Engineer"],
+        "places": ["Taiwan", "Europe"],
+        "company_ids": [uuid.uuid5(uuid.NAMESPACE_DNS, "Kestrel")],
+    }
+
+
+async def test_a_build_with_due_sources_waits_for_them_and_then_starts() -> None:
+    due = (uuid.uuid4(), uuid.uuid4())
+    market = FakeMarket(due=due)
+    service = _service(FakeRoleMapUnitOfWork(), market)
+
+    requested = await service.request_build(OWNER, wait=False)
+
+    assert not requested.should_queue and requested.should_await_market
+    assert requested.build.status == "waiting" and requested.build.is_waiting_for_market
+    wait = timedelta(minutes=5)
+    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.WAIT
+
+    market.fetched.update(due)
+    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.START
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and latest.status == "running"
+    # Started once: a second check finds nothing to do.
+    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.DONE
+
+
+async def test_a_build_starts_at_its_deadline_on_what_is_stored() -> None:
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    requested = await service.request_build(OWNER, wait=False)
+
+    found = await service.check_market(OWNER, requested.build.id, deadline=timedelta(0))
+
+    assert found is MarketWait.START
+
+
+async def test_a_build_asked_for_during_an_analysis_asks_the_market_once_it_is_released() -> None:
+    market = FakeMarket()
+    service = _service(FakeRoleMapUnitOfWork(), market)
 
     waiting = await service.request_build(OWNER, wait=True)
     assert not waiting.should_queue and waiting.build.status == "waiting"
+    assert not waiting.build.is_waiting_for_market and market.asked == []
     assert (await service.request_build(OWNER, wait=True)).build.id == waiting.build.id
 
-    started = await service.start_waiting(OWNER)
+    released = await service.release_waiting(OWNER)
 
-    assert started is not None and started.id == waiting.build.id
-    assert started.status == "running" and started.started_at is not None
-    assert await service.start_waiting(OWNER) is None
+    assert released is not None and released.build.id == waiting.build.id
+    assert released.should_queue and released.build.status == "running"
+    assert len(market.asked) == 1
+    assert await service.release_waiting(OWNER) is None
 
 
-async def test_asking_again_once_nothing_is_running_starts_the_waiting_build() -> None:
+async def test_asking_again_once_nothing_is_running_releases_the_waiting_build() -> None:
     service = _service(FakeRoleMapUnitOfWork())
     waiting = await service.request_build(OWNER, wait=True)
 
@@ -239,6 +274,18 @@ async def test_asking_again_once_nothing_is_running_starts_the_waiting_build() -
 
     assert now.should_queue and now.build.id == waiting.build.id
     assert now.build.status == "running"
+
+
+async def test_a_build_already_waiting_for_the_market_is_joined_not_asked_again() -> None:
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    first = await service.request_build(OWNER, wait=False)
+
+    again = await service.request_build(OWNER, wait=False)
+
+    assert again.build.id == first.build.id
+    assert not again.should_queue and not again.should_await_market
+    assert len(market.asked) == 1
 
 
 async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
@@ -256,6 +303,10 @@ async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
 
     latest = await service.latest_build(OWNER)
     assert latest is not None and latest.status == "ready" and latest.finished_at is not None
+    # It says how old the market it read was.
+    assert latest.market_data_at == MARKET_AS_OF
+    finished = await service.last_finished_build(OWNER)
+    assert finished is not None and finished.id == requested.build.id
     assert (await service.request_build(OWNER, wait=False)).build.id != requested.build.id
 
 
@@ -506,22 +557,30 @@ async def test_an_analysiss_candidates_replace_the_last_ones_in_its_order() -> N
     assert {c.assessment_id for c in uow.store.candidates.values()} == {assessment}
 
 
-async def test_new_candidates_are_announced_by_title_for_the_market_to_search() -> None:
+async def test_candidates_come_with_the_strengths_that_weigh_them_and_announce_nothing() -> None:
     uow = FakeRoleMapUnitOfWork()
     rolemap = _service(uow)
-
     await rolemap.replace_candidates(
-        OWNER, uuid.uuid4(), [_candidate("First", "a"), _candidate("Second", "b")]
+        OWNER,
+        uuid.uuid4(),
+        [_candidate("First", "a")],
+        strengths=[StrengthInput("old", "Old", "read", 0.5)],
     )
 
-    assert uow.store.events == [RoleCandidatesReplaced(OWNER, ("First", "Second"))]
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [_candidate("Second", "b")],
+        strengths=[
+            StrengthInput("backend", "Backend", "Built services.", 0.72),
+            StrengthInput("data", "Data", "Some pipelines.", 1.4),
+        ],
+    )
 
-
-async def test_an_analysis_that_recommends_nothing_asks_for_no_search() -> None:
-    uow = FakeRoleMapUnitOfWork()
-
-    await _service(uow).replace_candidates(OWNER, uuid.uuid4(), [])
-
+    stored = {s.dimension_key: s.weight for s in uow.store.strengths.values()}
+    # Replaced with the candidates; a weight is kept between 0 and 1.
+    assert stored == {"backend": 0.72, "data": 1.0}
+    # The market is asked by the build that follows, not told here (ADR 0027).
     assert uow.store.events == []
 
 
@@ -565,6 +624,33 @@ async def test_a_candidate_the_market_has_becomes_a_role_named_from_its_openings
     assert "Designer" not in gateway.shown[0]
     [candidate] = await rolemap.candidates(OWNER)
     assert (candidate.role_id, candidate.opening_count) == (role.id, 3)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_what_a_candidates_search_found_is_its_and_a_loose_hit_is_left_out() -> None:
+    """Payments Lead came back from the data search, matched on its description;
+    it is nothing like a data role, and the payments candidate never searched
+    for it, so it is nobody's opening (ADR 0027)."""
+    data = [_posting(f"Data Platform {i}") for i in range(3)]
+    loose = _posting("Payments Lead")
+    market = FakeMarket([*data, loose], searched={"Data Engineer": [p.id for p in [*data, loose]]})
+    rolemap = _service(FakeRoleMapUnitOfWork(), market, ScriptedGateway())
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [_candidate("Data Engineer", "Data pipelines."), _candidate("Payments Engineer", "")],
+        strengths=[StrengthInput("backend", "Data", "Data pipelines.", 0.8)],
+    )
+
+    [role] = await rolemap.recluster(OWNER)
+
+    [(_, openings)] = await rolemap.role_postings(OWNER)
+    assert {p.title for p in openings} == {p.title for p in data}
+    data_candidate, payments = await rolemap.candidates(OWNER)
+    assert (data_candidate.role_id, data_candidate.opening_count) == (role.id, 3)
+    assert payments.opening_count == 0
+    # The estimate that chose it is kept beside it, never shown as a fit.
+    assert data_candidate.fit_estimate is not None
 
 
 @pytest.mark.usefixtures("embedded")

@@ -11,6 +11,7 @@ from advisor.market.domain import (
     PostingStatus,
     PrivateJobPosting,
     SalaryRange,
+    SearchResult,
     SourceOrigin,
     SourceStatus,
 )
@@ -55,6 +56,7 @@ def crawl_source(row: models.CrawlSource) -> CrawlSource:
         last_fetched_at=row.last_fetched_at,
         last_error=row.last_error,
         last_requested_at=row.last_requested_at,
+        due_at=row.due_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -76,6 +78,7 @@ def apply_crawl_source(row: models.CrawlSource, entity: CrawlSource) -> None:
     row.last_fetched_at = entity.last_fetched_at
     row.last_error = entity.last_error
     row.last_requested_at = entity.last_requested_at
+    row.due_at = entity.due_at
 
 
 # --- job posting -----------------------------------------------------------
@@ -107,6 +110,7 @@ def job_posting(row: models.JobPosting) -> JobPosting:
         status=PostingStatus(row.status),
         first_seen_at=row.first_seen_at,
         last_seen_at=row.last_seen_at,
+        thinned_at=row.thinned_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -130,10 +134,34 @@ def apply_job_posting(row: models.JobPosting, entity: JobPosting) -> None:
     row.posted_on = entity.posted_on
     row.status = str(entity.status)
     row.last_seen_at = entity.last_seen_at
+    row.thinned_at = entity.thinned_at
     if entity.salary is not None:
         row.salary_min = entity.salary.min_amount
         row.salary_max = entity.salary.max_amount
         row.salary_currency = entity.salary.currency
+
+
+def search_result(row: models.SearchResult) -> SearchResult:
+    return SearchResult(
+        id=row.id,
+        crawl_source_id=row.crawl_source_id,
+        job_posting_id=row.job_posting_id,
+        rank=row.rank,
+        fetched_at=row.fetched_at,
+    )
+
+
+def search_result_row(entity: SearchResult) -> models.SearchResult:
+    row = models.SearchResult(id=entity.id)
+    apply_search_result(row, entity)
+    return row
+
+
+def apply_search_result(row: models.SearchResult, entity: SearchResult) -> None:
+    row.crawl_source_id = entity.crawl_source_id
+    row.job_posting_id = entity.job_posting_id
+    row.rank = entity.rank
+    row.fetched_at = entity.fetched_at
 
 
 # --- owner zone ------------------------------------------------------------

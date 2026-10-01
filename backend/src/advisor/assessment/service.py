@@ -55,6 +55,7 @@ from advisor.assessment.domain import (
     evaluate,
     profile_confidence,
     rank_matches,
+    spearman,
     thin_evidence,
 )
 from advisor.assessment.domain import (
@@ -76,6 +77,7 @@ from advisor.rolemap import (
     RequirementView,
     RoleMapService,
     RoleView,
+    StrengthInput,
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
@@ -472,8 +474,22 @@ class AssessmentService:
             template_version=result.template_version,
         )
         # The role map searches the market for these on the build that follows
-        # (ADR 0024); it owns them, so they are handed over, not stored here.
-        await self._rolemap.replace_candidates(owner_id, assessment_id, candidates)
+        # (ADR 0024); it owns them, so they are handed over, not stored here,
+        # with the scores its local fit estimate weighs them by (ADR 0027).
+        await self._rolemap.replace_candidates(
+            owner_id,
+            assessment_id,
+            candidates,
+            strengths=[
+                StrengthInput(
+                    dimension_key=d.dimension_id,
+                    name=d.name,
+                    read=d.read,
+                    weight=d.score / 100 * d.confidence,
+                )
+                for d in dimensions
+            ],
+        )
 
         return await self.latest(owner_id) or _never()
 
@@ -530,7 +546,28 @@ class AssessmentService:
 
         async with self._uow.for_owner(owner_id) as mine:
             mine.record(RoleFitsComputed(owner_id=owner_id, roles=len(roles)))
-        return await self.fits(owner_id)
+        fits = await self.fits(owner_id)
+        await self._log_estimate_agreement(owner_id, fits)
+        return fits
+
+    async def _log_estimate_agreement(self, owner_id: uuid.UUID, fits: list[FitView]) -> None:
+        """How well the local estimate that chose the ten agreed with the fits
+        then scored, as a rank correlation (ADR 0027). Numbers only, no user
+        data: the evidence for keeping the estimate, or going back to the
+        analysis's order."""
+        scored = {fit.role_id: fit.score for fit in fits if fit.role_id is not None}
+        pairs = [
+            (candidate.fit_estimate, scored[candidate.role_id])
+            for candidate in await self._rolemap.candidates(owner_id)
+            if candidate.role_id in scored and candidate.fit_estimate is not None
+        ]
+        if len(pairs) < 3:
+            return
+        log.info(
+            "assessment.estimate_agreement",
+            roles=len(pairs),
+            spearman=round(spearman([e for e, _ in pairs], [float(f) for _, f in pairs]), 3),
+        )
 
     async def fits(self, owner_id: uuid.UUID) -> list[FitView]:
         """The current fit per role — the bubble sizes.

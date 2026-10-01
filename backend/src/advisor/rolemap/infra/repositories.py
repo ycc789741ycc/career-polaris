@@ -17,6 +17,9 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunRepository,
+    CandidateStrength,
+    CandidateStrengthFilter,
+    CandidateStrengthRepository,
     LineageEntry,
     LineageEntryFilter,
     LineageEntryRepository,
@@ -204,4 +207,32 @@ class SqlAlchemyRoleCandidateRepository(
         return entity.id
 
     def conditions(self, filter: RoleCandidateFilter) -> list[ColumnElement[bool]]:
+        return []
+
+
+class SqlAlchemyCandidateStrengthRepository(
+    SqlAlchemyRepository[CandidateStrength, models.CandidateStrength, CandidateStrengthFilter],
+    CandidateStrengthRepository,
+):
+    model = models.CandidateStrength
+    id_column = models.CandidateStrength.id
+    created_column = models.CandidateStrength.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
+        models.CandidateStrength.owner_id
+    )
+    noun = "candidate strength"
+
+    def to_entity(self, row: models.CandidateStrength) -> CandidateStrength:
+        return mappers.strength(row)
+
+    def to_row(self, entity: CandidateStrength) -> models.CandidateStrength:
+        return mappers.strength_row(entity)
+
+    def apply(self, row: models.CandidateStrength, entity: CandidateStrength) -> None:
+        mappers.apply_strength(row, entity)
+
+    def id_of(self, entity: CandidateStrength) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: CandidateStrengthFilter) -> list[ColumnElement[bool]]:
         return []

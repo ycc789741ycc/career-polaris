@@ -52,6 +52,7 @@ SHARED_MARKET_TABLES = (
     "market.crawl_source",
     "market.job_posting",
     "market.posting_embedding",
+    "market.search_result",
 )
 
 # A component whose models stopped loading would otherwise vanish from

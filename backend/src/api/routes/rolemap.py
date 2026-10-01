@@ -19,11 +19,12 @@ from api.schemas.rolemap import (
     RoleCandidate,
     RoleCandidatePage,
     RoleMapEstimate,
+    RoleMapState,
     RolePage,
 )
 from kernel.paging import paginate
 from wiring.container import Container
-from wiring.queue import enqueue
+from wiring.queue import queue_build
 
 router = APIRouter(tags=["rolemap"])
 
@@ -34,6 +35,22 @@ async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
     # Paged here, not in the service: other components read the roles whole.
     found = paginate(await deps.rolemap.roles(user), paging.page, paging.page_size)
     return RolePage.of(found, Role.from_view)
+
+
+@router.get("/role-map")
+async def role_map_state(user: CurrentUser, deps: Deps) -> RoleMapState:
+    """How current the map is: the market it was built from, and whether the
+    target locations changed since (ADR 0027)."""
+    built = await deps.rolemap.last_finished_build(user)
+    if built is None or not built.needed_source_ids:
+        # No map yet, or one built before builds recorded what they read.
+        return RoleMapState(market_data_at=None, built_for_locations=None, locations_changed=False)
+    current = await deps.market.target_locations(user)
+    return RoleMapState(
+        market_data_at=built.market_data_at,
+        built_for_locations=list(built.locations),
+        locations_changed=sorted(built.locations) != sorted(current),
+    )
 
 
 @router.get("/role-candidates")
@@ -122,8 +139,7 @@ def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]
 
 async def _request_build(user: uuid.UUID, deps: Container) -> BuildRunView:
     requested = await deps.activity.request_role_map(user)
-    if requested.should_queue:
-        await enqueue("rolemap.recluster", owner_id=str(user), build_id=str(requested.build.id))
+    await queue_build(user, requested)
     return requested.build
 
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
+
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunStatus,
+    CandidateStrength,
     LineageEntry,
     Role,
     RoleCandidate,
@@ -140,6 +143,11 @@ def build_run(row: models.BuildRun) -> BuildRun:
         finished_at=row.finished_at,
         error_code=row.error_code,
         error_message=row.error_message,
+        needed_source_ids=tuple(uuid.UUID(i) for i in row.needed_source_ids or ()),
+        awaited_source_ids=tuple(uuid.UUID(i) for i in row.awaited_source_ids or ()),
+        locations=tuple(row.locations or ()),
+        awaited_since=row.awaited_since,
+        market_data_at=row.market_data_at,
     )
 
 
@@ -155,6 +163,11 @@ def apply_build_run(row: models.BuildRun, entity: BuildRun) -> None:
     row.finished_at = entity.finished_at
     row.error_code = entity.error_code
     row.error_message = entity.error_message
+    row.needed_source_ids = [str(i) for i in entity.needed_source_ids]
+    row.awaited_source_ids = [str(i) for i in entity.awaited_source_ids]
+    row.locations = list(entity.locations)
+    row.awaited_since = entity.awaited_since
+    row.market_data_at = entity.market_data_at
 
 
 def candidate(row: models.RoleCandidate) -> RoleCandidate:
@@ -168,6 +181,7 @@ def candidate(row: models.RoleCandidate) -> RoleCandidate:
         dimension_keys=tuple(row.dimension_keys),
         role_id=row.role_id,
         opening_count=row.opening_count,
+        fit_estimate=row.fit_estimate,
         created_at=row.created_at,
     )
 
@@ -187,3 +201,31 @@ def apply_candidate(row: models.RoleCandidate, entity: RoleCandidate) -> None:
     row.dimension_keys = list(entity.dimension_keys)
     row.role_id = entity.role_id
     row.opening_count = entity.opening_count
+    row.fit_estimate = entity.fit_estimate
+
+
+def strength(row: models.CandidateStrength) -> CandidateStrength:
+    return CandidateStrength(
+        id=row.id,
+        owner_id=row.owner_id,
+        assessment_id=row.assessment_id,
+        dimension_key=row.dimension_key,
+        name=row.name,
+        read=row.read,
+        weight=row.weight,
+    )
+
+
+def strength_row(entity: CandidateStrength) -> models.CandidateStrength:
+    row = models.CandidateStrength(
+        id=entity.id, owner_id=entity.owner_id, assessment_id=entity.assessment_id
+    )
+    apply_strength(row, entity)
+    return row
+
+
+def apply_strength(row: models.CandidateStrength, entity: CandidateStrength) -> None:
+    row.dimension_key = entity.dimension_key
+    row.name = entity.name
+    row.read = entity.read
+    row.weight = entity.weight

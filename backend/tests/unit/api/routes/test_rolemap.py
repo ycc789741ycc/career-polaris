@@ -21,12 +21,17 @@ from advisor.rolemap import BuildRequestView, BuildRunView, RoleCandidateView, R
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import rolemap as rolemap_api
+from wiring import queue
 
 
 class FakeRoleMap:
     def __init__(self) -> None:
         self.added: list[dict[str, Any]] = []
         self.removed: list[uuid.UUID] = []
+        self.finished: BuildRunView | None = None
+
+    async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
+        return self.finished
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
@@ -91,6 +96,10 @@ JD_ID = uuid.uuid4()
 class FakeMarket:
     def __init__(self) -> None:
         self.pasted: list[dict[str, Any]] = []
+        self.locations = ["Remote", "Taiwan"]
+
+    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
+        return self.locations
 
     async def paste_job_description(self, owner_id: uuid.UUID, **kw: Any) -> Any:
         self.pasted.append(kw)
@@ -103,6 +112,7 @@ class FakeActivity:
     def __init__(self) -> None:
         self.status = "running"
         self.should_queue = True
+        self.should_await_market = False
         self.requests = 0
 
     async def request_role_map(self, owner_id: uuid.UUID) -> BuildRequestView:
@@ -117,7 +127,11 @@ class FakeActivity:
             error_code=None,
             error_message=None,
         )
-        return BuildRequestView(build=build, should_queue=self.should_queue)
+        return BuildRequestView(
+            build=build,
+            should_queue=self.should_queue,
+            should_await_market=self.should_await_market,
+        )
 
 
 @pytest.fixture
@@ -147,7 +161,14 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     async def enqueue(name: str, **kwargs: Any) -> None:
         calls.append({"name": name, **kwargs})
 
-    monkeypatch.setattr(rolemap_api, "enqueue", enqueue)
+    async def enqueue_later(name: str, *, seconds: int, **kwargs: Any) -> None:
+        calls.append({"name": name, **kwargs})
+
+    # The route hands every build request to wiring's one helper, which queues
+    # it or schedules its check on the market (ADR 0027).
+    monkeypatch.setattr(queue, "enqueue", enqueue)
+    monkeypatch.setattr(queue, "enqueue_later", enqueue_later)
+    monkeypatch.setattr(queue, "get_settings", lambda: SimpleNamespace(crawl_due_poll_seconds=15))
     return calls
 
 
@@ -285,3 +306,60 @@ def test_a_custom_role_needs_a_title_before_anything_is_stored(
 def test_a_custom_role_is_removed(client: TestClient, rolemap: FakeRoleMap) -> None:
     assert client.delete(f"/roles/custom/{ROLE_ID}").status_code == 204
     assert rolemap.removed == [ROLE_ID]
+
+
+def test_a_rebuild_waiting_for_the_market_schedules_its_check_and_says_so(
+    client: TestClient, activity: FakeActivity, queued: list[dict[str, Any]]
+) -> None:
+    activity.status, activity.should_queue, activity.should_await_market = "waiting", False, True
+
+    response = client.post("/roles/recluster")
+
+    assert response.status_code == 202
+    assert [c["name"] for c in queued] == ["rolemap.await_market"]
+
+
+def _finished(locations: tuple[str, ...], needed: tuple[uuid.UUID, ...]) -> BuildRunView:
+    at = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    return BuildRunView(
+        id=uuid.uuid4(),
+        status="ready",
+        requested_at=at,
+        started_at=at,
+        finished_at=at,
+        error_code=None,
+        error_message=None,
+        locations=locations,
+        needed_source_ids=needed,
+        market_data_at=datetime(2026, 9, 30, 12, 0, tzinfo=UTC),
+    )
+
+
+def test_the_map_says_how_old_its_market_is_and_whether_the_locations_moved(
+    client: TestClient, rolemap: FakeRoleMap, market: FakeMarket
+) -> None:
+    rolemap.finished = _finished(("Taiwan", "Remote"), (uuid.uuid4(),))
+
+    current = client.get("/role-map").json()
+    market.locations = ["Taiwan"]
+    moved = client.get("/role-map").json()
+
+    assert current == {
+        "market_data_at": "2026-09-30T12:00:00+00:00",
+        "built_for_locations": ["Taiwan", "Remote"],
+        "locations_changed": False,
+    }
+    assert moved["locations_changed"] is True
+
+
+@pytest.mark.parametrize("finished", [None, "before ADR 0027"])
+def test_with_no_map_or_one_from_before_there_is_nothing_to_say(
+    client: TestClient, rolemap: FakeRoleMap, finished: str | None
+) -> None:
+    rolemap.finished = None if finished is None else _finished((), ())
+
+    assert client.get("/role-map").json() == {
+        "market_data_at": None,
+        "built_for_locations": None,
+        "locations_changed": False,
+    }

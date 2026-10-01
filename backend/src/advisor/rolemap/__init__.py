@@ -21,10 +21,12 @@ from advisor.rolemap.service import (
     BuildRequestView,
     BuildRunView,
     CandidateInput,
+    MarketWait,
     RequirementView,
     RoleCandidateView,
     RoleMapService,
     RoleView,
+    StrengthInput,
 )
 
 __all__ = [
@@ -36,10 +38,12 @@ __all__ = [
     "BuildRequestView",
     "BuildRunView",
     "CandidateInput",
+    "MarketWait",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
     "RoleView",
+    "StrengthInput",
     "create_rolemap_service",
     "jobs",
 ]

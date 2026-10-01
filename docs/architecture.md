@@ -42,11 +42,11 @@ flowchart LR
 | `web` | SPA for the prototype's screens; no business rules, no AI calls | No | API, auth provider |
 | `api` | HTTP + SSE, routers for every module, résumé chat streaming | **AI key only** (for chat streaming) | User's LLM provider |
 | `worker` | Queued and scheduled jobs: `ai` (assessment, the per-user role map of ten recommended roles plus custom roles, fit, gap-fill questions, gap plans per Target, résumé writing, difficulty estimates), `sync` (connectors, résumé parsing — **no AI**, domain decision 18), `docs` (résumé PDF export with WeasyPrint, ADR 0007), `notify` (interview prompts — not built yet) | AI key (`ai` queue), connector OAuth tokens (`sync` queue) | LLM provider, GitHub/Jira/LinkedIn, personal sites, email |
-| `crawler` | Weekly crawl of baseline and demand sources — company boards, and searches of a public job API for the roles analyses recommend ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) — plus a look every two minutes for sources not fetched yet: parse, normalize, dedup, embed and expire postings | **None** | Public job boards, job APIs, and custom-role companies' careers sites (SSRF-guarded) |
+| `crawler` | Fetches only the sources a role-map build is waiting for ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) — company boards, and searches of a public job API for the roles analyses recommend ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) — looking every few seconds: parse, normalize, dedup, embed, replace a search's result list or expire a board's missing postings, then mark them fetched. Backs off a host that refuses it, caps each host's requests per day, and once a day retires idle searches and thins postings nothing holds | **None** | Public job boards, job APIs, and custom-role companies' careers sites (SSRF-guarded) |
 
 **Why the crawler is its own unit:**
 - It has a different trust level: it parses hostile HTML from the internet.
-- It runs on a different schedule (weekly, with a short poll for new sources in between).
+- It runs on its own loop: a short poll for due sources, and a daily sweep.
 - It holds no secrets and never reads user data.
 
 The worker queues share one image for the MVP. Split them later by giving each queue its own process group, e.g. when PDF rendering's memory use starts crowding out AI jobs.
@@ -135,7 +135,7 @@ flowchart TB
 | Package | Responsibility | May import |
 |---|---|---|
 | `api/` | HTTP and SSE delivery: routes and request/response schemas per component, request dependencies, the error envelope, and one page envelope for every list ([ADR 0014](decisions/0014-page-every-list-response.md)) | `advisor` components, `wiring.container`, `wiring.queue`, `kernel` |
-| `worker/` | Queue worker entrypoint, and the outbox dispatcher that fans crawler events out to users | `wiring.container`, `wiring.queue`, `kernel` |
+| `worker/` | Queue worker entrypoint, and the outbox dispatcher that turns one user's events into their jobs | `wiring.container`, `wiring.queue`, `kernel` |
 | `crawler/` | The crawl loop and nothing else; holds no secrets and reads no user data | `advisor.market`, `wiring.crawl`, a secret-free subset of `kernel` |
 | `cli/` | One-off commands: migrate, job-queue schema, baseline seed, OpenAPI export | `advisor.market`, `api.main`, `kernel` |
 | `wiring/` | Composition root: `container` builds every component from its `factory`, `queue` registers each component's `jobs`, `crawl` is the crawler's narrow wiring, `models` gathers ORM models for migrations | `advisor` components, `kernel` |
@@ -209,9 +209,7 @@ flowchart TB
 | `ProfileUpdated` | profile | nothing that spends: the strength report marks itself out of date (ADR 0015). Evidence no longer opens a question round — questions come from a Target's gaps (domain decision 27) |
 | `AssessmentCompleted` / `DimensionsChanged` | assessment | nothing: the build that follows every analysis scores the fits ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
 | `AnalysisFinished(run, status)` | assessment, as the run closes | activity.request_role_map: a successful analysis always queues rolemap.recluster (domain decision 24; its cost was confirmed with the analysis's), and a build that waited on it starts whether the analysis succeeded or failed ([ADR 0018](decisions/0018-gate-journey-stages-on-recorded-run-status.md)) |
-| `PostingsChanged(markets, companies)` | crawler (via market) | dispatcher resolves affected users → activity.request_role_map per user: joins a build already open, waits for a running analysis, or queues rolemap.recluster. A place's searches are announced once per crawl, and only when an opening appeared or went; users are found by any name for the place ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)). A company board's change names no market and reaches nobody through the fan-out. |
-| `TargetLocationsChanged(locations)` | market | activity.rebuild_role_map: a role map the user already has is rebuilt on the new scope (ADR 0018 gating); a user with none waits for their first analysis. And `market.request_searches` with the titles of the user's candidates and the new locations: ownerless search sources, no user id ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |
-| `RoleCandidatesReplaced(titles)` | rolemap, as an analysis's candidates are stored | dispatcher reads the user's target locations → `market.request_searches(titles, locations)`, which leaves a `demand` `crawl_source` per title and place a search covers, with no user id ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |
+| `TargetLocationsChanged(locations)` | market | nothing: a build spends the user's key, so it waits until they ask. `GET /role-map` says the locations changed since the map was built ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
 | `CustomRoleAdded(role, company?)` | rolemap | a named company → `market.company_named` → `market.discover_board`, which may leave a `demand` `crawl_source` with no user id. The route that added the role already recorded the build that places it (its cost was confirmed when it was added) |
 | `GapAnswersSubmitted(target, evidence ids)` | gapfill | gapplan.regenerate and resume.regenerate for that Target, each only if the user already has one — dispatched separately, so the two never import each other |
 | `RoleMapBuildFinished(build, status)` | rolemap, as a build closes, `ready` or `failed` | assessment.compute_fits: the fits are scored once per build ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
@@ -222,7 +220,7 @@ flowchart TB
 | `ProviderCredentialFailed`, `UsageBudgetExceeded` | kernel.ai_gateway | identity.pause_background_jobs, notify |
 
 - **No module writes to another module's tables.**
-- The crawler never works out which users are affected, because that would require reading user data. It emits events about markets and companies, and the worker fans them out to users.
+- The crawler never works out which users are affected, because that would require reading user data. Since ADR 0027 nothing does: a build marks what it needs as due and waits for it, and the crawler announces nothing.
 
 ### Context → module → schema
 
@@ -256,7 +254,7 @@ flowchart TB
 
 | Domain data | Stored in | Why |
 |---|---|---|
-| TargetLocation (domain decision 21) | `market_user.market_preference` | User-owned, at most three rows per user — a rule in the `market` domain, checked again by the API schema. The table keeps its name: renaming it would mean rewriting the fan-out RLS policy for no gain. The worker copies each market's public-API sources into `market.crawl_source` **without user ids**, so the crawler can't tell who asked for them. |
+| TargetLocation (domain decision 21) | `market_user.market_preference` | User-owned, at most three rows per user — a rule in the `market` domain, checked again by the API schema. The table keeps its old name. A build asks for each place's public-API searches as `market.crawl_source` rows **without user ids**, so the crawler can't tell who asked for them (ADR 0027). |
 | Baseline sources (domain decision 15) | `market.crawl_source` with `origin = 'baseline'` | A versioned seed owned by `advisor.market`, loaded by `make migrate`. It is data reviewed like code, not environment configuration. Demand rows have `origin = 'demand'` and come from target locations and custom-role companies. Neither carries a user id. |
 | Role, with `origin` (domain decisions 23, 25) | `rolemap.role` | Owner zone. `origin` is `recommended` (one of the ten; retired by reconciliation when it falls out) or `custom` (kept until the user removes it, with its title, optional company and optional `private_posting_id`). The count of ten is a constant in the `rolemap` domain, not a setting. |
 | Resume, ResumeVersion, RevisionThread, exports | `resume.resume`, `resume.version`, `resume.revision`, `resume.export` | Owner zone. A résumé holds its Target like a plan does, with its snapshot and RequirementCoverage. Versions are never overwritten (`generated`, `manual`, `chat`, and `answers` for a regeneration after Fill the gap); each chat exchange keeps the proposal it made and the version it became; exported PDFs live in object storage under `users/{owner}/exports/`. |
@@ -332,12 +330,12 @@ flowchart LR
 
 | Trigger | Unit | Flow |
 |---|---|---|
-| Weekly cron | crawler | retire searches nobody has asked for in eight weeks → crawl every active `crawl_source`, baseline and demand → normalize → dedup → embed → expire unseen → outbox `PostingsChanged` (a board's own; a searched place once, if it changed) |
-| Every two minutes | crawler | crawl only the active sources never fetched (a search just asked for, a board just discovered) → the same steps (ADR 0025) |
-| `PostingsChanged` | worker (`ai`) | resolve affected users → recluster → match the latest analysis's candidates to the postings in scope and keep the first ten the market has, and re-match each custom role → name them and extract requirements → `RoleMapBuildFinished` → compute fits once |
+| Every `CRAWL_DUE_POLL_SECONDS` | crawler | fetch every due `crawl_source` (one a build waits for) → normalize → dedup → store: a board expires what it no longer lists, a search replaces its result list → embed → clear `due_at`. A host that answered 429/403 is skipped until its pause ends, and one past its daily ceiling until tomorrow; their sources stay due ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
+| Daily | crawler | retire searches no build has needed in `MARKET_SOURCE_IDLE_DAYS` and empty their lists → thin postings nothing holds that nobody has seen in `POSTING_THIN_AFTER_DAYS` (description and embedding dropped, row kept) |
+| A build is asked for (analysis finished, Rebuild, custom role added) | worker / api | `rolemap.request_build` → `market.request_sources(titles, places, company_ids)` marks what it reads that isn't fresh as due → nothing due: queue `rolemap.recluster`; otherwise the build waits and `rolemap.await_market` (`sync`, as its owner) checks every poll until its sources are fetched or `MARKET_WAIT_SECONDS` pass → recluster: searched postings go to the candidate whose search found them, board postings by embedding, the ten best by a local fit estimate are named and their requirements read → `RoleMapBuildFinished` → compute fits once |
 | User adds, removes or changes a target location | api → worker | the whole set saved at once, at most three, each a place from `GET /target-location-options`, checked in the domain (ADR 0026) → store in `market_user` → `TargetLocationsChanged` → rebuild a role map the user already has on the new scope (ADR 0018 gating), and search the last analysis's candidate roles in the new places as ownerless `crawl_source` rows (ADR 0025) |
 | Weekly cron, after crawl | worker (`notify`) | send interview-report prompts about 2 weeks after tailoring (not built yet) |
-| Weekly cron | worker | re-check demand `crawl_source` rows whose company had no board yet (not built). Public-API search rows need no refresh job: an analysis or a change of locations asks for them, and the crawler retires the ones nobody asks for (ADR 0025). A custom role's company needs no fan-out: `CustomRoleAdded` carries it, and the ownerless row it becomes persists |
+| Not built | worker | re-check demand `crawl_source` rows whose company had no board yet. A search needs no refresh job: the next build that needs it fetches it if it is stale (ADR 0027) |
 | User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits → the role-map build, whose cost was part of the same confirmation (domain decision 24; ADR 0006, ADR 0018) |
 | Role-map build (after an analysis, or a market change) | worker (`ai`) | build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → the first ten candidates the market has, plus every custom role → `ready` or `failed` (ADR 0018), recording `RoleMapBuildFinished` → compute fits once (ADR 0024) |
 | User clicks "Add to Role Map" (title, company?, JD?) | api → worker (`ai`) | cost estimate → user confirms → a custom role in `rolemap` (its JD stored privately in `market_user`) → `CustomRoleAdded` → board discovery for the company, if any → match postings in scope by title (and company) → requirements from the JD or the matches → fit → placed on the map, drawn green |
@@ -374,7 +372,7 @@ flowchart LR
 | T16 | Résumé PDFs are rendered by WeasyPrint on the `docs` queue, not a headless browser ([ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)) |
 | T17 | Target locations stay in `market_user.market_preference`, capped at three and drawn from a fixed list (Remote, regions, countries; ADR 0026) by a `market` domain rule; they scope the role map and salary bands and seed public-API demand sources without user ids (domain decision 21) |
 | T18 | The role map keeps a fixed ten recommended roles — a `rolemap` domain constant, no setting table — and is built after every analysis, its cost confirmed with the analysis's (domain decisions 23, 24; supersedes T11) |
-| T19 | Role subscriptions (with the `fanout_read` policy on their table; the one on `market_preference` stays) and the match digest are removed; board discovery is kept and driven by custom-role companies (domain decision 22) |
+| T19 | Role subscriptions (with the `fanout_read` policy on their table) and the match digest are removed; board discovery is kept and driven by custom-role companies (domain decision 22). The `fanout_read` policy on `market_preference` went with ADR 0027 |
 | T20 | A custom role is a `rolemap.role` with `origin = 'custom'`, never retired by reconciliation; its JD stays in `market_user.private_job_posting` (domain decision 25) |
 | T21 | A Target is stored as `role_id` plus a nullable `job_posting_id` with its frozen snapshot, in every consumer (domain decision 26; amends T13) |
 | T22 | Follow-up questions live in a `gapfill` component between `target` and its consumers, keyed on the Target; answers are submitted once and written as `user_answer` Evidence through `profile`; `GapAnswersSubmitted` regenerates the plan and résumé by separate jobs (domain decision 27; replaces ADR 0012's question rounds) |
@@ -395,7 +393,7 @@ flowchart LR
 | 10 / 20 App suggests successor role | `RoleSplitOrMerged` → `gapplan.suggest_successor` for affected Targets |
 | 12 Private pasted JDs | T4, T20: `market_user.private_job_posting`, owned by a custom role |
 | 13 Manual fallback for uncrawlable companies | Amended by 22: a custom role whose company has no board runs on its JD; the weekly re-check keeps looking |
-| 14 Weekly crawl | §6 weekly cron chain; no digest (22) |
+| 14 Weekly crawl | Superseded by 31 (ADR 0027): fetched only when a build needs it; §6 due-source poll and daily sweep |
 | 15 Baseline crawl | T10 |
 | 16 GapPlan per Target | T13, T14: `gapplan` schema, `target` module; the Target's shape is amended by 26 |
 | 17 User-chosen k | *Superseded by 23* |
@@ -436,5 +434,5 @@ flowchart LR
 | The two authentication tables get the same bootstrap RLS exception as `identity.account` | Sign-in reads them before there is an `app.user_id` to compare against, by definition. Every other owner-zone table — including the budget created at registration — keeps the strict policy and is written in a scoped session. |
 | Authentication state changes commit *before* a rejection is raised | Raising inside the transaction rolled back the failed-attempt counter and the refresh-family revocation, so lockout never engaged and a stolen token chain stayed alive. Found by the integration tests. |
 | Request-validation errors use the same `{error: {code, message}}` envelope as everything else | FastAPI's default is a list of Pydantic objects, so the SPA could only say "Request failed (422)" instead of why. |
-| One narrow `SELECT`-only RLS policy on `market_user.company_subscription` and `market_user.market_preference`, gated on an `app.fanout` transaction setting | The dispatcher must resolve a market change to affected users, and the crawler must not. The alternative — `BYPASSRLS` on `app_rw` — would have opened every table instead of two columns. |
-| Materialising `market.crawl_source` from subscriptions reads through the same `app.fanout` transaction | It is the same kind of read: which companies and links anyone watches, with the user ids dropped on the way across. Through `shared()` it saw no owner-zone rows at all, so the weekly re-check found nothing to crawl. |
+| One narrow `SELECT`-only RLS policy on `market_user.company_subscription` and `market_user.market_preference`, gated on an `app.fanout` transaction setting (removed by ADR 0027) | The dispatcher had to resolve a market change to affected users, and the crawler must not. The alternative — `BYPASSRLS` on `app_rw` — would have opened every table instead of two columns. Since ADR 0027 no market change is resolved to users, so the policy, and the last cross-user read, are gone. |
+| Materialising `market.crawl_source` from subscriptions read through the same `app.fanout` transaction (gone with subscriptions, ADR 0019) | It was the same kind of read: which companies and links anyone watches, with the user ids dropped on the way across. |

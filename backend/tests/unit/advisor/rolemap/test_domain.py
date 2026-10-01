@@ -15,6 +15,8 @@ from advisor.rolemap.domain import (
     RoleChange,
     assign_postings,
     blend,
+    choose_by_estimate,
+    fit_estimates,
     keep_on_market,
     max_role_count,
     overlap,
@@ -247,6 +249,98 @@ def test_each_posting_is_an_opening_for_one_candidate_at_most() -> None:
 def test_title_hits_must_line_up_with_the_postings() -> None:
     with pytest.raises(ValueError, match="one entry per posting"):
         assign_postings([_axis(0)], [_axis(0), _axis(1)], [NO_TITLE_HITS])
+
+
+# --- what a search found belongs to the candidate that searched (ADR 0027) ---
+
+
+def test_a_searched_posting_goes_to_the_candidate_whose_search_found_it() -> None:
+    candidates = [_axis(0), _near(0, 1, 0.5)]
+    # Nearer the first candidate, but only the second one's search found it.
+    posting = [_near(0, 1, 0.4)]
+    assert assign_postings(candidates, posting, [NO_TITLE_HITS], searched_by=[frozenset({1})]) == [
+        1
+    ]
+
+
+def test_a_searched_posting_irrelevant_to_its_searcher_is_left_out_not_handed_on() -> None:
+    candidates = [_axis(0), _axis(1)]
+    # Exactly the first candidate's, but the second searched for it, and it is
+    # nothing like the second: a loose hit on the description.
+    assert assign_postings(
+        candidates, [_axis(0)], [NO_TITLE_HITS], searched_by=[frozenset({1})]
+    ) == [None]
+
+
+def test_a_searched_posting_that_names_its_searchers_title_is_relevant() -> None:
+    assert assign_postings(
+        [_axis(0)], [_axis(5)], [frozenset({0})], searched_by=[frozenset({0})]
+    ) == [0]
+
+
+def test_a_posting_two_searches_found_counts_once_for_the_nearer() -> None:
+    candidates = [_axis(0), _axis(1)]
+    posting = [_near(1, 0, 0.6)]
+    assert assign_postings(
+        candidates, posting, [NO_TITLE_HITS], searched_by=[frozenset({0, 1})]
+    ) == [1]
+
+
+def test_a_posting_no_search_found_is_matched_as_before() -> None:
+    candidates = [_axis(0), _axis(1)]
+    assert assign_postings(
+        candidates, [_near(1, 0, 0.2)], [NO_TITLE_HITS], searched_by=[NO_TITLE_HITS]
+    ) == [1]
+
+
+def test_searched_by_must_line_up_with_the_postings() -> None:
+    with pytest.raises(ValueError, match="one entry per posting"):
+        assign_postings([_axis(0)], [_axis(0)], [NO_TITLE_HITS], searched_by=[])
+
+
+# --- the ten chosen by a free local estimate (ADR 0027) ----------------------
+
+
+def test_a_role_whose_openings_read_like_the_strongest_dimension_ranks_first() -> None:
+    dimensions = [_axis(0), _axis(1)]
+    # Strong in dimension 0, weak in dimension 1.
+    weights = [0.9, 0.1]
+    roles = [[_axis(1)] * 3, [_axis(0)] * 3]
+
+    estimates = fit_estimates(dimensions, weights, roles, [frozenset({0, 1})] * 2)
+
+    assert estimates[1] > estimates[0]
+
+
+def test_a_dimension_like_every_role_lifts_none_of_them() -> None:
+    broad = [1.0] * 16
+    roles = [[_axis(0)] * 3, [_axis(1)] * 3]
+
+    estimates = fit_estimates([broad], [1.0], roles, [frozenset({0})] * 2)
+
+    assert estimates == pytest.approx([0.0, 0.0])
+
+
+def test_a_dimension_a_candidate_rests_on_counts_more_than_one_it_does_not() -> None:
+    dimensions = [_axis(0), _axis(1)]
+    roles = [[_axis(0)] * 3, [_axis(1)] * 3]
+
+    cited_first = fit_estimates(dimensions, [0.5, 0.5], roles, [frozenset({0}), frozenset({0})])
+    cited_own = fit_estimates(dimensions, [0.5, 0.5], roles, [frozenset({0}), frozenset({1})])
+
+    # Equal strengths: what the candidate rests on decides.
+    assert cited_own[1] > cited_first[1]
+
+
+def test_without_strengths_every_estimate_is_zero() -> None:
+    assert fit_estimates([], [], [[_axis(0)]], [NO_TITLE_HITS]) == [0.0]
+    assert fit_estimates([_axis(0)], [0.0], [[_axis(0)]], [NO_TITLE_HITS]) == [0.0]
+
+
+def test_the_ten_are_the_best_estimates_with_the_analysiss_order_breaking_ties() -> None:
+    estimates = [0.1, 0.5, 0.5, -0.2, 0.9]
+    assert choose_by_estimate(estimates, [0, 1, 2, 4], limit=3) == [4, 1, 2]
+    assert choose_by_estimate(estimates, [3], limit=10) == [3]
 
 
 def test_a_title_hit_on_a_candidate_that_does_not_exist_is_a_bug() -> None:

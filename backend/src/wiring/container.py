@@ -7,6 +7,7 @@ and handed their collaborators; none of them reaches for another's internals.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal
 from functools import lru_cache
 
@@ -23,7 +24,7 @@ from advisor.identity import (
     create_auth_service,
     create_identity_service,
 )
-from advisor.market import MarketService, create_market_service
+from advisor.market import FreshWindows, MarketService, create_market_service
 from advisor.profile import (
     GitHubConnector,
     JiraConnector,
@@ -154,7 +155,13 @@ def build(settings: Settings | None = None) -> Container:
         http_timeout_seconds=settings.crawl_http_timeout_seconds,
         user_agent=settings.service_name,
     )
-    market = create_market_service(database)
+    market = create_market_service(
+        database,
+        windows=FreshWindows(
+            search=timedelta(hours=settings.market_search_fresh_hours),
+            board=timedelta(hours=settings.market_board_fresh_hours),
+        ),
+    )
     rolemap = create_rolemap_service(
         database,
         market=market,

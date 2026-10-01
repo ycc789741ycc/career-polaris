@@ -11,6 +11,7 @@ import pytest
 from advisor.market import (
     BaselineSource,
     CrawlIngest,
+    FreshWindows,
     MarketService,
     NormalizedPosting,
     SalaryRange,
@@ -21,7 +22,6 @@ from advisor.market import (
 from advisor.market.domain import (
     Company,
     CrawlSource,
-    PostingsChanged,
     PostingStatus,
     SourceOrigin,
     SourceStatus,
@@ -34,8 +34,11 @@ OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
+WINDOWS = FreshWindows(search=timedelta(hours=72), board=timedelta(hours=24))
+
+
 def _service(uow: FakeMarketUnitOfWork) -> MarketService:
-    return MarketService(uow)
+    return MarketService(uow, windows=WINDOWS)
 
 
 def _posting(title: str, *, company: str = "Acme", salary: SalaryRange | None = None):
@@ -130,33 +133,6 @@ async def test_the_scope_counts_the_open_shared_postings_in_the_target_locations
     assert scope.open_posting_count == 1
 
 
-async def test_the_fan_out_finds_the_users_whose_locations_take_in_a_market() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    await market.set_target_locations(OWNER, ["Portugal"])
-    await market.set_target_locations(OTHER, ["Germany"])
-
-    assert await market.owners_affected_by(market="Germany") == [OTHER]
-    # A company's board changing reaches nobody through the fan-out on its own.
-    assert await market.owners_affected_by(market=None) == []
-
-
-async def test_the_fan_out_reaches_the_users_of_a_country_and_of_its_regions() -> None:
-    """A change to a country's postings concerns whoever chose a region it is
-    in, too (ADR 0026)."""
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    third = uuid.UUID("00000000-0000-0000-0000-000000000003")
-    await market.set_target_locations(OWNER, ["Taiwan", "Remote"])
-    await market.set_target_locations(OTHER, ["Asia-Pacific"])
-    await market.set_target_locations(third, ["United Kingdom"])
-
-    assert await market.owners_affected_by(market="Taiwan") == [OWNER, OTHER]
-    assert await market.owners_affected_by(market="Singapore") == [OTHER]
-    assert await market.owners_affected_by(market="United Kingdom") == [third]
-    assert await market.owners_affected_by(market="Remote") == [OWNER]
-
-
 # --- crawling --------------------------------------------------------------
 
 
@@ -186,9 +162,8 @@ async def test_a_crawl_upserts_what_it_saw_and_expires_what_it_did_not() -> None
     assert (upserted, expired) == (1, 1)
     status = {p.title: p.status for p in uow.store.postings.values()}
     assert status == {"Backend": PostingStatus.OPEN, "SRE": PostingStatus.EXPIRED}
-    assert uow.store.events[-1] == PostingsChanged(
-        company_id=source.company_id, market=None, seen=1, expired=1
-    )
+    # Nothing is announced: no market change is resolved to users (ADR 0027).
+    assert uow.store.events == []
 
 
 async def test_a_repeat_sighting_keeps_published_pay_it_no_longer_shows() -> None:
@@ -343,9 +318,8 @@ async def test_a_company_with_a_board_needs_no_discovery() -> None:
     assert source.origin is SourceOrigin.DEMAND
 
 
-# --- searches of a public job API (ADR 0025) --------------------------------
+# --- the sources a build needs (ADR 0027) -----------------------------------
 
-SEARCH = "https://himalayas.app/jobs/api/search?q=data%20engineer&country=TW"
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 
 
@@ -353,141 +327,297 @@ def _remote(title: str, location: str = "Remote, Taiwan") -> NormalizedPosting:
     return replace(_posting(title), location=location, source_kind=SourceKind.PUBLIC_API)
 
 
-async def test_a_search_asked_for_is_an_ownerless_demand_source_filed_under_its_place() -> None:
-    uow = FakeMarketUnitOfWork()
+def _searches(uow: FakeMarketUnitOfWork) -> list[CrawlSource]:
+    return sorted((s for s in uow.store.sources.values() if s.is_search), key=lambda s: s.endpoint)
 
-    created = await _service(uow).request_searches(
-        kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW
+
+async def test_a_build_needs_a_search_per_title_and_place_the_baseline_and_named_boards() -> None:
+    uow = FakeMarketUnitOfWork()
+    baseline = _source(uow, origin=SourceOrigin.BASELINE)
+    company = _company(uow)
+    named = CrawlSource.board(
+        kind="lever",
+        endpoint="https://lever.test/beta",
+        company_id=company.id,
+        origin=SourceOrigin.DEMAND,
+    )
+    uow.store.sources[named.id] = named
+
+    request = await _service(uow).request_sources(
+        titles=["Data Engineer", "ML Engineer"],
+        places=["Taiwan", "Remote", "Europe"],
+        company_ids=[company.id],
+        at=NOW,
     )
 
-    (source,) = uow.store.sources.values()
-    assert created == 1
-    assert (source.kind, source.endpoint, source.market) == ("himalayas", SEARCH, "Taiwan")
-    assert (source.origin, source.status) == (SourceOrigin.DEMAND, SourceStatus.ACTIVE)
-    assert source.company_id is None and source.last_requested_at == NOW
-    assert not hasattr(source, "owner_id")
+    searches = _searches(uow)
+    # Two titles in two searchable places; a region adds none (ADR 0026).
+    assert len(searches) == 4
+    assert {s.market for s in searches} == {"Taiwan", "Remote"}
+    assert all(
+        s.company_id is None and s.origin is SourceOrigin.DEMAND and not hasattr(s, "owner_id")
+        for s in searches
+    )
+    assert set(request.needed) == {s.id for s in searches} | {baseline.id, named.id}
+    # Nothing has been fetched yet, so the build waits for all of it.
+    assert set(request.due) == set(request.needed)
+    assert all(uow.store.sources[i].due_at == NOW for i in request.needed)
 
 
-async def test_two_requests_for_the_same_search_share_one_source() -> None:
+async def test_each_title_is_searched_by_its_words_in_each_place_under_one_name() -> None:
     uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
 
-    later = NOW + timedelta(days=3)
-    created = await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=later)
+    await _service(uow).request_sources(
+        titles=["Data Engineer", "Platform Engineer"],
+        places=["Taiwan", "Remote"],
+        company_ids=[],
+        at=NOW,
+    )
 
-    (source,) = uow.store.sources.values()
-    assert created == 0 and source.last_requested_at == later
-
-
-async def test_a_new_search_is_crawled_before_the_weekly_run_and_only_once() -> None:
-    uow = FakeMarketUnitOfWork()
-    ingest = CrawlIngest(uow)
-    board = _source(uow)
-    await ingest.record_crawl(board.id, [])
-    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-
-    (new,) = await ingest.new_sources()
-    assert (new.endpoint, new.market, new.company_id) == (SEARCH, "Taiwan", None)
-
-    await ingest.record_search_crawl(new.id, [], error="board returned 429")
-
-    # A search that failed waits for the weekly run like any other source.
-    assert await ingest.new_sources() == []
-    assert len(await ingest.due_sources()) == 2
-
-
-async def test_a_search_crawl_is_stored_without_announcing_each_search() -> None:
-    uow = FakeMarketUnitOfWork()
-    ingest = CrawlIngest(uow)
-    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-    (search,) = await ingest.new_sources()
-
-    first = await ingest.record_search_crawl(search.id, [_remote("Data"), _remote("ML")])
-    same = await ingest.record_search_crawl(search.id, [_remote("Data"), _remote("ML")])
-    fewer = await ingest.record_search_crawl(search.id, [_remote("Data")])
-
-    assert first == (2, 0, True)
-    # The same openings again are no reason to rebuild anybody's role map.
-    assert same == (2, 0, False)
-    assert fewer == (1, 1, True)
+    searches = {(s.endpoint.split("?")[1], s.market) for s in _searches(uow)}
+    assert searches == {
+        ("q=data%20engineer&country=TW", "Taiwan"),
+        ("q=platform%20engineer&country=TW", "Taiwan"),
+        ("q=data%20engineer&worldwide=true", "Remote"),
+        ("q=platform%20engineer&worldwide=true", "Remote"),
+    }
+    assert {s.kind for s in _searches(uow)} == {"himalayas"}
     assert uow.store.events == []
 
 
-async def test_an_opening_that_comes_back_counts_as_a_change() -> None:
+async def test_a_fresh_source_is_reused_and_a_stale_one_is_due() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    board = _source(uow, origin=SourceOrigin.BASELINE)
+    first = await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    for source in uow.store.sources.values():
+        source.record_fetch(NOW, None)
+        source.fetched()
+
+    # A day and a bit later: the board's 24-hour window has passed, the search's
+    # 72-hour one has not.
+    later = NOW + timedelta(hours=30)
+    again = await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=later
+    )
+
+    assert set(again.needed) == set(first.needed)
+    assert again.due == (board.id,)
+    (search,) = _searches(uow)
+    assert search.last_requested_at == later and search.due_at is None
+
+
+async def test_two_builds_needing_one_stale_source_wait_on_one_fetch() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+
+    first = await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    second = await market.request_sources(
+        titles=["data engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(minutes=1)
+    )
+
+    (search,) = _searches(uow)
+    assert first.due == second.due == (search.id,)
+    # Still due from the first ask, not pushed back by the second.
+    assert search.due_at == NOW
+
+
+async def test_a_build_with_no_searchable_place_needs_only_boards() -> None:
+    uow = FakeMarketUnitOfWork()
+    _source(uow, origin=SourceOrigin.BASELINE)
+
+    request = await _service(uow).request_sources(
+        titles=["Data Engineer"], places=["Europe"], company_ids=[], at=NOW
+    )
+
+    assert _searches(uow) == [] and len(request.needed) == 1
+
+
+async def test_the_crawler_sees_only_due_sources_and_a_fetch_stops_the_wait() -> None:
     uow = FakeMarketUnitOfWork()
     ingest = CrawlIngest(uow)
-    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-    (search,) = await ingest.new_sources()
-    await ingest.record_search_crawl(search.id, [_remote("Data")])
-    await ingest.record_search_crawl(search.id, [])
+    idle = _source(uow)
+    request = await _service(uow).request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
 
-    assert await ingest.record_search_crawl(search.id, [_remote("Data")]) == (1, 0, True)
+    due = await ingest.due_sources()
+    assert [s.id for s in due] == list(request.due) and idle.id not in request.due
 
+    await ingest.record_crawl(due[0].id, [], error="board returned 500")
+    # Recorded, but still due until the run marks it fetched after embedding.
+    assert await _service(uow).pending_sources(request.due) == request.due
+    await ingest.mark_fetched([due[0].id])
 
-async def test_a_place_is_announced_once_however_many_of_its_searches_changed() -> None:
-    uow = FakeMarketUnitOfWork()
-
-    await CrawlIngest(uow).announce_markets(["Taiwan", "Singapore", "Taiwan"])
-
-    assert uow.store.events == [
-        PostingsChanged(company_id=None, market="Singapore", seen=0, expired=0),
-        PostingsChanged(company_id=None, market="Taiwan", seen=0, expired=0),
-    ]
+    assert await ingest.due_sources() == []
+    assert await _service(uow).pending_sources(request.due) == ()
 
 
-async def test_a_search_nobody_asks_for_any_more_is_retired_with_what_it_found() -> None:
+async def test_a_search_fetch_replaces_its_list_and_expires_nothing() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
-    wanted = SEARCH.replace("data", "platform")
-    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-    await market.request_searches(
-        kind="himalayas", searches={wanted: "Taiwan"}, at=NOW + timedelta(weeks=7)
+    await market.set_target_locations(OWNER, ["Taiwan"])
+    await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
     )
-    idle = next(s for s in uow.store.sources.values() if s.endpoint == SEARCH)
-    await ingest.record_search_crawl(idle.id, [_remote("Data")])
-    board = _source(uow)
+    (search,) = _searches(uow)
 
-    retired = await ingest.retire_idle_searches(NOW + timedelta(weeks=8, days=1))
+    first = await ingest.record_crawl(search.id, [_remote("Data"), _remote("ML")])
+    second = await ingest.record_crawl(search.id, [_remote("Data")])
+
+    assert (first, second) == ((2, 0), (1, 0))
+    # Pushed off the page, not closed: still open, but no longer counted.
+    assert {p.status for p in uow.store.postings.values()} == {PostingStatus.OPEN}
+    assert [p.title for p in await market.postings_in_scope(OWNER)] == ["Data"]
+
+
+async def test_a_posting_on_any_current_list_or_board_stays_in_scope() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    await market.set_target_locations(OWNER, ["Taiwan"])
+    await market.request_sources(
+        titles=["Data Engineer", "Analytics Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    data, analytics = _searches(uow)
+    await ingest.record_crawl(data.id, [_remote("Data")])
+    await ingest.record_crawl(analytics.id, [_remote("Data")])
+
+    # Gone from the search that saw it last, still on the other one's list.
+    await ingest.record_crawl(analytics.id, [])
+
+    assert [p.title for p in await market.postings_in_scope(OWNER)] == ["Data"]
+
+
+async def test_the_postings_each_title_search_found_best_first() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    await market.request_sources(
+        titles=["Data Engineer", "ML Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    data = next(s for s in _searches(uow) if "data" in s.endpoint)
+    await ingest.record_crawl(data.id, [_remote("Second"), _remote("First")])
+    ids = {p.title: p.id for p in uow.store.postings.values()}
+
+    found = await market.search_results(titles=["Data Engineer", "ML Engineer"], places=["Taiwan"])
+
+    assert found == {"Data Engineer": [ids["Second"], ids["First"]], "ML Engineer": []}
+
+
+async def test_the_market_a_build_read_is_as_old_as_its_stalest_fetch() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    old, new = _source(uow), _source(uow)
+    uow.store.sources[old.id].record_fetch(NOW - timedelta(days=2), None)
+    uow.store.sources[new.id].record_fetch(NOW, None)
+
+    assert await market.oldest_fetch([old.id, new.id]) == NOW - timedelta(days=2)
+    assert await market.oldest_fetch([]) is None
+
+
+async def test_a_searchable_place_is_a_country_or_remote() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+
+    await market.set_target_locations(OWNER, ["Europe"])
+    assert not await market.has_searchable_place(OWNER)
+    await market.set_target_locations(OWNER, ["Europe", "Taiwan"])
+    assert await market.has_searchable_place(OWNER)
+
+
+# --- what nobody asks for (ADR 0027) ----------------------------------------
+
+
+async def test_a_search_no_build_needs_any_more_is_retired_and_its_list_emptied() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    await market.set_target_locations(OWNER, ["Taiwan"])
+    await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    await market.request_sources(
+        titles=["Platform Engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(days=60)
+    )
+    idle = next(s for s in _searches(uow) if "data" in s.endpoint)
+    await ingest.record_crawl(idle.id, [_remote("Data")])
+    board = _source(uow)
+    board.last_requested_at = NOW
+
+    retired = await ingest.retire_idle_searches(idle_since=NOW + timedelta(days=30))
 
     assert retired == 1
     assert uow.store.sources[idle.id].status is SourceStatus.RETIRED
-    # Nothing would ever expire its postings again, so they are expired now.
-    assert [p.status for p in uow.store.postings.values()] == [PostingStatus.EXPIRED]
-    assert uow.store.events[-1] == PostingsChanged(
-        company_id=None, market="Taiwan", seen=0, expired=1
-    )
-    # A search still asked for, and a company's board, are left alone.
-    active = {s.endpoint for s in uow.store.sources.values() if s.status is SourceStatus.ACTIVE}
-    assert active == {wanted, board.endpoint}
+    assert uow.store.sources[idle.id].due_at is None
+    assert await market.postings_in_scope(OWNER) == []
+    # A search still needed, and a company's board, are left alone.
+    active = {s.id for s in uow.store.sources.values() if s.status is SourceStatus.ACTIVE}
+    assert idle.id not in active and board.id in active
 
 
-async def test_a_retired_search_asked_for_again_is_crawled_afresh() -> None:
+async def test_a_retired_search_needed_again_is_fetched_afresh() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
-    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-    (search,) = await ingest.new_sources()
-    await ingest.record_search_crawl(search.id, [])
-    await ingest.retire_idle_searches(NOW + timedelta(weeks=9))
+    await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    (search,) = _searches(uow)
+    await ingest.record_crawl(search.id, [])
+    await ingest.mark_fetched([search.id])
+    await ingest.retire_idle_searches(idle_since=NOW + timedelta(days=1))
 
-    await market.request_searches(
-        kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW + timedelta(weeks=10)
+    again = await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(days=2)
     )
 
-    assert [s.id for s in await ingest.new_sources()] == [search.id]
+    assert again.due == (search.id,)
+    assert uow.store.sources[search.id].status is SourceStatus.ACTIVE
+
+
+async def test_a_posting_nothing_holds_is_thinned_and_one_held_is_not() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    board = _source(uow)
+    await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    (search,) = _searches(uow)
+    await ingest.record_crawl(board.id, [_posting("Closed"), _posting("Open")])
+    await ingest.record_crawl(board.id, [_posting("Open")])
+    await ingest.record_crawl(search.id, [_remote("Listed"), _remote("Dropped")])
+    await ingest.record_crawl(search.id, [_remote("Listed")])
+    by_title = {p.title: p for p in uow.store.postings.values()}
+    await ingest.store_embeddings("model", {p.id: [0.1] for p in by_title.values()})
+
+    thinned = await ingest.thin_unheld_postings(unseen_since=utc_tomorrow())
+
+    assert thinned == 2
+    assert {t for t, p in by_title.items() if p.thinned_at is not None} == {"Closed", "Dropped"}
+    assert by_title["Closed"].description == "" and by_title["Open"].description != ""
+    assert set(uow.store.embeddings) == {by_title["Open"].id, by_title["Listed"].id}
+    # The row stays: a Target that names it still finds it.
+    assert len(uow.store.postings) == 4
+
+
+def utc_tomorrow() -> datetime:
+    return datetime.now(UTC) + timedelta(days=1)
 
 
 async def test_an_opening_found_through_a_job_site_is_credited_wherever_it_is_read() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
     await market.set_target_locations(OWNER, ["Taiwan"])
-    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
-    (search,) = await ingest.new_sources()
+    await market.request_sources(
+        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+    )
+    (search,) = _searches(uow)
     found = replace(
         _remote("Data", "Remote, Worldwide"),
         url="https://himalayas.app/companies/acme/jobs/data",
     )
-    await ingest.record_search_crawl(search.id, [found])
+    await ingest.record_crawl(search.id, [found])
     board = _source(uow)
     await ingest.record_crawl(board.id, [replace(_posting("Backend"), location="Taipei, Taiwan")])
 

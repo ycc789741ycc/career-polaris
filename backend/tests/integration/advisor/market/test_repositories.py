@@ -29,12 +29,12 @@ from advisor.market.domain import (
     NormalizedPosting,
     PostingEmbedding,
     PostingEmbeddingFilter,
-    PostingsChanged,
     PostingScope,
     PostingStatus,
     PrivateJobPosting,
     PrivateJobPostingFilter,
     SalaryRange,
+    SearchResultFilter,
     SourceKind,
     SourceOrigin,
     TargetLocationsChanged,
@@ -42,6 +42,7 @@ from advisor.market.domain import (
 from advisor.market.infra.unit_of_work import SqlAlchemyMarketUnitOfWork
 from kernel.db import Database
 from kernel.errors import NotFoundError, ValidationError
+from tests.integration.places import WINDOWS
 
 pytestmark = pytest.mark.integration
 
@@ -103,10 +104,15 @@ async def test_an_owner_scope_sees_nobody_elses_rows(
         with pytest.raises(NotFoundError):
             await theirs.markets.delete(preference.id)
 
-    # The fan-out scope reads across users, for the dispatcher.
-    async with uow.fanout() as everyone:
-        choosing = await everyone.markets.get_list(MarketPreferenceFilter(market=place))
-        assert [m.owner_id for m in choosing] == [account]
+    # Nothing reads target locations across users any more (ADR 0027): the
+    # setting the fan-out policy was gated on opens nothing.
+    async with database.shared() as session:
+        await session.execute(text("SELECT set_config('app.fanout', 'on', true)"))
+        rows = await session.execute(
+            text("SELECT count(*) FROM market_user.market_preference WHERE market = :place"),
+            {"place": place},
+        )
+        assert rows.scalar_one() == 0
 
 
 async def test_pasted_jds_round_trip(database: Database, account: uuid.UUID) -> None:
@@ -279,6 +285,9 @@ async def test_a_market_scope_matches_locations_by_their_words(
                         at=seen_at,
                     )
                 )
+            await market.search_results.replace(
+                source.id, [p.id for p in postings.values()], at=seen_at
+            )
 
         async with uow.shared() as market:
             in_scope = await market.postings.get_open_in_scope(
@@ -345,32 +354,10 @@ async def test_nothing_recorded_in_a_failed_scope_reaches_the_outbox(
         assert rows.scalar_one() == 0
 
 
-async def test_a_market_event_carries_no_owner(
-    crawler_database: Database, database: Database
-) -> None:
-    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
-    market = f"Repo market {uuid.uuid4().hex[:8]}"
-
-    async with uow.shared() as shared:
-        shared.record(PostingsChanged(company_id=None, market=market, seen=2, expired=1))
-
-    async with database.shared() as session:
-        rows = await session.execute(
-            text(
-                "SELECT owner_id, payload FROM outbox.event "
-                "WHERE name = 'PostingsChanged' AND payload->>'market' = :market"
-            ),
-            {"market": market},
-        )
-        owner_id, payload = rows.one()
-    assert owner_id is None
-    assert payload == {"company_id": None, "market": market, "seen": 2, "expired": 1}
-
-
 # --- searches of a public job API (ADR 0025) --------------------------------
 
 
-async def test_a_search_source_round_trips_and_is_found_while_unfetched_or_idle(
+async def test_a_search_source_round_trips_and_is_found_while_due_or_idle(
     crawler_database: Database,
 ) -> None:
     uow = SqlAlchemyMarketUnitOfWork(crawler_database)
@@ -387,10 +374,16 @@ async def test_a_search_source_round_trips_and_is_found_while_unfetched_or_idle(
             assert (loaded.last_requested_at, loaded.company_id) == (asked, None)
             assert (loaded.origin, loaded.market) == (SourceOrigin.DEMAND, "Taiwan")
 
-            unfetched = CrawlSourceFilter(endpoint=endpoint, is_unfetched=True)
-            fetched = CrawlSourceFilter(endpoint=endpoint, is_unfetched=False)
-            assert await market.sources.get_count(unfetched) == 1
-            assert await market.sources.get_count(fetched) == 0
+            due = CrawlSourceFilter(endpoint=endpoint, is_due=True, is_search=True)
+            waiting = CrawlSourceFilter(endpoint=endpoint, is_due=False)
+            assert await market.sources.get_count(due) == 0
+            assert await market.sources.get_count(waiting) == 1
+            assert (
+                await market.sources.get_count(
+                    CrawlSourceFilter(endpoint=endpoint, is_search=False)
+                )
+                == 0
+            )
 
             idle = CrawlSourceFilter(
                 endpoint=endpoint, requested_before=datetime(2026, 9, 2, tzinfo=UTC)
@@ -399,10 +392,15 @@ async def test_a_search_source_round_trips_and_is_found_while_unfetched_or_idle(
             assert await market.sources.get_count(idle) == 1
             assert await market.sources.get_count(wanted) == 0
 
-            loaded.record_fetch(datetime(2026, 9, 3, tzinfo=UTC), None)
+            loaded.due_at = datetime(2026, 9, 3, tzinfo=UTC)
             await market.sources.update(loaded)
-            assert await market.sources.get_count(unfetched) == 0
-            assert await market.sources.get_count(fetched) == 1
+            assert await market.sources.get_count(due) == 1
+            assert await market.sources.get_count(waiting) == 0
+            # Asked for again at once: one row, whoever asked.
+            assert not await market.sources.create_if_absent(
+                CrawlSource.search(kind="himalayas", endpoint=endpoint, market="Taiwan", at=asked)
+            )
+            assert await market.sources.get_count(CrawlSourceFilter(endpoint=endpoint)) == 1
     finally:
         async with crawler_database.shared() as session:
             await session.execute(
@@ -440,7 +438,9 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
     crawler_database: Database,
 ) -> None:
     uow = SqlAlchemyMarketUnitOfWork(crawler_database)
-    seen_at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    # Long ago, so the thinning below can reach nothing but these postings in a
+    # database other tests and the running stack share.
+    seen_at = datetime(2001, 1, 1, tzinfo=UTC)
     async with uow.shared() as market:
         company = await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
         source = await market.sources.create(
@@ -481,6 +481,9 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
                         at=seen_at,
                     )
                 )
+            await market.search_results.replace(
+                source.id, [p.id for p in postings.values()], at=seen_at
+            )
 
         async def in_scope(*markets: str) -> set[str]:
             async with uow.shared() as market:
@@ -494,6 +497,28 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
         assert await in_scope("Singapore") == {"anyone"}
         # A city is no place a search covers, so worldwide work is not in it.
         assert await in_scope("Taipei") == set()
+
+        # Off the search's current list, a posting leaves every scope, still
+        # open (ADR 0027).
+        async with uow.shared() as market:
+            await market.search_results.replace(source.id, [postings["anyone"].id], at=seen_at)
+            listed = await market.search_results.get_list(
+                SearchResultFilter(crawl_source_ids=(source.id,))
+            )
+        assert [r.job_posting_id for r in listed] == [postings["anyone"].id]
+        assert await in_scope("Remote") == {"anyone"}
+
+        # Nothing holds the others now: past the age, they are thinned.
+        async with uow.shared() as market:
+            thinned = await market.postings.thin_unheld(
+                unseen_since=datetime(2001, 1, 2, tzinfo=UTC),
+                at=datetime(2026, 10, 2, tzinfo=UTC),
+            )
+            kept = await market.postings.get(postings["taiwan"].id)
+            held = await market.postings.get(postings["anyone"].id)
+        assert thinned == 2
+        assert kept is not None and kept.description == "" and kept.thinned_at is not None
+        assert held is not None and held.description == "Build things."
     finally:
         async with crawler_database.shared() as session:
             for table, column in (
@@ -505,28 +530,10 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
                 )
 
 
-async def test_the_fan_out_finds_users_of_a_place_and_of_its_regions(
-    database: Database, account: uuid.UUID
-) -> None:
-    from advisor.market import create_market_service
-
-    market = create_market_service(database)
-    tag = uuid.uuid4().hex[:8]
-    await market.set_target_locations(account, ["Taiwan", "Europe", "Remote"])
-
-    assert account in await market.owners_affected_by(market="Taiwan")
-    # Through Europe: the user did not choose the country itself (ADR 0026).
-    assert account in await market.owners_affected_by(market="United Kingdom")
-    assert account in await market.owners_affected_by(market="Remote")
-    assert account not in await market.owners_affected_by(market="Singapore")
-    assert await market.owners_affected_by(market=f"Nowhere{tag}") == []
-    assert await market.owners_affected_by(market="---") == []
-
-
 async def test_only_places_on_the_list_are_saved(database: Database, account: uuid.UUID) -> None:
     from advisor.market import create_market_service
 
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
 
     assert await market.set_target_locations(account, ["united kingdom", "Remote"]) == [
         "Remote",

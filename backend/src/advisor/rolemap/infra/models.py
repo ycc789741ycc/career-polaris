@@ -144,6 +144,14 @@ class BuildRun(Base, OwnedMixin):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Ids of the shared crawl sources it reads and waits for (ADR 0027).
+    needed_source_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    awaited_source_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
+    locations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    awaited_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    market_data_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RoleCandidate(Base, OwnedMixin):
@@ -170,6 +178,29 @@ class RoleCandidate(Base, OwnedMixin):
         ForeignKey("rolemap.role.id", ondelete="SET NULL"), nullable=True
     )
     opening_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # The local estimate that chose the ten (ADR 0027); not a fit.
+    fit_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CandidateStrength(Base, OwnedMixin):
+    """One dimension as the analysis that recommended the candidates scored it,
+    for the local fit estimate (ADR 0027). Replaced with the candidates."""
+
+    __tablename__ = "candidate_strength"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "dimension_key", name="uq_candidate_strength_owner_id"),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    dimension_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    read: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

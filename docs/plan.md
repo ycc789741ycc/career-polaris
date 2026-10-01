@@ -427,6 +427,17 @@ Open questions:
   region is a judgement the user can't see.
 
 ## Fetch the market and build the role map only on demand
+**Done** ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)). Where the
+build differs from the plan below:
+
+* A waiting build is checked by a deferred `rolemap.await_market` job of its
+  own, as its owner. A dispatch-loop scan of every waiting build would have
+  read across users.
+* An idle search is retired with its list emptied, not deleted: its postings
+  keep their source.
+* The estimate centres each dimension's similarity over the candidates, and
+  weighs the dimensions a candidate rests on fully and the rest at a quarter.
+
 Today the market moves the role map. The crawler crawls every source weekly,
 and the Himalayas searches between runs. Each change becomes
 `PostingsChanged`, the worker's fan-out resolves it to every user in that

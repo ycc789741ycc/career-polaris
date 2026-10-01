@@ -31,7 +31,7 @@ from kernel.config import Settings
 from kernel.db import Database
 from kernel.db.base import utcnow
 from kernel.storage import ObjectStore
-from tests.integration.places import store_target_locations
+from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -109,7 +109,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             )
             ids: dict[str, uuid.UUID] = {title: posting_id for title, posting_id in found.all()}
 
-        market = create_market_service(database)
+        market = create_market_service(database, windows=WINDOWS)
         await store_target_locations(database, account, [market_name])
         pasted = await market.paste_job_description(
             account,
