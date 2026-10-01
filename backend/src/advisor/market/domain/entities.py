@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 
+from advisor.market.domain.places import target_location_option
 from advisor.market.domain.posting import (
     MAX_COMPANY_NAME,
     MAX_LOCATION,
@@ -263,9 +264,9 @@ class PrivateJobPosting:
         )
 
 
-# A user works toward one to three places: a city, a country or a remote
-# region (domain decision 21). The cap keeps a first role map affordable and
-# the map legible.
+# A user works toward one to three places from a fixed list: "Remote", a
+# region or a country (domain decision 21, ADR 0026). The cap keeps a first
+# role map affordable and the map legible.
 MAX_TARGET_LOCATIONS = 3
 MAX_TARGET_LOCATION = 128
 
@@ -275,10 +276,10 @@ class TargetLocationError(ValueError):
 
 
 def chosen_target_locations(values: Sequence[str]) -> tuple[str, ...]:
-    """The user's target locations as they will be stored: trimmed, each
-    named once (ignoring case), in the order given, and at most three."""
+    """The user's target locations as they will be stored: each one a listed
+    place under its own name ("united kingdom" is "United Kingdom"), named once,
+    in the order given, and at most three."""
     chosen: list[str] = []
-    seen: set[str] = set()
     for raw in values:
         value = raw.strip()
         if not value:
@@ -287,10 +288,11 @@ def chosen_target_locations(values: Sequence[str]) -> tuple[str, ...]:
             raise TargetLocationError(
                 f"a target location is at most {MAX_TARGET_LOCATION} characters"
             )
-        if value.casefold() in seen:
-            continue
-        seen.add(value.casefold())
-        chosen.append(value)
+        option = target_location_option(value)
+        if option is None:
+            raise TargetLocationError(f"{value!r} is not a place on the list")
+        if option.name not in chosen:
+            chosen.append(option.name)
     if len(chosen) > MAX_TARGET_LOCATIONS:
         raise TargetLocationError(
             f"choose at most {MAX_TARGET_LOCATIONS} target locations, got {len(chosen)}"

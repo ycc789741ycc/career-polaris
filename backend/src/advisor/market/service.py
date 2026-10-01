@@ -65,6 +65,7 @@ from advisor.market.domain import (
     salary_in_text,
     scope_names,
     search_scope,
+    target_location_options,
 )
 from kernel.clock import utcnow
 from kernel.errors import NotFoundError, ValidationError
@@ -86,6 +87,7 @@ __all__ = [
     "SearchScope",
     "SourceKind",
     "SourceOrigin",
+    "TargetLocationOptionView",
     "Visibility",
     "band_from",
     "canonical_key",
@@ -106,6 +108,14 @@ class CrawlSourceView:
     company_id: uuid.UUID | None
     company_name: str | None
     market: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TargetLocationOptionView:
+    """One place the user may pick: "remote", "region" or "country"."""
+
+    name: str
+    kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,6 +323,14 @@ class MarketService:
             )
         return sorted({m.owner_id for m in choosing})
 
+    def target_location_options(self) -> list[TargetLocationOptionView]:
+        """The places a user may pick from: "Remote", the regions, then the
+        countries, each group A to Z (ADR 0026)."""
+        return [
+            TargetLocationOptionView(name=option.name, kind=str(option.kind))
+            for option in target_location_options()
+        ]
+
     async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
         """Where the user wants to work, alphabetically."""
         async with self._uow.for_owner(owner_id) as mine:
@@ -321,7 +339,8 @@ class MarketService:
 
     async def set_target_locations(self, owner_id: uuid.UUID, locations: list[str]) -> list[str]:
         """Replace the user's target locations with ``locations``: one to three
-        places, or none to fall back to the baseline (domain decision 21).
+        places from the list, or none to fall back to the baseline (domain
+        decision 21, ADR 0026).
 
         A change is announced once, with the whole new set, so the role map is
         rebuilt on the new scope. Saving the same set again announces nothing.

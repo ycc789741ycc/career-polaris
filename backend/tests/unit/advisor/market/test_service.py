@@ -15,6 +15,7 @@ from advisor.market import (
     NormalizedPosting,
     SalaryRange,
     SourceKind,
+    TargetLocationOptionView,
     Visibility,
 )
 from advisor.market.domain import (
@@ -58,31 +59,50 @@ async def test_saving_the_same_target_locations_twice_announces_them_once() -> N
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
 
-    await market.set_target_locations(OWNER, [" Remote EU ", "Berlin", "berlin"])
-    chosen = await market.set_target_locations(OWNER, ["Berlin", "Remote EU"])
+    await market.set_target_locations(OWNER, [" remote ", "Germany", "germany"])
+    chosen = await market.set_target_locations(OWNER, ["Germany", "Remote"])
 
-    assert chosen == ["Berlin", "Remote EU"]
-    assert await market.target_locations(OWNER) == ["Berlin", "Remote EU"]
+    assert chosen == ["Germany", "Remote"]
+    assert await market.target_locations(OWNER) == ["Germany", "Remote"]
     assert uow.store.events == [
-        TargetLocationsChanged(owner_id=OWNER, locations=("Berlin", "Remote EU"))
+        TargetLocationsChanged(owner_id=OWNER, locations=("Germany", "Remote"))
     ]
+
+
+async def test_a_place_not_on_the_list_is_refused_and_nothing_changes() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    await market.set_target_locations(OWNER, ["Taiwan"])
+
+    with pytest.raises(ValidationError):
+        await market.set_target_locations(OWNER, ["Taiwan", "Taipei"])
+
+    assert await market.target_locations(OWNER) == ["Taiwan"]
+
+
+def test_the_options_are_the_list_with_their_kinds() -> None:
+    options = _service(FakeMarketUnitOfWork()).target_location_options()
+
+    assert options[0] == TargetLocationOptionView(name="Remote", kind="remote")
+    assert TargetLocationOptionView(name="Europe", kind="region") in options
+    assert TargetLocationOptionView(name="Taiwan", kind="country") in options
 
 
 async def test_a_fourth_target_location_is_refused_and_nothing_changes() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    await market.set_target_locations(OWNER, ["Berlin", "Lisbon", "Remote EU"])
+    await market.set_target_locations(OWNER, ["Germany", "Portugal", "Remote"])
 
     with pytest.raises(ValidationError):
-        await market.set_target_locations(OWNER, ["Berlin", "Lisbon", "Remote EU", "Paris"])
+        await market.set_target_locations(OWNER, ["Germany", "Portugal", "Remote", "France"])
 
-    assert await market.target_locations(OWNER) == ["Berlin", "Lisbon", "Remote EU"]
+    assert await market.target_locations(OWNER) == ["Germany", "Portugal", "Remote"]
 
 
 async def test_removing_every_target_location_is_announced() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    await market.set_target_locations(OWNER, ["Berlin"])
+    await market.set_target_locations(OWNER, ["Germany"])
 
     assert await market.set_target_locations(OWNER, []) == []
     assert uow.store.events[-1] == TargetLocationsChanged(owner_id=OWNER, locations=())
@@ -102,33 +122,34 @@ async def test_the_scope_counts_the_open_shared_postings_in_the_target_locations
     await market.paste_job_description(
         OWNER, company_name="Acme", title="Staff", location="Berlin", description="JD"
     )
-    await market.set_target_locations(OWNER, ["Berlin"])
+    await market.set_target_locations(OWNER, ["Germany"])
 
     scope = await market.scope(OWNER)
 
-    assert scope.target_locations == ["Berlin"]
+    assert scope.target_locations == ["Germany"]
     assert scope.open_posting_count == 1
 
 
 async def test_the_fan_out_finds_the_users_whose_locations_take_in_a_market() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
-    await market.set_target_locations(OWNER, ["Lisbon"])
-    await market.set_target_locations(OTHER, ["Berlin"])
+    await market.set_target_locations(OWNER, ["Portugal"])
+    await market.set_target_locations(OTHER, ["Germany"])
 
-    assert await market.owners_affected_by(market="Berlin") == [OTHER]
+    assert await market.owners_affected_by(market="Germany") == [OTHER]
     # A company's board changing reaches nobody through the fan-out on its own.
     assert await market.owners_affected_by(market=None) == []
 
 
-async def test_the_fan_out_reaches_every_way_of_naming_the_place_a_search_covers() -> None:
-    """A search is filed under one name for a place users spell several ways."""
+async def test_the_fan_out_reaches_the_users_of_a_country_and_of_its_regions() -> None:
+    """A change to a country's postings concerns whoever chose a region it is
+    in, too (ADR 0026)."""
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
     third = uuid.UUID("00000000-0000-0000-0000-000000000003")
-    await market.set_target_locations(OWNER, ["Remote Taiwan"])
-    await market.set_target_locations(OTHER, ["taiwan", "Singapore"])
-    await market.set_target_locations(third, ["UK"])
+    await market.set_target_locations(OWNER, ["Taiwan", "Remote"])
+    await market.set_target_locations(OTHER, ["Asia-Pacific"])
+    await market.set_target_locations(third, ["United Kingdom"])
 
     assert await market.owners_affected_by(market="Taiwan") == [OWNER, OTHER]
     assert await market.owners_affected_by(market="Singapore") == [OTHER]
@@ -227,11 +248,11 @@ async def test_without_markets_the_scope_falls_back_to_baseline_postings() -> No
     assert [p.title for p in in_scope] == ["Backend"]
 
     # With a market chosen, only postings in it count, baseline or not.
-    await market.set_target_locations(OWNER, ["Lisbon"])
+    await market.set_target_locations(OWNER, ["Portugal"])
     assert await market.postings_in_scope(OWNER) == []
 
 
-async def test_a_market_takes_in_postings_whose_location_names_it() -> None:
+async def test_a_place_takes_in_postings_naming_it_or_one_of_its_cities() -> None:
     uow = FakeMarketUnitOfWork()
     ingest, market = CrawlIngest(uow), _service(uow)
     baseline = _source(uow, origin=SourceOrigin.BASELINE)
@@ -239,14 +260,19 @@ async def test_a_market_takes_in_postings_whose_location_names_it() -> None:
         baseline.id,
         [
             replace(_posting("Backend"), location="Berlin, Germany"),
-            replace(_posting("Platform"), location="München, Germany"),
+            replace(_posting("Platform"), location="München"),
             replace(_posting("Data"), location="Remote, United States"),
+            replace(_posting("Infra"), location="Taipei"),
         ],
     )
 
-    await market.set_target_locations(OWNER, ["berlin", "Munchen"])
+    await market.set_target_locations(OWNER, ["Germany"])
     in_scope = await market.postings_in_scope(OWNER)
     assert sorted(p.title for p in in_scope) == ["Backend", "Platform"]
+
+    await market.set_target_locations(OWNER, ["Europe", "Asia-Pacific"])
+    in_scope = await market.postings_in_scope(OWNER)
+    assert sorted(p.title for p in in_scope) == ["Backend", "Infra", "Platform"]
 
 
 async def test_a_pasted_jd_is_private_and_links_to_its_crawled_twin() -> None:

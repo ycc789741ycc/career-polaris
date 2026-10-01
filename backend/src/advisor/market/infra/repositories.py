@@ -39,7 +39,9 @@ from advisor.market.domain import (
     PrivateJobPostingRepository,
     SourceOrigin,
     market_words,
+    place_names,
     search_scope,
+    target_location_option,
 )
 from advisor.market.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
@@ -179,11 +181,17 @@ class SqlAlchemyJobPostingRepository(
         posting = models.JobPosting
         either: list[ColumnElement[bool]] = []
         for market in scope.markets:
-            if words := market_words(market):
-                either.append(_names_every_word(posting.location, words))
-        if any(search_scope(market) is not None for market in scope.markets):
-            # Remote work open to anyone is in every place a search can be
-            # scoped to, though its location names none of them (ADR 0025).
+            # A country takes in its cities, and a region its member countries
+            # (ADR 0026): ``in_market`` in SQL.
+            for name in place_names(market):
+                if words := market_words(name):
+                    either.append(_names_every_word(posting.location, words))
+        if any(
+            target_location_option(market) is not None or search_scope(market) is not None
+            for market in scope.markets
+        ):
+            # Remote work open to anyone is in every listed place, though its
+            # location names none of them (ADR 0025).
             either.append(_names_every_word(posting.location, WORLDWIDE_WORDS))
         if scope.includes_baseline:
             either.append(

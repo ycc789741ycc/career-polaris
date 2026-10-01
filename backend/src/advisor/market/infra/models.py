@@ -139,7 +139,7 @@ class PostingEmbedding(Base):
 
 
 class MarketPreference(Base, OwnedMixin, TimestampMixin):
-    """A location or remote region the user chose. There is no fixed list."""
+    """A place the user chose, by its name on the list (ADR 0026)."""
 
     __tablename__ = "market_preference"
     __table_args__ = (

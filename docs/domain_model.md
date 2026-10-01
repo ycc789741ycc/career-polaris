@@ -124,8 +124,8 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
 - **Cost:** adding a Role names nothing, because the user named it. It still extracts requirements and scores fit on the user's key, so "Add to Role Map" shows a cost estimate first.
 
 ### 2.5 Market data: permitted sources, target locations, no watchlist
-**Decision 21: a user has 1–3 target locations.** This supersedes decision 9. 01 Sources asks *"Where you want to work"*. It has chips, an input and a counter ("2 of 3 chosen"). Once three are chosen, the user must remove one before adding another.
-- A **`TargetLocation`** is a city, a country or a remote region ("Remote EU").
+**Decision 21: a user has 1–3 target locations.** This supersedes decision 9. 01 Sources asks *"Where you want to work"*. It has chips, a filterable list of places and a counter ("2 of 3 chosen"). Once three are chosen, the user must remove one before adding another.
+- A **`TargetLocation`** is one place from a fixed list: "Remote", a region (a named set of countries) or a country ([ADR 0026](decisions/0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md)). A country takes in its main cities; a region takes in its member countries and is never searched.
 - It replaces **MarketPreference**, the "Markets you are looking in" panel and the role map's filter pills.
 - Target locations scope everything market-facing:
   - which postings the role map groups (*"1,284 open postings in Berlin and Remote EU"*)
@@ -421,7 +421,7 @@ flowchart LR
 | Evidence | One cited fact about the user's work (source, reference, fact, date); source is `github`, `jira`, `resume` or `user_answer` | Profile |
 | Answer | The user's submitted reply to a GapQuestion, stored as Evidence with source `user_answer` ("Your answers") | Profile |
 | CareerProfile | Career timeline plus all Evidence for one user; facts only, one per user | Profile |
-| TargetLocation | One of the user's 1–3 places to work (city, country or remote region); scopes the role map, the salary bands and demand crawling. Shown in the profile, owned by Market. Replaces MarketPreference | Market |
+| TargetLocation | One of the user's 1–3 places to work, picked from a list: Remote, a region or a country (ADR 0026); scopes the role map, the salary bands and demand crawling. Shown in the profile, owned by Market. Replaces MarketPreference | Market |
 | CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or a search of a public job API for one job title in one place); `origin` is `baseline` (platform-curated) or `demand` (a custom Role's company, or a candidate role in a target location, asked for it), never who asked | Market |
 | JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a custom Role's JD is private to its owner. Tracks first/last seen and open/expired | Market |
 | Company | An employer seen in the market | Market |
@@ -538,7 +538,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 18 | 2026-09-22 | Does ingestion use AI | **No** | 2.6: the Ingester is deterministic, answers included |
 | 19 | 2026-09-22 | What a subscription is to | **A role at a company, with an optional careers or JD URL** — *Superseded by 22* | RoleSubscription; removed |
 | 20 | 2026-09-22 | Target when its role splits | **App suggests a successor; the Target keeps its snapshot until the user accepts** | 2.1: amends 10 now that goals are gone |
-| 21 | 2026-09-29 | Where the user wants to work | **1–3 target locations, set in the profile; they scope the role map, salary bands and demand crawling** | 2.5: TargetLocation replaces MarketPreference; supersedes 9 |
+| 21 | 2026-09-29 | Where the user wants to work | **1–3 target locations, set in the profile; they scope the role map, salary bands and demand crawling** — *amended by ADR 0026: picked from a list of Remote, regions and countries* | 2.5: TargetLocation replaces MarketPreference; supersedes 9 |
 | 22 | 2026-09-29 | Watching roles and companies | **No subscriptions and no match digest; a custom Role's company seeds board discovery** | 2.4 / 2.5: RoleSubscription and MatchDigest removed; supersedes 19, amends 13 and 14 |
 | 23 | 2026-09-29 | How many roles the map analyses | **Ten, decided by the system** | 2.2: RoleSelection has a fixed cut-off; supersedes 17 (and ADR 0003 when built) |
 | 24 | 2026-09-29 | When the role map is built | **After every analysis, confirmed with the analysis's cost estimate; market changes still rebuild it** | 2.2 |

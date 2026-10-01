@@ -39,6 +39,7 @@ from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import EvidenceNotOwnedError, NotFoundError
 from kernel.storage import ObjectStore
+from tests.integration.places import store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -121,7 +122,7 @@ async def world(
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
     market = create_market_service(database)
-    await market.set_target_locations(account, [f"Résumé market {uuid.uuid4().hex[:8]}"])
+    await store_target_locations(database, account, [f"Résumé market {uuid.uuid4().hex[:8]}"])
     rolemap = create_rolemap_service(
         database,
         market=market,

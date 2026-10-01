@@ -317,7 +317,7 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   and `TargetLocationsChanged` queue `market.request_searches(titles,
   locations)`, which leaves one ownerless `himalayas` crawl source per job
   title and place: a country, or "Remote" (`market.domain.search_scope`; a
-  city adds none). Only the title leaves the platform. The crawler reads the
+  region adds none, ADR 0026). Only the title leaves the platform. The crawler reads the
   first page of each search, looks for unfetched sources every two minutes
   (`crawl_new`), announces a changed place once per crawl, and retires
   searches not asked for in eight weeks. Remote work open worldwide is in
@@ -352,3 +352,19 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   dimensions' confidence); Strengths shows it next to Re-analyse and lists
   dimensions least certain first. The sidebar has no meter. Résumés come in the
   prototype's two templates, `organic` and `plain`.
+
+## Phase 6 scope
+
+Building the role map only on demand (`docs/plan.md`), one branch per step:
+
+- **Target locations from a list** (ADR 0026). A target location is one of
+  `market.domain.places`: "Remote", a region (Asia-Pacific, Europe, Latin
+  America, Middle East & Africa, North America) or a country, served by
+  `GET /target-location-options` and picked in 01 Sources from a filterable
+  list. `chosen_target_locations` stores each under its name on the list and
+  refuses anything else. A country takes in its aliases and main cities
+  (`place_names`), in `in_market`, the scope SQL and the fan-out; a region
+  takes in its member countries and is never searched. Migration 0021 moved
+  stored free text onto the list and deleted what named no place. Integration
+  tests that need a market of their own store a made-up place directly
+  (`tests/integration/places.py`).
