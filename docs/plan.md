@@ -388,3 +388,89 @@ Open questions:
   minute; measure it before settling.
 * Whether a change of target locations should also wait for its searches
   (step 5).
+
+## Choose target locations from a list
+"Where you want to work" in 01 Sources is a free-text box today. Whatever the
+user types is matched against posting locations word by word, and only a
+country or "Remote" gets a search (ADR 0025). A city, a region or a typo
+silently gets none, and nothing on the screen says so.
+
+The box becomes a choose list. Every option is a place the platform can
+search, so every location the user picks is one the analysis's candidate
+roles are searched in.
+
+Its own branch, `feature/<ticket>/location-choice-list`, cut from mainline.
+It lands before "Build the role map once, after the market search", because
+it removes that branch's "no searchable place" case. Same definition of done
+as Phase 5, with its own ADR: it closes `PUT /target-locations` to a fixed
+set and changes domain decision 21.
+
+1. **The options come from the one place table.**
+   * They are "Remote" (remote work open to anyone), then one entry per
+     country in `market.domain.search`'s table, under its canonical name
+     ("United Kingdom", not "UK"), A to Z.
+   * `market.target_location_options()` returns them, and
+     `GET /target-location-options` serves them as a page (ADR 0014). The SPA
+     never keeps its own copy, so adding a country to the table adds it to
+     the list.
+
+2. **Only listed places are accepted.**
+   * `chosen_target_locations` rejects anything that is not an option, with
+     `TargetLocationError`. The request schema checks it again, as it checks
+     the cap of three today.
+   * `search_scope` then never answers `None` for a stored location.
+
+3. **The screen.**
+   * `TargetLocations.tsx` swaps the text input for a searchable select:
+     type to filter, pick to add. "Remote" is first, and places already
+     chosen are shown but can't be picked.
+   * Chips, the "n of 3 chosen" count and removing a location stay as they
+     are. Each change still saves the whole set and emits
+     `TargetLocationsChanged`.
+   * The copy no longer says "City, country or Remote region".
+
+4. **A country takes in its cities.**
+   * Company boards often write only the city ("Taipei", "Singapore"
+     happens to be both). Matching a posting to "Taiwan" by words alone
+     would drop every opening that says "Taipei" and nothing more.
+   * Each country gets its main cities as extra names, in the same table
+     ("Taipei", "Hsinchu", "Kaohsiung" for Taiwan). `in_market`,
+     `get_open_in_scope`'s SQL and `scope_names` (the fan-out) read them, so
+     a board posting in Taipei is in scope for "Taiwan" and its change
+     reaches the Taiwan users.
+   * The searches don't change: Himalayas is asked by country code.
+
+5. **Stored locations are moved over.**
+   * A migration rewrites each `market_user.market_preference` row to its
+     option, through `search_scope` ("UK" → "United Kingdom", "Remote
+     Taiwan" → "Taiwan"), dropping duplicates.
+   * A row that maps to no option (a city, a region) is deleted, so the user
+     sees one fewer location, or none. Users who had a role map get one
+     `TargetLocationsChanged`, so the map rebuilds on the new scope.
+
+Tests:
+* Unit: options are "Remote" then the countries A to Z, one per country;
+  `chosen_target_locations` rejects an unlisted place; a country takes in a
+  posting that names only one of its cities, in `in_market` and in the
+  fan-out names; the migration's mapping, including a dropped city.
+* Integration: `GET /target-location-options`; `PUT /target-locations`
+  answers 422 for an unlisted place; a Taipei-only posting counts toward
+  "Taiwan" in `GET /market-scope`.
+* SPA: filtering and picking an option, a chosen option can't be picked
+  twice, the cap of three.
+
+What gets harder:
+* A user can no longer narrow to one city. "Taiwan" takes in all of Taiwan,
+  and a user who only wants Taipei sees Kaohsiung too.
+* Regions ("Europe", "APAC", "Remote EU") can't be chosen. Adding one means
+  deciding how it is searched and matched first.
+* The city names per country are a list someone keeps up. A city that is
+  missing quietly drops that city's board postings for the country.
+* Users who typed a city lose that location in the migration.
+
+Open questions:
+* Whether a deleted location should be named once on the screen ("Taipei is
+  now part of Taiwan — add it?") rather than just disappearing. There are
+  few accounts yet, so the first cut just deletes.
+* Which cities each country lists. Start from the cities that appear in the
+  crawled postings, and grow the list as new ones show up.
