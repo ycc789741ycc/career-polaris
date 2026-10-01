@@ -441,7 +441,7 @@ nothing.
 
 One branch, `feature/<ticket>/market-on-demand`, cut from mainline after the
 location list has merged. Its ADR (0026 at the time of writing) supersedes
-domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
+domain decision 14 (weekly crawl) and amends ADRs 0018, 0020, 0024 and 0025.
 
 1. **A source is fetched when a build needs it and it isn't fresh.**
    * Every crawl source, a company board or a search, is one shared row, as
@@ -457,7 +457,7 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      fetched at most once per window however many users or rebuilds ask.
    * Marking is idempotent. Two builds that need the same stale source both
      wait on one fetch. A build also stamps `last_requested_at` on every
-     source it needs, fresh or not (rule 7).
+     source it needs, fresh or not (rule 8).
    * Creating a search uses `INSERT … ON CONFLICT (kind, endpoint) DO
      NOTHING`, so two analyses that recommend the same title at once can't
      fail on the unique constraint. This also fixes a race that exists
@@ -528,7 +528,50 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      down) leaves the old list in place. A build at its deadline uses it,
      and the map says how old it is.
 
-6. **What no longer builds the map.**
+6. **The search decides which role a posting belongs to, and a local
+   estimate picks the ten, with no extra tokens.**
+   * **A searched posting goes to the candidate that searched for it.** A
+     candidate's openings start as the current result lists of its own
+     searches in the user's places. That is a lookup, not a guess, and
+     replaces matching every posting to every candidate.
+   * **Loose hits are dropped.** Himalayas matches the query against the
+     description too, so a "Data Engineer" search returns some jobs that
+     aren't. A searched posting stays with its candidate only when its title
+     has the candidate's title words, or its embedding is at least
+     `CANDIDATE_MATCH_THRESHOLD` (0.40) similar to the candidate's. Otherwise
+     it is left out, not handed to another candidate.
+   * **A posting two searches returned counts once**, for the candidate it
+     is more similar to.
+   * **Board postings** weren't searched for anyone. They are assigned by
+     embedding or title words, as today, and can add openings to any
+     candidate.
+   * **Every candidate with at least three openings gets a local fit
+     estimate.** It costs nothing on the user's key: it uses the same local
+     embedding model as the matching, and runs before anything is sent to
+     the model.
+     * The user's side is their current dimensions, each weighted by score
+       × confidence. `assessment` hands them to `rolemap.replace_candidates`
+       with the candidates (names and weights only, no evidence), and
+       `rolemap` keeps them beside the candidates, in a new owner-zone table
+       with row-level security, replaced with them. `rolemap` still imports
+       nothing from `assessment` (ADR 0018).
+     * The role's side is the centroid of its openings' embeddings.
+     * The estimate is the weighted mean of each dimension's similarity to
+       that centroid: roles whose openings read like the user's strongest
+       dimensions come first.
+   * **The ten are the ten with the best estimate**, the analysis's own
+     rank breaking ties. Today it is the first ten in the analysis's order.
+   * **Only those ten are analysed on the user's key**, then scored by
+     `compute_fits`, exactly as today. The paid calls per build don't
+     change; only which ten get them does.
+   * The role map orders and plots roles by the real fit once it is scored.
+     The estimate only chooses the ten, and is never shown as a fit.
+   * Each build logs how well the estimate's order agreed with the fits
+     `compute_fits` then scored, as a rank correlation, with no user data.
+     That is the evidence for keeping the estimate or going back to the
+     analysis's order.
+
+7. **What no longer builds the map.**
    * A change of target locations. The role map says "Your locations
      changed" with Rebuild and its estimate. The next build searches the new
      places.
@@ -540,7 +583,7 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      the market…" while a build waits on sources, as well as "Waiting for
      analysis…".
 
-7. **What nobody asks for stops taking room.** Users who stop coming back
+8. **What nobody asks for stops taking room.** Users who stop coming back
    cost no bandwidth, since nothing is fetched without a build, but their
    searches and postings stay stored. `market` cleans up from its own
    facts, because it can't see who references a posting, and must not: that
@@ -578,6 +621,12 @@ Tests:
   * A search idle for `MARKET_SOURCE_IDLE_DAYS` is deleted with its list;
     an unheld posting past `POSTING_THIN_AFTER_DAYS` loses its description
     and embedding and keeps the rest; a held one is untouched.
+  * A candidate's search results become its openings; a loose hit is
+    dropped, not reassigned; a posting two searches returned counts once;
+    board postings still match by embedding or title words.
+  * The local estimate ranks a role whose openings read like the user's
+    strongest dimensions above one that doesn't, and the analysis's rank
+    breaks a tie; only the ten chosen are analysed.
   * A location change rebuilds nothing.
   * Each setting's default, and that each rejects a value below 1.
 * Integration:
@@ -608,12 +657,21 @@ What gets harder:
 * A waiting build has two meanings (an analysis, or the market), so ADR
   0018's rule and the activity copy widen.
 * Seven new settings, each with a default someone has to tune.
+* The ten are chosen by a local estimate that the user never sees, and a
+  small embedding model's sense of "reads like your strengths" is coarse.
+  It can keep a role the model ranked low and drop one it ranked high, and
+  the fits scored afterwards may disagree with the choice.
+* `rolemap` holds a copy of the user's dimension names and weights, kept in
+  step with every analysis.
 
 Open questions:
 * The windows (72 h and 24 h), `MARKET_WAIT_SECONDS` (300) and the daily
   ceiling (500) are guesses. Measure how long a build's due sources take,
   how often a re-analysis lands inside a window, and Himalayas' real
   requests per day, before settling.
+* Whether the estimate chooses better than the analysis's order. Compare
+  the logged rank correlation over a few weeks of builds before calling it
+  settled, and fall back to the analysis's order if it is weak.
 * Whether to search only the top 10 candidates instead of 20, if the
   ceiling is reached often. That halves the requests per new analysis.
 * Whether a region-only user should be told on the role map that their
