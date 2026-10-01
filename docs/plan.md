@@ -288,3 +288,103 @@ and step 8 can land any time.
     * On-site Taiwan and Singapore: Appier, OKX and Stripe join the baseline.
     * Not solved: the same opening from a company board and from Himalayas is
       two postings.
+
+# Phase 6
+## Build the role map once, after the market search
+Today an analysis builds the role map twice. `AnalysisFinished` builds it at
+once from the postings already crawled (ADR 0020). Then the Himalayas
+searches for the analysis's candidate roles (ADR 0025) land a few minutes
+later, `PostingsChanged` rebuilds it, and most roles are named again because
+their openings changed. That roughly doubles the naming and fit calls on the
+user's key for every analysis, and the map reshuffles under them.
+
+The defined process is: the analysis recommends roles from the user's
+strengths, the market is searched for those roles, and the ten that fit best
+among what the market has become the map. So the immediate build goes, and
+the one build waits for the search.
+
+One branch, `feature/<ticket>/build-after-search`, cut from mainline once
+`feature/no-ticket/himalayas-candidate-search` has merged, with the same
+definition of done as Phase 5: tests in the right tier, every gate passing
+with nothing skipped, its ADR (0026 at the time of writing, amending 0020
+and 0025) and the index, and `CLAUDE.md` and `README.md` saying what is built.
+
+1. **The build after an analysis waits for the search.**
+   * `activity.build_after_analysis` records the build as `waiting`, not
+     `running`, and queues nothing. The cost is still the one the user
+     confirmed with Analyse.
+   * A waiting build now waits for either an analysis or a market search.
+     `BuildRun` says which, so the running bar can say "Searching the market
+     for your recommended roles" rather than "waiting for the analysis".
+   * A failed analysis still only releases a build that waited for it, and
+     records no new one.
+
+2. **Searches are requested where the answer is known.**
+   * On `RoleCandidatesReplaced`, the dispatcher calls
+     `market.request_searches` itself instead of queueing
+     `market.request_searches`. It is a few writes, and the dispatcher needs
+     the answer: how many searches are new.
+   * None new means nothing to wait for: the user's places are cities or
+     regions with no search, or every title's search is already crawled (a
+     re-analysis). The dispatcher starts the waiting build at once, through
+     `activity.request_role_map`.
+   * The crawl sources stay ownerless. Only titles and places reach `market`;
+     the user id never leaves the dispatcher.
+   * `RoleCandidatesReplaced` is recorded before `AnalysisFinished`, so the
+     build may not exist yet when the searches are requested. The rule has to
+     hold in either order: whichever of the two events comes second starts the
+     build when there is nothing to wait for.
+
+3. **A search that finishes always says so.**
+   * `crawl_new` announces every place it searched, even when nothing changed,
+     because a waiting build is waiting for it. `request_role_map` already
+     starts a waiting build when asked again with nothing running.
+   * The weekly crawl keeps announcing a place only when an opening appeared
+     or went, so a quiet market still rebuilds nobody.
+
+4. **A deadline, so a slow or failing search never holds the map back.**
+   * A build still waiting `SEARCH_WAIT_SECONDS` (5 minutes to start with)
+     after it was recorded starts anyway, on the postings there are. A 429 or
+     a stopped crawler costs the user the searched postings, not the map.
+   * The check runs in the worker's dispatch loop, beside the outbox polling,
+     and reads only open builds. It reuses ADR 0018's staleness clock rather
+     than adding a scheduler.
+   * A build waiting on an analysis keeps today's rule: it starts when the
+     analysis ends, or is closed as lost with it.
+
+5. **What stays as it is.**
+   * Every other trigger builds as now: "Rebuild role map", adding a custom
+     role, a change of target locations, and the weekly crawl's
+     `PostingsChanged`.
+   * A change of target locations also requests searches for the new places.
+     Whether that build should wait for them too is open; the first cut keeps
+     it immediate.
+   * Fits are still scored once per finished build.
+
+Tests:
+* Unit: `activity` records a waiting build after a successful analysis and
+  starts it on request; the dispatcher starts the build at once when no
+  search is new, in both event orders, and leaves it waiting otherwise;
+  `crawl_new` announces unchanged places and the weekly crawl does not; the
+  deadline starts a build waiting on the search and leaves one waiting on an
+  analysis alone.
+* Integration: one analysis leads to one build and one `compute_fits`, with
+  the searched postings in scope; a re-analysis with the same titles builds
+  without waiting.
+* SPA: the running bar's "searching the market" state.
+
+What gets harder:
+* The map arrives later: up to two minutes for the crawler's look, plus the
+  crawl and the build, so three to five minutes after the analysis instead
+  of straight after it. The running bar has to make that wait legible.
+* Every analysis now depends on the crawler being up and Himalayas
+  answering, bounded by the deadline.
+* A waiting build has two meanings, so ADR 0018's rule and the activity
+  copy widen.
+
+Open questions:
+* `SEARCH_WAIT_SECONDS`: 5 minutes is a guess. The crawler's poll is two
+  minutes, and twenty searches at the per-host rate limit take most of a
+  minute; measure it before settling.
+* Whether a change of target locations should also wait for its searches
+  (step 5).
