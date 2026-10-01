@@ -436,7 +436,8 @@ crawled (ADR 0020), and again when its searches land (ADR 0025).
 From here, a role map is built only when the user asks, with an action whose
 cost they confirmed: an analysis, "Rebuild role map", or adding a custom
 role. A build fetches what it needs first, reusing anything fetched recently
-for anyone, and is built once.
+for anyone, and is built once. Nothing is fetched for a user who asks for
+nothing.
 
 One branch, `feature/<ticket>/market-on-demand`, cut from mainline after the
 location list has merged. Its ADR (0026 at the time of writing) supersedes
@@ -446,11 +447,17 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
    * Every crawl source, a company board or a search, is one shared row, as
      now. It gains `due_at`: set when a build needs it, cleared when it is
      fetched.
-   * A source is fresh when it was last fetched within
-     `MARKET_FRESH_HOURS`, an optional `.env` setting, 24 by default. A fresh
-     source is reused, whoever's build fetched it.
+   * A source is fresh when it was last fetched within its window, two
+     optional `.env` settings:
+     * `MARKET_SEARCH_FRESH_HOURS`, 72 by default. A search is a request to
+       one shared, rate-limited API, so it is reused longer.
+     * `MARKET_BOARD_FRESH_HOURS`, 24 by default. A board is one cheap
+       request that lists everything its company has.
+   * A fresh source is reused, whoever's build fetched it, so a source is
+     fetched at most once per window however many users or rebuilds ask.
    * Marking is idempotent. Two builds that need the same stale source both
-     wait on one fetch.
+     wait on one fetch. A build also stamps `last_requested_at` on every
+     source it needs, fresh or not (rule 7).
    * Creating a search uses `INSERT … ON CONFLICT (kind, endpoint) DO
      NOTHING`, so two analyses that recommend the same title at once can't
      fail on the unique constraint. This also fixes a race that exists
@@ -467,16 +474,24 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      marks the stale ones due, and answers with their ids. Only titles,
      places and company ids reach `market`; the user id never does.
 
-3. **The crawler fetches what is due, and nothing else.**
+3. **The crawler fetches what is due, and nothing else, politely.**
    * Its loop looks for due sources every `CRAWL_DUE_POLL_SECONDS`, an
      optional setting, 15 by default (a user is waiting), and fetches each
-     under the existing robots.txt and per-host rate limit.
+     under robots.txt and the per-host rate limit.
    * The weekly run, the two-minute look for unfetched sources, and
-     `retire_idle_searches` go. A source nobody's build needs is never
-     fetched again, so it needs no retiring. `last_requested_at` and its
-     migration-0020 column are dropped.
-   * A fetch records `last_fetched_at` and clears `due_at`, failed or not. A
-     failed fetch expires nothing, as now.
+     `retire_idle_searches` go.
+   * A fetch records `last_fetched_at` and clears `due_at`, failed or not.
+   * **Back off per host.** A 429 or 403 pauses that host until its
+     `Retry-After`, or for an exponential backoff starting at 15 minutes.
+     Its due sources wait, logged at WARN, and builds waiting on them start
+     at their deadline with what is stored.
+   * **A daily ceiling per host,** `CRAWL_MAX_REQUESTS_PER_HOST_PER_DAY`,
+     optional, 500 by default. Past it, due sources for that host stay due
+     until the next day, and builds use what is stored. No amount of demand
+     breaks it.
+   * **robots.txt is cached across polls** for 24 hours, per host. It is
+     cached per crawl run today, which is weekly; with a poll every 15
+     seconds, that would refetch it four times a minute.
    * The crawler emits no posting events. `PostingsChanged` and
      `market.owners_affected_by` go, and so does the fan-out's SELECT-only
      policy on `market_user.market_preference`. The crawler then says
@@ -490,7 +505,7 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      staleness. It now also starts a waiting build when every source it
      waits for has been fetched since the build was recorded, or when
      `MARKET_WAIT_SECONDS` (optional, 300 by default) has passed. Either
-     way the build uses the postings there are.
+     way the build uses what is stored.
    * After an analysis, the titles come from `RoleCandidatesReplaced`, which
      is recorded before `AnalysisFinished`. The build is recorded on
      `AnalysisFinished` and asks for its sources then. A failed analysis
@@ -498,19 +513,20 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
    * `BuildRun` says what it waits for, so the running bar can say
      "Searching the market for your recommended roles".
 
-5. **Which postings a build may use.**
+5. **A fetch replaces what its source holds.**
    * A board lists every opening its company has, so one missing from a
-     successful fetch is closed. Board postings expire by absence, as now.
-   * A search shows only its first page (robots.txt forbids paging), so a
-     job missing from a fetch was usually only pushed off the page. Search
-     fetches stop calling `expire_unseen`.
-   * Instead, a build's scope leaves out a searched posting whose
-     `last_seen_at` is older than `SEARCH_POSTING_UNSEEN_DAYS` (optional, 7
-     by default). It is not marked expired: with nothing re-checking it,
-     "too old to count" is all the platform knows. The row stays, for
-     Targets that point at it (ADR 0022) and for salary history.
-   * `last_seen_at` is per posting, so a posting found by two searches, or
-     by a search and a board, counts while any of them still returns it.
+     successful fetch is closed, and it expires, as now.
+   * A search shows only its first page (robots.txt forbids paging). Each
+     successful fetch replaces that search's result list, a new table
+     `market.search_result (crawl_source_id, job_posting_id, rank,
+     fetched_at)`. A job pushed off the page leaves the list; the posting
+     row is not deleted, and stays open while a board or another search
+     still holds it.
+   * A build's searched postings are exactly the current lists of the
+     searches it needed. Search fetches stop calling `expire_unseen`.
+   * A failed or skipped fetch (backoff, the daily ceiling, the crawler
+     down) leaves the old list in place. A build at its deadline uses it,
+     and the map says how old it is.
 
 6. **What no longer builds the map.**
    * A change of target locations. The role map says "Your locations
@@ -524,28 +540,53 @@ domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
      the market…" while a build waits on sources, as well as "Waiting for
      analysis…".
 
+7. **What nobody asks for stops taking room.** Users who stop coming back
+   cost no bandwidth, since nothing is fetched without a build, but their
+   searches and postings stay stored. `market` cleans up from its own
+   facts, because it can't see who references a posting, and must not: that
+   would be a cross-user read again.
+   * A search no build has needed for `MARKET_SOURCE_IDLE_DAYS` (optional,
+     90 by default) is deleted with its result list. A board is never
+     deleted, only no longer fetched.
+   * A posting is held while it is open on a board or on a current result
+     list. One unheld for `POSTING_THIN_AFTER_DAYS` (optional, 180 by
+     default) is thinned. Its description and embedding are dropped. Its
+     id, title, company, location, link, salary and dates stay, a few
+     hundred bytes.
+   * Thinning, not deleting, keeps every reference whole: a Target's opening
+     (`job_posting_id` in plans, résumés and gap questions), a stale role
+     map's members, and salary history. A Target's requirements are frozen
+     in its snapshot, so they never needed the description.
+   * The sweep runs once a day in the crawler's loop, on `market` rows only.
+
 Tests:
 * Unit:
-  * A source fetched within `MARKET_FRESH_HOURS` is not marked due, and an
-    older or unfetched one is.
+  * A source fetched within its window is not marked due, and an older or
+    unfetched one is, with searches and boards on their own windows.
   * Two builds needing the same stale source mark it once.
   * Creating a search that already exists is a no-op, not an error.
   * A build with nothing due starts at once. One with due sources waits,
     starts when they are all fetched, and starts at `MARKET_WAIT_SECONDS`
     if they aren't.
-  * A failed fetch counts as fetched for waiting and expires nothing.
-  * A board fetch still expires a missing posting, and a search fetch does
-    not.
-  * A searched posting past `SEARCH_POSTING_UNSEEN_DAYS` is out of scope,
-    and still counts if a board or another search saw it recently.
-  * A location change and a crawl rebuild nothing.
-  * The three settings' defaults, and that each rejects a value below 1.
+  * A failed fetch counts as fetched for waiting and replaces nothing.
+  * A 429 pauses the host and honours `Retry-After`; the daily ceiling
+    stops fetches but not builds; robots.txt is fetched once per host per
+    day.
+  * A board fetch still expires a missing posting. A search fetch replaces
+    its list, and a posting dropped from it stays open while a board or
+    another search holds it.
+  * A search idle for `MARKET_SOURCE_IDLE_DAYS` is deleted with its list;
+    an unheld posting past `POSTING_THIN_AFTER_DAYS` loses its description
+    and embedding and keeps the rest; a held one is untouched.
+  * A location change rebuilds nothing.
+  * Each setting's default, and that each rejects a value below 1.
 * Integration:
   * One analysis leads to one build and one `compute_fits`, with the
     searched postings in scope.
-  * A second analysis with the same titles within the fresh window fetches
+  * A second analysis with the same titles within the window fetches
     nothing and builds at once.
   * The crawler fetches only due sources.
+  * The daily sweep against real rows.
 * SPA: the running bar's "searching the market" state, "Your locations
   changed" with Rebuild, and "Market data as of …".
 
@@ -555,19 +596,26 @@ What gets harder:
   say so. "The role map rebuilds and rescores as the market moves" in
   `CLAUDE.md` stops being true.
 * A build arrives later, after its sources are fetched: seconds when they are
-  fresh, up to `MARKET_WAIT_SECONDS` when Himalayas is slow or the crawler
-  is down.
+  fresh, up to `MARKET_WAIT_SECONDS` when Himalayas is slow, the host is
+  backed off, or the crawler is down.
 * Salary-band history only grows when someone builds, so it is patchy for
   places few users target.
 * Closed openings on a board stay open until a build fetches that board, so
-  a stale map can show a job that is gone. Its link says so.
+  a stale map can show a job that is gone. A job pushed off a search's first
+  page leaves the next map though it may still be open.
+* A user coming back after months finds thinned openings on their old map:
+  title, company and link, with no description, until they rebuild.
 * A waiting build has two meanings (an analysis, or the market), so ADR
   0018's rule and the activity copy widen.
+* Seven new settings, each with a default someone has to tune.
 
 Open questions:
-* `MARKET_FRESH_HOURS` (24) and `MARKET_WAIT_SECONDS` (300) are guesses.
-  Measure how long a build's due sources take, and how often a re-analysis
-  lands inside the fresh window, before settling.
+* The windows (72 h and 24 h), `MARKET_WAIT_SECONDS` (300) and the daily
+  ceiling (500) are guesses. Measure how long a build's due sources take,
+  how often a re-analysis lands inside a window, and Himalayas' real
+  requests per day, before settling.
+* Whether to search only the top 10 candidates instead of 20, if the
+  ceiling is reached often. That halves the requests per new analysis.
 * Whether a region-only user should be told on the role map that their
   recommended roles weren't searched, beyond the note in 01 Sources.
 * Whether "Rebuild role map" should offer to refresh only the market, with
