@@ -290,186 +290,20 @@ and step 8 can land any time.
       two postings.
 
 # Phase 6
-## Build the role map once, after the market search
-Today an analysis builds the role map twice. `AnalysisFinished` builds it at
-once from the postings already crawled (ADR 0020). Then the Himalayas
-searches for the analysis's candidate roles (ADR 0025) land a few minutes
-later, `PostingsChanged` rebuilds it, and most roles are named again because
-their openings changed. That roughly doubles the naming and fit calls on the
-user's key for every analysis, and the map reshuffles under them.
+Every role-map build spends the user's own key: naming the roles, then
+scoring the fits. So the map is built only when the user asks for it, and
+the market data it is built from is fetched then, for what that build needs,
+not on a timer. Two branches, in this order:
 
-The defined process is: the analysis recommends roles from the user's
-strengths, the market is searched for those roles, and the ten that fit best
-among what the market has become the map. So the immediate build goes, and
-the one build waits for the search.
+1. "Choose target locations from a list": every place a user picks is one
+   the platform knows how to search, or plainly can't.
+2. "Fetch the market and build the role map only on demand": the weekly
+   crawl, market-driven rebuilds and the fan-out to users go; a build waits
+   for the sources it needs that aren't fresh.
 
-One branch, `feature/<ticket>/build-after-search`, cut from mainline once
-`feature/no-ticket/himalayas-candidate-search` has merged, with the same
-definition of done as Phase 5: tests in the right tier, every gate passing
-with nothing skipped, its ADR (0026 at the time of writing, amending 0020
-and 0025) and the index, and `CLAUDE.md` and `README.md` saying what is built.
-
-1. **The build after an analysis waits for the search.**
-   * `activity.build_after_analysis` records the build as `waiting`, not
-     `running`, and queues nothing. The cost is still the one the user
-     confirmed with Analyse.
-   * A waiting build now waits for either an analysis or a market search.
-     `BuildRun` says which, so the running bar can say "Searching the market
-     for your recommended roles" rather than "waiting for the analysis".
-   * A failed analysis still only releases a build that waited for it, and
-     records no new one.
-
-2. **Searches are requested where the answer is known.**
-   * On `RoleCandidatesReplaced`, the dispatcher calls
-     `market.request_searches` itself instead of queueing
-     `market.request_searches`. It is a few writes, and the dispatcher needs
-     the answer: how many searches are new.
-   * None new means nothing to wait for: the user chose only regions, which
-     add no search ("Choose target locations from a list" below), or every
-     title's search is already crawled (a re-analysis). The dispatcher starts the waiting build at once, through
-     `activity.request_role_map`.
-   * The crawl sources stay ownerless. Only titles and places reach `market`;
-     the user id never leaves the dispatcher.
-   * `RoleCandidatesReplaced` is recorded before `AnalysisFinished`, so the
-     build may not exist yet when the searches are requested. The rule has to
-     hold in either order: whichever of the two events comes second starts the
-     build when there is nothing to wait for.
-
-3. **A search that finishes always says so.**
-   * `crawl_new` announces every place it searched, even when nothing changed,
-     because a waiting build is waiting for it. `request_role_map` already
-     starts a waiting build when asked again with nothing running.
-   * The weekly crawl keeps announcing a place only when an opening appeared
-     or went, so a quiet market still rebuilds nobody.
-
-4. **A deadline, so a slow or failing search never holds the map back.**
-   * A build still waiting `SEARCH_WAIT_SECONDS` (5 minutes to start with)
-     after it was recorded starts anyway, on the postings there are. A 429 or
-     a stopped crawler costs the user the searched postings, not the map.
-   * The check runs in the worker's dispatch loop, beside the outbox polling,
-     and reads only open builds. It reuses ADR 0018's staleness clock rather
-     than adding a scheduler.
-   * A build waiting on an analysis keeps today's rule: it starts when the
-     analysis ends, or is closed as lost with it.
-
-5. **What stays as it is.**
-   * Every other trigger builds as now: "Rebuild role map", adding a custom
-     role, a change of target locations, and the weekly crawl's
-     `PostingsChanged`.
-   * A change of target locations also requests searches for the new places.
-     Whether that build should wait for them too is open; the first cut keeps
-     it immediate.
-   * Fits are still scored once per finished build.
-
-Tests:
-* Unit: `activity` records a waiting build after a successful analysis and
-  starts it on request; the dispatcher starts the build at once when no
-  search is new, in both event orders, and leaves it waiting otherwise;
-  `crawl_new` announces unchanged places and the weekly crawl does not; the
-  deadline starts a build waiting on the search and leaves one waiting on an
-  analysis alone.
-* Integration: one analysis leads to one build and one `compute_fits`, with
-  the searched postings in scope; a re-analysis with the same titles builds
-  without waiting.
-* SPA: the running bar's "searching the market" state.
-
-What gets harder:
-* The map arrives later: up to two minutes for the crawler's look, plus the
-  crawl and the build, so three to five minutes after the analysis instead
-  of straight after it. The running bar has to make that wait legible.
-* Every analysis now depends on the crawler being up and Himalayas
-  answering, bounded by the deadline.
-* A waiting build has two meanings, so ADR 0018's rule and the activity
-  copy widen.
-
-Open questions:
-* `SEARCH_WAIT_SECONDS`: 5 minutes is a guess. The crawler's poll is two
-  minutes, and twenty searches at the per-host rate limit take most of a
-  minute; measure it before settling.
-* Whether a change of target locations should also wait for its searches
-  (step 5).
-
-## Expire searched postings by age, not by absence
-How an opening closes today depends on its source:
-
-* **A company board** (Greenhouse, Lever, Ashby, a JSON-LD career page)
-  lists every opening the company has. One missing from a successful crawl
-  is closed, and `expire_unseen` marks it expired at once.
-* **A Himalayas search** returns only its first page, about twenty jobs,
-  because robots.txt forbids paging (ADR 0025). The same rule reads "pushed
-  off page 1 by a newer job" as "closed". A busy title then reports a change
-  on nearly every crawl, which rebuilds role maps for nothing, and an opening
-  that is still real drops off the map.
-
-What stays the same for every source:
-
-* A failed fetch expires nothing.
-* An expired posting is kept, not deleted. It leaves the role map, the
-  openings and the market scope, and still counts toward salary-band history.
-* Seen again, it reopens.
-* A retired search (eight weeks unasked) expires everything it found.
-
-The same opening returned by two searches makes it worse. It belongs to
-whichever source saw it last (`seen_again`), and only that source can expire
-it. If it then leaves that search's first page, it expires, though the other
-search still lists it, until the other's next crawl reopens it.
-
-Its own branch, `feature/<ticket>/search-posting-expiry`, cut from mainline.
-It lands before "Build the role map once, after the market search", whose
-waiting builds rely on a search announcing a change only when the market
-really moved. ADR 0025 is amended in the same branch.
-
-1. **A searched posting expires when nobody has seen it for a while.**
-   * A posting whose source is a search is expired when its `last_seen_at` is
-     older than the unseen age, not when one crawl misses it. `last_seen_at` is per posting,
-     so any search, or a company board, that still returns it keeps it open,
-     whichever source it belongs to.
-   * The age is `SEARCH_POSTING_UNSEEN_DAYS` in `.env`, optional with a
-     default of 7, declared in `.env.example` beside the other `CRAWL_*`
-     settings. `kernel.config` reads it once at start-up and rejects anything
-     under 1. The crawler's wiring passes it to `market` as a `timedelta`, so
-     the domain holds no number of its own.
-   * `record_search_crawl` stops calling `expire_unseen`. Its `changed` is
-     then just "an opening appeared or reopened".
-2. **One sweep per crawl run.**
-   * After a crawl run's searches (`crawl_new` and the weekly crawl), one
-     query expires every open searched posting past the age, using the
-     existing `(status, last_seen_at)` index.
-   * The sweep returns the places those postings were found for, and the run
-     announces them with the places that changed, still once per place.
-3. **Boards keep expiry by absence.** Their list is complete, so a missing
-   opening is a closed one, and that is noticed the next crawl rather than
-   `SEARCH_POSTING_UNSEEN_DAYS` later.
-
-Tests:
-* Unit: a searched posting missing from one crawl stays open; one unseen for
-  the configured age is expired by the sweep and its place announced, and
-  one just short of it is not; the setting defaults to 7 and rejects 0; a posting another search still returns stays open; a board
-  posting missing from a crawl still expires at once; a search crawl that
-  finds only known openings reports no change.
-* Integration: the sweep's query against real rows, scoped to searched
-  postings only.
-
-What gets harder:
-* A job closed on Himalayas stays on the role map for up to
-  `SEARCH_POSTING_UNSEEN_DAYS`, a week by default. Its
-  link then goes to a closed listing, and the fit counts an opening that is
-  gone.
-* Expiry now has two rules, by source kind, and the sweep is one more step
-  in each crawl run.
-* Openings counted per role and per place run a little high for searched
-  postings, by the ones closed within the unseen age.
-
-Open questions:
-* Whether Himalayas' payload carries an expiry date per job. If it does, a
-  job past it could close on that date, and the age rule would only catch
-  the ones that vanish early.
-* Whether 7 days is enough. A search is crawled once when it is new and then
-  weekly, so a posting seen at one weekly crawl and missed at the next is
-  about 7 days unseen at that crawl's sweep: with the default, a single
-  weekly miss can still expire it. Count how often a job leaves page 1 and
-  comes back, and raise the setting (14 is two weekly crawls) if the weekly
-  crawl keeps flipping postings.
+Both have the same definition of done as Phase 5: tests in the right tier,
+every gate passing with nothing skipped, an ADR each with the index, and
+`CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
 
 ## Choose target locations from a list
 "Where you want to work" in 01 Sources is a free-text box today. Whatever the
@@ -487,8 +321,8 @@ to be matched and, where it can be, searched:
 | Region | "Europe" | any member country's names and cities | no search of its own |
 
 Its own branch, `feature/<ticket>/location-choice-list`, cut from mainline.
-It lands before "Build the role map once, after the market search", which
-relies on every place being either searched or plainly not. Same definition
+It lands before "Fetch the market and build the role map only on demand",
+which relies on every place being either searched or plainly not. Same definition
 of done as Phase 5, with its own ADR: it closes `PUT /target-locations` to a
 fixed set, changes domain decision 21, and amends ADR 0025's "a region adds no
 source" from a gap into a rule.
@@ -517,10 +351,9 @@ source" from a gap into a rule.
      to "Taiwan" by words alone would drop every opening that says "Taipei"
      and nothing more.
    * Each country gets its main cities as extra names, in the same table
-     ("Taipei", "Hsinchu", "Kaohsiung" for Taiwan). `in_market`,
-     `get_open_in_scope`'s SQL and `scope_names` (the fan-out) read them, so
-     a board posting in Taipei is in scope for "Taiwan" and its change
-     reaches the Taiwan users.
+     ("Taipei", "Hsinchu", "Kaohsiung" for Taiwan). `in_market` and
+     `get_open_in_scope`'s SQL read them, so a board posting in Taipei is in
+     scope for "Taiwan".
    * The searches don't change: Himalayas is asked by country code.
 
 4. **A region is matched, not searched.**
@@ -532,11 +365,9 @@ source" from a gap into a rule.
      title: about 500 for one analysis, some eight minutes at one request a
      second per host, past the build's deadline and into Himalayas' rate
      limit.
-   * It still sees searched postings: those of a member country that some
-     user chose, and remote work open worldwide, searched for whoever chose
-     "Remote".
-   * The fan-out resolves a changed place to its regions as well: a change
-     announced for "Germany" also reaches users who chose "Europe".
+   * It still sees searched postings that are young enough to count: those
+     of a member country some user's build searched, and remote work open
+     worldwide, searched for whoever chose "Remote".
 
 5. **The screen.**
    * `TargetLocations.tsx` swaps the text input for a searchable select:
@@ -544,7 +375,8 @@ source" from a gap into a rule.
      Countries, and places already chosen are shown but can't be picked.
    * Chips, the "n of 3 chosen" count and removing a location stay as they
      are. Each change still saves the whole set and emits
-     `TargetLocationsChanged`.
+     `TargetLocationsChanged`, which no longer rebuilds anything by itself
+     (next section).
    * A chosen region's chip is marked, with one line under the list: "Regions
      use the postings we already have. Pick a country for a fresh search of
      your recommended roles." The copy no longer says "City, country or
@@ -555,8 +387,8 @@ source" from a gap into a rule.
      option: "UK" → "United Kingdom", "Remote Taiwan" → "Taiwan", "EU" or
      "Remote EU" → "Europe", dropping duplicates.
    * A row that maps to no option (a city, an unknown region) is deleted, so
-     the user sees one fewer location, or none. Users who had a role map get
-     one `TargetLocationsChanged`, so the map rebuilds on the new scope.
+     the user sees one fewer location, or none. No event is recorded: the
+     role map says its locations changed, and is rebuilt when the user asks.
 
 Tests:
 * Unit: options are "Remote", the regions, then the countries, each group A
@@ -564,8 +396,8 @@ Tests:
   `chosen_target_locations` rejects an unlisted place; a country takes in a
   posting that names only one of its cities; a region takes in a posting in
   any member country and remote work open worldwide, and nothing else;
-  a region requests no search; a change announced for a country reaches
-  users of its regions; the migration's mapping, including a dropped city.
+  a region requests no search; the migration's mapping, including a
+  dropped city.
 * Integration: `GET /target-location-options`; `PUT /target-locations`
   answers 422 for an unlisted place; a Taipei-only posting counts toward
   "Taiwan" and "Asia-Pacific" in `GET /market-scope`.
@@ -579,8 +411,6 @@ What gets harder:
   picks only "Europe" gets board postings and worldwide remote work, but the
   candidate roles are never searched for in Europe on their behalf, and the
   screen has to say so.
-* Fan-out widens: one country's change now reaches its regions' users too,
-  and "Europe" users rebuild when any member country moves.
 * The city names per country and the countries per region are lists someone
   keeps up. A missing city quietly drops that city's board postings.
 * Users who typed a city lose that location in the migration.
@@ -594,3 +424,152 @@ Open questions:
 * Whether a region should one day search a few of its largest member
   countries. That would make it fresher, but which countries stand for a
   region is a judgement the user can't see.
+
+## Fetch the market and build the role map only on demand
+Today the market moves the role map. The crawler crawls every source weekly,
+and the Himalayas searches between runs. Each change becomes
+`PostingsChanged`, the worker's fan-out resolves it to every user in that
+place, and each of them gets a rebuild and a `compute_fits` on their own key,
+asked for or not. An analysis builds twice: once at once from what was
+crawled (ADR 0020), and again when its searches land (ADR 0025).
+
+From here, a role map is built only when the user asks, with an action whose
+cost they confirmed: an analysis, "Rebuild role map", or adding a custom
+role. A build fetches what it needs first, reusing anything fetched recently
+for anyone, and is built once.
+
+One branch, `feature/<ticket>/market-on-demand`, cut from mainline after the
+location list has merged. Its ADR (0026 at the time of writing) supersedes
+domain decision 14 (weekly crawl) and amends ADRs 0018, 0020 and 0025.
+
+1. **A source is fetched when a build needs it and it isn't fresh.**
+   * Every crawl source, a company board or a search, is one shared row, as
+     now. It gains `due_at`: set when a build needs it, cleared when it is
+     fetched.
+   * A source is fresh when it was last fetched within
+     `MARKET_FRESH_HOURS`, an optional `.env` setting, 24 by default. A fresh
+     source is reused, whoever's build fetched it.
+   * Marking is idempotent. Two builds that need the same stale source both
+     wait on one fetch.
+   * Creating a search uses `INSERT … ON CONFLICT (kind, endpoint) DO
+     NOTHING`, so two analyses that recommend the same title at once can't
+     fail on the unique constraint. This also fixes a race that exists
+     today.
+
+2. **What a build needs.**
+   * The searches: each of the user's candidate titles, in each searchable
+     place (a country, or "Remote"). A region or no location adds none.
+   * The baseline boards (domain decision 15). They have no place, so every
+     build needs all of them; there are nine.
+   * The boards of the companies named on the user's custom roles, once
+     discovery has found one.
+   * `market.request_sources(titles, places, company_ids)` resolves these,
+     marks the stale ones due, and answers with their ids. Only titles,
+     places and company ids reach `market`; the user id never does.
+
+3. **The crawler fetches what is due, and nothing else.**
+   * Its loop looks for due sources every `CRAWL_DUE_POLL_SECONDS`, an
+     optional setting, 15 by default (a user is waiting), and fetches each
+     under the existing robots.txt and per-host rate limit.
+   * The weekly run, the two-minute look for unfetched sources, and
+     `retire_idle_searches` go. A source nobody's build needs is never
+     fetched again, so it needs no retiring. `last_requested_at` and its
+     migration-0020 column are dropped.
+   * A fetch records `last_fetched_at` and clears `due_at`, failed or not. A
+     failed fetch expires nothing, as now.
+   * The crawler emits no posting events. `PostingsChanged` and
+     `market.owners_affected_by` go, and so does the fan-out's SELECT-only
+     policy on `market_user.market_preference`. The crawler then says
+     nothing that is ever resolved to a user.
+
+4. **A build waits for its due sources.**
+   * Each trigger records the build as `waiting`, with the ids of the
+     sources it waits for, in the user's own activity row. If none is due,
+     it starts at once.
+   * The worker's dispatch loop already reads open builds for ADR 0018's
+     staleness. It now also starts a waiting build when every source it
+     waits for has been fetched since the build was recorded, or when
+     `MARKET_WAIT_SECONDS` (optional, 300 by default) has passed. Either
+     way the build uses the postings there are.
+   * After an analysis, the titles come from `RoleCandidatesReplaced`, which
+     is recorded before `AnalysisFinished`. The build is recorded on
+     `AnalysisFinished` and asks for its sources then. A failed analysis
+     still only releases a build that waited for it.
+   * `BuildRun` says what it waits for, so the running bar can say
+     "Searching the market for your recommended roles".
+
+5. **Which postings a build may use.**
+   * A board lists every opening its company has, so one missing from a
+     successful fetch is closed. Board postings expire by absence, as now.
+   * A search shows only its first page (robots.txt forbids paging), so a
+     job missing from a fetch was usually only pushed off the page. Search
+     fetches stop calling `expire_unseen`.
+   * Instead, a build's scope leaves out a searched posting whose
+     `last_seen_at` is older than `SEARCH_POSTING_UNSEEN_DAYS` (optional, 7
+     by default). It is not marked expired: with nothing re-checking it,
+     "too old to count" is all the platform knows. The row stays, for
+     Targets that point at it (ADR 0022) and for salary history.
+   * `last_seen_at` is per posting, so a posting found by two searches, or
+     by a search and a board, counts while any of them still returns it.
+
+6. **What no longer builds the map.**
+   * A change of target locations. The role map says "Your locations
+     changed" with Rebuild and its estimate. The next build searches the new
+     places.
+   * A market change. There is none to hear any more.
+   * The role map shows "Market data as of …": the oldest fetch among the
+     sources its last build used.
+   * "Keep your map current" stops saying the map is rebuilt "when the
+     market in your locations changes". Its Rebuild button reads "Searching
+     the market…" while a build waits on sources, as well as "Waiting for
+     analysis…".
+
+Tests:
+* Unit:
+  * A source fetched within `MARKET_FRESH_HOURS` is not marked due, and an
+    older or unfetched one is.
+  * Two builds needing the same stale source mark it once.
+  * Creating a search that already exists is a no-op, not an error.
+  * A build with nothing due starts at once. One with due sources waits,
+    starts when they are all fetched, and starts at `MARKET_WAIT_SECONDS`
+    if they aren't.
+  * A failed fetch counts as fetched for waiting and expires nothing.
+  * A board fetch still expires a missing posting, and a search fetch does
+    not.
+  * A searched posting past `SEARCH_POSTING_UNSEEN_DAYS` is out of scope,
+    and still counts if a board or another search saw it recently.
+  * A location change and a crawl rebuild nothing.
+  * The three settings' defaults, and that each rejects a value below 1.
+* Integration:
+  * One analysis leads to one build and one `compute_fits`, with the
+    searched postings in scope.
+  * A second analysis with the same titles within the fresh window fetches
+    nothing and builds at once.
+  * The crawler fetches only due sources.
+* SPA: the running bar's "searching the market" state, "Your locations
+  changed" with Rebuild, and "Market data as of …".
+
+What gets harder:
+* The map is as old as the user's last request. A map built a month ago
+  shows month-old openings until the user rebuilds, and the screen has to
+  say so. "The role map rebuilds and rescores as the market moves" in
+  `CLAUDE.md` stops being true.
+* A build arrives later, after its sources are fetched: seconds when they are
+  fresh, up to `MARKET_WAIT_SECONDS` when Himalayas is slow or the crawler
+  is down.
+* Salary-band history only grows when someone builds, so it is patchy for
+  places few users target.
+* Closed openings on a board stay open until a build fetches that board, so
+  a stale map can show a job that is gone. Its link says so.
+* A waiting build has two meanings (an analysis, or the market), so ADR
+  0018's rule and the activity copy widen.
+
+Open questions:
+* `MARKET_FRESH_HOURS` (24) and `MARKET_WAIT_SECONDS` (300) are guesses.
+  Measure how long a build's due sources take, and how often a re-analysis
+  lands inside the fresh window, before settling.
+* Whether a region-only user should be told on the role map that their
+  recommended roles weren't searched, beyond the note in 01 Sources.
+* Whether "Rebuild role map" should offer to refresh only the market, with
+  no naming, when the candidates haven't changed. That would need a
+  cheaper build path.
