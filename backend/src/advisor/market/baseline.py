@@ -39,6 +39,23 @@ BASELINE_SOURCES: tuple[BaselineSource, ...] = (
         "Datadog",
         "https://boards-api.greenhouse.io/v1/boards/datadog/jobs?content=true",
     ),
+    # Boards with openings in Taiwan and Singapore, where no job API can be
+    # searched for on-site work (ADR 0025).
+    BaselineSource(
+        "greenhouse",
+        "Appier",
+        "https://boards-api.greenhouse.io/v1/boards/appier/jobs?content=true",
+    ),
+    BaselineSource(
+        "greenhouse",
+        "OKX",
+        "https://boards-api.greenhouse.io/v1/boards/okx/jobs?content=true",
+    ),
+    BaselineSource(
+        "greenhouse",
+        "Stripe",
+        "https://boards-api.greenhouse.io/v1/boards/stripe/jobs?content=true",
+    ),
     BaselineSource("lever", "Spotify", "https://api.lever.co/v0/postings/spotify?mode=json"),
     BaselineSource(
         "ashby",

@@ -30,6 +30,7 @@ from __future__ import annotations
 import uuid
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from advisor.market.domain.entities import (
@@ -83,6 +84,10 @@ class CrawlSourceFilter:
     company_id: uuid.UUID | None = None
     kind: str | None = None
     endpoint: str | None = None
+    # True: only sources no crawl has fetched yet.
+    is_unfetched: bool | None = None
+    # Searches whose candidates last asked for them before this moment.
+    requested_before: datetime | None = None
 
 
 class CrawlSourceRepository(Repository[CrawlSource, CrawlSourceFilter], Protocol): ...
@@ -143,6 +148,8 @@ class SharedMarket(Protocol):
 @dataclass(frozen=True, slots=True)
 class MarketPreferenceFilter:
     market: str | None = None
+    # Target locations that contain every word of at least one of these names.
+    names_any_of: tuple[str, ...] | None = None
 
 
 class MarketPreferenceRepository(

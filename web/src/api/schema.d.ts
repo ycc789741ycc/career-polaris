@@ -1585,6 +1585,8 @@ export interface components {
         MatchedPosting: {
             /** Company Name */
             company_name: string;
+            /** Credited To */
+            credited_to: string | null;
             /** Fit */
             fit: number | null;
             /**

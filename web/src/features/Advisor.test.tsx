@@ -69,6 +69,7 @@ const northwind: MatchedPosting = {
   fit: 86,
   fit_basis: "role",
   source_kind: "atsBoard",
+  credited_to: null,
 };
 
 function plan(roleId: string, opening: string | null, id: string): PlanSummary {
@@ -239,6 +240,23 @@ describe("what a focus aims at", () => {
     expect(target?.ref).toEqual({ role_id: "r1", job_posting_id: "p1" });
     expect(target?.band).toBe("EUR 165k–190k");
     expect(target?.fit).toBe(86);
+    expect(target?.creditedTo).toBeNull();
+  });
+
+  it("carries the job site an opening was found through, to credit it", () => {
+    const found = {
+      ...northwind,
+      url: "https://himalayas.app/companies/northwind-pay/jobs/staff-engineer",
+      credited_to: "Himalayas",
+    };
+    const target = targetFor(
+      { role: "r1", opening: "p1" },
+      [backend],
+      [fit("r1", 81)],
+      [found],
+    );
+    expect(target?.creditedTo).toBe("Himalayas");
+    expect(target?.url).toBe(found.url);
   });
 
   it("is a custom role with its own company, drawn as yours", () => {

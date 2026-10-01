@@ -381,6 +381,7 @@ flowchart LR
   AssessmentRequested --> AssessmentCompleted --> DimensionsChanged
   AssessmentCompleted --> AnalysisFinished --> RoleMapBuildRequested
   TargetLocationsChanged --> CrawlCompleted
+  AssessmentCompleted --> RoleCandidatesReplaced --> CrawlCompleted
   CustomRoleAdded --> CrawlCompleted
   CustomRoleAdded --> RoleMapBuildRequested
   WeeklyCrawlScheduled --> CrawlCompleted
@@ -421,7 +422,7 @@ flowchart LR
 | Answer | The user's submitted reply to a GapQuestion, stored as Evidence with source `user_answer` ("Your answers") | Profile |
 | CareerProfile | Career timeline plus all Evidence for one user; facts only, one per user | Profile |
 | TargetLocation | One of the user's 1–3 places to work (city, country or remote region); scopes the role map, the salary bands and demand crawling. Shown in the profile, owned by Market. Replaces MarketPreference | Market |
-| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or public job API); `origin` is `baseline` (platform-curated) or `demand` (a target location or a custom Role's company asked for it), never who asked | Market |
+| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or a search of a public job API for one job title in one place); `origin` is `baseline` (platform-curated) or `demand` (a custom Role's company, or a candidate role in a target location, asked for it), never who asked | Market |
 | JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a custom Role's JD is private to its owner. Tracks first/last seen and open/expired | Market |
 | Company | An employer seen in the market | Market |
 | InterviewReport | A user's report of an interview. The shared part is aggregated for the hiring bar when ≥3 users reported; the private part becomes the reporter's Evidence and calibrates their fit | Market |
@@ -546,6 +547,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** | 2.8: Gap fill; the Analyzer no longer asks questions |
 | 28 | 2026-09-29 | Where profile confidence lives | **On the SkillAssessment, shown on 02 Strengths** | 2.7 |
 | 29 | 2026-09-30 | Where the recommended Roles come from | **The analysis recommends candidate roles from the strengths; the role map keeps the first ten the user's market has openings for, and fits are scored once per build** | 2.2: RoleCandidate, RoleSelection; supersedes 2 ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
+| 30 | 2026-09-30 | How a candidate role's openings are found | **Its title is searched on a public job API (Himalayas) for the countries and remote work the user named, as ownerless demand sources; on-site work stays on company boards** | 2.5: CrawlSource as a search; remote work open worldwide is in every searchable target location ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |
 
 ### 6.2 Remaining questions
 

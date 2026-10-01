@@ -79,17 +79,6 @@ def normalize_title(title: str) -> str:
     return normalize(_TITLE_NOISE_RE.sub(" ", title))
 
 
-def in_market(location: str | None, market: str) -> bool:
-    """Whether a posting's location falls in a market the user chose.
-
-    Every word of the market must appear in the location, so "Berlin" takes in
-    "Berlin, Germany" and "Remote" takes in "Remote, United States". Boards
-    never write a location the way a user names a market, so equal strings
-    almost never happen.
-    """
-    return names_every_word(location, market)
-
-
 def names_every_word(text: str | None, phrase: str) -> bool:
     """Whether ``text`` contains every word of ``phrase``, accent-folded and in
     any order. The one word rule for a location in a market and for a posting

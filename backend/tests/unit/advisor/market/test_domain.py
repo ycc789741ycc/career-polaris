@@ -13,18 +13,24 @@ from advisor.market.domain import (
     MAX_TARGET_LOCATIONS,
     NormalizedPosting,
     SalaryRange,
+    SearchScope,
     SourceKind,
     TargetLocationError,
     band_from,
     canonical_key,
     chosen_target_locations,
     clip,
+    credited_source,
     expired_keys,
     in_market,
+    is_open_worldwide,
     market_words,
     names_every_word,
     normalize,
     normalize_title,
+    remote_location,
+    scope_names,
+    search_scope,
 )
 
 
@@ -252,3 +258,95 @@ def test_a_role_title_takes_in_a_posting_naming_each_of_its_words_in_any_order()
     assert names_every_word("Ingénieur Backend", "ingenieur")
     assert not names_every_word("Staff Designer", "Staff Backend")
     assert not names_every_word("Anything", "  ")
+
+
+# -- places a job API can be searched for (ADR 0025) --------------------------
+
+
+@pytest.mark.parametrize(
+    ("location", "label", "code"),
+    [
+        ("Taiwan", "Taiwan", "TW"),
+        ("taiwan", "Taiwan", "TW"),
+        ("Remote Taiwan", "Taiwan", "TW"),
+        ("Singapore", "Singapore", "SG"),
+        ("UK", "United Kingdom", "GB"),
+        ("United Kingdom", "United Kingdom", "GB"),
+        ("South Korea", "South Korea", "KR"),
+        ("Remote", "Remote", None),
+        ("remote", "Remote", None),
+    ],
+)
+def test_a_country_or_remote_is_a_place_a_search_can_be_scoped_to(
+    location: str, label: str, code: str | None
+) -> None:
+    scope = search_scope(location)
+
+    assert scope == SearchScope(label=label, country_code=code)
+    assert scope.is_worldwide == (code is None)
+
+
+@pytest.mark.parametrize("location", ["Taipei", "Taipei, Taiwan", "Remote EU", "Berlin", "", "—"])
+def test_a_city_or_a_region_adds_no_search(location: str) -> None:
+    """A posting stored for the search would not contain those words, so it
+    would never be in that user's scope."""
+    assert search_scope(location) is None
+
+
+def test_every_name_for_a_country_leads_to_the_users_who_chose_it() -> None:
+    assert scope_names("United Kingdom") == ("United Kingdom", "UK")
+    assert scope_names("Taiwan") == ("Taiwan",)
+    assert scope_names("Remote") == ("Remote",)
+    # A market that is not a search's place is only ever its own name.
+    assert scope_names("Berlin") == ("Berlin",)
+
+
+def test_a_remote_posting_names_the_countries_it_is_open_to() -> None:
+    assert remote_location(["Taiwan", " Japan ", ""]) == "Remote, Taiwan, Japan"
+    assert remote_location([]) == "Remote, Worldwide"
+
+
+@pytest.mark.parametrize("market", ["Taiwan", "Remote Taiwan", "Singapore", "Remote"])
+def test_remote_work_open_to_anyone_is_in_every_place_a_search_covers(market: str) -> None:
+    assert in_market("Remote, Worldwide", market)
+
+
+@pytest.mark.parametrize("market", ["Taipei", "Berlin", "Remote EU"])
+def test_remote_work_open_to_anyone_is_not_in_a_place_no_search_covers(market: str) -> None:
+    assert not in_market("Remote, Worldwide", market)
+
+
+def test_remote_work_open_to_other_countries_is_not_in_this_one() -> None:
+    assert not in_market("Remote, Argentina", "Taiwan")
+    assert in_market("Remote, Taiwan, Japan", "Taiwan")
+    assert in_market("Remote, Taiwan, Japan", "Remote Taiwan")
+
+
+@pytest.mark.parametrize(
+    ("location", "expected"),
+    [
+        ("Remote, Worldwide", True),
+        ("Worldwide (remote)", True),
+        ("Remote, Taiwan", False),
+        (None, False),
+    ],
+)
+def test_a_posting_says_when_it_is_open_worldwide(location: str | None, expected: bool) -> None:
+    assert is_open_worldwide(location) is expected
+
+
+@pytest.mark.parametrize(
+    ("url", "credit"),
+    [
+        ("https://himalayas.app/companies/acme/jobs/engineer", "Himalayas"),
+        ("https://www.himalayas.app/companies/acme/jobs/engineer", "Himalayas"),
+        ("https://boards.greenhouse.io/acme/jobs/1", None),
+        ("https://nothimalayas.app/jobs/1", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_an_opening_found_through_a_job_site_is_credited_to_it(
+    url: str | None, credit: str | None
+) -> None:
+    assert credited_source(url) == credit

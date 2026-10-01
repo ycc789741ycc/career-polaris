@@ -273,3 +273,18 @@ and step 8 can land any time.
      estimate that leads to a build prices them (`fits_cost_usd`).
    * The role map lists the recommended roles the market lacks
      (`GET /role-candidates`).
+
+10. **Search a public job API for the candidate roles — done.**
+    `feature/no-ticket/himalayas-candidate-search` (ADR 0025, domain decision 30)
+    * `RoleCandidatesReplaced` and `TargetLocationsChanged` queue
+      `market.request_searches(titles, locations)`: one ownerless `himalayas`
+      crawl source per title and place, for a country or "Remote"
+      (`market.domain.search_scope`). Migration 0020 adds `last_requested_at`.
+    * A Himalayas adapter reads the first page of each search. The crawler
+      looks for unfetched sources every two minutes, announces a changed place
+      once per crawl, and retires searches nobody has asked for in eight weeks.
+    * Remote work open worldwide is in scope for every searchable location.
+    * Openings found there say "via Himalayas" and link back (`credited_to`).
+    * On-site Taiwan and Singapore: Appier, OKX and Stripe join the baseline.
+    * Not solved: the same opening from a company board and from Himalayas is
+      two postings.

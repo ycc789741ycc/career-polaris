@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -119,6 +119,21 @@ async def test_the_fan_out_finds_the_users_whose_locations_take_in_a_market() ->
     assert await market.owners_affected_by(market="Berlin") == [OTHER]
     # A company's board changing reaches nobody through the fan-out on its own.
     assert await market.owners_affected_by(market=None) == []
+
+
+async def test_the_fan_out_reaches_every_way_of_naming_the_place_a_search_covers() -> None:
+    """A search is filed under one name for a place users spell several ways."""
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    third = uuid.UUID("00000000-0000-0000-0000-000000000003")
+    await market.set_target_locations(OWNER, ["Remote Taiwan"])
+    await market.set_target_locations(OTHER, ["taiwan", "Singapore"])
+    await market.set_target_locations(third, ["UK"])
+
+    assert await market.owners_affected_by(market="Taiwan") == [OWNER, OTHER]
+    assert await market.owners_affected_by(market="Singapore") == [OTHER]
+    assert await market.owners_affected_by(market="United Kingdom") == [third]
+    assert await market.owners_affected_by(market="Remote") == [OWNER]
 
 
 # --- crawling --------------------------------------------------------------
@@ -300,3 +315,157 @@ async def test_a_company_with_a_board_needs_no_discovery() -> None:
     assert await market.company_needing_source(company.id, "Acme") is None
     (source,) = uow.store.sources.values()
     assert source.origin is SourceOrigin.DEMAND
+
+
+# --- searches of a public job API (ADR 0025) --------------------------------
+
+SEARCH = "https://himalayas.app/jobs/api/search?q=data%20engineer&country=TW"
+NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+
+
+def _remote(title: str, location: str = "Remote, Taiwan") -> NormalizedPosting:
+    return replace(_posting(title), location=location, source_kind=SourceKind.PUBLIC_API)
+
+
+async def test_a_search_asked_for_is_an_ownerless_demand_source_filed_under_its_place() -> None:
+    uow = FakeMarketUnitOfWork()
+
+    created = await _service(uow).request_searches(
+        kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW
+    )
+
+    (source,) = uow.store.sources.values()
+    assert created == 1
+    assert (source.kind, source.endpoint, source.market) == ("himalayas", SEARCH, "Taiwan")
+    assert (source.origin, source.status) == (SourceOrigin.DEMAND, SourceStatus.ACTIVE)
+    assert source.company_id is None and source.last_requested_at == NOW
+    assert not hasattr(source, "owner_id")
+
+
+async def test_two_requests_for_the_same_search_share_one_source() -> None:
+    uow = FakeMarketUnitOfWork()
+    market = _service(uow)
+    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+
+    later = NOW + timedelta(days=3)
+    created = await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=later)
+
+    (source,) = uow.store.sources.values()
+    assert created == 0 and source.last_requested_at == later
+
+
+async def test_a_new_search_is_crawled_before_the_weekly_run_and_only_once() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest = CrawlIngest(uow)
+    board = _source(uow)
+    await ingest.record_crawl(board.id, [])
+    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+
+    (new,) = await ingest.new_sources()
+    assert (new.endpoint, new.market, new.company_id) == (SEARCH, "Taiwan", None)
+
+    await ingest.record_search_crawl(new.id, [], error="board returned 429")
+
+    # A search that failed waits for the weekly run like any other source.
+    assert await ingest.new_sources() == []
+    assert len(await ingest.due_sources()) == 2
+
+
+async def test_a_search_crawl_is_stored_without_announcing_each_search() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest = CrawlIngest(uow)
+    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+    (search,) = await ingest.new_sources()
+
+    first = await ingest.record_search_crawl(search.id, [_remote("Data"), _remote("ML")])
+    same = await ingest.record_search_crawl(search.id, [_remote("Data"), _remote("ML")])
+    fewer = await ingest.record_search_crawl(search.id, [_remote("Data")])
+
+    assert first == (2, 0, True)
+    # The same openings again are no reason to rebuild anybody's role map.
+    assert same == (2, 0, False)
+    assert fewer == (1, 1, True)
+    assert uow.store.events == []
+
+
+async def test_an_opening_that_comes_back_counts_as_a_change() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest = CrawlIngest(uow)
+    await _service(uow).request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+    (search,) = await ingest.new_sources()
+    await ingest.record_search_crawl(search.id, [_remote("Data")])
+    await ingest.record_search_crawl(search.id, [])
+
+    assert await ingest.record_search_crawl(search.id, [_remote("Data")]) == (1, 0, True)
+
+
+async def test_a_place_is_announced_once_however_many_of_its_searches_changed() -> None:
+    uow = FakeMarketUnitOfWork()
+
+    await CrawlIngest(uow).announce_markets(["Taiwan", "Singapore", "Taiwan"])
+
+    assert uow.store.events == [
+        PostingsChanged(company_id=None, market="Singapore", seen=0, expired=0),
+        PostingsChanged(company_id=None, market="Taiwan", seen=0, expired=0),
+    ]
+
+
+async def test_a_search_nobody_asks_for_any_more_is_retired_with_what_it_found() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    wanted = SEARCH.replace("data", "platform")
+    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+    await market.request_searches(
+        kind="himalayas", searches={wanted: "Taiwan"}, at=NOW + timedelta(weeks=7)
+    )
+    idle = next(s for s in uow.store.sources.values() if s.endpoint == SEARCH)
+    await ingest.record_search_crawl(idle.id, [_remote("Data")])
+    board = _source(uow)
+
+    retired = await ingest.retire_idle_searches(NOW + timedelta(weeks=8, days=1))
+
+    assert retired == 1
+    assert uow.store.sources[idle.id].status is SourceStatus.RETIRED
+    # Nothing would ever expire its postings again, so they are expired now.
+    assert [p.status for p in uow.store.postings.values()] == [PostingStatus.EXPIRED]
+    assert uow.store.events[-1] == PostingsChanged(
+        company_id=None, market="Taiwan", seen=0, expired=1
+    )
+    # A search still asked for, and a company's board, are left alone.
+    active = {s.endpoint for s in uow.store.sources.values() if s.status is SourceStatus.ACTIVE}
+    assert active == {wanted, board.endpoint}
+
+
+async def test_a_retired_search_asked_for_again_is_crawled_afresh() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+    (search,) = await ingest.new_sources()
+    await ingest.record_search_crawl(search.id, [])
+    await ingest.retire_idle_searches(NOW + timedelta(weeks=9))
+
+    await market.request_searches(
+        kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW + timedelta(weeks=10)
+    )
+
+    assert [s.id for s in await ingest.new_sources()] == [search.id]
+
+
+async def test_an_opening_found_through_a_job_site_is_credited_wherever_it_is_read() -> None:
+    uow = FakeMarketUnitOfWork()
+    market, ingest = _service(uow), CrawlIngest(uow)
+    await market.set_target_locations(OWNER, ["Taiwan"])
+    await market.request_searches(kind="himalayas", searches={SEARCH: "Taiwan"}, at=NOW)
+    (search,) = await ingest.new_sources()
+    found = replace(
+        _remote("Data", "Remote, Worldwide"),
+        url="https://himalayas.app/companies/acme/jobs/data",
+    )
+    await ingest.record_search_crawl(search.id, [found])
+    board = _source(uow)
+    await ingest.record_crawl(board.id, [replace(_posting("Backend"), location="Taipei, Taiwan")])
+
+    credits = {p.title: p.credited_to for p in await market.postings_in_scope(OWNER)}
+
+    # The worldwide opening is in scope for Taiwan, and says where it came from.
+    assert credits == {"Data": "Himalayas", "Backend": None}

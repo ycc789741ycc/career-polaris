@@ -70,6 +70,11 @@ class CrawlSource(Base, TimestampMixin):
     origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="demand")
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set on a search of a public job API (ADR 0025): when a user's candidates
+    # last asked for it. One nobody asks for any more is retired.
+    last_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class JobPosting(Base, TimestampMixin):

@@ -28,7 +28,7 @@ import { useToast } from "../shell/toast";
 import { FillTheGap } from "./FillTheGap";
 import { GapPlan } from "./GapPlan";
 import { Resume } from "./Resume";
-import { pickBand } from "./Roles";
+import { Credit, pickBand } from "./Roles";
 import type { AdvisorTarget } from "./target";
 import { useAsync } from "./useAsync";
 
@@ -255,6 +255,7 @@ function TargetBanner({
             <div className="subcopy" style={{ margin: "2px 0 0" }}>
               at {where}
               {target.postingTitle ? " posting" : ""}
+              <Credit to={target.creditedTo} url={target.url} />
             </div>
           )}
           <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
@@ -306,6 +307,7 @@ export function targetFor(
     location: opening?.location ?? null,
     postingTitle: opening?.title ?? null,
     url: opening?.url ?? null,
+    creditedTo: opening?.credited_to ?? null,
     fit: opening?.fit ?? roleFit,
     band: opening?.salary
       ? money(opening.salary.currency, opening.salary.min, opening.salary.max)

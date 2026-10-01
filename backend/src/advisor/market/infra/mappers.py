@@ -54,6 +54,7 @@ def crawl_source(row: models.CrawlSource) -> CrawlSource:
         status=SourceStatus(row.status),
         last_fetched_at=row.last_fetched_at,
         last_error=row.last_error,
+        last_requested_at=row.last_requested_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -74,6 +75,7 @@ def apply_crawl_source(row: models.CrawlSource, entity: CrawlSource) -> None:
     row.status = str(entity.status)
     row.last_fetched_at = entity.last_fetched_at
     row.last_error = entity.last_error
+    row.last_requested_at = entity.last_requested_at
 
 
 # --- job posting -----------------------------------------------------------

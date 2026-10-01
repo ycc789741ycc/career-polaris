@@ -17,6 +17,7 @@ const option: AdvisorTarget = {
   location: "Berlin",
   postingTitle: "Senior Backend Engineer",
   url: null,
+  creditedTo: null,
   fit: 71,
   band: null,
   isCustom: false,

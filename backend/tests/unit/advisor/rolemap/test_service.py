@@ -16,6 +16,7 @@ from advisor.rolemap.domain import (
     BarBasis,
     CustomRoleAdded,
     HiringBar,
+    RoleCandidatesReplaced,
     RoleChange,
     RoleLineage,
     RoleMapBuildFinished,
@@ -503,6 +504,25 @@ async def test_an_analysiss_candidates_replace_the_last_ones_in_its_order() -> N
         (1, "Second", None),
     ]
     assert {c.assessment_id for c in uow.store.candidates.values()} == {assessment}
+
+
+async def test_new_candidates_are_announced_by_title_for_the_market_to_search() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow)
+
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("First", "a"), _candidate("Second", "b")]
+    )
+
+    assert uow.store.events == [RoleCandidatesReplaced(OWNER, ("First", "Second"))]
+
+
+async def test_an_analysis_that_recommends_nothing_asks_for_no_search() -> None:
+    uow = FakeRoleMapUnitOfWork()
+
+    await _service(uow).replace_candidates(OWNER, uuid.uuid4(), [])
+
+    assert uow.store.events == []
 
 
 async def test_an_analysis_recommends_no_more_than_twenty_roles() -> None:

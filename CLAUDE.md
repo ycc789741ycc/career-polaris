@@ -230,8 +230,9 @@ contract.
   profile or the whole response is rejected — that is the guard against invented
   claims.
 - **Glassdoor, Indeed and LinkedIn are not crawled** (domain decision 6). Market
-  data comes from public ATS job boards, schema.org JSON-LD career pages, and
-  JDs users paste themselves.
+  data comes from public ATS job boards, schema.org JSON-LD career pages, the
+  Himalayas public API for remote work (ADR 0025), and JDs users paste
+  themselves.
 
 ## Phase 1 scope
 
@@ -291,8 +292,9 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   has, and never builds a first one. The role map has no market pills or band
   toggle, and says how many open postings the locations take in
   (`GET /market-scope`). The table keeps its old name,
-  `market_user.market_preference`. Public-API crawl sources per location are
-  not built: there is no adapter for one yet.
+  `market_user.market_preference`. A location that is a country or "Remote"
+  is searched on a public job API for the roles the analysis recommends
+  (ADR 0025).
 - **No watchlist** (ADR 0019). Role subscriptions, manual re-crawls and the
   `subscription` Target kind are gone. Board discovery stays as an ownerless
   `market.discover_board(company_id, company_name)`, for the companies custom
@@ -311,6 +313,16 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
   to a build includes them (`fits_cost_usd`). `GET /role-candidates` lets the
   role map name the recommended roles the market lacks.
+- **Candidate roles are searched for** (ADR 0025). `RoleCandidatesReplaced`
+  and `TargetLocationsChanged` queue `market.request_searches(titles,
+  locations)`, which leaves one ownerless `himalayas` crawl source per job
+  title and place: a country, or "Remote" (`market.domain.search_scope`; a
+  city adds none). Only the title leaves the platform. The crawler reads the
+  first page of each search, looks for unfetched sources every two minutes
+  (`crawl_new`), announces a changed place once per crawl, and retires
+  searches not asked for in eight weeks. Remote work open worldwide is in
+  scope for every searchable location. An opening found there carries
+  `credited_to` and is shown "via Himalayas" with its link.
 - **Custom roles** (ADR 0021). `rolemap.role.origin` is `recommended` or
   `custom`; a custom role has an optional company and private JD, is never
   retired by reconciliation, and is removed by the user (retired, not deleted).

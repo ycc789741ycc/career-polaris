@@ -14,6 +14,8 @@ export interface AdvisorTarget {
   /** The opening's own title, when the Target names one. */
   postingTitle: string | null;
   url: string | null;
+  /** The job site the opening was found through, to credit beside it. */
+  creditedTo: string | null;
   /** Today's fit: the opening's when there is one, else the role's. */
   fit: number | null;
   /** "EUR 165k–190k", when the opening or role publishes pay. */

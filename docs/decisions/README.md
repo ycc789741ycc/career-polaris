@@ -30,7 +30,7 @@ new record that supersedes the old one.
 | [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted |
 | [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
 | [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Accepted |
-| [0025](0025-search-himalayas-for-the-candidate-roles.md) | Search Himalayas for the analysis's candidate roles, as ownerless demand sources | Proposed |
+| [0025](0025-search-himalayas-for-the-candidate-roles.md) | Search Himalayas for the analysis's candidate roles, as ownerless demand sources | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

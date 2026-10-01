@@ -15,16 +15,22 @@ from typing import Any, Protocol
 from advisor.market.service import NormalizedPosting, SalaryRange, SourceKind
 from kernel.parsing import parse_date, strip_html
 
-__all__ = ["BoardAdapter", "parse_date", "salary_from", "strip_html"]
+__all__ = ["BoardAdapter", "PostingSource", "parse_date", "salary_from", "strip_html"]
 
 
-class BoardAdapter(Protocol):
+class PostingSource(Protocol):
+    """Anything a crawl source's payload can be parsed by, keyed by its kind."""
+
     name: str
     source_kind: SourceKind
 
-    def endpoint_for(self, slug: str) -> str: ...
-
     def parse(self, payload: Any, *, company_name: str) -> list[NormalizedPosting]: ...
+
+
+class BoardAdapter(PostingSource, Protocol):
+    """One company's job board, found under a slug."""
+
+    def endpoint_for(self, slug: str) -> str: ...
 
 
 def salary_from(minimum: Any, maximum: Any, currency: Any) -> SalaryRange | None:
