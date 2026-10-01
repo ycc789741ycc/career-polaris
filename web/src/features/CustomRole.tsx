@@ -91,8 +91,8 @@ export function CustomRoleForm({
           {estimate.matches > 0
             ? `It takes in ${estimate.matches} open ${estimate.matches === 1 ? "posting" : "postings"} in your locations. `
             : "No open posting in your locations matches it yet, so it is read from its JD alone. "}
-          Reading what it requires will cost about{" "}
-          <strong>${estimate.cost_usd}</strong>
+          Reading what it requires, then scoring your fit against every role on
+          the map, will cost about <strong>${estimate.cost_usd}</strong>
           {estimate.model_id ? ` on ${estimate.model_id}` : ""}, charged to your
           own provider.
         </CostConfirm>

@@ -1,4 +1,5 @@
-"""Hiring bar blending and role identity across re-clustering."""
+"""Hiring bar blending, role identity across rebuilds, and which recommended
+candidates the market has."""
 
 from __future__ import annotations
 
@@ -7,14 +8,16 @@ import itertools
 import pytest
 
 from advisor.rolemap.domain import (
+    CANDIDATE_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
     RECOMMENDED_ROLE_COUNT,
     BarBasis,
     RoleChange,
+    assign_postings,
     blend,
+    keep_on_market,
     max_role_count,
     overlap,
-    rank_by_fit,
     reconcile,
 )
 
@@ -176,7 +179,7 @@ def test_the_role_map_analyses_ten_recommended_roles() -> None:
     assert RECOMMENDED_ROLE_COUNT == 10
 
 
-# -- choosing which clusters are analysed -----------------------------------
+# -- matching candidates to the market (ADR 0024) ----------------------------
 
 
 def _axis(index: int, weight: float = 1.0) -> list[float]:
@@ -185,42 +188,96 @@ def _axis(index: int, weight: float = 1.0) -> list[float]:
     return vector
 
 
-def test_the_clusters_closest_to_the_profile_come_first() -> None:
-    profile = [_axis(2, 3.0), _axis(0, 1.0)]
-    clusters = [[_axis(0)] * 3, [_axis(1)] * 3, [_axis(2)] * 3]
-    assert rank_by_fit(profile, clusters) == [2, 0, 1]
+def _near(index: int, lean: int, amount: float) -> list[float]:
+    """Mostly along ``index``, tilted toward ``lean`` by ``amount``."""
+    vector = _axis(index)
+    vector[lean] = amount
+    return vector
 
 
-def test_by_default_no_more_than_ten_clusters_are_kept() -> None:
-    profile = [_axis(i, float(i)) for i in range(12)]
-    clusters = [[_axis(i)] * 3 for i in range(12)]
-    assert rank_by_fit(profile, clusters) == list(range(11, 1, -1))
-    assert len(rank_by_fit(profile, clusters)) == RECOMMENDED_ROLE_COUNT
+NO_TITLE_HITS: frozenset[int] = frozenset()
 
 
-def test_a_smaller_limit_keeps_the_closest_clusters_of_the_larger_one() -> None:
-    profile = [_axis(i, float(i)) for i in range(12)]
-    clusters = [[_axis(i)] * 3 for i in range(12)]
-    assert rank_by_fit(profile, clusters, limit=4) == [11, 10, 9, 8]
+def test_a_posting_is_an_opening_for_the_candidate_it_is_nearest() -> None:
+    candidates = [_axis(0), _axis(1)]
+    postings = [_near(1, 0, 0.2), _near(0, 1, 0.2)]
+    assert assign_postings(candidates, postings, [NO_TITLE_HITS] * 2) == [1, 0]
 
 
-def test_fewer_clusters_than_the_limit_are_all_kept() -> None:
-    clusters = [[_axis(i)] * 3 for i in range(4)]
-    assert sorted(rank_by_fit([_axis(0)], clusters)) == [0, 1, 2, 3]
+def test_a_posting_near_no_candidate_is_an_opening_for_none() -> None:
+    assert assign_postings([_axis(0), _axis(1)], [_axis(5)], [NO_TITLE_HITS]) == [None]
 
 
-def test_equally_close_clusters_go_larger_first_then_in_order() -> None:
-    profile = [_axis(0)]
-    clusters = [[_axis(1)] * 3, [_axis(2)] * 5, [_axis(3)] * 3]
-    assert rank_by_fit(profile, clusters) == [1, 0, 2]
+def test_the_threshold_is_the_least_cosine_that_counts() -> None:
+    # cos 45° is about 0.707
+    posting = [_near(0, 1, 1.0)]
+    assert assign_postings([_axis(0)], posting, [NO_TITLE_HITS], threshold=0.7) == [0]
+    assert assign_postings([_axis(0)], posting, [NO_TITLE_HITS], threshold=0.75) == [None]
 
 
-def test_with_no_profile_the_largest_clusters_are_kept() -> None:
-    """A user who has connected nothing yet still gets a map."""
-    clusters = [[_axis(i)] * (3 + i) for i in range(12)]
-    assert rank_by_fit([], clusters) == list(range(11, 1, -1))
+def test_a_posting_that_names_a_candidates_title_goes_to_it_even_when_another_is_nearer() -> None:
+    candidates = [_axis(0), _axis(1)]
+    posting = [_near(0, 1, 0.1)]
+    assert assign_postings(candidates, posting, [frozenset({1})]) == [1]
 
 
-def test_a_profile_in_another_embedding_space_is_a_bug() -> None:
+def test_a_title_hit_counts_below_the_threshold() -> None:
+    assert assign_postings([_axis(0)], [_axis(5)], [frozenset({0})]) == [0]
+
+
+def test_of_several_title_hits_the_nearest_wins() -> None:
+    candidates = [_axis(0), _axis(1), _axis(2)]
+    posting = [_near(2, 0, 0.3)]
+    assert assign_postings(candidates, posting, [frozenset({0, 2})]) == [2]
+
+
+def test_equally_near_candidates_go_to_the_better_ranked() -> None:
+    posting = [_near(0, 1, 1.0)]
+    assert assign_postings([_axis(1), _axis(0)], posting, [NO_TITLE_HITS]) == [0]
+    assert assign_postings([_axis(0), _axis(1)], posting, [frozenset({0, 1})]) == [0]
+
+
+def test_each_posting_is_an_opening_for_one_candidate_at_most() -> None:
+    candidates = [_axis(0), _near(0, 1, 0.1)]
+    postings = [_axis(0)] * 3
+    assigned = assign_postings(candidates, postings, [NO_TITLE_HITS] * 3)
+    assert assigned == [0, 0, 0]
+
+
+def test_title_hits_must_line_up_with_the_postings() -> None:
+    with pytest.raises(ValueError, match="one entry per posting"):
+        assign_postings([_axis(0)], [_axis(0), _axis(1)], [NO_TITLE_HITS])
+
+
+def test_a_title_hit_on_a_candidate_that_does_not_exist_is_a_bug() -> None:
+    with pytest.raises(ValueError, match="does not exist"):
+        assign_postings([_axis(0)], [_axis(0)], [frozenset({3})])
+
+
+def test_a_candidate_in_another_embedding_space_is_a_bug() -> None:
     with pytest.raises(ValueError, match="same length"):
-        rank_by_fit([[1.0, 0.0]], [[_axis(0)] * 3])
+        assign_postings([[1.0, 0.0]], [_axis(0)], [NO_TITLE_HITS])
+
+
+def test_the_candidates_with_enough_openings_become_roles_in_the_analysiss_order() -> None:
+    counts = [5, MIN_POSTINGS_FOR_A_ROLE - 1, MIN_POSTINGS_FOR_A_ROLE, 0, 9]
+    assert keep_on_market(counts) == [0, 2, 4]
+
+
+def test_no_more_than_ten_candidates_become_roles() -> None:
+    kept = keep_on_market([MIN_POSTINGS_FOR_A_ROLE] * CANDIDATE_ROLE_COUNT)
+    assert kept == list(range(RECOMMENDED_ROLE_COUNT))
+
+
+def test_a_candidate_the_market_skips_leaves_room_for_the_next() -> None:
+    counts = [0] * 3 + [MIN_POSTINGS_FOR_A_ROLE] * 12
+    assert keep_on_market(counts) == list(range(3, 13))
+
+
+def test_an_analysis_recommends_twice_the_ten() -> None:
+    assert CANDIDATE_ROLE_COUNT == 2 * RECOMMENDED_ROLE_COUNT
+
+
+def test_a_role_needs_an_opening() -> None:
+    with pytest.raises(ValueError, match="at least one opening"):
+        keep_on_market([1], minimum=0)

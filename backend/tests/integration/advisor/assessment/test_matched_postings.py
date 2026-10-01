@@ -155,7 +155,6 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
         rolemap = create_rolemap_service(
             database,
             market=market,
-            profile=profile,
             gateway=gateway,
             embedding_model=settings.embedding_model_name,
         )

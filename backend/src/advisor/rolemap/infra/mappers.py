@@ -7,6 +7,7 @@ from advisor.rolemap.domain import (
     BuildRunStatus,
     LineageEntry,
     Role,
+    RoleCandidate,
     RoleChange,
     RoleMember,
     RoleOrigin,
@@ -154,3 +155,35 @@ def apply_build_run(row: models.BuildRun, entity: BuildRun) -> None:
     row.finished_at = entity.finished_at
     row.error_code = entity.error_code
     row.error_message = entity.error_message
+
+
+def candidate(row: models.RoleCandidate) -> RoleCandidate:
+    return RoleCandidate(
+        id=row.id,
+        owner_id=row.owner_id,
+        assessment_id=row.assessment_id,
+        rank=row.rank,
+        title=row.title,
+        description=row.description,
+        dimension_keys=tuple(row.dimension_keys),
+        role_id=row.role_id,
+        opening_count=row.opening_count,
+        created_at=row.created_at,
+    )
+
+
+def candidate_row(entity: RoleCandidate) -> models.RoleCandidate:
+    row = models.RoleCandidate(
+        id=entity.id, owner_id=entity.owner_id, assessment_id=entity.assessment_id
+    )
+    apply_candidate(row, entity)
+    return row
+
+
+def apply_candidate(row: models.RoleCandidate, entity: RoleCandidate) -> None:
+    row.rank = entity.rank
+    row.title = entity.title
+    row.description = entity.description
+    row.dimension_keys = list(entity.dimension_keys)
+    row.role_id = entity.role_id
+    row.opening_count = entity.opening_count

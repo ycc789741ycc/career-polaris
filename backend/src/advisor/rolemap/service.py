@@ -1,14 +1,18 @@
-"""The role map: postings grouped into roles, per user, on the user's key.
+"""The role map: the roles the user's strengths point to, found on the market,
+per user, on the user's key.
 
-The split that matters here is who pays for what. Clustering runs locally on
-the platform — plain computation. The user's key is spent only on naming a
-cluster, pulling its requirements out, and estimating its interview difficulty
-(domain decision 7).
+The analysis recommends candidate roles (ADR 0024); a build searches the
+postings in the user's target locations for each and keeps the first ten the
+market has. The split that matters is who pays for what. Embedding and
+matching run locally on the platform — plain computation. The user's key is
+spent only on naming a role, pulling its requirements out, and estimating its
+interview difficulty (domain decision 7).
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -16,9 +20,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from advisor.market import MarketService, PostingView, band_from, in_market, names_every_word
-from advisor.profile import ProfileService
 from advisor.rolemap.domain import (
+    CANDIDATE_ROLE_COUNT,
+    MAX_ROLE_REQUIREMENTS,
     MIN_POSTINGS_FOR_A_ROLE,
+    RECOMMENDED_ROLE_COUNT,
     BarBasis,
     BuildRun,
     BuildRunFilter,
@@ -29,8 +35,11 @@ from advisor.rolemap.domain import (
     LineageEntry,
     Reconciliation,
     Role,
+    RoleCandidate,
+    RoleCandidateFilter,
     RoleChange,
     RoleFilter,
+    RoleMapBuildFinished,
     RoleMapUnitOfWork,
     RoleMember,
     RoleMemberFilter,
@@ -40,23 +49,32 @@ from advisor.rolemap.domain import (
     RoleRequirementsChanged,
     RoleSplitOrMerged,
     RolesReclustered,
+    assign_postings,
     blend,
+    keep_on_market,
     max_role_count,
-    rank_by_fit,
     reconcile,
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
-from kernel.embeddings import cluster, embed
+from kernel.embeddings import embed
 from kernel.errors import DomainError, NotFoundError, ValidationError
 from kernel.logging import get_logger
 
-__all__ = ["BuildRequestView", "BuildRunView", "RequirementView", "RoleMapService", "RoleView"]
+__all__ = [
+    "BuildRequestView",
+    "BuildRunView",
+    "CandidateInput",
+    "RequirementView",
+    "RoleCandidateView",
+    "RoleMapService",
+    "RoleView",
+]
 
 log = get_logger(__name__)
 
-# The user's key is spent per cluster, so a first run has a predictable cost.
+# The user's key is spent per role, so a first run has a predictable cost.
 MAX_POSTINGS_IN_A_PROMPT = 12
 MAX_DESCRIPTION_CHARS = 4000
 
@@ -70,7 +88,7 @@ class _Requirement(BaseModel):
 class _RoleExtraction(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     is_coherent: bool = True
-    requirements: list[_Requirement] = Field(min_length=1, max_length=20)
+    requirements: list[_Requirement] = Field(min_length=1, max_length=MAX_ROLE_REQUIREMENTS)
 
 
 class _DifficultyEstimate(BaseModel):
@@ -81,11 +99,35 @@ class _DifficultyEstimate(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class _Group:
-    """One cluster of postings, before it is analysed into a role."""
+    """One candidate's openings, before they are analysed into a role."""
 
+    candidate: RoleCandidate
     keys: set[str]
     postings: list[PostingView]
-    vectors: list[list[float]]
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateInput:
+    """One role the analysis recommended, as ``assessment`` hands it over:
+    best fit first, resting on the user's dimension keys (ADR 0024)."""
+
+    title: str
+    description: str
+    dimension_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RoleCandidateView:
+    """A recommended candidate and what the last build made of it: the role it
+    became, or none when the user's target locations lack openings for it."""
+
+    id: uuid.UUID
+    rank: int
+    title: str
+    description: str
+    dimension_keys: tuple[str, ...]
+    role_id: uuid.UUID | None
+    opening_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,13 +195,11 @@ class RoleMapService:
         uow: RoleMapUnitOfWork,
         *,
         market: MarketService,
-        profile: ProfileService,
         gateway: AiGateway,
         embedding_model: str,
     ) -> None:
         self._uow = uow
         self._market = market
-        self._profile = profile
         self._gateway = gateway
         self._embedding_model = embedding_model
 
@@ -203,18 +243,67 @@ class RoleMapService:
             for role in roles
         ]
 
+    # -- candidates (ADR 0024) -----------------------------------------------
+
+    async def replace_candidates(
+        self,
+        owner_id: uuid.UUID,
+        assessment_id: uuid.UUID,
+        candidates: Sequence[CandidateInput],
+    ) -> list[RoleCandidateView]:
+        """The roles an analysis recommended, replacing the last analysis's.
+
+        Called by ``assessment`` once its scores are stored; the next build
+        searches the market for these. At most ``CANDIDATE_ROLE_COUNT``, in the
+        analysis's order.
+        """
+        if len(candidates) > CANDIDATE_ROLE_COUNT:
+            raise ValidationError(
+                f"an analysis recommends at most {CANDIDATE_ROLE_COUNT} roles",
+                candidates=len(candidates),
+            )
+        async with self._uow.for_owner(owner_id) as mine:
+            for previous in await mine.candidates.get_list(RoleCandidateFilter()):
+                await mine.candidates.delete(previous.id)
+            stored = [
+                await mine.candidates.create(
+                    RoleCandidate(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        assessment_id=assessment_id,
+                        rank=rank,
+                        title=candidate.title,
+                        description=candidate.description,
+                        dimension_keys=candidate.dimension_keys,
+                    )
+                )
+                for rank, candidate in enumerate(candidates)
+            ]
+        log.info("rolemap.candidates_replaced", candidates=len(stored))
+        return [_candidate_view(c) for c in stored]
+
+    async def candidates(self, owner_id: uuid.UUID) -> list[RoleCandidateView]:
+        """The latest analysis's candidates, in its order, each with the role
+        the last build made of it, if any."""
+        return [_candidate_view(c) for c in await self._candidates(owner_id)]
+
+    async def _candidates(self, owner_id: uuid.UUID) -> list[RoleCandidate]:
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.candidates.get_list(RoleCandidateFilter())
+        return sorted(found, key=lambda c: c.rank)
+
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         """The most a role map can cost, before any money is spent.
 
-        A ceiling, not a prediction: the api runs no embeddings or clustering,
-        so it prices the largest number of clusters these postings could form,
-        capped at the ten recommended roles, each sent with the costliest
-        prompt they could fill.
+        A ceiling, not a prediction: the api runs no embeddings, so it prices
+        the most roles these postings could make, with each posting an opening
+        for one role at most, capped at the ten recommended roles, each sent
+        with the costliest prompt they could fill.
         """
         postings = await self._market.postings_in_scope(owner_id)
-        max_clusters = max_role_count(len(postings))
-        if max_clusters == 0:
-            return {"max_clusters": 0, "cost_usd": "0", "model_id": None}
+        max_roles = max_role_count(len(postings))
+        if max_roles == 0:
+            return {"max_roles": 0, "cost_usd": "0", "model_id": None}
 
         template = load_template("role_extraction", "v1")
         sample = _postings_block(sorted(postings, key=_prompt_length, reverse=True))
@@ -225,10 +314,10 @@ class RoleMapService:
             inputs={"postings": sample},
             untrusted=frozenset({"postings"}),
         )
-        # Two calls per cluster: extraction, then the difficulty estimate.
-        total = estimate.cost_usd * max_clusters * 2
+        # Two calls per role: extraction, then the difficulty estimate.
+        total = estimate.cost_usd * max_roles * 2
         return {
-            "max_clusters": max_clusters,
+            "max_roles": max_roles,
             "cost_usd": str(total.quantize(estimate.cost_usd)),
             "model_id": estimate.model_id,
             "rate_is_published": estimate.rate_is_published,
@@ -315,47 +404,101 @@ class RoleMapService:
             if done is not None and done.is_running:
                 done.ready(utcnow())
                 await mine.builds.update(done)
+                # Its fits are scored once, now, whatever it changed (ADR 0024).
+                mine.record(
+                    RoleMapBuildFinished(
+                        owner_id=owner_id, build_id=build_id, status=str(BuildRunStatus.READY)
+                    )
+                )
         return roles
 
     async def fail_build(
         self, owner_id: uuid.UUID, build_id: uuid.UUID, *, code: str, message: str
     ) -> None:
         """Close a build without a result. Also how ``advisor.activity`` gives
-        up on a build whose worker never came back."""
+        up on a build whose worker never came back. The fits are still scored:
+        an analysis that asked for this build has new scores to show against
+        the roles that are there."""
         async with self._uow.for_owner(owner_id) as mine:
             failed = await mine.builds.get(build_id)
             if failed is None or not failed.is_open:
                 return
             failed.failed(code=code, message=message, at=utcnow())
             await mine.builds.update(failed)
+            mine.record(
+                RoleMapBuildFinished(
+                    owner_id=owner_id, build_id=build_id, status=str(BuildRunStatus.FAILED)
+                )
+            )
 
     async def recluster(self, owner_id: uuid.UUID) -> list[RoleView]:
-        """Rebuild this user's role map.
+        """Rebuild this user's role map from the latest analysis's candidates.
 
         Role ids survive: a goal or a saved fit pointing at a role must still
-        find it after a crawl changes the underlying postings.
+        find it after a crawl changes the underlying postings. With no
+        candidates yet — no analysis has succeeded — only custom roles are
+        placed, so nothing is spent on a map the user never priced.
         """
-        found = await self._group_postings(owner_id)
-        if found:
-            await self._build_recommended(owner_id, found)
+        candidates = await self._candidates(owner_id)
+        if candidates:
+            await self._build_recommended(owner_id, candidates)
         else:
-            log.info("rolemap.nothing_to_cluster", owner_id=str(owner_id))
+            log.info("rolemap.no_candidates", owner_id=str(owner_id))
         await self._build_custom(owner_id)
         return await self.roles(owner_id)
 
-    async def _build_recommended(self, owner_id: uuid.UUID, found: list[_Group]) -> None:
-        """The ten clusters closest to the profile, analysed on the user's key."""
-        # Only the ten clusters closest to the profile are analysed on the
-        # user's key; the rest are left out, so roles they held are retired below.
-        keep = rank_by_fit(
-            await self._profile_vectors(owner_id), [group.vectors for group in found]
+    async def _build_recommended(
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate]
+    ) -> None:
+        """The first ten candidates the market has, analysed on the user's key.
+
+        Candidates the market lacks are left unplaced, and roles that no longer
+        come from a kept candidate are retired by reconciliation.
+        """
+        scope = await self._scope_vectors(owner_id)
+        if not scope:
+            # An empty market says nothing about the roles, or about where each
+            # candidate stands: keep both as they are.
+            log.info("rolemap.nothing_in_scope", owner_id=str(owner_id))
+            return
+
+        vectors = embed(
+            ["\n".join((c.title, c.title, c.description)) for c in candidates],
+            model_name=self._embedding_model,
         )
-        groups = [found[index] for index in keep]
+        postings = [posting for _key, posting, _vector in scope]
+        assigned = assign_postings(
+            vectors,
+            [vector for _key, _posting, vector in scope],
+            [
+                frozenset(
+                    index
+                    for index, candidate in enumerate(candidates)
+                    if names_every_word(posting.title, candidate.title)
+                )
+                for posting in postings
+            ],
+        )
+        members: list[list[int]] = [[] for _ in candidates]
+        for posting_index, candidate_index in enumerate(assigned):
+            if candidate_index is not None:
+                members[candidate_index].append(posting_index)
+        counts = {c.id: len(members[i]) for i, c in enumerate(candidates)}
+        keep = keep_on_market([len(m) for m in members], limit=RECOMMENDED_ROLE_COUNT)
+        groups = [
+            _Group(
+                candidate=candidates[index],
+                keys={scope[j][0] for j in members[index]},
+                postings=[postings[j] for j in members[index]],
+            )
+            for index in keep
+        ]
         log.info(
             "rolemap.selected",
             owner_id=str(owner_id),
-            clusters_found=len(found),
-            clusters_kept=len(groups),
+            candidates=len(candidates),
+            candidates_kept=len(groups),
+            postings_in_scope=len(scope),
         )
 
         previous = await self._previous_members(owner_id)
@@ -365,8 +508,10 @@ class RoleMapService:
             new_id=lambda: str(uuid.uuid4()),
         )
 
+        placed: dict[uuid.UUID, uuid.UUID] = {}
         for index, group in enumerate(groups):
             role_id = uuid.UUID(reconciliation.assignments[index])
+            placed[group.candidate.id] = role_id
             # The same postings as the last analysis: nothing for the key to
             # redo, so a rebuild on an unchanged market is free.
             if previous.get(str(role_id)) == group.keys and await self._keep_role(
@@ -382,6 +527,33 @@ class RoleMapService:
             )
 
         await self._record_lineage(owner_id, reconciliation)
+        await self._place_candidates(owner_id, candidates, placed=placed, counts=counts)
+
+    async def _place_candidates(
+        self,
+        owner_id: uuid.UUID,
+        candidates: list[RoleCandidate],
+        *,
+        placed: dict[uuid.UUID, uuid.UUID],
+        counts: dict[uuid.UUID, int],
+    ) -> None:
+        """Record what the build made of each candidate: its role, or none.
+
+        An analysis that finished during the build has replaced the set; its
+        candidates wait for the build that follows it, so the ones this build
+        read and no longer exist are skipped.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            for read in candidates:
+                candidate = await mine.candidates.get(read.id)
+                if candidate is None:
+                    continue
+                role_id = placed.get(candidate.id)
+                if role_id is None:
+                    candidate.unplaced(opening_count=counts.get(candidate.id, 0))
+                else:
+                    candidate.placed(role_id=role_id, opening_count=counts[candidate.id])
+                await mine.candidates.update(candidate)
 
     async def _analyse(
         self,
@@ -393,8 +565,8 @@ class RoleMapService:
         block: str,
     ) -> None:
         """Name a role, read out what it requires and estimate its bar, on the
-        user's key: two calls. ``block`` is the untrusted text read — the
-        cluster's postings, or a custom role's JD."""
+        user's key: two calls. ``block`` is the untrusted text read — a
+        candidate's openings, or a custom role's JD."""
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
@@ -573,13 +745,20 @@ class RoleMapService:
 
     # -- internals ----------------------------------------------------------
 
-    async def _group_postings(self, owner_id: uuid.UUID) -> list[_Group]:
-        """Cluster this user's postings locally. No AI, no cost."""
+    async def _scope_vectors(
+        self, owner_id: uuid.UUID
+    ) -> list[tuple[str, PostingView, list[float]]]:
+        """This user's postings, each with its embedding. No AI, no cost.
+
+        Fewer than one role's worth of postings is no market to search, and
+        comes back empty.
+        """
         scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
         if len(scope) < MIN_POSTINGS_FOR_A_ROLE:
             return []
 
         missing = [(key, posting) for key, posting, vector in scope if vector is None]
+        fresh: dict[str, list[float]] = {}
         if missing:
             # Postings the crawler has not embedded yet; embedding is local.
             texts = [
@@ -588,37 +767,12 @@ class RoleMapService:
                 )
                 for _key, p in missing
             ]
-            fresh = embed(texts, model_name=self._embedding_model)
-            by_key = dict(zip((k for k, _ in missing), fresh, strict=True))
-            scope = [
-                (key, posting, vector if vector is not None else by_key[key])
-                for key, posting, vector in scope
-            ]
-
-        keys = [key for key, _p, _v in scope]
-        postings = [p for _k, p, _v in scope]
-        vectors = [v for _k, _p, v in scope if v is not None]
-
-        result = cluster(vectors, min_cluster_size=MIN_POSTINGS_FOR_A_ROLE)
-        groups: list[_Group] = []
-        for cluster_id in result.cluster_ids:
-            members = result.members(cluster_id)
-            groups.append(
-                _Group(
-                    keys={keys[i] for i in members},
-                    postings=[postings[i] for i in members],
-                    vectors=[vectors[i] for i in members],
-                )
-            )
-        return groups
-
-    async def _profile_vectors(self, owner_id: uuid.UUID) -> list[list[float]]:
-        """The user's profile in the postings' embedding space: one vector per
-        evidence fact and per position held. Local and platform-paid."""
-        snapshot = await self._profile.snapshot(owner_id)
-        texts = [e.fact for e in snapshot.evidence if e.fact.strip()]
-        texts += [p.title for p in snapshot.positions if p.title.strip()]
-        return embed(texts, model_name=self._embedding_model)
+            vectors = embed(texts, model_name=self._embedding_model)
+            fresh = dict(zip((k for k, _ in missing), vectors, strict=True))
+        return [
+            (key, posting, vector if vector is not None else fresh[key])
+            for key, posting, vector in scope
+        ]
 
     async def _previous_members(self, owner_id: uuid.UUID) -> dict[str, set[str]]:
         """Every recommended role's postings from the last run, retired ones
@@ -641,7 +795,7 @@ class RoleMapService:
     ) -> bool:
         """Keep an already-analysed role on the map, refreshing only what needs
         no AI: its opening count and salary bands. ``False`` means there is no
-        analysed role to keep, and the cluster is analysed afresh."""
+        analysed role to keep, and its postings are analysed afresh."""
         bands = await self._salary_bands(owner_id, postings)
         async with self._uow.for_owner(owner_id) as mine:
             role = await mine.roles.get(role_id)
@@ -771,7 +925,7 @@ class RoleMapService:
 
 
 def _posting_key(posting: PostingView) -> str:
-    """The key a posting is clustered under (see ``MarketService.scope_with_vectors``)."""
+    """The key a posting is matched under (see ``MarketService.scope_with_vectors``)."""
     return str(posting.id)
 
 
@@ -808,7 +962,7 @@ def _prompt_length(posting: PostingView) -> int:
 
 
 def _postings_block(postings: list[PostingView]) -> str:
-    """Untrusted posting text, trimmed so one cluster is one predictable call."""
+    """Untrusted posting text, trimmed so one role is one predictable call."""
     chunks = []
     for posting in postings[:MAX_POSTINGS_IN_A_PROMPT]:
         chunks.append(
@@ -821,6 +975,18 @@ def _postings_block(postings: list[PostingView]) -> str:
 
 def _first[T](items: list[T]) -> T | None:
     return items[0] if items else None
+
+
+def _candidate_view(candidate: RoleCandidate) -> RoleCandidateView:
+    return RoleCandidateView(
+        id=candidate.id,
+        rank=candidate.rank,
+        title=candidate.title,
+        description=candidate.description,
+        dimension_keys=candidate.dimension_keys,
+        role_id=candidate.role_id,
+        opening_count=candidate.opening_count,
+    )
 
 
 def _role_view(role: Role, requirements: list[RoleRequirement]) -> RoleView:

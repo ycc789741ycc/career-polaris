@@ -23,6 +23,7 @@ from advisor.rolemap.domain.entities import (
     BuildRunStatus,
     LineageEntry,
     Role,
+    RoleCandidate,
     RoleMember,
     RoleOrigin,
     RoleRequirement,
@@ -89,12 +90,21 @@ class BuildRunFilter:
 class BuildRunRepository(Repository[BuildRun, BuildRunFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class RoleCandidateFilter:
+    """Nothing to filter on: a user has one set, the latest analysis's."""
+
+
+class RoleCandidateRepository(Repository[RoleCandidate, RoleCandidateFilter], Protocol): ...
+
+
 class OwnerRoleMap(Protocol):
     roles: RoleRepository
     members: RoleMemberRepository
     requirements: RoleRequirementRepository
     lineage: LineageEntryRepository
     builds: BuildRunRepository
+    candidates: RoleCandidateRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 

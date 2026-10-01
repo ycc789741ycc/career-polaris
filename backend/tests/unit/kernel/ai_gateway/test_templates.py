@@ -7,30 +7,32 @@ import pytest
 from kernel.ai_gateway import templates
 from kernel.errors import ValidationError
 
-PHASE_1_TEMPLATES = [
-    "skill_assessment",
-    "follow_up_questions",
-    "role_extraction",
-    "difficulty_estimate",
-    "fit_projection",
+# Each template at the version the code loads.
+TEMPLATES = [
+    # Candidate roles joined the reply in v2 (ADR 0024).
+    ("skill_assessment", "v2"),
+    ("follow_up_questions", "v1"),
+    ("role_extraction", "v1"),
+    ("difficulty_estimate", "v1"),
+    ("fit_projection", "v1"),
     # Phase 2
-    "gap_plan",
-    "resume_write",
-    "resume_revise",
+    ("gap_plan", "v1"),
+    ("resume_write", "v1"),
+    ("resume_revise", "v1"),
 ]
 
 
-@pytest.mark.parametrize("name", PHASE_1_TEMPLATES)
-def test_every_phase_1_template_loads_and_is_versioned(name: str) -> None:
-    template = templates.load(name, "v1")
-    assert template.version_id == f"{name}@v1"
+@pytest.mark.parametrize(("name", "version"), TEMPLATES)
+def test_every_template_loads_and_is_versioned(name: str, version: str) -> None:
+    template = templates.load(name, version)
+    assert template.version_id == f"{name}@{version}"
     assert template.system and template.user
     assert template.expected_output_tokens > 0
 
 
-@pytest.mark.parametrize("name", PHASE_1_TEMPLATES)
-def test_every_template_carries_the_untrusted_input_preamble(name: str) -> None:
-    assert templates.UNTRUSTED_PREAMBLE in templates.load(name, "v1").system
+@pytest.mark.parametrize(("name", "version"), TEMPLATES)
+def test_every_template_carries_the_untrusted_input_preamble(name: str, version: str) -> None:
+    assert templates.UNTRUSTED_PREAMBLE in templates.load(name, version).system
 
 
 def test_untrusted_input_is_fenced_as_data() -> None:

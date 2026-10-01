@@ -6,6 +6,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -20,7 +21,12 @@ from advisor.assessment.domain import (
     TargetScore,
     evaluate,
 )
-from kernel.errors import BudgetExceededError, NotFoundError, ValidationError
+from kernel.errors import (
+    BudgetExceededError,
+    NotFoundError,
+    OutputInvalidError,
+    ValidationError,
+)
 from tests.unit.advisor.assessment.fakes import FakeAssessmentUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -39,6 +45,7 @@ class _Evidence:
 class _Snapshot:
     evidence: tuple[_Evidence, ...]
     positions: tuple[Any, ...] = ()
+    version: int = 1
 
 
 class FakeProfile:
@@ -50,6 +57,9 @@ class FakeProfile:
 
     async def snapshot(self, owner_id: uuid.UUID) -> _Snapshot:
         return _Snapshot(evidence=(_Evidence("e1", "github", "GitHub · api", "12 merged PRs"),))
+
+    async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
+        return {"e1"}
 
 
 @dataclass
@@ -368,46 +378,142 @@ class _PricedGateway:
 
 
 class _PricedRoleMap:
-    def __init__(self, cost: dict[str, Any]) -> None:
+    def __init__(self, cost: dict[str, Any], custom_roles: int = 0) -> None:
         self.cost = cost
+        self.custom_roles = custom_roles
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return self.cost
 
+    async def roles(self, owner_id: uuid.UUID) -> list[Any]:
+        return [SimpleNamespace(is_custom=True)] * self.custom_roles
 
-def _priced(role_map_cost: dict[str, Any]) -> AssessmentService:
+
+def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentService:
     return AssessmentService(
         FakeAssessmentUnitOfWork(),
         profile=FakeProfile(),  # type: ignore[arg-type]
-        rolemap=_PricedRoleMap(role_map_cost),  # type: ignore[arg-type]
+        rolemap=_PricedRoleMap(role_map_cost, custom_roles),  # type: ignore[arg-type]
         market=None,  # type: ignore[arg-type]
         gateway=_PricedGateway(),  # type: ignore[arg-type]
         confidence_threshold=0.5,
     )
 
 
-async def test_analyze_is_priced_with_the_role_map_build_that_follows_it() -> None:
+async def test_analyze_is_priced_with_the_role_map_build_and_fits_that_follow_it() -> None:
+    """Each call is priced at $0.10 here: one analysis, and one fit projection
+    for each of the ten roles and the user's two own."""
     service = _priced(
         {
-            "max_clusters": 10,
+            "max_roles": 10,
             "cost_usd": "0.40",
             "model_id": "claude-opus-5",
             "rate_is_published": True,
-        }
+        },
+        custom_roles=2,
     )
 
     estimate = await service.estimate_cost(OWNER)
 
-    assert estimate["cost_usd"] == "0.50"
     assert (estimate["analysis_cost_usd"], estimate["role_map_cost_usd"]) == ("0.10", "0.40")
+    assert estimate["fits_cost_usd"] == "1.20"
+    assert estimate["cost_usd"] == "1.70"
     assert estimate["max_roles"] == 10
     assert estimate["rate_is_published"] is True
 
 
 async def test_analyze_on_a_market_too_thin_for_a_role_costs_the_analysis_alone() -> None:
-    service = _priced({"max_clusters": 0, "cost_usd": "0", "model_id": None})
+    service = _priced({"max_roles": 0, "cost_usd": "0", "model_id": None})
 
     estimate = await service.estimate_cost(OWNER)
 
     assert estimate["cost_usd"] == "0.10"
-    assert estimate["max_roles"] == 0
+    assert (estimate["max_roles"], estimate["fits_cost_usd"]) == (0, "0")
+
+
+async def test_adding_a_role_prices_its_fit_beside_the_ones_already_on_the_map() -> None:
+    service = _priced({}, custom_roles=1)
+
+    fits = await service.estimate_fits(OWNER, extra_roles=1)
+
+    assert (fits["roles"], fits["cost_usd"]) == (2, "0.20")
+
+
+# --- candidate roles for the role map (ADR 0024) ----------------------------
+
+
+class _RecordingRoleMap:
+    def __init__(self) -> None:
+        self.handed: list[tuple[uuid.UUID, list[Any]]] = []
+
+    async def replace_candidates(
+        self, owner_id: uuid.UUID, assessment_id: uuid.UUID, candidates: list[Any]
+    ) -> list[Any]:
+        self.handed.append((assessment_id, list(candidates)))
+        return []
+
+
+def _reply(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "dimensions": [
+            {
+                "id": key,
+                "name": key.title(),
+                "score": 60,
+                "confidence": 0.8,
+                "read": "Shown by the evidence.",
+                "evidence_ids": ["E1"],
+            }
+            for key in ("backend", "data", "infra", "testing", "delivery")
+        ],
+        "candidates": candidates,
+    }
+
+
+def _analysing(reply: dict[str, Any]) -> tuple[AssessmentService, _RecordingRoleMap, Any]:
+    uow = FakeAssessmentUnitOfWork()
+    rolemap = _RecordingRoleMap()
+    service = AssessmentService(
+        uow,
+        profile=FakeProfile(),  # type: ignore[arg-type]
+        rolemap=rolemap,  # type: ignore[arg-type]
+        market=None,  # type: ignore[arg-type]
+        gateway=FakeGateway(reply),  # type: ignore[arg-type]
+        confidence_threshold=0.5,
+    )
+    return service, rolemap, uow
+
+
+async def test_an_analysis_hands_the_roles_it_recommends_to_the_role_map() -> None:
+    service, rolemap, _uow = _analysing(
+        _reply(
+            [
+                {
+                    "title": " Backend Engineer ",
+                    "description": "Builds services.",
+                    "dimension_ids": ["backend", "data", "backend"],
+                },
+                {"title": "Data Engineer", "description": "Moves data.", "dimension_ids": ["data"]},
+            ]
+        )
+    )
+
+    assessment = await service.run(OWNER)
+
+    [(assessment_id, candidates)] = rolemap.handed
+    assert assessment_id == assessment.id
+    assert [(c.title, c.dimension_keys) for c in candidates] == [
+        ("Backend Engineer", ("backend", "data")),
+        ("Data Engineer", ("data",)),
+    ]
+
+
+async def test_a_role_resting_on_a_dimension_the_reply_lacks_rejects_the_whole_reply() -> None:
+    service, rolemap, uow = _analysing(
+        _reply([{"title": "Designer", "description": "Designs.", "dimension_ids": ["taste"]}])
+    )
+
+    with pytest.raises(OutputInvalidError, match="did not produce"):
+        await service.run(OWNER)
+
+    assert rolemap.handed == [] and uow.store.assessments == {}

@@ -7,6 +7,8 @@ import type {
   MatchedPosting,
   MatchedPostingPage,
   Role,
+  RoleCandidate,
+  RoleCandidatePage,
   RoleMapEstimate,
   RolePage,
   SalaryBand,
@@ -53,6 +55,10 @@ export function Roles() {
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [settled.analysis],
+  );
+  const candidates = useAsync<RoleCandidate[]>(
+    () => api.items<RoleCandidatePage>("/role-candidates"),
+    [settled.roleMap, settled.analysis],
   );
   const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
   const matched = useAsync<MatchedPosting[]>(
@@ -180,13 +186,14 @@ export function Roles() {
             )
           }
         >
-          Your map covers up to {estimate.max_clusters ?? 0} of the ten roles
-          closest to your profile. Naming them will cost at most{" "}
-          <strong>${estimate.cost_usd}</strong> on {estimate.model_id} — usually
-          less, since postings may form fewer roles than that, and roles already
-          analysed are not paid for again. Grouping itself runs on our machines;
-          your key pays only for naming the roles and reading out what they
-          require.
+          Your map covers up to {estimate.max_roles} of the roles your last
+          analysis recommended. Naming them and scoring your fit against each
+          will cost at most <strong>${estimate.cost_usd}</strong> on{" "}
+          {estimate.model_id} — usually less, since your locations may have
+          openings for fewer roles than that, and roles already analysed are not
+          paid for again. Searching the postings runs on our machines; your key
+          pays only for naming the roles, reading out what they require, and
+          your fit.
         </CostConfirm>
       )}
 
@@ -195,7 +202,8 @@ export function Roles() {
       ) : bubbles.length === 0 ? (
         <EmptyState title="No roles yet">
           Choose where you want to work on Sources, then analyse your strengths:
-          the role map is built after every analysis.
+          each analysis recommends the roles they point to, and the role map
+          shows the ones with openings where you want to work.
         </EmptyState>
       ) : (
         <AutoGrid col={400} gap={20}>
@@ -444,6 +452,11 @@ export function Roles() {
         </div>
       )}
 
+      <UnplacedCandidates
+        candidates={candidates.data ?? []}
+        onSources={() => navigate("sources")}
+      />
+
       <CustomRoleForm
         onAdded={async (role) => {
           await Promise.all([roles.reload(), refreshActivity()]);
@@ -533,4 +546,41 @@ function bandShort(band: SalaryBand): string {
 
 function bandLabel(band: SalaryBand): string {
   return `${band.currency} ${bandShort(band)}${band.is_confident ? "" : " (thin sample)"}`;
+}
+
+/**
+ * The roles the analysis recommended that are not on the map: the user's
+ * target locations have too few openings for them (ADR 0024). Naming them says
+ * why the map is short, and what to do about it.
+ */
+function UnplacedCandidates({
+  candidates,
+  onSources,
+}: {
+  candidates: RoleCandidate[];
+  onSources: () => void;
+}) {
+  const unplaced = candidates.filter((c) => c.role_id === null);
+  if (unplaced.length === 0) return null;
+  return (
+    <div className="panel" style={{ marginTop: 20 }}>
+      <h3>From your strengths, not on your market yet</h3>
+      <p className="subcopy">
+        Your analysis also points to these roles, but your locations have too
+        few openings for them right now. Add one as a role of your own below, or
+        widen{" "}
+        <button type="button" className="link-button" onClick={onSources}>
+          where you want to work
+        </button>
+        .
+      </p>
+      <ul aria-label="Recommended roles without openings">
+        {unplaced.map((candidate) => (
+          <li key={candidate.id}>
+            <strong>{candidate.title}</strong> — {candidate.description}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }

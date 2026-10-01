@@ -5,7 +5,7 @@ picture of where they stand (a skill radar) and what is worth aiming at (a role
 map of real openings), with every claim traceable to evidence.
 
 All AI runs on **the user's own provider key**. The platform runs only the work
-that needs no model: crawling, parsing, embedding, clustering.
+that needs no model: crawling, parsing, embedding, matching.
 
 ## Read these first
 
@@ -192,7 +192,7 @@ contract.
 
 - **The journey only runs forward.** Sources → Strengths → Role map → Advisor
   (01–04): a step reads the ones before it, never the ones after. The role map
-  reclusters and rescores as the market moves, so the strength report shows no
+  rebuilds and rescores as the market moves, so the strength report shows no
   fit, role or bar from it — comparing against a role is the role map's job.
   Likewise Sources lists the collected facts, filterable by source — "Your
   answers" among them — and nothing the analysis made of them, and asks
@@ -302,6 +302,15 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   goes to `activity.build_after_analysis`: a successful analysis always builds
   the map, a failed one only releases a build that waited. Analyze's estimate
   (`AnalysisEstimate`) includes the build's, so it is confirmed once.
+- **Roles come from the strengths** (ADR 0024). The analysis recommends up to
+  20 candidate roles; `assessment` hands them to `rolemap.replace_candidates`,
+  and `rolemap.role_candidate` holds the latest set. A build matches them to
+  the postings in scope locally (embeddings, plus title words) and keeps the
+  first ten with openings; nothing clusters any more. With no candidates, a
+  build places custom roles only. Fits are scored once per build, when
+  `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
+  to a build includes them (`fits_cost_usd`). `GET /role-candidates` lets the
+  role map name the recommended roles the market lacks.
 - **Custom roles** (ADR 0021). `rolemap.role.origin` is `recommended` or
   `custom`; a custom role has an optional company and private JD, is never
   retired by reconciliation, and is removed by the user (retired, not deleted).

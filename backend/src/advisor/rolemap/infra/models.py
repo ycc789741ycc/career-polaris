@@ -144,3 +144,32 @@ class BuildRun(Base, OwnedMixin):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RoleCandidate(Base, OwnedMixin):
+    """A role the latest analysis recommended from the user's strengths
+    (ADR 0024). Replaced as a set by each analysis; a build places each one on
+    the role it became, or leaves ``role_id`` empty when the market lacks it."""
+
+    __tablename__ = "role_candidate"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "rank", name="uq_role_candidate_owner_id"),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    # The analysis that recommended it, in assessment.skill_assessment. No
+    # foreign key: the schemas belong to different components.
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # The user's dimension keys it rests on, checked against that analysis.
+    dimension_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    role_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("rolemap.role.id", ondelete="SET NULL"), nullable=True
+    )
+    opening_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

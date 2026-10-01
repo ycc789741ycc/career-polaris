@@ -71,7 +71,11 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # Target's gaps, in Fill the gap (ADR 0023).
         return
 
-    if name in (EventName.ASSESSMENT_COMPLETED, EventName.DIMENSIONS_CHANGED) and owner_id:
+    if name == EventName.ROLE_MAP_BUILD_FINISHED and owner_id:
+        # Fits are scored once per build, when it closes, whatever it changed
+        # (ADR 0024). A successful analysis always builds the map (ADR 0020),
+        # so its new scores reach the fits here too; AssessmentCompleted,
+        # DimensionsChanged and RoleRequirementsChanged queue nothing.
         await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return
 
@@ -110,10 +114,6 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
             await enqueue(
                 "market.discover_board", company_id=str(company_id), company_name=company_name
             )
-        return
-
-    if name == EventName.ROLE_REQUIREMENTS_CHANGED and owner_id:
-        await enqueue("assessment.compute_fits", owner_id=str(owner_id))
         return
 
     if name == EventName.TARGET_LOCATIONS_CHANGED and owner_id:

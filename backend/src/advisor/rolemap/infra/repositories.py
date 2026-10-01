@@ -21,6 +21,9 @@ from advisor.rolemap.domain import (
     LineageEntryFilter,
     LineageEntryRepository,
     Role,
+    RoleCandidate,
+    RoleCandidateFilter,
+    RoleCandidateRepository,
     RoleFilter,
     RoleMember,
     RoleMemberFilter,
@@ -176,3 +179,29 @@ class SqlAlchemyBuildRunRepository(
         if filter.statuses is None:
             return []
         return [models.BuildRun.status.in_([str(s) for s in filter.statuses])]
+
+
+class SqlAlchemyRoleCandidateRepository(
+    SqlAlchemyRepository[RoleCandidate, models.RoleCandidate, RoleCandidateFilter],
+    RoleCandidateRepository,
+):
+    model = models.RoleCandidate
+    id_column = models.RoleCandidate.id
+    created_column = models.RoleCandidate.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.RoleCandidate.owner_id
+    noun = "role candidate"
+
+    def to_entity(self, row: models.RoleCandidate) -> RoleCandidate:
+        return mappers.candidate(row)
+
+    def to_row(self, entity: RoleCandidate) -> models.RoleCandidate:
+        return mappers.candidate_row(entity)
+
+    def apply(self, row: models.RoleCandidate, entity: RoleCandidate) -> None:
+        mappers.apply_candidate(row, entity)
+
+    def id_of(self, entity: RoleCandidate) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: RoleCandidateFilter) -> list[ColumnElement[bool]]:
+        return []

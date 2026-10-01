@@ -1,8 +1,11 @@
-"""Role map HTTP surface: the bubble chart's roles, and the ones the user adds."""
+"""Role map HTTP surface: the bubble chart's roles, the candidates they come
+from, and the ones the user adds."""
 
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -13,6 +16,8 @@ from api.schemas.rolemap import (
     CustomRoleEstimate,
     CustomRoleRequest,
     Role,
+    RoleCandidate,
+    RoleCandidatePage,
     RoleMapEstimate,
     RolePage,
 )
@@ -31,10 +36,21 @@ async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
     return RolePage.of(found, Role.from_view)
 
 
+@router.get("/role-candidates")
+async def list_candidates(user: CurrentUser, deps: Deps, paging: Paging) -> RoleCandidatePage:
+    """The roles the latest analysis recommended, best fit first, each with the
+    role it became or none when the market lacks it (ADR 0024)."""
+    found = paginate(await deps.rolemap.candidates(user), paging.page, paging.page_size)
+    return RoleCandidatePage.of(found, RoleCandidate.from_view)
+
+
 @router.get("/roles/cost-estimate")
 async def cost_estimate(user: CurrentUser, deps: Deps) -> RoleMapEstimate:
-    """Shown before a rebuild runs, so nothing is spent unasked."""
-    return RoleMapEstimate.model_validate(await deps.rolemap.estimate_cost(user))
+    """Shown before a rebuild runs, so nothing is spent unasked: the build, and
+    the fits scored once it ends."""
+    estimate = await deps.rolemap.estimate_cost(user)
+    fits = await deps.assessment.estimate_fits(user, recommended=estimate["max_roles"])
+    return RoleMapEstimate.model_validate(_with_fits(estimate, fits))
 
 
 @router.post("/roles/recluster", status_code=202)
@@ -51,14 +67,15 @@ async def custom_role_estimate(
 ) -> CustomRoleEstimate:
     """Priced before "Add to Role Map", so nothing is spent unasked. A POST,
     because a pasted JD does not fit in a query string."""
-    return CustomRoleEstimate.model_validate(
-        await deps.rolemap.estimate_custom_role(
-            user,
-            title=body.title,
-            company_name=body.company_name,
-            job_description=body.job_description,
-        )
+    estimate = await deps.rolemap.estimate_custom_role(
+        user,
+        title=body.title,
+        company_name=body.company_name,
+        job_description=body.job_description,
     )
+    # The build that places it scores every role's fit, this one's included.
+    fits = await deps.assessment.estimate_fits(user, extra_roles=1)
+    return CustomRoleEstimate.model_validate(_with_fits(estimate, fits))
 
 
 @router.post("/roles/custom", status_code=201)
@@ -90,6 +107,17 @@ async def add_custom_role(body: CustomRoleRequest, user: CurrentUser, deps: Deps
 @router.delete("/roles/custom/{role_id}", status_code=204)
 async def remove_custom_role(role_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
     await deps.rolemap.remove_custom_role(user, role_id)
+
+
+def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]:
+    """A build's price with the fits it is scored with added in (ADR 0024)."""
+    return {
+        **estimate,
+        "cost_usd": str(Decimal(estimate["cost_usd"]) + Decimal(fits["cost_usd"])),
+        "fits_cost_usd": fits["cost_usd"],
+        "rate_is_published": estimate.get("rate_is_published") is not False
+        and fits["rate_is_published"],
+    }
 
 
 async def _request_build(user: uuid.UUID, deps: Container) -> BuildRunView:

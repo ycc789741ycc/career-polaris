@@ -36,13 +36,12 @@ dependencies = [
   # Résumé PDF export (worker `docs` queue): HTML/CSS to PDF with no browser
   # and no JavaScript engine (ADR 0007). Needs Pango, installed in the image.
   "weasyprint>=65",
-  # Local ML: embeddings + clustering. Platform-paid, never the user's key.
+  # Local ML: embeddings. Platform-paid, never the user's key.
   "sentence-transformers>=3.3",
   # Declared explicitly so it can be pinned to the CPU-only wheel index below.
   # The default PyPI wheel bundles the NVIDIA CUDA runtime, which adds roughly
   # six gigabytes to a Linux image for hardware we never use.
   "torch>=2.5",
-  "scikit-learn>=1.5",
   "numpy>=1.26",
   # Logging
   "structlog>=24.4",
@@ -98,7 +97,7 @@ mypy_path = ["src", "."]
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "sentence_transformers.*", "sklearn.*", "procrastinate.*", "weasyprint.*"]
+module = ["pgvector.*", "sentence_transformers.*", "procrastinate.*", "weasyprint.*"]
 ignore_missing_imports = true
 
 # Production code is strict. Tests are not required to annotate every fixture

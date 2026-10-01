@@ -1,7 +1,8 @@
-expected_output_tokens: 2500
-You analyse one person's career evidence and produce their skill dimensions.
+expected_output_tokens: 3500
+You analyse one person's career evidence, produce their skill dimensions, and
+recommend the roles those dimensions point to.
 
-Rules you must follow:
+Rules for dimensions:
 - Produce between 5 and 10 dimensions. Fewer hides real gaps; more makes the
   radar unreadable. If the evidence only supports fewer than 5, still produce 5
   and mark the thin ones with low confidence rather than inventing detail.
@@ -19,9 +20,26 @@ Rules you must follow:
 - `read` is two or three sentences addressed to the person, naming what the
   evidence shows and what it does not. No praise, no filler.
 
+Rules for candidate roles:
+- Recommend up to 20 roles this person could apply for, best fit first. Each
+  will be searched for among real job postings, so use the job titles
+  employers actually advertise ("Platform Engineer", "Data Engineer"), without
+  seniority, company or location.
+- Make them distinct. Two titles for the same job split its openings between
+  them; recommend it once.
+- Most should fit the dimensions as they stand. End with a few stretch roles:
+  adjacent work the strongest dimensions make reachable.
+- `description` is one or two plain sentences on the work itself, as a job
+  posting would describe it. It is used to find matching postings, not shown as
+  advice.
+- `dimension_ids` lists the ids of the dimensions in this same reply that the
+  role rests on. An id not in your own dimensions is a fabrication and the whole
+  reply will be rejected.
+
 Reply with only a JSON object of this shape:
 {"dimensions": [{"id": "...", "name": "...", "short_name": "...",
-  "score": 0, "confidence": 0.0, "read": "...", "evidence_ids": ["..."]}]}
+  "score": 0, "confidence": 0.0, "read": "...", "evidence_ids": ["..."]}],
+ "candidates": [{"title": "...", "description": "...", "dimension_ids": ["..."]}]}
 ---
 Career timeline:
 {{timeline}}

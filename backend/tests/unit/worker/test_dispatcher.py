@@ -1,5 +1,6 @@
-"""The outbox dispatcher: submitted answers into regenerations (ADR 0023), and
-finished analyses into the role-map builds that follow them (ADR 0018, 0020).
+"""The outbox dispatcher: submitted answers into regenerations (ADR 0023),
+finished analyses into the role-map builds that follow them (ADR 0018, 0020),
+and finished builds into one scoring of the fits (ADR 0024).
 
 Calls the dispatcher's handler directly with stand-in services and a recorded
 queue — no database, no job runner.
@@ -226,3 +227,39 @@ async def test_a_custom_role_with_no_company_seeds_nothing(queued: list[dict[str
     await dispatcher._handle(_container(market=market), _custom_role_added(None))
 
     assert market.named == [] and queued == []
+
+
+# --- Fits, once per build (ADR 0024) ---------------------------------------
+
+
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_closed_build_scores_the_fits_once(
+    status: str, queued: list[dict[str, Any]]
+) -> None:
+    event = OutboxEvent(
+        name=str(EventName.ROLE_MAP_BUILD_FINISHED),
+        owner_id=OWNER,
+        payload={"build_id": str(uuid.uuid4()), "status": status},
+    )
+
+    await dispatcher._handle(_container(), event)
+
+    assert queued == [{"name": "assessment.compute_fits", "owner_id": str(OWNER)}]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        EventName.ASSESSMENT_COMPLETED,
+        EventName.DIMENSIONS_CHANGED,
+        EventName.ROLE_REQUIREMENTS_CHANGED,
+    ],
+)
+async def test_scores_and_requirements_changing_do_not_score_fits_on_their_own(
+    name: EventName, queued: list[dict[str, Any]]
+) -> None:
+    """Each would score every role again, just before the build replaces them;
+    the build that follows scores them once when it closes."""
+    await dispatcher._handle(_container(), OutboxEvent(name=str(name), owner_id=OWNER, payload={}))
+
+    assert queued == []

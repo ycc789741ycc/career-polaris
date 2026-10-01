@@ -25,11 +25,11 @@ new record that supersedes the old one.
 | [0017](0017-group-jira-work-by-epic-not-project.md) | Group Jira work by epic, not by project | Accepted |
 | [0018](0018-gate-journey-stages-on-recorded-run-status.md) | Gate the journey's stages on the status each stage records while it runs | Accepted |
 | [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted |
-| [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted |
+| [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted, amended by 0024 |
 | [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Accepted |
 | [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted |
 | [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
-| [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Proposed |
+| [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

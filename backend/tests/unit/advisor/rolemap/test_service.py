@@ -1,5 +1,5 @@
 """Role-map use cases against in-memory storage: what they store and announce,
-with no database, no model and no clustering."""
+with no database, no model and no embedding model."""
 
 from __future__ import annotations
 
@@ -10,13 +10,15 @@ from typing import Any
 import pytest
 
 from advisor.market import PostingView, SalaryRange, Visibility
-from advisor.rolemap import RoleMapService
+from advisor.rolemap import CANDIDATE_ROLE_COUNT, CandidateInput, RoleMapService
+from advisor.rolemap import service as rolemap_service
 from advisor.rolemap.domain import (
     BarBasis,
     CustomRoleAdded,
     HiringBar,
     RoleChange,
     RoleLineage,
+    RoleMapBuildFinished,
     RoleRequirementsChanged,
     RoleSplitOrMerged,
     RolesReclustered,
@@ -52,6 +54,12 @@ class FakeMarket:
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         return self.postings
 
+    async def scope_with_vectors(
+        self, owner_id: uuid.UUID, model_name: str
+    ) -> list[tuple[str, PostingView, list[float] | None]]:
+        # None: nothing embedded yet, so the service embeds them itself.
+        return [(str(p.id), p, None) for p in self.postings]
+
 
 def _service(
     uow: FakeRoleMapUnitOfWork, market: FakeMarket | None = None, gateway: Any = None
@@ -59,7 +67,6 @@ def _service(
     return RoleMapService(
         uow,
         market=market or FakeMarket(),  # type: ignore[arg-type]
-        profile=None,  # type: ignore[arg-type]
         gateway=gateway,
         embedding_model="test-model",
     )
@@ -341,10 +348,6 @@ def _jd(title: str = "Staff Engineer") -> PostingView:
     )
 
 
-async def _no_clusters(owner_id: uuid.UUID) -> list[Any]:
-    return []
-
-
 async def test_adding_a_custom_role_announces_its_company() -> None:
     uow = FakeRoleMapUnitOfWork()
     rolemap = _service(uow)
@@ -384,16 +387,13 @@ async def test_only_a_custom_role_can_be_removed_and_it_is_retired_not_deleted()
         await rolemap.remove_custom_role(OWNER, recommended)
 
 
-async def test_a_custom_role_takes_in_postings_by_title_words_at_its_company(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_a_custom_role_takes_in_postings_by_title_words_at_its_company() -> None:
     uow = FakeRoleMapUnitOfWork()
     staff = _posting("Backend Engineer, Staff", company="Northwind Pay")
     elsewhere = _posting("Staff Backend Engineer", company="Acme")
     other = _posting("Staff Designer", company="Northwind Pay")
     gateway = ScriptedGateway()
     rolemap = _service(uow, FakeMarket([staff, elsewhere, other]), gateway)
-    monkeypatch.setattr(rolemap, "_group_postings", _no_clusters)
     role = await rolemap.add_custom_role(
         OWNER, title="Staff Backend", company_name="Northwind", private_posting_id=None
     )
@@ -406,14 +406,11 @@ async def test_a_custom_role_takes_in_postings_by_title_words_at_its_company(
     assert "Acme" not in gateway.shown[0]
 
 
-async def test_a_custom_roles_requirements_come_from_its_jd_when_it_has_one(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_a_custom_roles_requirements_come_from_its_jd_when_it_has_one() -> None:
     uow = FakeRoleMapUnitOfWork()
     jd = _jd()
     gateway = ScriptedGateway()
     rolemap = _service(uow, FakeMarket([_posting("Staff Engineer")], pasted=[jd]), gateway)
-    monkeypatch.setattr(rolemap, "_group_postings", _no_clusters)
     await rolemap.add_custom_role(
         OWNER, title="Staff Engineer", company_name=None, private_posting_id=jd.id
     )
@@ -424,13 +421,10 @@ async def test_a_custom_roles_requirements_come_from_its_jd_when_it_has_one(
     assert all("Own the ledger" in shown for shown in gateway.shown)
 
 
-async def test_an_unchanged_custom_role_costs_nothing_on_the_next_build(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_an_unchanged_custom_role_costs_nothing_on_the_next_build() -> None:
     uow = FakeRoleMapUnitOfWork()
     gateway = ScriptedGateway()
     rolemap = _service(uow, FakeMarket([_posting("Staff Engineer")]), gateway)
-    monkeypatch.setattr(rolemap, "_group_postings", _no_clusters)
     await rolemap.add_custom_role(
         OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
     )
@@ -442,13 +436,10 @@ async def test_an_unchanged_custom_role_costs_nothing_on_the_next_build(
     assert len(gateway.shown) == calls == 2
 
 
-async def test_a_custom_role_with_nothing_to_read_stays_on_the_map_unscored(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_a_custom_role_with_nothing_to_read_stays_on_the_map_unscored() -> None:
     uow = FakeRoleMapUnitOfWork()
     gateway = ScriptedGateway()
     rolemap = _service(uow, FakeMarket([_posting("Designer")]), gateway)
-    monkeypatch.setattr(rolemap, "_group_postings", _no_clusters)
     await rolemap.add_custom_role(
         OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
     )
@@ -468,3 +459,214 @@ async def test_reconciliation_never_retires_a_custom_role() -> None:
     await _store(rolemap, custom.id, [_posting("Staff Engineer")], "Staff Engineer")
 
     assert await rolemap._previous_members(OWNER) == {}
+
+
+# --- recommended roles from the analysis's candidates (ADR 0024) ------------
+
+# A stand-in embedding: each keyword a text contains adds weight on its axis.
+_AXES = ("backend", "payments", "designer", "data")
+
+
+def _fake_embed(texts: list[str], *, model_name: str) -> list[list[float]]:
+    return [[float(text.lower().count(word)) for word in _AXES] for text in texts]
+
+
+@pytest.fixture
+def embedded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rolemap_service, "embed", _fake_embed)
+
+
+def _candidate(title: str, description: str) -> CandidateInput:
+    return CandidateInput(title=title, description=description, dimension_keys=("backend",))
+
+
+def _market(backend: int = 3, designer: int = 0) -> FakeMarket:
+    return FakeMarket(
+        [_posting(f"Backend Engineer {i}") for i in range(backend)]
+        + [_posting(f"Designer {i}") for i in range(designer)]
+    )
+
+
+async def test_an_analysiss_candidates_replace_the_last_ones_in_its_order() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow)
+    assessment = uuid.uuid4()
+    await rolemap.replace_candidates(OWNER, uuid.uuid4(), [_candidate("Old", "old work")])
+
+    await rolemap.replace_candidates(
+        OWNER, assessment, [_candidate("First", "a"), _candidate("Second", "b")]
+    )
+
+    found = await rolemap.candidates(OWNER)
+    assert [(c.rank, c.title, c.role_id) for c in found] == [
+        (0, "First", None),
+        (1, "Second", None),
+    ]
+    assert {c.assessment_id for c in uow.store.candidates.values()} == {assessment}
+
+
+async def test_an_analysis_recommends_no_more_than_twenty_roles() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork())
+    too_many = [_candidate(f"Role {i}", "work") for i in range(CANDIDATE_ROLE_COUNT + 1)]
+
+    with pytest.raises(ValidationError, match="at most"):
+        await rolemap.replace_candidates(OWNER, uuid.uuid4(), too_many)
+
+
+async def test_candidates_are_per_user() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork())
+    await rolemap.replace_candidates(OWNER, uuid.uuid4(), [_candidate("Mine", "work")])
+
+    assert await rolemap.candidates(OTHER) == []
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_without_candidates_a_build_names_no_recommended_role() -> None:
+    """No analysis has succeeded, so nothing the user priced exists to spend on."""
+    gateway = ScriptedGateway()
+    rolemap = _service(FakeRoleMapUnitOfWork(), _market(), gateway)
+
+    assert await rolemap.recluster(OWNER) == []
+    assert gateway.shown == []
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_candidate_the_market_has_becomes_a_role_named_from_its_openings() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    gateway = ScriptedGateway()
+    rolemap = _service(uow, _market(backend=3, designer=1), gateway)
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+
+    [role] = await rolemap.recluster(OWNER)
+
+    assert role.name == "Whatever the model calls it" and role.opening_count == 3
+    assert "Designer" not in gateway.shown[0]
+    [candidate] = await rolemap.candidates(OWNER)
+    assert (candidate.role_id, candidate.opening_count) == (role.id, 3)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_candidate_the_market_lacks_is_left_unplaced_and_costs_nothing() -> None:
+    gateway = ScriptedGateway()
+    rolemap = _service(FakeRoleMapUnitOfWork(), _market(backend=3), gateway)
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [
+            _candidate("Payments Engineer", "Payments systems."),
+            _candidate("Backend Engineer", "Backend services."),
+        ],
+    )
+
+    [role] = await rolemap.recluster(OWNER)
+
+    payments, backend = await rolemap.candidates(OWNER)
+    assert (payments.role_id, payments.opening_count) == (None, 0)
+    assert backend.role_id == role.id
+    assert len(gateway.shown) == 2  # extraction and difficulty, for one role
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_rebuild_on_an_unchanged_market_costs_nothing() -> None:
+    gateway = ScriptedGateway()
+    rolemap = _service(FakeRoleMapUnitOfWork(), _market(backend=3), gateway)
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    [first] = await rolemap.recluster(OWNER)
+    calls = len(gateway.shown)
+
+    [again] = await rolemap.recluster(OWNER)
+
+    assert again.id == first.id and len(gateway.shown) == calls
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_new_analysiss_candidates_retire_the_roles_they_no_longer_include() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, _market(backend=3, designer=3), ScriptedGateway())
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    [backend] = await rolemap.recluster(OWNER)
+
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Designer", "Designer work.")]
+    )
+    [designer] = await rolemap.recluster(OWNER)
+
+    assert designer.id != backend.id
+    assert uow.store.roles[backend.id].retired_at is not None
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_an_empty_market_keeps_the_roles_it_says_nothing_about() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    market = _market(backend=3)
+    rolemap = _service(uow, market, ScriptedGateway())
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    [role] = await rolemap.recluster(OWNER)
+    market.postings = []
+
+    assert [r.id for r in await rolemap.recluster(OWNER)] == [role.id]
+    [candidate] = await rolemap.candidates(OWNER)
+    assert candidate.role_id == role.id
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_candidates_replaced_during_a_build_are_left_for_the_next_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), _market(backend=3), ScriptedGateway())
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    record = rolemap._record_lineage
+
+    async def analysis_finishes_meanwhile(owner_id: uuid.UUID, reconciliation: Any) -> None:
+        await record(owner_id, reconciliation)
+        await rolemap.replace_candidates(
+            OWNER, uuid.uuid4(), [_candidate("Designer", "Designer work.")]
+        )
+
+    monkeypatch.setattr(rolemap, "_record_lineage", analysis_finishes_meanwhile)
+
+    await rolemap.recluster(OWNER)
+
+    [candidate] = await rolemap.candidates(OWNER)
+    assert (candidate.title, candidate.role_id) == ("Designer", None)
+
+
+# --- fits, scored once per build (ADR 0024) ---------------------------------
+
+
+async def test_a_finished_build_announces_itself_for_its_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeRoleMapUnitOfWork()
+    service = _service(uow)
+    requested = await service.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+        return []
+
+    monkeypatch.setattr(service, "recluster", recluster)
+    await service.build(OWNER, requested.build.id)
+
+    assert RoleMapBuildFinished(OWNER, requested.build.id, "ready") in uow.store.events
+
+
+async def test_a_failed_build_still_announces_itself_for_its_fits() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    service = _service(uow)
+    requested = await service.request_build(OWNER, wait=False)
+
+    await service.fail_build(OWNER, requested.build.id, code="stale", message="Lost.")
+    await service.fail_build(OWNER, requested.build.id, code="stale", message="Lost.")
+
+    finished = [e for e in uow.store.events if isinstance(e, RoleMapBuildFinished)]
+    assert finished == [RoleMapBuildFinished(OWNER, requested.build.id, "failed")]
