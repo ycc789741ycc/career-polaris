@@ -421,10 +421,14 @@ really moved. ADR 0025 is amended in the same branch.
 
 1. **A searched posting expires when nobody has seen it for a while.**
    * A posting whose source is a search is expired when its `last_seen_at` is
-     older than `SEARCH_POSTING_UNSEEN_DAYS` (14 to start with, two weekly
-     crawls), not when one crawl misses it. `last_seen_at` is per posting,
+     older than the unseen age, not when one crawl misses it. `last_seen_at` is per posting,
      so any search, or a company board, that still returns it keeps it open,
      whichever source it belongs to.
+   * The age is `SEARCH_POSTING_UNSEEN_DAYS` in `.env`, optional with a
+     default of 7, declared in `.env.example` beside the other `CRAWL_*`
+     settings. `kernel.config` reads it once at start-up and rejects anything
+     under 1. The crawler's wiring passes it to `market` as a `timedelta`, so
+     the domain holds no number of its own.
    * `record_search_crawl` stops calling `expire_unseen`. Its `changed` is
      then just "an opening appeared or reopened".
 2. **One sweep per crawl run.**
@@ -434,34 +438,38 @@ really moved. ADR 0025 is amended in the same branch.
    * The sweep returns the places those postings were found for, and the run
      announces them with the places that changed, still once per place.
 3. **Boards keep expiry by absence.** Their list is complete, so a missing
-   opening is a closed one, and that is noticed the next crawl rather than a
-   fortnight later.
+   opening is a closed one, and that is noticed the next crawl rather than
+   `SEARCH_POSTING_UNSEEN_DAYS` later.
 
 Tests:
 * Unit: a searched posting missing from one crawl stays open; one unseen for
-  `SEARCH_POSTING_UNSEEN_DAYS` is expired by the sweep and its place
-  announced; a posting another search still returns stays open; a board
+  the configured age is expired by the sweep and its place announced, and
+  one just short of it is not; the setting defaults to 7 and rejects 0; a posting another search still returns stays open; a board
   posting missing from a crawl still expires at once; a search crawl that
   finds only known openings reports no change.
 * Integration: the sweep's query against real rows, scoped to searched
   postings only.
 
 What gets harder:
-* A job closed on Himalayas stays on the role map for up to two weeks. Its
+* A job closed on Himalayas stays on the role map for up to
+  `SEARCH_POSTING_UNSEEN_DAYS`, a week by default. Its
   link then goes to a closed listing, and the fit counts an opening that is
   gone.
 * Expiry now has two rules, by source kind, and the sweep is one more step
   in each crawl run.
 * Openings counted per role and per place run a little high for searched
-  postings, by the ones closed in the last fortnight.
+  postings, by the ones closed within the unseen age.
 
 Open questions:
 * Whether Himalayas' payload carries an expiry date per job. If it does, a
   job past it could close on that date, and the age rule would only catch
   the ones that vanish early.
-* 14 days is two weekly crawls. A search crawled more often (asked for by
-  several analyses) could use a shorter age; measure how long a job usually
-  stays on page 1 first.
+* Whether 7 days is enough. A search is crawled once when it is new and then
+  weekly, so a posting seen at one weekly crawl and missed at the next is
+  about 7 days unseen at that crawl's sweep: with the default, a single
+  weekly miss can still expire it. Count how often a job leaves page 1 and
+  comes back, and raise the setting (14 is two weekly crawls) if the weekly
+  crawl keeps flipping postings.
 
 ## Choose target locations from a list
 "Where you want to work" in 01 Sources is a free-text box today. Whatever the
