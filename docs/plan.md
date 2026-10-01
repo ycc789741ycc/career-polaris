@@ -389,6 +389,80 @@ Open questions:
 * Whether a change of target locations should also wait for its searches
   (step 5).
 
+## Expire searched postings by age, not by absence
+How an opening closes today depends on its source:
+
+* **A company board** (Greenhouse, Lever, Ashby, a JSON-LD career page)
+  lists every opening the company has. One missing from a successful crawl
+  is closed, and `expire_unseen` marks it expired at once.
+* **A Himalayas search** returns only its first page, about twenty jobs,
+  because robots.txt forbids paging (ADR 0025). The same rule reads "pushed
+  off page 1 by a newer job" as "closed". A busy title then reports a change
+  on nearly every crawl, which rebuilds role maps for nothing, and an opening
+  that is still real drops off the map.
+
+What stays the same for every source:
+
+* A failed fetch expires nothing.
+* An expired posting is kept, not deleted. It leaves the role map, the
+  openings and the market scope, and still counts toward salary-band history.
+* Seen again, it reopens.
+* A retired search (eight weeks unasked) expires everything it found.
+
+The same opening returned by two searches makes it worse. It belongs to
+whichever source saw it last (`seen_again`), and only that source can expire
+it. If it then leaves that search's first page, it expires, though the other
+search still lists it, until the other's next crawl reopens it.
+
+Its own branch, `feature/<ticket>/search-posting-expiry`, cut from mainline.
+It lands before "Build the role map once, after the market search", whose
+waiting builds rely on a search announcing a change only when the market
+really moved. ADR 0025 is amended in the same branch.
+
+1. **A searched posting expires when nobody has seen it for a while.**
+   * A posting whose source is a search is expired when its `last_seen_at` is
+     older than `SEARCH_POSTING_UNSEEN_DAYS` (14 to start with, two weekly
+     crawls), not when one crawl misses it. `last_seen_at` is per posting,
+     so any search, or a company board, that still returns it keeps it open,
+     whichever source it belongs to.
+   * `record_search_crawl` stops calling `expire_unseen`. Its `changed` is
+     then just "an opening appeared or reopened".
+2. **One sweep per crawl run.**
+   * After a crawl run's searches (`crawl_new` and the weekly crawl), one
+     query expires every open searched posting past the age, using the
+     existing `(status, last_seen_at)` index.
+   * The sweep returns the places those postings were found for, and the run
+     announces them with the places that changed, still once per place.
+3. **Boards keep expiry by absence.** Their list is complete, so a missing
+   opening is a closed one, and that is noticed the next crawl rather than a
+   fortnight later.
+
+Tests:
+* Unit: a searched posting missing from one crawl stays open; one unseen for
+  `SEARCH_POSTING_UNSEEN_DAYS` is expired by the sweep and its place
+  announced; a posting another search still returns stays open; a board
+  posting missing from a crawl still expires at once; a search crawl that
+  finds only known openings reports no change.
+* Integration: the sweep's query against real rows, scoped to searched
+  postings only.
+
+What gets harder:
+* A job closed on Himalayas stays on the role map for up to two weeks. Its
+  link then goes to a closed listing, and the fit counts an opening that is
+  gone.
+* Expiry now has two rules, by source kind, and the sweep is one more step
+  in each crawl run.
+* Openings counted per role and per place run a little high for searched
+  postings, by the ones closed in the last fortnight.
+
+Open questions:
+* Whether Himalayas' payload carries an expiry date per job. If it does, a
+  job past it could close on that date, and the age rule would only catch
+  the ones that vanish early.
+* 14 days is two weekly crawls. A search crawled more often (asked for by
+  several analyses) could use a shorter age; measure how long a job usually
+  stays on page 1 first.
+
 ## Choose target locations from a list
 "Where you want to work" in 01 Sources is a free-text box today. Whatever the
 user types is matched against posting locations word by word, and only a
