@@ -324,9 +324,9 @@ and 0025) and the index, and `CLAUDE.md` and `README.md` saying what is built.
      `market.request_searches` itself instead of queueing
      `market.request_searches`. It is a few writes, and the dispatcher needs
      the answer: how many searches are new.
-   * None new means nothing to wait for: the user's places are cities or
-     regions with no search, or every title's search is already crawled (a
-     re-analysis). The dispatcher starts the waiting build at once, through
+   * None new means nothing to wait for: the user chose only regions, which
+     add no search ("Choose target locations from a list" below), or every
+     title's search is already crawled (a re-analysis). The dispatcher starts the waiting build at once, through
      `activity.request_role_map`.
    * The crawl sources stay ownerless. Only titles and places reach `market`;
      the user id never leaves the dispatcher.
@@ -395,44 +395,45 @@ user types is matched against posting locations word by word, and only a
 country or "Remote" gets a search (ADR 0025). A city, a region or a typo
 silently gets none, and nothing on the screen says so.
 
-The box becomes a choose list. Every option is a place the platform can
-search, so every location the user picks is one the analysis's candidate
-roles are searched in.
+The box becomes a choose list of three kinds of place, each with a known way
+to be matched and, where it can be, searched:
+
+| Kind | Example | Matched by | Searched |
+|---|---|---|---|
+| Remote | "Remote" | remote work open to anyone | Himalayas, `worldwide` |
+| Country | "Taiwan" | the country's names and main cities | Himalayas, by country code |
+| Region | "Europe" | any member country's names and cities | no search of its own |
 
 Its own branch, `feature/<ticket>/location-choice-list`, cut from mainline.
-It lands before "Build the role map once, after the market search", because
-it removes that branch's "no searchable place" case. Same definition of done
-as Phase 5, with its own ADR: it closes `PUT /target-locations` to a fixed
-set and changes domain decision 21.
+It lands before "Build the role map once, after the market search", which
+relies on every place being either searched or plainly not. Same definition
+of done as Phase 5, with its own ADR: it closes `PUT /target-locations` to a
+fixed set, changes domain decision 21, and amends ADR 0025's "a region adds no
+source" from a gap into a rule.
 
 1. **The options come from the one place table.**
-   * They are "Remote" (remote work open to anyone), then one entry per
-     country in `market.domain.search`'s table, under its canonical name
-     ("United Kingdom", not "UK"), A to Z.
-   * `market.target_location_options()` returns them, and
-     `GET /target-location-options` serves them as a page (ADR 0014). The SPA
-     never keeps its own copy, so adding a country to the table adds it to
-     the list.
+   * They are "Remote" (remote work open to anyone), then the regions, then
+     one entry per country in `market.domain.search`'s table, under its
+     canonical name ("United Kingdom", not "UK"), each group A to Z.
+   * A region is a named set of the table's countries: Europe, Asia-Pacific,
+     North America and Latin America to start with. A country may sit in
+     more than one region, and every country belongs to at least one.
+   * `market.target_location_options()` returns each option with its kind,
+     and `GET /target-location-options` serves them as a page (ADR 0014). The
+     SPA never keeps its own copy, so adding a country or a region to the
+     table adds it to the list.
 
 2. **Only listed places are accepted.**
    * `chosen_target_locations` rejects anything that is not an option, with
      `TargetLocationError`. The request schema checks it again, as it checks
      the cap of three today.
-   * `search_scope` then never answers `None` for a stored location.
+   * `search_scope` answers a scope for "Remote" and every country, and
+     `None` for a region, by rule rather than by failing to parse.
 
-3. **The screen.**
-   * `TargetLocations.tsx` swaps the text input for a searchable select:
-     type to filter, pick to add. "Remote" is first, and places already
-     chosen are shown but can't be picked.
-   * Chips, the "n of 3 chosen" count and removing a location stay as they
-     are. Each change still saves the whole set and emits
-     `TargetLocationsChanged`.
-   * The copy no longer says "City, country or Remote region".
-
-4. **A country takes in its cities.**
-   * Company boards often write only the city ("Taipei", "Singapore"
-     happens to be both). Matching a posting to "Taiwan" by words alone
-     would drop every opening that says "Taipei" and nothing more.
+3. **A country takes in its cities.**
+   * Company boards often write only the city ("Taipei"). Matching a posting
+     to "Taiwan" by words alone would drop every opening that says "Taipei"
+     and nothing more.
    * Each country gets its main cities as extra names, in the same table
      ("Taipei", "Hsinchu", "Kaohsiung" for Taiwan). `in_market`,
      `get_open_in_scope`'s SQL and `scope_names` (the fan-out) read them, so
@@ -440,32 +441,66 @@ set and changes domain decision 21.
      reaches the Taiwan users.
    * The searches don't change: Himalayas is asked by country code.
 
-5. **Stored locations are moved over.**
+4. **A region is matched, not searched.**
+   * A posting is in a region when it is in any member country by rule 3:
+     it names the country, one of its aliases or one of its cities. Remote
+     work open worldwide is in every region too, as it is in every country.
+   * A region adds no search. Himalayas filters by one country at a time, so
+     "Europe" would be one search per member country for each candidate
+     title: about 500 for one analysis, some eight minutes at one request a
+     second per host, past the build's deadline and into Himalayas' rate
+     limit.
+   * It still sees searched postings: those of a member country that some
+     user chose, and remote work open worldwide, searched for whoever chose
+     "Remote".
+   * The fan-out resolves a changed place to its regions as well: a change
+     announced for "Germany" also reaches users who chose "Europe".
+
+5. **The screen.**
+   * `TargetLocations.tsx` swaps the text input for a searchable select:
+     type to filter, pick to add. Options are grouped Remote, Regions,
+     Countries, and places already chosen are shown but can't be picked.
+   * Chips, the "n of 3 chosen" count and removing a location stay as they
+     are. Each change still saves the whole set and emits
+     `TargetLocationsChanged`.
+   * A chosen region's chip is marked, with one line under the list: "Regions
+     use the postings we already have. Pick a country for a fresh search of
+     your recommended roles." The copy no longer says "City, country or
+     Remote region".
+
+6. **Stored locations are moved over.**
    * A migration rewrites each `market_user.market_preference` row to its
-     option, through `search_scope` ("UK" → "United Kingdom", "Remote
-     Taiwan" → "Taiwan"), dropping duplicates.
-   * A row that maps to no option (a city, a region) is deleted, so the user
-     sees one fewer location, or none. Users who had a role map get one
-     `TargetLocationsChanged`, so the map rebuilds on the new scope.
+     option: "UK" → "United Kingdom", "Remote Taiwan" → "Taiwan", "EU" or
+     "Remote EU" → "Europe", dropping duplicates.
+   * A row that maps to no option (a city, an unknown region) is deleted, so
+     the user sees one fewer location, or none. Users who had a role map get
+     one `TargetLocationsChanged`, so the map rebuilds on the new scope.
 
 Tests:
-* Unit: options are "Remote" then the countries A to Z, one per country;
+* Unit: options are "Remote", the regions, then the countries, each group A
+  to Z, one per country; every country is in a region;
   `chosen_target_locations` rejects an unlisted place; a country takes in a
-  posting that names only one of its cities, in `in_market` and in the
-  fan-out names; the migration's mapping, including a dropped city.
+  posting that names only one of its cities; a region takes in a posting in
+  any member country and remote work open worldwide, and nothing else;
+  a region requests no search; a change announced for a country reaches
+  users of its regions; the migration's mapping, including a dropped city.
 * Integration: `GET /target-location-options`; `PUT /target-locations`
   answers 422 for an unlisted place; a Taipei-only posting counts toward
-  "Taiwan" in `GET /market-scope`.
-* SPA: filtering and picking an option, a chosen option can't be picked
-  twice, the cap of three.
+  "Taiwan" and "Asia-Pacific" in `GET /market-scope`.
+* SPA: filtering and picking an option, the groups, a chosen option can't be
+  picked twice, the cap of three, the region note.
 
 What gets harder:
 * A user can no longer narrow to one city. "Taiwan" takes in all of Taiwan,
   and a user who only wants Taipei sees Kaohsiung too.
-* Regions ("Europe", "APAC", "Remote EU") can't be chosen. Adding one means
-  deciding how it is searched and matched first.
-* The city names per country are a list someone keeps up. A city that is
-  missing quietly drops that city's board postings for the country.
+* A region's searched postings depend on what other users chose. A user who
+  picks only "Europe" gets board postings and worldwide remote work, but the
+  candidate roles are never searched for in Europe on their behalf, and the
+  screen has to say so.
+* Fan-out widens: one country's change now reaches its regions' users too,
+  and "Europe" users rebuild when any member country moves.
+* The city names per country and the countries per region are lists someone
+  keeps up. A missing city quietly drops that city's board postings.
 * Users who typed a city lose that location in the migration.
 
 Open questions:
@@ -474,3 +509,6 @@ Open questions:
   few accounts yet, so the first cut just deletes.
 * Which cities each country lists. Start from the cities that appear in the
   crawled postings, and grow the list as new ones show up.
+* Whether a region should one day search a few of its largest member
+  countries. That would make it fresher, but which countries stand for a
+  region is a judgement the user can't see.
