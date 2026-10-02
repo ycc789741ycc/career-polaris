@@ -1343,6 +1343,171 @@ async def test_fits_are_priced_per_role_the_map_will_hold() -> None:
     assert (now["roles"], now["cost_usd"]) == (1, "0.10")
 
 
+# --- a fit for every opening, worked out locally (Phase 8) -------------------
+
+
+class TwoDimensionGateway:
+    """Projects "backend services" onto backend, wanted at 80, and "data
+    pipelines" onto data, wanted at 50. Records how often it was asked."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **_: Any):
+        from advisor.rolemap.service import _Projection
+
+        assert task == "rolemap.fit"
+        self.calls += 1
+        return _Reply(
+            _Projection.model_validate(
+                {
+                    "mappings": [
+                        {"requirement_statement": "backend services", "dimension_id": "backend"},
+                        {"requirement_statement": "data pipelines", "dimension_id": "data"},
+                    ],
+                    "target_scores": [
+                        {"dimension_id": "backend", "target": 80},
+                        {"dimension_id": "data", "target": 50},
+                    ],
+                    "reasoning": "Short on services, ahead on data.",
+                }
+            )
+        )
+
+
+def _opening(title: str, description: str, company: str) -> PostingView:
+    return replace(_posting(title, company=company), description=description)
+
+
+async def _role_with_openings(
+    gateway: Any, *, same_company: bool = False
+) -> tuple[RoleMapService, FakeRoleMapUnitOfWork, uuid.UUID, PostingView, PostingView]:
+    """One role whose two openings ask for different things: one stresses
+    backend, where the user falls short, the other data, where they don't."""
+    backend = _opening("Platform Engineer", "backend backend backend", "Acme")
+    data = _opening("Platform Engineer", "data data data", "Acme" if same_company else "Kestrel")
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, FakeMarket([backend, data]), gateway)
+    role_id = uuid.uuid4()
+    await rolemap._store_role(
+        OWNER,
+        role_id=role_id,
+        keys={str(backend.id), str(data.id)},
+        postings=[backend, data],
+        extraction=_RoleExtraction.model_validate(
+            {
+                "name": "Platform Engineer",
+                "requirements": [
+                    {"statement": "backend services", "weight": 0.9, "expected_level": "expert"},
+                    {"statement": "data pipelines", "weight": 0.5, "expected_level": "senior"},
+                ],
+            }
+        ),
+        bar=_BAR,
+        bar_reasoning="because",
+        model_id="model",
+        template_version="v1",
+    )
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [],
+        strengths=[
+            StrengthInput("backend", "Backend", "Some services.", 60, 0.9),
+            StrengthInput("data", "Data", "Many pipelines.", 90, 0.9),
+        ],
+    )
+    return rolemap, uow, role_id, backend, data
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_every_opening_gets_its_own_fit_from_its_roles() -> None:
+    gateway = TwoDimensionGateway()
+    rolemap, uow, role_id, backend, data = await _role_with_openings(gateway)
+
+    [role_fit] = await rolemap.compute_fits(OWNER)
+
+    # One AI call, for the role; the openings' fits are worked out from it.
+    assert gateway.calls == 1
+    fits = {f.posting_key: f for f in uow.store.posting_fits.values()}
+    assert set(fits) == {str(backend.id), str(data.id)}
+    assert all(f.role_id == role_id and str(f.basis) == "role" for f in fits.values())
+    assert fits[str(data.id)].score > role_fit.score > fits[str(backend.id)].score
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_working_out_the_openings_fits_is_never_an_ai_call() -> None:
+    class NoCalls:
+        async def run(self, *args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("an opening's fit made an AI call")
+
+    rolemap, uow, _role_id, _backend, _data = await _role_with_openings(TwoDimensionGateway())
+    await rolemap.compute_fits(OWNER)
+    rolemap._gateway = NoCalls()  # type: ignore[assignment]
+
+    await rolemap._derive_opening_fits(OWNER, await rolemap._strengths(OWNER))
+
+    # Worked out again, and replaced as a set rather than added to.
+    assert len(uow.store.posting_fits) == 2
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_reused_role_fit_still_has_its_openings_worked_out() -> None:
+    gateway = TwoDimensionGateway()
+    rolemap, uow, _role_id, _backend, _data = await _role_with_openings(gateway)
+    await rolemap.compute_fits(OWNER)
+    uow.store.posting_fits.clear()
+
+    await rolemap.compute_fits(OWNER)
+
+    assert gateway.calls == 1 and len(uow.store.posting_fits) == 2
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_roles_openings_rank_by_their_own_fit() -> None:
+    rolemap, _uow, role_id, backend, data = await _role_with_openings(TwoDimensionGateway())
+    before = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+    await rolemap.compute_fits(OWNER)
+
+    after = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+
+    # Before a build works them out, the role's fit, for both.
+    assert {m.fit_basis for m in before} == {"role"}
+    assert [m.posting_id for m in after] == [data.id, backend.id]
+    assert {m.fit_basis for m in after} == {"posting"}
+    assert after[0].fit is not None and after[1].fit is not None
+    assert after[0].fit > after[1].fit
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_top_matched_keeps_one_opening_per_company_in_a_role_when_asked() -> None:
+    rolemap, _uow, role_id, _backend, data = await _role_with_openings(
+        TwoDimensionGateway(), same_company=True
+    )
+    await rolemap.compute_fits(OWNER)
+
+    every = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+    top = await rolemap.matched_postings(OWNER, limit=10, role_id=role_id, one_per_company=True)
+
+    assert len(every) == 2
+    assert [m.posting_id for m in top] == [data.id]
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_an_openings_fit_is_read_for_its_role_alone() -> None:
+    rolemap, _uow, role_id, backend, _data = await _role_with_openings(TwoDimensionGateway())
+    assert await rolemap.opening_fit(OWNER, role_id, backend.id) is None
+    await rolemap.compute_fits(OWNER)
+
+    fit = await rolemap.opening_fit(OWNER, role_id, backend.id)
+
+    assert fit is not None and fit.basis == "role"
+    # The backend opening does not ask for data pipelines: they drop out of it.
+    assert [r.statement for r in fit.requirements] == ["backend services"]
+    assert await rolemap.opening_fit(OWNER, uuid.uuid4(), backend.id) is None
+    assert fit.lifts().by_dimension["backend"] > 0
+
+
 async def test_no_roles_cost_no_fits() -> None:
     rolemap = _service(FakeRoleMapUnitOfWork(), gateway=ProjectingGateway())
 

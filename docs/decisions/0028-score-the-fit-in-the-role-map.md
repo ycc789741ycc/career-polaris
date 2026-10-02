@@ -1,6 +1,6 @@
 # 0028. Score the fit in the role map, against the scores the analysis hands over
 
-**Status:** Accepted — 2026-10-03. Amends [0018](0018-gate-journey-stages-on-recorded-run-status.md) and [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md).
+**Status:** Accepted — 2026-10-03. Amends [0018](0018-gate-journey-stages-on-recorded-run-status.md) and [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md). Amended by [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md).
 
 ## Context
 

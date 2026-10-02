@@ -40,6 +40,7 @@ class FakeRoleMap:
         # How many recommended roles each fits estimate was asked to price.
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
+        self.one_per_company: list[bool | None] = []
         self.rescore_run: uuid.UUID | None = RUN_ID
 
     async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
@@ -67,9 +68,15 @@ class FakeRoleMap:
         ]
 
     async def matched_postings(
-        self, owner_id: uuid.UUID, *, limit: int | None, role_id: uuid.UUID | None
+        self,
+        owner_id: uuid.UUID,
+        *,
+        limit: int | None,
+        role_id: uuid.UUID | None,
+        one_per_company: bool | None = None,
     ) -> list[Any]:
         self.matched_for.append(role_id)
+        self.one_per_company.append(one_per_company)
         return []
 
     async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
@@ -479,6 +486,19 @@ def test_matched_postings_can_be_narrowed_to_one_role(
     assert response.status_code == 200
     assert response.json()["items"] == []
     assert rolemap.matched_for == [ROLE_ID]
+    assert rolemap.one_per_company == [None]
+
+
+def test_top_matched_asks_for_one_opening_per_company_in_the_selected_role(
+    client: TestClient, rolemap: FakeRoleMap
+) -> None:
+    response = client.get(
+        "/matched-postings",
+        params={"role_id": str(ROLE_ID), "one_per_company": "true", "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    assert (rolemap.matched_for, rolemap.one_per_company) == ([ROLE_ID], [True])
 
 
 def test_the_roles_are_drawn_with_the_openings_they_have_now(client: TestClient) -> None:

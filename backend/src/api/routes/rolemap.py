@@ -185,13 +185,17 @@ async def matched_postings(
     deps: Deps,
     paging: Paging,
     role_id: Annotated[uuid.UUID | None, Query()] = None,
+    one_per_company: Annotated[bool | None, Query()] = None,
 ) -> MatchedPostingPage:
-    """The openings inside the user's roles, best first, for the role map's "Top
-    matched" list: ask for ``page_size=10`` for the top ten. Across all roles
-    it holds one opening per company, the best-ranked one. ``role_id`` keeps
-    one role's, every opening the Advisor can aim at in it. Ranked by the
-    role's fit; no AI runs to produce it."""
-    ranked = await deps.rolemap.matched_postings(user, limit=None, role_id=role_id)
+    """The openings inside the user's roles, best first. ``role_id`` keeps one
+    role's; "Top matched openings" asks for the selected role's with
+    ``one_per_company=true&page_size=10``, and the Advisor for all of them.
+    Each is ranked by its own fit, worked out locally from its role's by the
+    last build; no AI runs to produce it. ``one_per_company`` defaults to true
+    across all roles and false for one role."""
+    ranked = await deps.rolemap.matched_postings(
+        user, limit=None, role_id=role_id, one_per_company=one_per_company
+    )
     return MatchedPostingPage.of(
         paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
     )

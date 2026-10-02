@@ -156,6 +156,7 @@ class PostingRequirementFitRepository(
 @dataclass(frozen=True, slots=True)
 class PostingFitFilter:
     posting_keys: tuple[str, ...] | None = None
+    role_ids: tuple[uuid.UUID, ...] | None = None
 
 
 class PostingFitRepository(Repository[PostingFit, PostingFitFilter], Protocol): ...

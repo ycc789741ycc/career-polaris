@@ -240,7 +240,7 @@ describe("the Advisor's one target role", () => {
     expect(banner).toHaveTextContent("86%");
     expect(banner).toHaveTextContent("EUR 165k–190k");
     expect(banner).toHaveTextContent(
-      "Everything on this page is measured against this one role.",
+      "Everything on this page is measured against this opening",
     );
     await waitFor(() =>
       expect(shell.setTarget).toHaveBeenCalledWith(

@@ -237,7 +237,8 @@ class Fit(ApiModel):
 
 
 class MatchedPosting(ApiModel):
-    """An opening inside one of the user's roles, ranked by that role's fit."""
+    """An opening inside one of the user's roles, ranked by its own fit,
+    worked out locally from its role's (Phase 8)."""
 
     posting_id: uuid.UUID
     role_id: uuid.UUID
@@ -247,9 +248,10 @@ class MatchedPosting(ApiModel):
     location: str | None
     url: str | None
     salary: Salary | None
-    # The role's fit: a posting's own requirements do not move it yet.
+    # The opening's own fit (`posting`), or its role's before a build has
+    # worked the opening's out (`role`).
     fit: int | None
-    fit_basis: Literal["role"] = "role"
+    fit_basis: Literal["role", "posting"] = "role"
     # atsBoard, jsonLd or publicApi; never a site that forbids crawling.
     source_kind: str | None
     # The job site whose API found this opening, to be named beside its link
@@ -268,6 +270,7 @@ class MatchedPosting(ApiModel):
             url=m.url,
             salary=Salary.of(m.salary),
             fit=m.fit,
+            fit_basis=m.fit_basis,
             source_kind=m.source_kind,
             credited_to=m.credited_to,
         )

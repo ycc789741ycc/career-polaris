@@ -358,12 +358,14 @@ class PostingRequirementFit(Base, OwnedMixin):
 
 class PostingFit(Base, OwnedMixin):
     """The user's fit to one posting, worked out locally from an AI fit; never
-    an AI call. Every one worked out is kept; the newest per posting is the
-    current one."""
+    an AI call. For a posting of the user's own every one is kept, the newest
+    current; an opening's are replaced by each build, as a cache."""
 
     __tablename__ = "posting_fit"
     __table_args__ = (
-        CheckConstraint("basis IN ('own')", name="basis"),
+        CheckConstraint("basis IN ('own', 'role')", name="basis"),
+        CheckConstraint("(basis = 'role') = (role_id IS NOT NULL)", name="role"),
+        Index("ix_posting_fit_owner_role", "owner_id", "role_id"),
         Index("ix_posting_fit_owner_key", "owner_id", "posting_key", "created_at"),
         {"schema": "rolemap"},
     )
@@ -372,8 +374,13 @@ class PostingFit(Base, OwnedMixin):
     # "private:<id>" for a posting of the user's own, as role_member keys it.
     posting_key: Mapped[str] = mapped_column(String(128), nullable=False)
     basis: Mapped[str] = mapped_column(String(8), nullable=False)
-    # The AI fit it was worked out from: a posting_requirement_fit for `own`.
+    # The AI fit it was worked out from: a posting_requirement_fit for `own`,
+    # the role's role_fit for `role`.
     source_fit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    # An opening's role; none for a posting of the user's own.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("rolemap.role.id", ondelete="CASCADE"), nullable=True
+    )
     assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)

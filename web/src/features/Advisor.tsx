@@ -341,7 +341,9 @@ function TargetBanner({
           <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
             {target.isOwnPosting
               ? "Everything on this page is measured against this posting's own requirements."
-              : "Everything on this page is measured against this one role."}
+              : target.postingTitle
+                ? "Everything on this page is measured against this opening: the role's requirements, as it weighs them."
+                : "Everything on this page is measured against this one role."}
           </p>
         </div>
         <div className="row" style={{ gap: 10, alignItems: "stretch" }}>

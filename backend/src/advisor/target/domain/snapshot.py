@@ -26,6 +26,9 @@ class RequirementBasis(StrEnum):
 
     # A posting of the user's own: the JD they pasted.
     POSTING = "posting"
+    # One opening in a Role: the Role's requirements, as that opening weighs
+    # them (Phase 8).
+    OPENING = "opening"
     # The Role's requirements across its openings.
     ROLE = "role"
 

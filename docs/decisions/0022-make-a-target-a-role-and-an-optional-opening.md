@@ -1,6 +1,6 @@
 # 0022. Make a Target a role, plus an optional opening in it
 
-**Status:** Accepted — 2026-09-29. Amends [0005](0005-resolve-targets-in-their-own-module.md). Amended by [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md).
+**Status:** Accepted — 2026-09-29. Amends [0005](0005-resolve-targets-in-their-own-module.md). Amended by [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) and [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md).
 
 ## Context
 

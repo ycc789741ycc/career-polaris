@@ -62,8 +62,9 @@ class TargetService:
 
         A posting of the user's own is measured against its JD's requirements
         and its own fit. A role is measured against its requirements across its
-        openings; an opening narrows the title and company, and is measured
-        against its role's (ADR 0022).
+        openings. An opening is measured against its own fit, the role's
+        requirements as it weighs them (Phase 8), or against its role's before
+        a build has worked that out.
         """
         if ref.is_own_posting:
             return await self._own_posting_snapshot(owner_id, ref)
@@ -76,14 +77,17 @@ class TargetService:
                 "it is scored when the role map is built",
                 role_id=str(role.id),
             )
+        opening_fit = (
+            await self._rolemap.opening_fit(owner_id, role.id, opening.id) if opening else None
+        )
         return await self._freeze(
             owner_id,
             ref,
             role=role,
             title=opening.title if opening else role.name,
             company=opening.company_name if opening else "",
-            fit=fit,
-            basis=RequirementBasis.ROLE,
+            fit=opening_fit or fit,
+            basis=RequirementBasis.OPENING if opening_fit else RequirementBasis.ROLE,
         )
 
     async def _own_posting_snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:

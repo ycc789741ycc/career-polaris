@@ -403,9 +403,13 @@ class SqlAlchemyPostingFitRepository(
         return entity.id
 
     def conditions(self, filter: PostingFitFilter) -> list[ColumnElement[bool]]:
-        if filter.posting_keys is None:
-            return []
-        return [models.PostingFit.posting_key.in_(filter.posting_keys)]
+        fit = models.PostingFit
+        found: list[ColumnElement[bool]] = []
+        if filter.posting_keys is not None:
+            found.append(fit.posting_key.in_(filter.posting_keys))
+        if filter.role_ids is not None:
+            found.append(fit.role_id.in_(filter.role_ids))
+        return found
 
 
 class SqlAlchemyCandidatePlacementRepository(

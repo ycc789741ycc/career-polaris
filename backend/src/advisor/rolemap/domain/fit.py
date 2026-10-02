@@ -13,12 +13,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
+
+from advisor.rolemap.domain.constants import (
+    OPENING_EMPHASIS,
+    OPENING_WEIGHT_CEILING,
+    OPENING_WEIGHT_FLOOR,
+)
 
 # How much an uncovered requirement costs, relative to a dimension scored zero
 # against its target. A requirement with no evidence at all is worse than a low
@@ -38,11 +45,14 @@ class TargetScore:
 
 @dataclass(frozen=True, slots=True)
 class SkillGap:
-    """The user's score minus the target on one dimension."""
+    """The user's score minus the target on one dimension. ``weight`` is how
+    much the dimension counts: 1 for a role, and for one opening how much more
+    or less it asks for it than the role's openings do (Phase 8)."""
 
     dimension_id: str
     user_score: int
     target_score: int
+    weight: float = 1.0
 
     @property
     def delta(self) -> int:
@@ -82,6 +92,7 @@ def evaluate(
     user_scores: dict[str, int],
     targets: list[TargetScore],
     uncovered: list[UncoveredRequirement],
+    dimension_weights: Mapping[str, float] | None = None,
 ) -> FitResult:
     """Score one User x Role pair.
 
@@ -89,11 +100,13 @@ def evaluate(
     does not compensate for being under it on another, which is how interview
     panels actually behave.
     """
+    weights = dimension_weights or {}
     gaps = tuple(
         SkillGap(
             dimension_id=target.dimension_id,
             user_score=user_scores.get(target.dimension_id, 0),
             target_score=target.target,
+            weight=weights.get(target.dimension_id, 1.0),
         )
         for target in targets
     )
@@ -101,8 +114,8 @@ def evaluate(
     if not gaps and not uncovered:
         return FitResult(score=0, gaps=(), uncovered=())
 
-    shortfall = sum(max(0, -gap.delta) for gap in gaps)
-    possible = sum(gap.target_score for gap in gaps)
+    shortfall = sum(gap.weight * max(0, -gap.delta) for gap in gaps)
+    possible = sum(gap.weight * gap.target_score for gap in gaps)
 
     # Each uncovered requirement is weighted onto the same 0-100 scale so it
     # actually moves the number rather than being a footnote.
@@ -136,14 +149,16 @@ def closing_lifts(
     are worth nothing and are left out. Rounding and the 0-100 clamp mean the
     lifts need not sum exactly to the distance from 100.
     """
-    possible = sum(gap.target_score for gap in gaps)
+    possible = sum(gap.weight * gap.target_score for gap in gaps)
     uncovered_possible = sum(100 * r.weight for r in uncovered)
     denominator = possible + uncovered_possible
     if denominator == 0:
         return ClosingLifts(by_dimension={}, by_uncovered=tuple(0 for _ in uncovered))
     return ClosingLifts(
         by_dimension={
-            gap.dimension_id: round(100 * -gap.delta / denominator) for gap in gaps if gap.is_gap
+            gap.dimension_id: round(100 * gap.weight * -gap.delta / denominator)
+            for gap in gaps
+            if gap.is_gap
         },
         by_uncovered=tuple(
             round(100 * 100 * _UNCOVERED_PENALTY * r.weight / denominator) for r in uncovered
@@ -228,6 +243,8 @@ class PostingFitBasis(StrEnum):
 
     # A posting of the user's own: its ``PostingRequirementFit``.
     OWN = "own"
+    # An opening in one of the user's roles: its role's ``RoleFit``.
+    ROLE = "role"
 
 
 @dataclass(slots=True)
@@ -236,9 +253,14 @@ class PostingFit:
     never an AI call (Phase 8).
 
     ``posting_key`` names the posting as ``rolemap.role_member`` does:
-    ``private:<id>`` for a posting of the user's own. ``source_fit_id`` is the
-    AI fit it came from, and ``assessment_id`` the analysis whose scores it
-    was worked out against.
+    ``private:<id>`` for a posting of the user's own, the shared posting's id
+    for an opening, whose ``role_id`` is its role. ``source_fit_id`` is the AI
+    fit it came from, and ``assessment_id`` the analysis whose scores it was
+    worked out against.
+
+    An opening's is a cache of a pure computation: never edited, worked out
+    again by every build, and rebuildable from the fits and the embeddings
+    with no AI call.
     """
 
     id: uuid.UUID
@@ -253,7 +275,12 @@ class PostingFit:
     target_profile: dict[str, int]
     gaps: tuple[dict[str, Any], ...]
     uncovered: tuple[dict[str, Any], ...]
+    role_id: uuid.UUID | None = None
     created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if (self.basis is PostingFitBasis.ROLE) != (self.role_id is not None):
+            raise ValueError("an opening's fit names its role, and only an opening's does")
 
 
 def get_own_posting_key(private_job_posting_id: uuid.UUID) -> str:
@@ -314,3 +341,105 @@ def get_requirements_digest(
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def get_requirement_relevance(
+    requirement_vectors: Sequence[Sequence[float]],
+    opening_vectors: Sequence[Sequence[float]],
+) -> list[list[float]]:
+    """How much each opening asks for each requirement, compared with the
+    other openings of its role: ``[opening][requirement]``.
+
+    A requirement's similarity to an opening is centred on its mean over the
+    role's openings. One every opening asks for is 0 everywhere, so it weighs
+    the same in each; one an opening stresses is above 0 there. Plain
+    arithmetic over local vectors.
+    """
+    if not opening_vectors:
+        return []
+    similarity = [
+        [_cosine(requirement, opening) for requirement in requirement_vectors]
+        for opening in opening_vectors
+    ]
+    means = [
+        sum(row[i] for row in similarity) / len(similarity) for i in range(len(requirement_vectors))
+    ]
+    return [[row[i] - means[i] for i in range(len(requirement_vectors))] for row in similarity]
+
+
+def get_opening_fit(
+    *,
+    requirements: Sequence[Mapping[str, Any]],
+    requirement_map: Mapping[str, str | None],
+    target_profile: Mapping[str, int],
+    user_scores: Mapping[str, int],
+    relevance: Sequence[float],
+) -> tuple[FitResult, tuple[dict[str, Any], ...]]:
+    """One opening's fit, worked out from its role's AI fit with no AI call
+    (Phase 8): the role's requirements reweighted by how much the opening asks
+    for each (``relevance``, from ``get_requirement_relevance``), evaluated
+    with the role fit's mapping and targets. Returns the result and the
+    requirements as the opening weighs them.
+
+    A requirement's weight is scaled by ``1 + OPENING_EMPHASIS x relevance``,
+    at most ``OPENING_WEIGHT_CEILING``; below ``OPENING_WEIGHT_FLOOR`` the
+    opening does not ask for it, and it drops out. A dimension counts by the
+    weight its requirements kept, relative to the role's; one with none mapped
+    counts as for the role. With every opening alike, each scores its role's
+    fit.
+    """
+    if len(relevance) != len(requirements):
+        raise ValueError("relevance needs one entry per requirement")
+    scales = [_opening_scale(r) for r in relevance]
+    kept = tuple(
+        {**requirement, "weight": round(float(requirement["weight"]) * scale, 4)}
+        for requirement, scale in zip(requirements, scales, strict=True)
+        if scale > 0
+    )
+    role_weight: dict[str, float] = {}
+    opening_weight: dict[str, float] = {}
+    for requirement, scale in zip(requirements, scales, strict=True):
+        dimension = requirement_map.get(str(requirement["statement"]))
+        if dimension is not None and dimension in user_scores:
+            weight = float(requirement["weight"])
+            role_weight[dimension] = role_weight.get(dimension, 0.0) + weight
+            opening_weight[dimension] = opening_weight.get(dimension, 0.0) + weight * scale
+    dimension_weights = {
+        key: opening_weight[key] / role_weight[key] if role_weight.get(key) else 1.0
+        for key in target_profile
+    }
+    targets = [
+        TargetScore(dimension_id=key, target=target)
+        for key, target in sorted(target_profile.items())
+        if key in user_scores and dimension_weights[key] > 0
+    ]
+    seen: set[str] = set()
+    uncovered: list[UncoveredRequirement] = []
+    for requirement in kept:
+        statement = str(requirement["statement"])
+        if statement in seen:
+            continue
+        seen.add(statement)
+        if requirement_map.get(statement) not in user_scores:
+            uncovered.append(UncoveredRequirement(statement, float(requirement["weight"])))
+    result = evaluate(
+        user_scores=dict(user_scores),
+        targets=targets,
+        uncovered=uncovered,
+        dimension_weights=dimension_weights,
+    )
+    return result, kept
+
+
+def _opening_scale(relevance: float) -> float:
+    scale = 1.0 + OPENING_EMPHASIS * relevance
+    if scale < OPENING_WEIGHT_FLOOR:
+        return 0.0
+    return min(OPENING_WEIGHT_CEILING, scale)
+
+
+def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    if norm == 0:
+        return 0.0
+    return sum(x * y for x, y in zip(a, b, strict=True)) / norm
