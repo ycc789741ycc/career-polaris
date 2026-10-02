@@ -69,6 +69,14 @@ class OwnPostingRequest(RequestModel):
     job_description: str = Field(min_length=1, max_length=MAX_JOB_DESCRIPTION)
 
 
+class OwnPostingUploadEstimateRequest(RequestModel):
+    """A posting of the user's own to be uploaded as a file: priced before the
+    file is read, so only its title and company are known."""
+
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+    company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME)
+
+
 class OwnPostingEstimate(ApiModel):
     """What reading and scoring a posting of the user's own costs, shown
     before anything runs: two calls to add one, one to rescore it."""
@@ -85,6 +93,9 @@ class OwnPosting(ApiModel):
     private_job_posting_id: uuid.UUID
     title: str
     company_name: str
+    # How its JD arrived; an uploaded one names its file.
+    source: Literal["pasted", "uploaded"]
+    filename: str | None
     # The latest run reading and scoring it; null before any.
     status: Literal["running", "ready", "failed"] | None
     error_code: str | None
@@ -100,6 +111,8 @@ class OwnPosting(ApiModel):
             private_job_posting_id=posting.private_job_posting_id,
             title=posting.title,
             company_name=posting.company_name,
+            source=posting.source,
+            filename=posting.filename,
             status=posting.status,
             error_code=posting.error_code,
             error_message=posting.error_message,

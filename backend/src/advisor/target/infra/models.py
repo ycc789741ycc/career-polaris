@@ -37,6 +37,12 @@ class PrivateJobPosting(Base, OwnedMixin):
 
     __tablename__ = "private_job_posting"
     __table_args__ = (
+        CheckConstraint("source IN ('pasted', 'uploaded')", name="source"),
+        # Only an uploaded file waits for its JD to be read.
+        CheckConstraint(
+            "job_description IS NOT NULL OR (source = 'uploaded' AND storage_key IS NOT NULL)",
+            name="job_description",
+        ),
         Index("ix_private_job_posting_owner_created", "owner_id", "created_at"),
         {"schema": "target"},
     )
@@ -44,7 +50,13 @@ class PrivateJobPosting(Base, OwnedMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    job_description: Mapped[str] = mapped_column(Text, nullable=False)
+    # None for an uploaded file until the worker has read it.
+    job_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pasted")
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # The uploaded file in object storage, until it has been read.
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

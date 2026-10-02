@@ -125,7 +125,14 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
         candidate_count=settings.role_candidate_count,
     )
-    target = create_target_service(database, assessment=assessment, rolemap=rolemap)
+    target = create_target_service(
+        database,
+        assessment=assessment,
+        rolemap=rolemap,
+        object_store=ObjectStore(settings),
+        upload_max_bytes=settings.own_posting_max_bytes,
+        upload_max_pages=settings.own_posting_max_pages,
+    )
     gapplan = create_gapplan_service(
         database,
         target=target,
@@ -222,6 +229,41 @@ async def _own_posting(
     _score_the_jd(world.stub)
     await world.target.evaluate_own_posting(account, run_id)
     return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
+
+
+async def test_a_posting_uploaded_as_a_file_is_read_scored_and_planned_for(
+    world: World, account: uuid.UUID
+) -> None:
+    """The file goes to object storage, the worker reads it into the JD, and
+    from there it is a posting of the user's own like a pasted one."""
+    posting, run_id = await world.target.upload_own_posting(
+        account,
+        title="Staff Platform Engineer",
+        company_name="Meridian Labs",
+        filename="meridian.txt",
+        content_type="text/plain",
+        content=b"Set technical direction across three product teams...",
+    )
+    assert (posting.source, posting.filename, posting.status) == (
+        "uploaded",
+        "meridian.txt",
+        "running",
+    )
+    _score_the_jd(world.stub)
+
+    await world.target.evaluate_own_posting(account, run_id)
+
+    [listed] = await world.target.own_postings(account)
+    assert listed.status == "ready", listed.error_message
+    assert "Set technical direction" in world.stub.calls[-2].user
+    ref = TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
+    world.stub.replies.append(_plan_reply(CITED))
+    requested = await world.gapplan.request(account, ref)
+    await world.gapplan.draft(account, requested.id)
+    plan = await world.gapplan.get(account, requested.id)
+    assert plan.summary.status is PlanStatus.READY, plan.summary.error_message
+    assert [g.key for g in plan.gaps] == [ORG_KEY, LEAD_KEY]
+    await world.target.remove_own_posting(account, posting.private_job_posting_id)
 
 
 ORG_KEY = "req:demonstrated-org-level-influence"

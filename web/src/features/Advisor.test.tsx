@@ -60,6 +60,8 @@ function own(id: string, overrides: Partial<OwnPosting> = {}): OwnPosting {
     private_job_posting_id: id,
     title: "Staff Platform Engineer",
     company_name: "Meridian Labs",
+    source: "pasted",
+    filename: null,
     status: "ready",
     error_code: null,
     error_message: null,

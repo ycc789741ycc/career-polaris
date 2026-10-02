@@ -8,6 +8,7 @@ from advisor.target.domain import (
     PostingEvaluationStatus,
     PostingRequirement,
     PostingRequirementFit,
+    PostingSource,
     PrivateJobPosting,
 )
 from advisor.target.infra import models
@@ -20,6 +21,10 @@ def posting(row: models.PrivateJobPosting) -> PrivateJobPosting:
         title=row.title,
         company_name=row.company_name,
         job_description=row.job_description,
+        source=PostingSource(row.source),
+        filename=row.filename,
+        content_type=row.content_type,
+        storage_key=row.storage_key,
         created_at=row.created_at,
     )
 
@@ -34,6 +39,10 @@ def apply_posting(row: models.PrivateJobPosting, entity: PrivateJobPosting) -> N
     row.title = entity.title
     row.company_name = entity.company_name
     row.job_description = entity.job_description
+    row.source = str(entity.source)
+    row.filename = entity.filename
+    row.content_type = entity.content_type
+    row.storage_key = entity.storage_key
 
 
 def evaluation(row: models.PostingEvaluation) -> PostingEvaluation:

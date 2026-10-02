@@ -96,9 +96,10 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
       <section>
         <EmptyState title="Pick a target first">
           Select a role on the role map — or one of its openings — and press the
-          target button at the bottom of the map. Or aim at a posting of your
-          own, below. The Advisor then plans a route to it and writes your
-          résumé for it.
+          target button at the bottom of the map. Nothing there you want? Aim at
+          a posting of your own below: paste its description or upload it as a
+          file. The Advisor then plans a route to it and writes your résumé for
+          it.
           <span style={{ display: "block", marginTop: 14 }}>
             <Button onClick={() => navigate("roles")}>Open the role map</Button>
           </span>

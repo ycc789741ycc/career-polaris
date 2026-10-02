@@ -11,11 +11,23 @@ from advisor.rolemap import RoleMapService
 from advisor.target.infra.unit_of_work import SqlAlchemyTargetUnitOfWork
 from advisor.target.service import TargetService
 from kernel.db import Database
+from kernel.storage import ObjectStore
 
 
 def create_target_service(
-    database: Database, *, assessment: AssessmentService, rolemap: RoleMapService
+    database: Database,
+    *,
+    assessment: AssessmentService,
+    rolemap: RoleMapService,
+    object_store: ObjectStore,
+    upload_max_bytes: int,
+    upload_max_pages: int,
 ) -> TargetService:
     return TargetService(
-        SqlAlchemyTargetUnitOfWork(database), assessment=assessment, rolemap=rolemap
+        SqlAlchemyTargetUnitOfWork(database),
+        assessment=assessment,
+        rolemap=rolemap,
+        object_store=object_store,
+        upload_max_bytes=upload_max_bytes,
+        upload_max_pages=upload_max_pages,
     )

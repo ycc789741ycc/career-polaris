@@ -114,7 +114,14 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
         candidate_count=settings.role_candidate_count,
     )
-    target = create_target_service(database, assessment=assessment, rolemap=rolemap)
+    target = create_target_service(
+        database,
+        assessment=assessment,
+        rolemap=rolemap,
+        object_store=ObjectStore(settings),
+        upload_max_bytes=settings.own_posting_max_bytes,
+        upload_max_pages=settings.own_posting_max_pages,
+    )
     gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     stub.replies.append(
         json.dumps(

@@ -721,6 +721,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/own-postings/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Own Posting
+         * @description Store the file privately and queue reading it, then reading and scoring
+         *     its requirements; poll ``GET /own-postings``. A PDF, a Word file or plain
+         *     text. Never placed on the role map, and builds nothing.
+         */
+        post: operations["upload_own_posting_api_v1_own_postings_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/own-postings/upload-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Own Posting Upload Estimate
+         * @description Priced before the file is sent: a ceiling, as if it held the longest JD
+         *     there may be, since nothing reads it until the worker does.
+         */
+        post: operations["own_posting_upload_estimate_api_v1_own_postings_upload_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/own-postings/{private_job_posting_id}": {
         parameters: {
             query?: never;
@@ -1314,6 +1357,15 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** Body_upload_own_posting_api_v1_own_postings_upload_post */
+        Body_upload_own_posting_api_v1_own_postings_upload_post: {
+            /** Company Name */
+            company_name?: string | null;
+            /** File */
+            file: string;
+            /** Title */
+            title: string;
+        };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
             /** File */
@@ -1731,6 +1783,8 @@ export interface components {
             error_code: string | null;
             /** Error Message */
             error_message: string | null;
+            /** Filename */
+            filename: string | null;
             /** Fit */
             fit: number | null;
             /** Is Stale */
@@ -1742,6 +1796,11 @@ export interface components {
             private_job_posting_id: string;
             /** Scored At */
             scored_at: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "pasted" | "uploaded";
             /** Status */
             status: ("running" | "ready" | "failed") | null;
             /** Title */
@@ -1781,6 +1840,17 @@ export interface components {
             company_name?: string | null;
             /** Job Description */
             job_description: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * OwnPostingUploadEstimateRequest
+         * @description A posting of the user's own to be uploaded as a file: priced before the
+         *     file is read, so only its title and company are known.
+         */
+        OwnPostingUploadEstimateRequest: {
+            /** Company Name */
+            company_name?: string | null;
             /** Title */
             title: string;
         };
@@ -4706,6 +4776,108 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OwnPostingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnPostingEstimate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    upload_own_posting_api_v1_own_postings_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_own_posting_api_v1_own_postings_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnPosting"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    own_posting_upload_estimate_api_v1_own_postings_upload_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnPostingUploadEstimateRequest"];
             };
         };
         responses: {

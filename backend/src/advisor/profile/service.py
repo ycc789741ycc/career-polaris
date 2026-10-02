@@ -38,9 +38,10 @@ from advisor.profile.domain import (
     Position as PositionValue,
 )
 from advisor.profile.infra.connectors import Connector, EvidenceDraft
-from advisor.profile.infra.resume_parser import ACCEPTED_TYPES, parse
+from advisor.profile.infra.resume_parser import parse
 from kernel.clock import utcnow
 from kernel.crypto import decrypt, encrypt
+from kernel.documents import ACCEPTED_TYPES
 from kernel.errors import NotFoundError, UpstreamFailedError, ValidationError
 from kernel.fetch import GuardedClient
 from kernel.logging import get_logger

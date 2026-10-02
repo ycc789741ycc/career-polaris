@@ -1,14 +1,23 @@
 """Target HTTP surface: the postings the user brings themselves to aim the
-Advisor at (Phase 8, ADR 0033), which are never on the role map."""
+Advisor at (Phase 8, ADR 0033), pasted or uploaded as a file, which are never
+on the role map."""
 
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 
+from advisor.target import MAX_COMPANY_NAME, MAX_TITLE
 from api.dependencies import CurrentUser, Deps, Paging
-from api.schemas.target import OwnPosting, OwnPostingEstimate, OwnPostingPage, OwnPostingRequest
+from api.schemas.target import (
+    OwnPosting,
+    OwnPostingEstimate,
+    OwnPostingPage,
+    OwnPostingRequest,
+    OwnPostingUploadEstimateRequest,
+)
 from kernel.paging import paginate
 from wiring.queue import enqueue
 
@@ -49,6 +58,42 @@ async def add_own_posting(body: OwnPostingRequest, user: CurrentUser, deps: Deps
         title=body.title,
         company_name=body.company_name,
         job_description=body.job_description,
+    )
+    await enqueue(
+        "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
+    )
+    return OwnPosting.from_view(posting)
+
+
+@router.post("/own-postings/upload-estimate")
+async def own_posting_upload_estimate(
+    body: OwnPostingUploadEstimateRequest, user: CurrentUser, deps: Deps
+) -> OwnPostingEstimate:
+    """Priced before the file is sent: a ceiling, as if it held the longest JD
+    there may be, since nothing reads it until the worker does."""
+    return OwnPostingEstimate.model_validate(
+        await deps.target.estimate_upload(user, title=body.title, company_name=body.company_name)
+    )
+
+
+@router.post("/own-postings/upload", status_code=202)
+async def upload_own_posting(
+    user: CurrentUser,
+    deps: Deps,
+    title: Annotated[str, Form(min_length=1, max_length=MAX_TITLE)],
+    file: Annotated[UploadFile, File()],
+    company_name: Annotated[str | None, Form(max_length=MAX_COMPANY_NAME)] = None,
+) -> OwnPosting:
+    """Store the file privately and queue reading it, then reading and scoring
+    its requirements; poll ``GET /own-postings``. A PDF, a Word file or plain
+    text. Never placed on the role map, and builds nothing."""
+    posting, evaluation_id = await deps.target.upload_own_posting(
+        user,
+        title=title,
+        company_name=company_name,
+        filename=file.filename or "job description",
+        content_type=file.content_type or "application/octet-stream",
+        content=await file.read(),
     )
     await enqueue(
         "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
