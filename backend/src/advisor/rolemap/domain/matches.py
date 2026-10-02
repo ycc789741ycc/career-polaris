@@ -26,17 +26,22 @@ class MatchCandidate:
 
 
 def rank_matches(
-    candidates: Iterable[MatchCandidate], *, limit: int | None = DEFAULT_MATCHES
+    candidates: Iterable[MatchCandidate],
+    *,
+    limit: int | None = DEFAULT_MATCHES,
+    one_per_company: bool = False,
 ) -> list[MatchCandidate]:
     """The ``limit`` best openings, or all of them ranked when ``limit`` is
     None: highest role fit first, unscored last.
 
     Ties are broken by role, company, then title, so the same inputs always
-    give the same list.
+    give the same list. With ``one_per_company``, only each company's
+    best-ranked opening is kept, before the limit, so the list fills from
+    other companies rather than repeating one.
     """
     if limit is not None and not MIN_MATCHES <= limit <= MAX_MATCHES:
         raise ValueError(f"limit must be between {MIN_MATCHES} and {MAX_MATCHES}, got {limit}")
-    return sorted(
+    ranked = sorted(
         candidates,
         key=lambda c: (
             c.fit is None,
@@ -46,4 +51,15 @@ def rank_matches(
             c.title.lower(),
             c.posting_id,
         ),
-    )[:limit]
+    )
+    if one_per_company:
+        seen: set[str] = set()
+        distinct: list[MatchCandidate] = []
+        for candidate in ranked:
+            company = candidate.company_name.strip().lower()
+            if company in seen:
+                continue
+            seen.add(company)
+            distinct.append(candidate)
+        ranked = distinct
+    return ranked[:limit]

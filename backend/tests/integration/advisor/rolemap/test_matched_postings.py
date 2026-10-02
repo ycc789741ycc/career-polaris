@@ -156,10 +156,10 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
 
         matched = await rolemap.matched_postings(account, limit=10)
 
-        # Equal fits break by company: Kestrel before Northwind.
+        # One opening per company: Kestrel's best is Platform (91), so its
+        # Backend B gives way and Northwind's Backend A follows.
         assert [(m.title, m.fit) for m in matched] == [
             (f"Platform {tag}", 91),
-            (f"Backend B {tag}", 80),
             (f"Backend A {tag}", 80),
         ]
         assert [m.title for m in await rolemap.matched_postings(account, limit=1)] == [

@@ -1030,6 +1030,10 @@ class RoleMapService:
         opening inside two roles (a custom role's title can match a
         recommended role's posting) is listed under each, as each role's
         bubble counts it.
+
+        Across all roles the list keeps each company's best opening only, so
+        "Top matched" names different companies; one role's list
+        (``role_id``) keeps all its openings, as its bubble counts them.
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
 
@@ -1054,7 +1058,7 @@ class RoleMapService:
                 )
 
         try:
-            ranked = rank_matches(candidates, limit=limit)
+            ranked = rank_matches(candidates, limit=limit, one_per_company=role_id is None)
         except ValueError as exc:
             raise ValidationError(str(exc), limit=limit) from exc
 
