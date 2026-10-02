@@ -16,15 +16,10 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.assessment.domain.entities import (
-    AnalysisRun,
-    AnalysisRunStatus,
-    AssessedScore,
-    DimensionChange,
-    SkillAssessment,
-    SkillDimension,
-)
+from advisor.assessment.domain.analysis_run import AnalysisRun, AnalysisRunStatus
+from advisor.assessment.domain.dimensions import DimensionChange, SkillDimension
 from advisor.assessment.domain.events import AssessmentEvent
+from advisor.assessment.domain.skill_assessment import AssessedScore, SkillAssessment
 
 
 class Repository[Entity, Filter](Protocol):

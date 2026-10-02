@@ -11,13 +11,14 @@ Two rules carry the whole feature:
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
-MIN_DIMENSIONS = 5
-MAX_DIMENSIONS = 10
+from advisor.assessment.domain.constants import MAX_DIMENSIONS, MIN_DIMENSIONS
 
 
 class LineageKind(StrEnum):
@@ -133,3 +134,44 @@ def profile_confidence(dimensions: Sequence[Scored]) -> float | None:
     if not dimensions:
         return None
     return sum(d.confidence for d in dimensions) / len(dimensions)
+
+
+@dataclass(slots=True)
+class SkillDimension:
+    """One axis of *this user's* skills; there is no global taxonomy.
+
+    ``key`` is reused across re-assessments, which is what lets two
+    assessments be compared to show progress.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    key: str
+    name: str
+    short_name: str
+    retired_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    def rename(self, *, name: str, short_name: str) -> None:
+        """Seen again: take the latest name, and it is live again."""
+        self.name = name
+        self.short_name = short_name
+        self.retired_at = None
+
+    def retire(self, at: datetime) -> None:
+        self.retired_at = at
+
+
+@dataclass(slots=True)
+class DimensionChange:
+    """A dimension added, renamed or merged away, so radar history lines up."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    kind: LineageKind
+    dimension_key: str
+    from_keys: tuple[str, ...] = ()
+    previous_name: str | None = None
+    recorded_at: datetime | None = None
