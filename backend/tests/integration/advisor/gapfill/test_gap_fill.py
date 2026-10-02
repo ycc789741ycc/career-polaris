@@ -102,6 +102,8 @@ async def world(
         market=market,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
     assessment = create_assessment_service(
         database,
@@ -109,6 +111,7 @@ async def world(
         rolemap=rolemap,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
+        candidate_count=settings.role_candidate_count,
     )
     target = TargetService(assessment=assessment, rolemap=rolemap)
     gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)

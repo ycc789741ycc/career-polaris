@@ -2,8 +2,8 @@
 
 A strength analysis reads a user's collected evidence (GitHub, Jira, the
 résumé and their own answers) and turns it into a scored set of skill
-dimensions: the strength report on 02 Strengths. It also recommends up to 20
-candidate roles, which the role-map build that follows searches the market for
+dimensions: the strength report on 02 Strengths. It also recommends up to
+`ROLE_CANDIDATE_COUNT` candidate roles (10 by default, ADR 0029), which the role-map build that follows searches the market for
 ([role-map-build.md](role-map-build.md)). It runs on the user's own AI key, as
 one job on the `ai` queue, and is priced and confirmed before anything is
 spent.
@@ -32,7 +32,7 @@ sequenceDiagram
     API-->>UI: 202 RunStatus
     W->>Q: pick up assessment.run
     W->>A: analyse(owner_id, run_id)
-    A->>GW: run skill_assessment v2 on the user's key
+    A->>GW: run skill_assessment v3 on the user's key
     GW-->>A: validated dimensions + candidates
     A->>A: check every citation and dimension reference
     A->>DB: store assessment, scores, lineage + AssessmentCompleted
@@ -53,8 +53,8 @@ once:
 
 | Part | Where it is priced | What it assumes |
 |---|---|---|
-| `analysis_cost_usd` | `ai_gateway.estimate` on `skill_assessment` v2 | The real prompt: the user's evidence and timeline |
-| `role_map_cost_usd` | `rolemap.estimate_cost` | Two calls per role, up to `max_roles`. When the user has a searchable place (a country or "Remote"), this is the full 10, because the search that runs first could find anything. |
+| `analysis_cost_usd` | `ai_gateway.estimate` on `skill_assessment` v3 | The real prompt: the user's evidence and timeline |
+| `role_map_cost_usd` | `rolemap.estimate_cost` | Two calls per role, up to `max_roles`. When the user has a searchable place (a country or "Remote"), this is the full k (`ROLE_MAP_TOP_K`), because the search that runs first could find anything. |
 | `fits_cost_usd` | `rolemap.estimate_fits` | One `fit_projection` call for each recommended and custom role, priced at its worst-case prompt |
 
 With no evidence, the estimate is refused with `ValidationError`, which tells
@@ -93,6 +93,7 @@ is skipped.
 | `timeline` | Each position (title, company, dates), plus total experience with overlaps counted once |
 | `evidence` | One line per evidence fact, labelled with a short citation handle instead of its UUID (`CitationHandles`) |
 | `existing_dimensions` | The user's current dimension keys and names, so the model keeps them stable across analyses |
+| `candidate_count` | `ROLE_CANDIDATE_COUNT`: how many candidate roles to recommend at most (ADR 0029) |
 
 `evidence` and `timeline` are marked **untrusted**: they come from outside
 the platform, and the gateway fences them off as data, never as instructions.
@@ -100,7 +101,7 @@ the platform, and the gateway fences them off as data, never as instructions.
 ### 3.2 Call the model through the AI gateway
 
 `kernel.ai_gateway.run` with task `assessment.run`, template
-`skill_assessment` v2:
+`skill_assessment` v3:
 
 1. Estimate the cost, and check it against the user's budget.
 2. Decrypt the user's key for this one call, and send the prompt to their
@@ -111,8 +112,9 @@ the platform, and the gateway fences them off as data, never as instructions.
    `AI_MAX_OUTPUT_RETRIES` times when it doesn't parse:
    - 5 to 10 dimensions, each with an id, name, score from 0 to 100,
      confidence from 0 to 1, a written read, and cited evidence handles;
-   - up to 20 candidate roles, each with a title, a description, and the
-     dimension ids it rests on.
+   - up to `ROLE_CANDIDATE_COUNT` candidate roles, each with a title, a
+     description, and the dimension ids it rests on. The schema is built
+     with that maximum, so a reply with more fails and is asked again.
 
 ### 3.3 Treat the output as untrusted
 
@@ -223,3 +225,4 @@ finishes.
 - [ADR 0024: roles from the assessment](../decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)
 - [ADR 0027: fetch the market only when a build needs it](../decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)
 - [ADR 0028: score the fit in the role map](../decisions/0028-score-the-fit-in-the-role-map.md)
+- [ADR 0029: the candidate count and the top k as settings](../decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)

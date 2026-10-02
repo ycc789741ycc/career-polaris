@@ -89,6 +89,7 @@ The prototype's role map reads: *"The 10 best-fit roles on the market, plus the 
   - Every analysed Role costs calls on the user's key, and a fixed number gives a cost the user can predict.
   - A user who wants further afield now adds the role they have in mind (2.4). That targets the spend better than raising k did.
 - **What it costs:** a user on a tight budget can no longer analyse fewer than ten, and a user thinking about a career change can't widen the automatic net. Their only option is to add roles one at a time.
+- *Superseded by decision 33* ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)): the number is still the system's, not the user's, but it is a deployment setting, k (`ROLE_MAP_TOP_K`, default 10). Only the top k are named, analysed and scored. The analysis recommends `ROLE_CANDIDATE_COUNT` candidates (default 10, at most 20), all of them searched for.
 
 **Decision 24: the role map is built after every analysis.** v3's 2d–2h are a single flow: an assessment finishes, and the user's role map is rebuilt from it.
 - Pressing Analyze estimates the cost of the analysis **and** of the build together, and asks the user to confirm once. A separate "build the role map" step would have made the user confirm twice for one outcome.
@@ -551,6 +552,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 30 | 2026-09-30 | How a candidate role's openings are found | **Its title is searched on a public job API (Himalayas) for the countries and remote work the user named, as ownerless demand sources; on-site work stays on company boards** | 2.5: CrawlSource as a search; remote work open worldwide is in every searchable target location ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |
 | 31 | 2026-10-02 | When the market is fetched, and the map built | **Only when the user asks for a build: it asks for the sources it reads, waits for the stale ones, and the ten are chosen by a free local fit estimate; nothing the market does builds a map, and nothing reads across users** | 2.5: supersedes 14, amends 24 ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
 | 32 | 2026-10-03 | Where the fit lives | **In the Role Map, scored against the dimension scores the Analyzer hands over with the candidate roles; the Assessment describes only the user** | 2.5: moves RoleFit, SkillGap, UncoveredRequirement and the Top matched ranking from Assessment to Role Map ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
+| 33 | 2026-10-03 | How many roles a build keeps, and how many an analysis recommends | **Both are deployment settings: the top k (default 10) are named, analysed and scored, of the candidates an analysis recommends (default 10); custom roles are on top** | 2.2: supersedes 23 ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)) |
 
 ### 6.2 Remaining questions
 

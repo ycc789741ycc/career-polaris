@@ -2,8 +2,8 @@
 per user, on the user's key.
 
 The analysis recommends candidate roles (ADR 0024); a build searches the
-postings in the user's target locations for each and keeps the first ten the
-market has. The split that matters is who pays for what. Embedding and
+postings in the user's target locations for each and keeps the top k the
+market has, k a setting (ADR 0029). The split that matters is who pays for what. Embedding and
 matching run locally on the platform — plain computation. The user's key is
 spent only on naming a role, pulling its requirements out, and estimating its
 interview difficulty (domain decision 7).
@@ -30,13 +30,11 @@ from advisor.market import (
     names_every_word,
 )
 from advisor.rolemap.domain import (
-    CANDIDATE_ROLE_COUNT,
     DEFAULT_MATCHES,
     MAX_ROLE_REQUIREMENTS,
     MAX_ROLE_TITLE,
     MAX_STRENGTHS,
     MIN_POSTINGS_FOR_A_ROLE,
-    RECOMMENDED_ROLE_COUNT,
     BarBasis,
     BuildRun,
     BuildRunFilter,
@@ -194,7 +192,7 @@ class RoleCandidateView:
     dimension_keys: tuple[str, ...]
     role_id: uuid.UUID | None
     opening_count: int
-    # The local estimate that chose the ten (ADR 0027); never a fit.
+    # The local estimate that chose the k (ADR 0027); never a fit.
     fit_estimate: float | None = None
 
 
@@ -337,15 +335,23 @@ class RoleMapService:
         market: MarketService,
         gateway: AiGateway,
         embedding_model: str,
+        top_k: int,
+        candidate_count: int,
     ) -> None:
+        if not 1 <= top_k <= candidate_count:
+            raise ValueError("a build keeps between 1 and candidate_count roles")
         self._uow = uow
         self._market = market
         self._gateway = gateway
         self._embedding_model = embedding_model
+        # How many recommended roles a build keeps, names, analyses and
+        # scores, and how many candidates an analysis may hand over (ADR 0029).
+        self._top_k = top_k
+        self._candidate_count = candidate_count
 
     async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The live roles, newest first, each with its requirements, weightiest
-        first. One user's map: ten roles and their own, read whole."""
+        first. One user's map: k roles and their own, read whole."""
         async with self._uow.for_owner(owner_id) as mine:
             roles = await mine.roles.get_list(RoleFilter(is_retired=False))
             requirements = (
@@ -396,12 +402,12 @@ class RoleMapService:
 
         Called by ``assessment`` once its scores are stored; the next build
         asks the market to search for their titles (ADR 0027) and looks for
-        them among what it finds. At most ``CANDIDATE_ROLE_COUNT``, in
+        them among what it finds. At most ``ROLE_CANDIDATE_COUNT``, in
         the analysis's order.
         """
-        if len(candidates) > CANDIDATE_ROLE_COUNT:
+        if len(candidates) > self._candidate_count:
             raise ValidationError(
-                f"an analysis recommends at most {CANDIDATE_ROLE_COUNT} roles",
+                f"an analysis recommends at most {self._candidate_count} roles",
                 candidates=len(candidates),
             )
         _check_strengths(strengths)
@@ -456,15 +462,15 @@ class RoleMapService:
 
         A ceiling, not a prediction: the api runs no embeddings, so it prices
         the most roles these postings could make, with each posting an opening
-        for one role at most, capped at the ten recommended roles, each sent
-        with the costliest prompt they could fill. Where a search will run
-        before the build (ADR 0027), what is stored now says nothing about
-        what it will find, so the ceiling is the full ten.
+        for one role at most, capped at the k recommended roles a build keeps,
+        each sent with the costliest prompt they could fill. Where a search
+        will run before the build (ADR 0027), what is stored now says nothing
+        about what it will find, so the ceiling is the full k.
         """
         postings = await self._market.postings_in_scope(owner_id)
-        max_roles = max_role_count(len(postings))
+        max_roles = max_role_count(len(postings), ceiling=self._top_k)
         if await self._market.has_searchable_place(owner_id):
-            max_roles = RECOMMENDED_ROLE_COUNT
+            max_roles = self._top_k
         if max_roles == 0:
             return {"max_roles": 0, "cost_usd": "0", "model_id": None}
 
@@ -694,10 +700,11 @@ class RoleMapService:
     async def _build_recommended(
         self, owner_id: uuid.UUID, candidates: list[RoleCandidate]
     ) -> None:
-        """Ten of the candidates the market has, analysed on the user's key.
+        """The top k of the candidates the market has, analysed on the user's
+        key; nothing is spent on the rest (ADR 0029).
 
         Each candidate's openings start with what its own search found; the
-        ten kept are those that read most like the user's strengths, by a
+        k kept are those that read most like the user's strengths, by a
         local estimate that spends nothing (ADR 0027). Candidates the market
         lacks are left unplaced, and roles that no longer come from a kept
         candidate are retired by reconciliation.
@@ -735,7 +742,7 @@ class RoleMapService:
         counts = {c.id: len(members[i]) for i, c in enumerate(candidates)}
         eligible = keep_on_market([len(m) for m in members], limit=len(candidates))
         estimates = await self._estimates(owner_id, candidates, members, eligible, scope)
-        keep = choose_by_estimate(estimates, eligible, limit=RECOMMENDED_ROLE_COUNT)
+        keep = choose_by_estimate(estimates, eligible, limit=self._top_k)
         groups = [
             _Group(
                 candidate=candidates[index],
@@ -939,7 +946,7 @@ class RoleMapService:
         custom = sum(1 for role in live if role.is_custom)
         if recommended is None:
             recommended = len(live) - custom
-        roles = min(recommended, RECOMMENDED_ROLE_COUNT) + custom + extra_roles
+        roles = min(recommended, self._top_k) + custom + extra_roles
         if roles == 0:
             return {"cost_usd": "0", "roles": 0, "rate_is_published": True}
         estimate = await self._gateway.estimate(
@@ -1137,7 +1144,7 @@ class RoleMapService:
             )
 
     async def _log_estimate_agreement(self, owner_id: uuid.UUID, fits: list[FitView]) -> None:
-        """How well the local estimate that chose the ten agreed with the fits
+        """How well the local estimate that chose the k agreed with the fits
         then scored, as a rank correlation (ADR 0027). Numbers only, no user
         data: the evidence for keeping the estimate, or going back to the
         analysis's order."""
@@ -1165,7 +1172,7 @@ class RoleMapService:
         company_name: str | None,
         private_posting_id: uuid.UUID | None,
     ) -> RoleView:
-        """A role the user named, placed beside the ten. It is analysed by the
+        """A role the user named, placed beside the k. It is analysed by the
         next build, whose cost the user confirmed when adding it."""
         try:
             role = Role.custom(

@@ -21,6 +21,7 @@ def create_assessment_service(
     rolemap: RoleMapService,
     gateway: AiGateway,
     confidence_threshold: float,
+    candidate_count: int,
 ) -> AssessmentService:
     return AssessmentService(
         SqlAlchemyAssessmentUnitOfWork(database),
@@ -28,4 +29,5 @@ def create_assessment_service(
         rolemap=rolemap,
         gateway=gateway,
         confidence_threshold=confidence_threshold,
+        candidate_count=candidate_count,
     )

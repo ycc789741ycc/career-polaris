@@ -170,3 +170,29 @@ def test_switching_google_on_makes_the_rest_of_it_required(
         settings.require_for(Unit.API)
     # The worker never signs anyone in, so it does not need any of it.
     settings.require_for(Unit.WORKER)
+
+
+def test_the_role_map_keeps_ten_of_ten_candidates_by_default(clean_env: None) -> None:
+    settings = get_settings()
+    assert (settings.role_candidate_count, settings.role_map_top_k) == (10, 10)
+
+
+@pytest.mark.parametrize(
+    ("candidates", "top_k"),
+    [
+        ("0", "1"),  # an analysis recommends at least one role
+        ("21", "10"),  # one search per role and place: capped at twenty
+        ("10", "0"),  # a build keeps at least one
+        ("5", "6"),  # and never more than were recommended
+    ],
+)
+def test_role_counts_out_of_range_fail_startup(candidates: str, top_k: str) -> None:
+    env = dict(MINIMAL_ENV, ROLE_CANDIDATE_COUNT=candidates, ROLE_MAP_TOP_K=top_k)
+    with pytest.raises(PydanticValidationError):
+        Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]
+
+
+def test_a_smaller_top_k_than_candidates_is_allowed() -> None:
+    env = dict(MINIMAL_ENV, ROLE_CANDIDATE_COUNT="20", ROLE_MAP_TOP_K="5")
+    settings = Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]
+    assert (settings.role_candidate_count, settings.role_map_top_k) == (20, 5)

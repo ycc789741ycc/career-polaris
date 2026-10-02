@@ -157,6 +157,15 @@ class Settings(BaseSettings):
         default=0.6, alias="ASSESSMENT_CONFIDENCE_THRESHOLD"
     )
 
+    # --- Role map (ADR 0029) -------------------------------------------------
+    # How many roles an analysis recommends, every one searched for in each
+    # searchable place: one public-API request per role and place, so it is
+    # capped at the twenty an analysis recommended before this was a setting.
+    role_candidate_count: int = Field(default=10, ge=1, le=20, alias="ROLE_CANDIDATE_COUNT")
+    # How many recommended roles a build keeps, names, analyses and scores:
+    # three calls each on the user's key. Custom roles are on top.
+    role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
+
     # --- Background work ----------------------------------------------------
     # How long a sync, parse, analysis or role-map build may show as running
     # before it is treated as lost (a worker that died mid-job), so it stops
@@ -178,6 +187,14 @@ class Settings(BaseSettings):
         if not 0.0 <= value <= 1.0:
             raise ValueError("ASSESSMENT_CONFIDENCE_THRESHOLD must be between 0 and 1")
         return value
+
+    @model_validator(mode="after")
+    def _top_k_within_the_candidates(self) -> Settings:
+        # A build keeps k of the candidates; more than were recommended would
+        # price roles no build can make.
+        if self.role_map_top_k > self.role_candidate_count:
+            raise ValueError("ROLE_MAP_TOP_K must not exceed ROLE_CANDIDATE_COUNT")
+        return self
 
     @model_validator(mode="after")
     def _wait_shorter_than_staleness(self) -> Settings:

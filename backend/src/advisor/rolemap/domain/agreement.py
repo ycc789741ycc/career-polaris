@@ -1,6 +1,6 @@
 """How well two orderings of the same roles agree.
 
-Used to check the role map's local fit estimate, which chooses the ten roles
+Used to check the role map's local fit estimate, which chooses the k roles
 for free, against the fits then scored on the user's key (ADR 0027).
 """
 

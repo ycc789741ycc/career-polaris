@@ -37,7 +37,8 @@ router = APIRouter(tags=["rolemap"])
 
 @router.get("/roles")
 async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
-    """The analysed roles: the ten recommended ones at most (ADR 0020)."""
+    """The analysed roles: the top k recommended ones at most (ADR 0029), and
+    the user's own."""
     # Paged here, not in the service: other components read the roles whole.
     found = paginate(await deps.rolemap.roles(user), paging.page, paging.page_size)
     return RolePage.of(found, Role.from_view)
@@ -103,7 +104,7 @@ async def custom_role_estimate(
 
 @router.post("/roles/custom", status_code=201)
 async def add_custom_role(body: CustomRoleRequest, user: CurrentUser, deps: Deps) -> Role:
-    """Place a role the user named beside the ten (ADR 0021). Its JD, if any,
+    """Place a role the user named beside the top k (ADR 0021). Its JD, if any,
     is stored privately; the build that analyses it is recorded here, so the
     page sees it at once, and waits for a running analysis (ADR 0018)."""
     jd = (body.job_description or "").strip()

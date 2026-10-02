@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from advisor.assessment.domain import (
     MAX_DIMENSIONS,
@@ -55,7 +55,6 @@ from advisor.profile import (
     assert_citations_exist,
 )
 from advisor.rolemap import (
-    CANDIDATE_ROLE_COUNT,
     MAX_ROLE_TITLE,
     CandidateInput,
     RoleMapService,
@@ -108,7 +107,18 @@ class _Candidate(BaseModel):
 
 class _Assessment(BaseModel):
     dimensions: list[_Dimension] = Field(min_length=MIN_DIMENSIONS, max_length=MAX_DIMENSIONS)
-    candidates: list[_Candidate] = Field(default_factory=list, max_length=CANDIDATE_ROLE_COUNT)
+    candidates: list[_Candidate] = Field(default_factory=list)
+
+
+def _assessment_schema(candidate_count: int) -> type[_Assessment]:
+    """The reply's schema, holding at most ``candidate_count`` candidate roles
+    (ADR 0029). A reply with more fails validation in the gateway, which asks
+    again, rather than being cut short here."""
+    return create_model(
+        "_Assessment",
+        __base__=_Assessment,
+        candidates=(list[_Candidate], Field(default_factory=list, max_length=candidate_count)),
+    )
 
 
 # --- views -----------------------------------------------------------------
@@ -174,12 +184,16 @@ class AssessmentService:
         rolemap: RoleMapService,
         gateway: AiGateway,
         confidence_threshold: float,
+        candidate_count: int,
     ) -> None:
         self._uow = uow
         self._profile = profile
         self._rolemap = rolemap
         self._gateway = gateway
         self._threshold = confidence_threshold
+        # How many roles an analysis recommends, all searched for (ADR 0029).
+        self._candidate_count = candidate_count
+        self._reply = _assessment_schema(candidate_count)
 
     # -- cost ---------------------------------------------------------------
 
@@ -194,9 +208,12 @@ class AssessmentService:
         estimate = await self._gateway.estimate(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v2"),
+            template=load_template("skill_assessment", "v3"),
             inputs=_assessment_inputs(
-                snapshot, CitationHandles(e.id for e in snapshot.evidence), existing=()
+                snapshot,
+                CitationHandles(e.id for e in snapshot.evidence),
+                existing=(),
+                candidate_count=self._candidate_count,
             ),
             untrusted=frozenset({"evidence", "timeline"}),
         )
@@ -311,9 +328,14 @@ class AssessmentService:
         result = await self._gateway.run(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v2"),
-            inputs=_assessment_inputs(snapshot, handles, existing=tuple(existing.items())),
-            output_schema=_Assessment,
+            template=load_template("skill_assessment", "v3"),
+            inputs=_assessment_inputs(
+                snapshot,
+                handles,
+                existing=tuple(existing.items()),
+                candidate_count=self._candidate_count,
+            ),
+            output_schema=self._reply,
             untrusted=frozenset({"evidence", "timeline"}),
         )
 
@@ -564,7 +586,11 @@ async def _view(
 
 
 def _assessment_inputs(
-    snapshot: Any, handles: CitationHandles, *, existing: tuple[tuple[str, str], ...]
+    snapshot: Any,
+    handles: CitationHandles,
+    *,
+    existing: tuple[tuple[str, str], ...],
+    candidate_count: int,
 ) -> dict[str, str]:
     return {
         "timeline": _timeline_block(snapshot),
@@ -572,6 +598,7 @@ def _assessment_inputs(
         "existing_dimensions": (
             "\n".join(f"- {key}: {name}" for key, name in existing) or "(none yet)"
         ),
+        "candidate_count": str(candidate_count),
     }
 
 

@@ -838,7 +838,8 @@ export interface paths {
         };
         /**
          * List Roles
-         * @description The analysed roles: the ten recommended ones at most (ADR 0020).
+         * @description The analysed roles: the top k recommended ones at most (ADR 0029), and
+         *     the user's own.
          */
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
@@ -881,7 +882,7 @@ export interface paths {
         put?: never;
         /**
          * Add Custom Role
-         * @description Place a role the user named beside the ten (ADR 0021). Its JD, if any,
+         * @description Place a role the user named beside the top k (ADR 0021). Its JD, if any,
          *     is stored privately; the build that analyses it is recorded here, so the
          *     page sees it at once, and waits for a running analysis (ADR 0018).
          */

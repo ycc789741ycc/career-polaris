@@ -41,6 +41,8 @@ class _Services:
             market=FakeMarket(),  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
+            top_k=10,
+            candidate_count=10,
         )
         self.assessment: AssessmentService = create_assessment_service(
             database,
@@ -48,6 +50,7 @@ class _Services:
             rolemap=self.rolemap,
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.6,
+            candidate_count=10,
         )
         self.activity = ActivityService(
             profile=self.profile,

@@ -8,9 +8,7 @@ import itertools
 import pytest
 
 from advisor.rolemap.domain import (
-    CANDIDATE_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
-    RECOMMENDED_ROLE_COUNT,
     BarBasis,
     RoleChange,
     assign_postings,
@@ -159,26 +157,25 @@ def test_overlap_is_jaccard(left: set[str], right: set[str], expected: float) ->
         (MIN_POSTINGS_FOR_A_ROLE - 1, 0),
         (MIN_POSTINGS_FOR_A_ROLE, 1),
         (10, 3),
-        (410, RECOMMENDED_ROLE_COUNT),
+        (410, 10),
     ],
 )
-def test_no_more_roles_than_full_clusters_fit_or_than_are_analysed(
+def test_no_more_roles_than_full_clusters_fit_or_than_a_build_keeps(
     postings: int, expected: int
 ) -> None:
-    assert max_role_count(postings) == expected
+    assert max_role_count(postings, ceiling=10) == expected
 
 
-def test_a_negative_posting_count_is_a_bug_not_zero_roles() -> None:
+def test_the_ceiling_is_the_k_a_build_keeps() -> None:
+    """k is a setting (ADR 0029): a smaller one lowers the ceiling."""
+    assert max_role_count(410, ceiling=3) == 3
+    assert max_role_count(4, ceiling=3) == 1
+
+
+@pytest.mark.parametrize(("postings", "ceiling"), [(-1, 10), (10, -1)])
+def test_a_negative_count_is_a_bug_not_zero_roles(postings: int, ceiling: int) -> None:
     with pytest.raises(ValueError, match="negative"):
-        max_role_count(-1)
-
-
-# -- ten, fixed ---------------------------------------------------------------
-
-
-def test_the_role_map_analyses_ten_recommended_roles() -> None:
-    """Fixed by the system, so the cost is predictable (ADR 0020)."""
-    assert RECOMMENDED_ROLE_COUNT == 10
+        max_role_count(postings, ceiling=ceiling)
 
 
 # -- matching candidates to the market (ADR 0024) ----------------------------
@@ -358,18 +355,18 @@ def test_the_candidates_with_enough_openings_become_roles_in_the_analysiss_order
     assert keep_on_market(counts) == [0, 2, 4]
 
 
-def test_no_more_than_ten_candidates_become_roles() -> None:
-    kept = keep_on_market([MIN_POSTINGS_FOR_A_ROLE] * CANDIDATE_ROLE_COUNT)
-    assert kept == list(range(RECOMMENDED_ROLE_COUNT))
+def test_no_more_candidates_than_the_limit_are_kept() -> None:
+    kept = keep_on_market([MIN_POSTINGS_FOR_A_ROLE] * 20, limit=10)
+    assert kept == list(range(10))
+
+
+def test_without_a_limit_every_candidate_on_the_market_is_kept() -> None:
+    assert keep_on_market([MIN_POSTINGS_FOR_A_ROLE] * 12) == list(range(12))
 
 
 def test_a_candidate_the_market_skips_leaves_room_for_the_next() -> None:
     counts = [0] * 3 + [MIN_POSTINGS_FOR_A_ROLE] * 12
-    assert keep_on_market(counts) == list(range(3, 13))
-
-
-def test_an_analysis_recommends_twice_the_ten() -> None:
-    assert CANDIDATE_ROLE_COUNT == 2 * RECOMMENDED_ROLE_COUNT
+    assert keep_on_market(counts, limit=10) == list(range(3, 13))
 
 
 def test_a_role_needs_an_opening() -> None:
