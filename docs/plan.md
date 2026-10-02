@@ -999,7 +999,10 @@ out of it.
   it references the role.
 * A **role candidate** is the query a build searches and matches with.
 * A **PostingFit** is the evaluation of one posting: an opening in a role,
-  or one the user brought themselves.
+  or one the user brought themselves. It is never an AI call. The AI
+  evaluates a set of requirements once, a role's (`RoleFit`) or a pasted
+  JD's (`PostingRequirementFit`), and every `PostingFit` is worked out from
+  that locally.
 
 A posting the user brings themselves is aimed at from the Advisor, not added
 to the map. Four branches, in this order, each cut from an epic,
@@ -1052,21 +1055,34 @@ Its own branch, `refactor/<ticket>/own-posting-target`.
    neither. `gapplan.plan`, `resume.resume` and `gapfill.question_set` gain
    a nullable `private_job_posting_id`, `role_id` becomes nullable, and a
    check constraint keeps exactly one of them set. A posting of your own's
-   requirement basis is its JD, as a custom role's was.
+   requirement basis is its JD, as a custom role's was. In `TargetSnapshot`,
+   `role_id` and `role_name` become optional, and its label comes from the
+   title and company the user entered.
 3. **The posting is evaluated beside the role fits, not in the map.** In
    `rolemap`, which keeps the one set of fit rules (ADR 0028):
    * `PostingRequirement` (table `rolemap.posting_requirement`) describes
      the posting: what its JD asks for, read once when it is added.
-   * `PostingFit` (table `rolemap.posting_fit`) evaluates the user against
-     it, with the same score, gaps, uncovered requirements and closing lifts
-     as a `RoleFit`. It references the posting by `posting_key`
-     (`private:<id>`), as `rolemap.role_member` does, so the fourth branch
-     stores openings' fits in the same table.
-   * Neither is listed, counted or drawn by the role map, and no build reads
-     or scores them.
+   * `PostingRequirementFit` (table `rolemap.posting_requirement_fit`) is
+     the AI's evaluation of those requirements against the user's
+     dimensions. It is the `fit_projection` call a `RoleFit` makes, giving
+     the mapping, the targets and the reasoning, but over the JD's
+     requirements instead of a role's.
+   * `PostingFit` (table `rolemap.posting_fit`, `basis = own`) is worked out
+     from it locally, with no AI. `evaluate` runs over the JD's requirements
+     at their own weights, since nothing needs reweighting when the
+     requirements come from this one posting. It carries the score, gaps,
+     uncovered requirements and closing lifts the Advisor reads. It
+     references the posting by `posting_key` (`private:<id>`), as
+     `rolemap.role_member` does, so the fourth branch stores openings' fits
+     in the same table.
+   * Adding a posting of your own costs two calls, `rolemap.extract` then
+     `rolemap.fit`. Nothing else on it calls the AI.
+   * None of them is listed, counted or drawn by the role map, and no build
+     reads or scores them.
    * After a new analysis, the Advisor says the posting's fit was scored
-     against earlier strengths and offers to rescore it, with its cost. It
-     is never rescored unasked.
+     against earlier strengths and offers to rescore it, with its cost. A
+     rescore re-runs the `PostingRequirementFit` call, and the `PostingFit`
+     is worked out again from it. Nothing is rescored unasked.
 4. **The role map loses custom roles.**
    * Gone: `RoleOrigin`, `CustomRoleError`, `add_custom_role`, `POST
      /roles/custom`, `/roles/custom/cost-estimate`, `CustomRoleAdded`, and
@@ -1095,7 +1111,9 @@ Tests:
 * Unit:
   * `TargetRef` refuses both or neither;
   * a snapshot for a posting of your own reads its JD's requirements and
-    its `PostingFit`;
+    its `PostingFit`, with no role;
+  * its `PostingFit` is worked out from its `PostingRequirementFit` with a
+    gateway that fails on any call;
   * a build has no custom roles to match, analyse or score;
   * the role map lists no posting of your own;
   * rescoring after a new analysis is offered, not run.
@@ -1229,11 +1247,14 @@ that come out the same.
 
 Its own branch, `feature/<ticket>/reuse-unchanged-fits`, after the second.
 
-1. **A fit records what it read.** `RoleFit` and `PostingFit` gain
+1. **An AI fit records what it read.** `RoleFit` and
+   `PostingRequirementFit` gain
    `requirements_digest`, a hash of the requirements scored against
    (statement, weight and expected level, in order) and of the fit
    prompt's template version, and the `assessment_id` of the strengths.
-   A new fit prompt therefore re-scores everything once.
+   A new fit prompt therefore re-scores everything once. A `PostingFit`
+   needs none of this: it costs nothing, so it is simply worked out again
+   from whichever fit it came from.
 2. **`compute_fits` skips a role whose latest fit read the same
    requirements and the same analysis.** It scores only the rest, and logs
    how many it reused. A posting of your own's fit is reused by the same
@@ -1311,7 +1332,12 @@ Its own branch, `feature/<ticket>/fit-per-opening`, after the third.
    keyed on the opening's `posting_key` and references the `RoleFit` it was
    worked out from. Every build re-derives its openings' fits, since this is
    free, including for roles whose `RoleFit` was reused.
-4. **Top matched openings follows the selected role.**
+4. **A `PostingFit` is never an AI call.** That holds for both bases. The
+   code that works them out takes no AI gateway, and a unit test runs it
+   with a gateway that fails on any call. The AI evaluates a set of
+   requirements once, and per-posting work stays local, so the cost of a
+   build grows with its roles, not with its openings.
+5. **Top matched openings follows the selected role.**
    * `GET /matched-postings?role_id=` ranks the role's openings by their
      own fit. Each row carries the opening's score and `fit_basis:
      "posting"`, so `make gen-client` changes.
@@ -1321,11 +1347,13 @@ Its own branch, `feature/<ticket>/fit-per-opening`, after the third.
    * The list across every role goes. The SPA loads the selected role's
      list, the best fit's until the user picks a bubble, and reloads it on
      every pick.
-5. **Aiming the Advisor at an opening plans against the opening's fit.** A
+6. **Aiming the Advisor at an opening plans against the opening's fit.** A
    Target of a role and an opening takes that opening's `PostingFit`: its
-   reweighted requirements, gaps and lifts. A Target of a role alone keeps
-   the `RoleFit`. Resolving either still spends nothing.
-6. **An ADR** records the per-opening fit: what it is derived from, what it
+   reweighted requirements, gaps and lifts. Its snapshot's
+   `RequirementBasis` is a new `opening`, so the Advisor says "measured
+   against this opening" rather than "against the role". A Target of a role
+   alone keeps the `RoleFit`. Resolving either still spends nothing.
+7. **An ADR** records the per-opening fit: what it is derived from, what it
    cannot see, and why it is not an AI call per opening. It supersedes the
    part of ADR 0022 that says an opening's fit is its role's. The index is
    updated.
@@ -1341,6 +1369,8 @@ Tests:
 * Unit, service:
   * openings' fits are derived after a build, including when the role fit
     was reused;
+  * deriving every opening's fit makes no AI call: the gateway fails on
+    any call;
   * `matched_postings(role_id=)` ranks by the opening's fit, and with
     `one_per_company` keeps one per company;
   * a Target with an opening reads the opening's fit.
