@@ -35,19 +35,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from advisor.market.domain.entities import (
-    Company,
-    CrawlSource,
+from advisor.market.domain.events import MarketEvent
+from advisor.market.domain.posting import (
     JobPosting,
-    MarketPreference,
     PostingEmbedding,
     PostingScope,
-    PrivateJobPosting,
-    SearchResult,
-    SourceStatus,
+    PostingStatus,
 )
-from advisor.market.domain.events import MarketEvent
-from advisor.market.domain.posting import PostingStatus, SourceOrigin
+from advisor.market.domain.private_posting import PrivateJobPosting
+from advisor.market.domain.search import SearchResult
+from advisor.market.domain.source import Company, CrawlSource, SourceOrigin, SourceStatus
+from advisor.market.domain.target_locations import MarketPreference
 
 
 class Repository[Entity, Filter](Protocol):

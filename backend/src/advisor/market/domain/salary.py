@@ -5,9 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from statistics import median
 
-# Below this many postings a band is shown, but flagged: a role is not hidden
-# from a user's map just because their market is thin (domain section 2.5).
-CONFIDENT_SAMPLE_SIZE = 5
+from advisor.market.domain.constants import CONFIDENT_SAMPLE_SIZE
 
 
 @dataclass(frozen=True, slots=True)

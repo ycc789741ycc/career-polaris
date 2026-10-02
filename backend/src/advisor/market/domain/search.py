@@ -13,12 +13,14 @@ who named a country: nothing in its location says so.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlsplit
 
+from advisor.market.domain.constants import REMOTE, WORLDWIDE_LOCATION
 from advisor.market.domain.places import (
     COUNTRIES,
-    REMOTE,
     country_named,
     names_a_place,
     regions_of,
@@ -26,8 +28,6 @@ from advisor.market.domain.places import (
 )
 from advisor.market.domain.posting import market_words
 
-WORLDWIDE = "Worldwide"
-WORLDWIDE_LOCATION = f"{REMOTE}, {WORLDWIDE}"
 WORLDWIDE_WORDS = market_words(WORLDWIDE_LOCATION)
 
 # Job sites whose terms ask that an opening found through their API links back
@@ -133,3 +133,16 @@ def credited_source(url: str | None) -> str | None:
         if host == credited or host.endswith(f".{credited}"):
             return name
     return None
+
+
+@dataclass(slots=True)
+class SearchResult:
+    """One posting on a search's current result list: what the search returned
+    the last time it was fetched, in its order (ADR 0027). A fetch replaces the
+    whole list."""
+
+    id: uuid.UUID
+    crawl_source_id: uuid.UUID
+    job_posting_id: uuid.UUID
+    rank: int
+    fetched_at: datetime

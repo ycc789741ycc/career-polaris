@@ -20,9 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from advisor.market.domain.constants import REMOTE
 from advisor.market.domain.posting import market_words, normalize
-
-REMOTE = "Remote"
 
 
 class PlaceKind(StrEnum):

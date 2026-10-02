@@ -1,4 +1,5 @@
-"""Normalising job postings, and the key that deduplicates them.
+"""Job postings: the shared openings, how they are normalised, and the key
+that deduplicates them.
 
 The same opening turns up from several sources — a company's Greenhouse board
 and its own career page carrying JSON-LD. ``canonical_key`` is what collapses
@@ -10,17 +11,24 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
-# The longest text a posting keeps. A board can list every office an opening is
-# open in as its "location"; the posting keeps the start of it rather than
-# failing to store at all.
-MAX_COMPANY_NAME = 255
-MAX_TITLE = 512
-MAX_LOCATION = 255
-MAX_CANONICAL_KEY = 768
+from advisor.market.domain.constants import (
+    MAX_CANONICAL_KEY,
+    MAX_COMPANY_NAME,
+    MAX_LOCATION,
+    MAX_TITLE,
+)
+
+if TYPE_CHECKING:
+    # Only an annotation here: source.py normalises company names with this
+    # module's rules, so a runtime import would be a cycle.
+    from advisor.market.domain.source import SourceKind
+
 _KEY_DIGEST_CHARS = 16
 
 _WHITESPACE = re.compile(r"\s+")
@@ -54,20 +62,6 @@ class Visibility(StrEnum):
 
     SHARED = "shared"
     PRIVATE = "private"
-
-
-class SourceKind(StrEnum):
-    ATS_BOARD = "atsBoard"
-    JSON_LD = "jsonLd"
-    PUBLIC_API = "publicApi"
-    PASTED = "pasted"
-
-
-class SourceOrigin(StrEnum):
-    """Why a source is crawled (domain decision 15) — never who asked for it."""
-
-    BASELINE = "baseline"
-    DEMAND = "demand"
 
 
 def normalize(text: str) -> str:
@@ -186,3 +180,101 @@ def expired_keys(seen_now: set[str], known_open: set[str]) -> set[str]:
     list and the opening counts.
     """
     return known_open - seen_now
+
+
+@dataclass(slots=True)
+class JobPosting:
+    """A crawled opening, shared by every user whose scope reaches it."""
+
+    id: uuid.UUID
+    canonical_key: str
+    company_id: uuid.UUID
+    crawl_source_id: uuid.UUID | None
+    title: str
+    location: str | None
+    description: str
+    url: str
+    source_kind: str
+    posted_on: date | None
+    salary: SalaryRange | None
+    status: PostingStatus
+    first_seen_at: datetime
+    last_seen_at: datetime
+    # When its description and embedding were dropped because nothing held it
+    # any more (ADR 0027). The row stays for Targets and salary history.
+    thinned_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def first_seen(
+        cls,
+        posting: NormalizedPosting,
+        *,
+        company_id: uuid.UUID,
+        source_id: uuid.UUID,
+        at: datetime,
+    ) -> JobPosting:
+        return cls(
+            id=uuid.uuid4(),
+            canonical_key=posting.canonical_key,
+            company_id=company_id,
+            crawl_source_id=source_id,
+            title=posting.title,
+            location=posting.location,
+            description=posting.description,
+            url=posting.url,
+            source_kind=str(posting.source_kind),
+            posted_on=posting.posted_on,
+            salary=posting.salary,
+            status=PostingStatus.OPEN,
+            first_seen_at=at,
+            last_seen_at=at,
+        )
+
+    def seen_again(self, posting: NormalizedPosting, *, source_id: uuid.UUID, at: datetime) -> None:
+        self.last_seen_at = at
+        self.status = PostingStatus.OPEN
+        # The same opening can arrive from several sources — a company's
+        # Greenhouse board and its own career page carrying JSON-LD. Dedup
+        # collapses them into one posting, and it belongs to whichever source
+        # saw it last, so expiry (which is scoped per source) stays coherent
+        # instead of leaving a posting that no crawl is responsible for.
+        self.crawl_source_id = source_id
+        self.title = posting.title
+        self.description = posting.description
+        self.url = posting.url
+        self.thinned_at = None
+        if posting.salary is not None:
+            self.salary = posting.salary
+
+
+@dataclass(slots=True)
+class PostingEmbedding:
+    """A posting's local embedding, one per posting. Platform-paid computation."""
+
+    posting_id: uuid.UUID
+    model_name: str
+    vector: list[float]
+    computed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PostingScope:
+    """Which shared postings a user's role map is built from (domain decision 15).
+
+    A posting is in scope if it is in one of their target locations. A user
+    with none also gets the platform's baseline postings, so a first role map
+    has something to group; with locations chosen, baseline postings in them
+    are already in scope through the location match.
+
+    A posting a search found counts only while it is on that search's current
+    result list (ADR 0027): a search sees one page, so a job missing from the
+    next fetch was usually pushed off it, not closed.
+    """
+
+    markets: tuple[str, ...]
+
+    @property
+    def includes_baseline(self) -> bool:
+        return not self.markets
