@@ -19,14 +19,13 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
-MAX_ROLES = 6
-MAX_BULLETS_PER_ROLE = 8
-MAX_SKILLS = 30
-MAX_TEXT = 600
-
-# A dimension this far below the Target's bar still counts as partly covered.
-# The prototype's threshold.
-PARTIAL_WITHIN = 14
+from advisor.resume.domain.constants import (
+    MAX_BULLETS_PER_ROLE,
+    MAX_ROLES,
+    MAX_SKILLS,
+    MAX_TEXT,
+    PARTIAL_WITHIN,
+)
 
 
 class ResumeError(ValueError):
