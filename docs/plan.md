@@ -299,7 +299,9 @@ not on a timer. Two branches, in this order:
    the platform knows how to search, or plainly can't.
 2. "Fetch the market and build the role map only on demand": the weekly
    crawl, market-driven rebuilds and the fan-out to users go; a build waits
-   for the sources it needs that aren't fresh.
+   for the sources it needs that aren't fresh. Its follow-up is two more
+   branches: the fit moves into the role map, then only the top k roles are
+   named, analysed and scored, with k and the candidate count as settings.
 
 Both have the same definition of done as Phase 5: tests in the right tier,
 every gate passing with nothing skipped, an ADR each with the index, and
@@ -684,10 +686,147 @@ Open questions:
 * Whether the estimate chooses better than the analysis's order. Compare
   the logged rank correlation over a few weeks of builds before calling it
   settled, and fall back to the analysis's order if it is weak.
-* Whether to search only the top 10 candidates instead of 20, if the
-  ceiling is reached often. That halves the requests per new analysis.
 * Whether a region-only user should be told on the role map that their
   recommended roles weren't searched, beyond the note in 01 Sources.
 * Whether "Rebuild role map" should offer to refresh only the market, with
   no naming, when the candidates haven't changed. That would need a
   cheaper build path.
+
+### Follow-up: score only the top k, inside the role map
+Two things are still fixed in code that should not be. What a build spends
+on the user's key follows `RECOMMENDED_ROLE_COUNT`, a constant of ten, and
+the analysis recommends a constant twenty candidates that are all searched.
+Both should be numbers the operator sets. And the fit, which compares the
+user with a role, lives in `assessment`, which otherwise only describes the
+user. A fit is about the role, and belongs beside it.
+
+So:
+
+* The analysis recommends `ROLE_CANDIDATE_COUNT` candidate roles, 10 by
+  default, and every one is searched for.
+* A build keeps the top `ROLE_MAP_TOP_K` of them by the local estimate, 10
+  by default. Only those k are named, analysed and scored: three calls each
+  on the user's key, and nothing for the rest. The role map shows those k.
+* Custom roles stay outside the k. Every one is placed and scored, as now,
+  because the user asked for it by name.
+* The fit, its gaps (the user's score against the role's target), its
+  uncovered requirements, the lifts that would close them, and the ranking
+  of matched openings all move into `rolemap`. `assessment` keeps only the
+  strength report.
+
+Two branches, in this order, because a branch that needs two kinds is two
+branches. Both are cut from the Phase 6 epic and merged back into it.
+
+#### `refactor/<ticket>/fits-in-rolemap`: the fit moves into the role map
+Behaviour does not change; only where the fit lives.
+
+1. **What moves.**
+   * The `RoleFit` entity, its repository and its table:
+     `assessment.role_fit` becomes `rolemap.role_fit`. A migration moves
+     the rows and keeps owner-zone row-level security. The obsolete
+     `private_posting_id` path (scoring a pasted JD on its own, gone since
+     ADR 0022) is dropped.
+   * `evaluate`, `FitResult`, the gaps, `closing_lifts` and `ClosingLifts`
+     from `assessment/domain/fit.py`, and `rank_matches` from
+     `assessment/domain/matches.py`.
+   * The `fit_projection` call, `RoleFitsComputed`, and the Spearman log of
+     the estimate's agreement with the fits, which no longer needs anything
+     handed over to read the estimates.
+2. **The user's side is handed down, not read up.** `assessment` stays
+   above `rolemap` (ADR 0018), so `rolemap` still imports nothing from it.
+   * `StrengthInput`, and `rolemap.candidate_strength` where it is stored,
+     gain each dimension's `score` and `confidence` beside today's name,
+     read and weight, and the `assessment_id` they came from.
+   * The fit prompt's dimensions block is built from them, and a fit
+     records the `assessment_id` it was scored against as a plain id.
+3. **Scoring is a `rolemap` job.** `rolemap.compute_fits(owner_id)` runs on
+   the `ai` queue, and the dispatcher routes `RoleMapBuildFinished` to it
+   instead of to `assessment.compute_fits`. It stays a job of its own, not a
+   step of the build, so a failure while scoring does not fail or repeat
+   role analysis the user has already paid for.
+4. **Callers ask `rolemap`.**
+   * `target` reads a role's fit, and `gapplan` ranks gaps by it, from
+     `rolemap` instead of `assessment`.
+   * `estimate_fits` moves too, and `assessment.estimate_cost` asks
+     `rolemap` for the build and its fits in one estimate.
+   * `/fits`, `/fits/compute` and `/matched-postings` move to
+     `api/routes/rolemap.py`, with their schemas to `api/schemas/rolemap.py`.
+     Paths and bodies stay the same, so the SPA does not change.
+5. **What `assessment` keeps:** analysis runs, dimensions and their scores,
+   lineage, the candidates it hands over, and the strength report. Nothing
+   about roles.
+6. **Its ADR (0028 at the time of writing)** records the move. It amends
+   ADR 0018, where the fit belongs to the User × Role pair in `assessment`,
+   and ADR 0024, and moves Fit from the Assessment context to the Role Map
+   context in `docs/domain_model.md`. The import-linter contracts do not
+   change.
+
+Tests:
+* Unit: the fit tests in `tests/unit/advisor/assessment/test_domain.py`
+  and `test_matches_domain.py` move to `tests/unit/advisor/rolemap/` with
+  the code; `compute_fits` builds its prompt from the handed-down scores.
+* Integration: `rolemap.role_fit` keeps row-level security; the migration
+  carries existing fits over; `/fits` and `/matched-postings` answer as
+  before.
+
+#### `feature/<ticket>/role-map-top-k`: the two counts become settings
+1. **Two optional `.env` settings**, read once into `Settings` and validated
+   at startup:
+   * `ROLE_CANDIDATE_COUNT`, 10 by default: how many roles an analysis
+     recommends, all of which are searched for. It replaces
+     `CANDIDATE_ROLE_COUNT` (20).
+   * `ROLE_MAP_TOP_K`, 10 by default: how many recommended roles a build
+     keeps, names, analyses and scores. It replaces `RECOMMENDED_ROLE_COUNT`.
+   * Each is at least 1, and `ROLE_MAP_TOP_K` is at most
+     `ROLE_CANDIDATE_COUNT`, or startup fails.
+   * They reach the services through each component's `factory.py`, as
+     `confidence_threshold` and the market's windows do. The domain rules
+     take them as parameters (`choose_by_estimate(limit=…)`,
+     `keep_on_market(limit=…)`, `max_role_count(…, ceiling=…)`), so no
+     constant is left behind.
+2. **The analysis asks for the configured number.**
+   * The output schema's candidate list takes its maximum from the setting,
+     and `replace_candidates` checks it again.
+   * A new `skill_assessment` v3 template says "Recommend up to
+     {candidate_count} roles". v2 says twenty, and templates are versioned,
+     not edited.
+3. **A build names, analyses and scores only the top k.**
+   * `choose_by_estimate` keeps k of the candidates with at least three
+     openings. Nothing else is sent to the model.
+   * Custom roles are placed and scored on top of the k.
+   * `compute_fits` scores every live role with requirements, which is the
+     k plus the custom roles.
+   * Candidates outside the k are recorded unplaced, with their opening
+     count and estimate, so `GET /role-candidates` still names them.
+4. **Estimates price k.** `rolemap.estimate_cost` and `estimate_fits` use k
+   where they use ten now: the full k when the user has a searchable place,
+   otherwise `max_role_count` capped at k.
+5. **The screen** says the number it is given (`max_roles`), never "ten".
+6. **Its ADR (0029 at the time of writing)** supersedes ADR 0020's count
+   "fixed by the system, with no setting" and domain decision 23, and amends
+   ADR 0024's twenty candidates.
+
+Tests:
+* Unit: both defaults; startup rejects 0, and a k above the candidate
+  count; an analysis reply with more candidates than configured is
+  rejected; only the top k are analysed, and fits are scored for the k
+  plus the custom roles; estimates scale with k; candidates outside the k
+  are listed unplaced.
+* Integration: at a small k (3), one analysis leads to one build that
+  names three roles, and three fits.
+
+What gets harder:
+* Two more settings to tune, and what a build costs differs between
+  deployments. The ten is no longer something a reader finds in the code.
+* With ten candidates instead of twenty, there are fewer spares. A market
+  that lacks several of them shows fewer than k roles.
+* `rolemap` holds a copy of the user's dimension scores and confidence, not
+  only their weights, kept in step with every analysis.
+* Moving `role_fit` is a migration over every user's fits.
+
+Open questions:
+* Whether k should one day be the user's choice rather than the
+  deployment's. The cost confirm already shows what it buys.
+* Whether ten candidates leave narrow markets thin. Watch
+  `candidates_on_market` in the `rolemap.selected` log before lowering the
+  default further, or raising it back.
