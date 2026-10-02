@@ -146,8 +146,9 @@ backend/src/
               market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the component's ONLY importable surface
                 service.py  use cases; stored data only via domain/repositories.py
-                domain/     entities, rules, events, repository interfaces: no I/O,
-                            no framework, no kernel
+                domain/     one module per concept (role.py, build_run.py), holding its
+                            entities, value objects and rules; plus repositories.py,
+                            events.py and constants.py. No I/O, no framework, no kernel
                 infra/      ORM models, mappers, SqlAlchemy repositories + unit of work, adapters
                 factory.py  builds the component's services from a Database
                 jobs.py     use cases the worker runs
@@ -183,6 +184,16 @@ paged. The six are written once in `kernel.db.repository.SqlAlchemyRepository`,
 with an in-memory twin for unit tests in `tests/unit/kernel/db/fake_repository.py`.
 A component's `factory.py` builds its services from a `Database`; nothing else
 constructs a repository. Only `infra/` imports SQLAlchemy.
+
+A component's `domain/` is split by concept, as the design guideline's "Modules
+in the domain: one per concept" requires (Phase 7). A module holds one
+concept's entities, value objects, enums, errors and rules, and is named for it.
+There is no `entities.py`. Only three modules are split by kind:
+`repositories.py`, `events.py`, and `constants.py`, which holds every public
+literal value and imports only the standard library. The rest of the
+component imports from `domain/__init__.py`, so a class can move between
+concept modules without changing any import outside `domain/`.
+`tests/unit/advisor/test_domain_layout.py` keeps it that way.
 
 Twenty-two `import-linter` contracts in `backend/.importlinter` enforce those
 boundaries, and they run in CI. If one breaks, the design is wrong, not the

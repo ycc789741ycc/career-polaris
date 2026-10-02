@@ -15,11 +15,8 @@ from __future__ import annotations
 import html
 import re
 
+from advisor.market.domain.constants import MAX_YEARLY_AMOUNT, MIN_YEARLY_AMOUNT
 from advisor.market.domain.posting import SalaryRange
-
-# Below this a figure is an hourly rate or not pay at all; above it, not a salary.
-MIN_YEARLY_AMOUNT = 10_000
-MAX_YEARLY_AMOUNT = 100_000_000
 
 _CODES = ("USD", "EUR", "GBP", "CAD", "AUD", "CHF", "SEK", "NOK", "DKK", "PLN", "SGD", "NZD")
 # Longest first, so "CA$" is read before "$".

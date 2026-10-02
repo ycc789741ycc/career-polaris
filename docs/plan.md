@@ -874,6 +874,22 @@ Housekeeping that changes no behaviour: no endpoint, table, migration or
 screen changes. One branch for now; more items can join this phase later.
 
 ## Split each domain by concept
+**Done**. Where the build differs from the plan below:
+
+* The market's word rules (`normalize`, `normalize_title`,
+  `names_every_word`, `market_words`, `clip`, `ACCENT_FOLDS`) move out of
+  `posting.py` into a concept of their own, `words.py`. Moving `Company` to
+  `source.py` and `SourceKind` out of `posting.py` turned the old one-way
+  imports into a cycle: `source.py` needed `normalize` from `posting.py`,
+  and `posting.py` needed `SourceKind` from `source.py`. The rules were never
+  about postings. Companies, places and searches compare words through them
+  too, so with them in `words.py` every import points one way.
+* Each `constants.py` groups its values under a header naming the module
+  whose rules use them, which keeps finding a limit's rule one step away.
+  `profile` and `target` have no literal constants, so no `constants.py`.
+* The guard also refuses `value_objects.py` and `helpers.py`, as the
+  design guideline does.
+
 Today a component's `domain/` is split two ways at once. `entities.py` holds
 every class a repository loads and saves, whatever concept it belongs to. The
 other files are each named after one concept and hold its rules: `fit.py`,

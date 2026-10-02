@@ -1,6 +1,4 @@
-from advisor.gapplan.domain.entities import GapPlan, Milestone, Task
-from advisor.gapplan.domain.events import GapPlanEvent, PlanDrafted
-from advisor.gapplan.domain.plan import (
+from advisor.gapplan.domain.constants import (
     MAX_MILESTONES,
     MAX_PROJECTS,
     MAX_STEPPING_STONES,
@@ -9,13 +7,19 @@ from advisor.gapplan.domain.plan import (
     MIN_TASKS_PER_MILESTONE,
     SHOWN_GAPS,
     TASK_MATCH_THRESHOLD,
+)
+from advisor.gapplan.domain.events import GapPlanEvent, PlanDrafted
+from advisor.gapplan.domain.plan import (
     DraftMilestone,
     DraftProject,
     DraftTask,
+    GapPlan,
     GapReading,
+    Milestone,
     PlanError,
     PlanStatus,
     RoleOption,
+    Task,
     assert_draft_valid,
     carried_done,
     progress,

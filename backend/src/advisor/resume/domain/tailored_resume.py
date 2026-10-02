@@ -1,10 +1,4 @@
-"""The Resume Advisor's entities: a résumé tailored to one Target, its versions,
-the revision chat, and PDF exports.
-
-A résumé holds its Target as a kind and one id, plus the frozen snapshot it was
-written against. Versions are never overwritten; every save adds one.
-``advisor.resume.infra`` maps these to and from the database.
-"""
+"""A résumé written for one Target, and its saved versions."""
 
 from __future__ import annotations
 
@@ -19,12 +13,6 @@ from advisor.resume.domain.content import Options, Template, VersionSource
 
 class ResumeStatus(StrEnum):
     DRAFTING = "drafting"
-    READY = "ready"
-    FAILED = "failed"
-
-
-class ExportStatus(StrEnum):
-    RENDERING = "rendering"
     READY = "ready"
     FAILED = "failed"
 
@@ -122,44 +110,3 @@ class ResumeVersion:
     created_at: datetime
     model_id: str | None = None
     template_version: str | None = None
-
-
-@dataclass(slots=True)
-class Revision:
-    """One exchange in the revision chat: the request, the reply, the edit."""
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    resume_id: uuid.UUID
-    request: str
-    reply: str
-    proposal: dict[str, Any] | None
-    model_id: str
-    template_version: str
-    created_at: datetime
-    applied_version_id: uuid.UUID | None = None
-
-
-@dataclass(slots=True)
-class Export:
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    version_id: uuid.UUID
-    template: Template
-    status: ExportStatus
-    created_at: datetime
-    storage_key: str | None = None
-    error_code: str | None = None
-    error_message: str | None = None
-    finished_at: datetime | None = None
-
-    def rendered(self, storage_key: str, *, at: datetime) -> None:
-        self.status = ExportStatus.READY
-        self.storage_key = storage_key
-        self.finished_at = at
-
-    def failed(self, *, code: str, message: str, at: datetime) -> None:
-        self.status = ExportStatus.FAILED
-        self.error_code = code
-        self.error_message = message
-        self.finished_at = at

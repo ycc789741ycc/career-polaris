@@ -7,7 +7,9 @@ characters (docs/architecture.md section 4).
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -52,3 +54,50 @@ class CredentialView:
 def requires_base_url(provider: Provider) -> bool:
     """A self-hosted model has no endpoint we could know in advance."""
     return provider is Provider.LOCAL
+
+
+@dataclass(slots=True)
+class ProviderCredential:
+    """The user's AI provider and key. Written, tested, replaced — never read
+    back in the clear."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    provider: Provider
+    model: str
+    base_url: str | None
+    # Envelope-encrypted, bound to owner_id as additional authenticated data.
+    encrypted_api_key: str
+    # The only part of the key the client may ever see.
+    last_four: str
+    status: CredentialStatus
+    last_error: str | None = None
+    last_verified_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def configured(
+        cls,
+        owner_id: uuid.UUID,
+        *,
+        provider: Provider,
+        model: str,
+        base_url: str | None,
+        encrypted_api_key: str,
+        last_four: str,
+    ) -> ProviderCredential:
+        return cls(
+            id=uuid.uuid4(),
+            owner_id=owner_id,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            encrypted_api_key=encrypted_api_key,
+            last_four=last_four,
+            status=CredentialStatus.ACTIVE,
+        )
+
+    def failed(self, reason: str) -> None:
+        self.status = CredentialStatus.FAILED
+        self.last_error = reason

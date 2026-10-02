@@ -1,20 +1,19 @@
 from advisor.rolemap.domain.agreement import spearman
-from advisor.rolemap.domain.entities import (
+from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus
+from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
+from advisor.rolemap.domain.constants import (
+    CANDIDATE_MATCH_THRESHOLD,
+    DEFAULT_MATCHES,
     MAX_COMPANY_NAME,
+    MAX_MATCHES,
     MAX_ROLE_REQUIREMENTS,
     MAX_ROLE_TITLE,
     MAX_STRENGTHS,
-    BuildRun,
-    BuildRunStatus,
-    CandidateStrength,
-    CustomRoleError,
-    LineageEntry,
-    Role,
-    RoleCandidate,
-    RoleFit,
-    RoleMember,
-    RoleOrigin,
-    RoleRequirement,
+    MIN_MATCHES,
+    MIN_POSTINGS_FOR_A_ROLE,
+    MIN_REPORTERS,
+    SAME_ROLE_THRESHOLD,
+    UNCITED_DIMENSION_WEIGHT,
 )
 from advisor.rolemap.domain.events import (
     CustomRoleAdded,
@@ -28,28 +27,23 @@ from advisor.rolemap.domain.events import (
 from advisor.rolemap.domain.fit import (
     ClosingLifts,
     FitResult,
+    RoleFit,
     SkillGap,
     TargetScore,
     UncoveredRequirement,
     closing_lifts,
     evaluate,
 )
-from advisor.rolemap.domain.hiring_bar import MIN_REPORTERS, BarBasis, HiringBar, blend
-from advisor.rolemap.domain.identity import (
-    SAME_ROLE_THRESHOLD,
+from advisor.rolemap.domain.hiring_bar import BarBasis, HiringBar, blend
+from advisor.rolemap.domain.lineage import (
+    LineageEntry,
     Reconciliation,
     RoleChange,
     RoleLineage,
     overlap,
     reconcile,
 )
-from advisor.rolemap.domain.matches import (
-    DEFAULT_MATCHES,
-    MAX_MATCHES,
-    MIN_MATCHES,
-    MatchCandidate,
-    rank_matches,
-)
+from advisor.rolemap.domain.matches import MatchCandidate, rank_matches
 from advisor.rolemap.domain.repositories import (
     BuildRunFilter,
     BuildRunRepository,
@@ -71,10 +65,14 @@ from advisor.rolemap.domain.repositories import (
     RoleRequirementFilter,
     RoleRequirementRepository,
 )
+from advisor.rolemap.domain.role import (
+    CustomRoleError,
+    Role,
+    RoleMember,
+    RoleOrigin,
+    RoleRequirement,
+)
 from advisor.rolemap.domain.selection import (
-    CANDIDATE_MATCH_THRESHOLD,
-    MIN_POSTINGS_FOR_A_ROLE,
-    UNCITED_DIMENSION_WEIGHT,
     assign_postings,
     choose_by_estimate,
     fit_estimates,

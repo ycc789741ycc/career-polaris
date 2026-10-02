@@ -19,8 +19,10 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.resume.domain.entities import Export, ResumeVersion, Revision, TailoredResume
 from advisor.resume.domain.events import ResumeEvent
+from advisor.resume.domain.export import Export
+from advisor.resume.domain.revision import Revision
+from advisor.resume.domain.tailored_resume import ResumeVersion, TailoredResume
 
 
 class Repository[Entity, Filter](Protocol):

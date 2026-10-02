@@ -4,6 +4,7 @@ No I/O, no kernel: ``advisor.activity.service`` reads each stage's recorded
 status through the other components and applies these.
 """
 
-from advisor.activity.domain.stages import STALE, Staleness
+from advisor.activity.domain.constants import STALE
+from advisor.activity.domain.stages import Staleness
 
 __all__ = ["STALE", "Staleness"]

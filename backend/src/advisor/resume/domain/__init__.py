@@ -1,9 +1,11 @@
-from advisor.resume.domain.content import (
+from advisor.resume.domain.constants import (
     MAX_BULLETS_PER_ROLE,
     MAX_ROLES,
     MAX_SKILLS,
     MAX_TEXT,
     PARTIAL_WITHIN,
+)
+from advisor.resume.domain.content import (
     Bullet,
     Coverage,
     Options,
@@ -20,15 +22,8 @@ from advisor.resume.domain.content import (
     mark_edits,
     settle_revision,
 )
-from advisor.resume.domain.entities import (
-    Export,
-    ExportStatus,
-    ResumeStatus,
-    ResumeVersion,
-    Revision,
-    TailoredResume,
-)
 from advisor.resume.domain.events import ResumeEvent, ResumeTailored, ResumeVersionSaved
+from advisor.resume.domain.export import Export, ExportStatus
 from advisor.resume.domain.repositories import (
     ExportFilter,
     ExportRepository,
@@ -42,6 +37,8 @@ from advisor.resume.domain.repositories import (
     TailoredResumeFilter,
     TailoredResumeRepository,
 )
+from advisor.resume.domain.revision import Revision
+from advisor.resume.domain.tailored_resume import ResumeStatus, ResumeVersion, TailoredResume
 
 __all__ = [
     "MAX_BULLETS_PER_ROLE",

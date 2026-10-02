@@ -1,25 +1,19 @@
+from advisor.assessment.domain.analysis_run import AnalysisRun, AnalysisRunStatus
+from advisor.assessment.domain.constants import MAX_DIMENSIONS, MIN_DIMENSIONS
 from advisor.assessment.domain.dimensions import (
-    MAX_DIMENSIONS,
-    MIN_DIMENSIONS,
+    DimensionChange,
     DimensionCountError,
     DimensionScore,
     LineageEntry,
     LineageKind,
     Scored,
+    SkillDimension,
     assert_ids_unique,
     assert_within_bounds,
     derive_lineage,
     dropped_ids,
     profile_confidence,
     thin_evidence,
-)
-from advisor.assessment.domain.entities import (
-    AnalysisRun,
-    AnalysisRunStatus,
-    AssessedScore,
-    DimensionChange,
-    SkillAssessment,
-    SkillDimension,
 )
 from advisor.assessment.domain.events import (
     AnalysisFinished,
@@ -42,6 +36,7 @@ from advisor.assessment.domain.repositories import (
     SkillDimensionFilter,
     SkillDimensionRepository,
 )
+from advisor.assessment.domain.skill_assessment import AssessedScore, SkillAssessment
 
 __all__ = [
     "MAX_DIMENSIONS",

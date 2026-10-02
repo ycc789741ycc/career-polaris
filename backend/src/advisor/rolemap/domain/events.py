@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from advisor.rolemap.domain.identity import RoleLineage
+from advisor.rolemap.domain.lineage import RoleLineage
 
 
 @dataclass(frozen=True, slots=True)

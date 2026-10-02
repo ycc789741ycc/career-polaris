@@ -1,28 +1,18 @@
-from advisor.market.domain.entities import (
+from advisor.market.domain.constants import (
+    CONFIDENT_SAMPLE_SIZE,
+    MAX_CANONICAL_KEY,
+    MAX_COMPANY_NAME,
+    MAX_LOCATION,
     MAX_TARGET_LOCATION,
     MAX_TARGET_LOCATIONS,
-    Company,
-    CrawlSource,
-    FreshWindows,
-    JobPosting,
-    MarketPreference,
-    PostingEmbedding,
-    PostingScope,
-    PrivateJobPosting,
-    SearchResult,
-    SourceStatus,
-    TargetLocationError,
-    chosen_target_locations,
+    MAX_TITLE,
+    REMOTE,
 )
-from advisor.market.domain.events import (
-    MarketEvent,
-    TargetLocationsChanged,
-)
+from advisor.market.domain.events import MarketEvent, TargetLocationsChanged
 from advisor.market.domain.pay_text import salary_in_text
 from advisor.market.domain.places import (
     COUNTRIES,
     REGIONS,
-    REMOTE,
     Country,
     PlaceKind,
     Region,
@@ -33,25 +23,17 @@ from advisor.market.domain.places import (
     target_location_options,
 )
 from advisor.market.domain.posting import (
-    ACCENT_FOLDS,
-    MAX_CANONICAL_KEY,
-    MAX_COMPANY_NAME,
-    MAX_LOCATION,
-    MAX_TITLE,
+    JobPosting,
     NormalizedPosting,
+    PostingEmbedding,
+    PostingScope,
     PostingStatus,
     SalaryRange,
-    SourceKind,
-    SourceOrigin,
     Visibility,
     canonical_key,
-    clip,
     expired_keys,
-    market_words,
-    names_every_word,
-    normalize,
-    normalize_title,
 )
+from advisor.market.domain.private_posting import PrivateJobPosting
 from advisor.market.domain.repositories import (
     CompanyFilter,
     CompanyRepository,
@@ -72,9 +54,10 @@ from advisor.market.domain.repositories import (
     SearchResultRepository,
     SharedMarket,
 )
-from advisor.market.domain.salary import CONFIDENT_SAMPLE_SIZE, SalaryBand, band_from
+from advisor.market.domain.salary import SalaryBand, band_from
 from advisor.market.domain.search import (
     WORLDWIDE_WORDS,
+    SearchResult,
     SearchScope,
     credited_source,
     in_market,
@@ -83,6 +66,27 @@ from advisor.market.domain.search import (
     remote_location,
     scope_names,
     search_scope,
+)
+from advisor.market.domain.source import (
+    Company,
+    CrawlSource,
+    FreshWindows,
+    SourceKind,
+    SourceOrigin,
+    SourceStatus,
+)
+from advisor.market.domain.target_locations import (
+    MarketPreference,
+    TargetLocationError,
+    chosen_target_locations,
+)
+from advisor.market.domain.words import (
+    ACCENT_FOLDS,
+    clip,
+    market_words,
+    names_every_word,
+    normalize,
+    normalize_title,
 )
 
 __all__ = [

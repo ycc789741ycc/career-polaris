@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,3 +45,26 @@ def total_experience_months(positions: list[Position], *, as_of: date) -> int:
             merged.append((start, end))
 
     return sum((end.year - start.year) * 12 + end.month - start.month for start, end in merged)
+
+
+@dataclass(slots=True)
+class CareerPosition:
+    """One position on the career timeline."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    title: str
+    company: str
+    started_on: date
+    ended_on: date | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @property
+    def value(self) -> Position:
+        return Position(
+            title=self.title,
+            company=self.company,
+            started_on=self.started_on,
+            ended_on=self.ended_on,
+        )

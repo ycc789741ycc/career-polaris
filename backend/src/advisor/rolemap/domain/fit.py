@@ -11,8 +11,11 @@ important output here.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 
 # How much an uncovered requirement costs, relative to a dimension scored zero
 # against its target. A requirement with no evidence at all is worse than a low
@@ -143,3 +146,28 @@ def closing_lifts(
             round(100 * 100 * _UNCOVERED_PENALTY * r.weight / denominator) for r in uncovered
         ),
     )
+
+
+@dataclass(slots=True)
+class RoleFit:
+    """Fit between this user and one of their roles (ADR 0028).
+
+    Fit lives on the User x Role pair, never on the role: a snapshot taken
+    against the scores of one analysis (``assessment_id``), kept with what it
+    was projected from so it can be re-read without the role.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    role_id: uuid.UUID
+    score: int
+    reasoning: str
+    target_profile: dict[str, int]
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    model_id: str
+    template_version: str
+    requirements: tuple[dict[str, Any], ...] = ()
+    requirement_map: dict[str, str | None] = field(default_factory=dict)
+    created_at: datetime | None = None
