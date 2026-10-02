@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from advisor.market.domain.constants import REMOTE
-from advisor.market.domain.posting import market_words, normalize
+from advisor.market.domain.words import market_words, normalize
 
 
 class PlaceKind(StrEnum):

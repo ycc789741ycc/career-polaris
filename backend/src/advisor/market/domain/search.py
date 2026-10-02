@@ -26,7 +26,7 @@ from advisor.market.domain.places import (
     regions_of,
     target_location_option,
 )
-from advisor.market.domain.posting import market_words
+from advisor.market.domain.words import market_words
 
 WORLDWIDE_WORDS = market_words(WORLDWIDE_LOCATION)
 

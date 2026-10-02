@@ -23,7 +23,6 @@ from advisor.market.domain.places import (
     target_location_options,
 )
 from advisor.market.domain.posting import (
-    ACCENT_FOLDS,
     JobPosting,
     NormalizedPosting,
     PostingEmbedding,
@@ -32,12 +31,7 @@ from advisor.market.domain.posting import (
     SalaryRange,
     Visibility,
     canonical_key,
-    clip,
     expired_keys,
-    market_words,
-    names_every_word,
-    normalize,
-    normalize_title,
 )
 from advisor.market.domain.private_posting import PrivateJobPosting
 from advisor.market.domain.repositories import (
@@ -85,6 +79,14 @@ from advisor.market.domain.target_locations import (
     MarketPreference,
     TargetLocationError,
     chosen_target_locations,
+)
+from advisor.market.domain.words import (
+    ACCENT_FOLDS,
+    clip,
+    market_words,
+    names_every_word,
+    normalize,
+    normalize_title,
 )
 
 __all__ = [

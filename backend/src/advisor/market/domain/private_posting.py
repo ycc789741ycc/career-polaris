@@ -9,10 +9,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from advisor.market.domain.constants import MAX_COMPANY_NAME, MAX_LOCATION, MAX_TITLE
-from advisor.market.domain.posting import (
-    canonical_key,
-    clip,
-)
+from advisor.market.domain.posting import canonical_key
+from advisor.market.domain.words import clip
 
 
 @dataclass(slots=True)

@@ -1,5 +1,4 @@
-"""Job postings: the shared openings, how they are normalised, and the key
-that deduplicates them.
+"""Job postings: the shared openings, and the key that deduplicates them.
 
 The same opening turns up from several sources — a company's Greenhouse board
 and its own career page carrying JSON-LD. ``canonical_key`` is what collapses
@@ -9,13 +8,10 @@ those into one posting (domain section 2.5).
 from __future__ import annotations
 
 import hashlib
-import re
-import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
 from advisor.market.domain.constants import (
     MAX_CANONICAL_KEY,
@@ -23,33 +19,10 @@ from advisor.market.domain.constants import (
     MAX_LOCATION,
     MAX_TITLE,
 )
-
-if TYPE_CHECKING:
-    # Only an annotation here: source.py normalises company names with this
-    # module's rules, so a runtime import would be a cycle.
-    from advisor.market.domain.source import SourceKind
+from advisor.market.domain.source import SourceKind
+from advisor.market.domain.words import clip, normalize, normalize_title
 
 _KEY_DIGEST_CHARS = 16
-
-_WHITESPACE = re.compile(r"\s+")
-_NOISE = re.compile(r"[^a-z0-9 ]+")
-
-# Decoration that carries no information about which job this is. Stripped so
-# "Senior Backend Engineer (m/f/d)" and "Senior Backend Engineer" are one job.
-_TITLE_NOISE = (
-    r"\(m/f/d\)",
-    r"\(m/w/d\)",
-    r"\(f/m/d\)",
-    r"\(all genders\)",
-    r"\(remote\)",
-    r"\(hybrid\)",
-    r"\(onsite\)",
-    r"\(full[- ]time\)",
-    r"\(part[- ]time\)",
-    r"\(contract\)",
-    r"\(intern\)",
-)
-_TITLE_NOISE_RE = re.compile("|".join(_TITLE_NOISE), re.IGNORECASE)
 
 
 class PostingStatus(StrEnum):
@@ -62,56 +35,6 @@ class Visibility(StrEnum):
 
     SHARED = "shared"
     PRIVATE = "private"
-
-
-def normalize(text: str) -> str:
-    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return _WHITESPACE.sub(" ", _NOISE.sub(" ", folded.lower())).strip()
-
-
-def normalize_title(title: str) -> str:
-    return normalize(_TITLE_NOISE_RE.sub(" ", title))
-
-
-def names_every_word(text: str | None, phrase: str) -> bool:
-    """Whether ``text`` contains every word of ``phrase``, accent-folded and in
-    any order. The one word rule for a location in a market and for a posting
-    matching a role the user named ("Staff Backend" takes in "Backend Engineer,
-    Staff")."""
-    wanted = set(market_words(phrase))
-    return bool(wanted) and wanted <= set(normalize(text or "").split())
-
-
-def market_words(market: str) -> tuple[str, ...]:
-    """The words a location must contain to be in ``market``: lowercase ASCII
-    letters and digits only, so they are safe inside a database pattern."""
-    return tuple(dict.fromkeys(normalize(market).split()))
-
-
-def _accent_folds() -> tuple[str, str]:
-    """Each lowercase accented Latin letter and the ASCII letter ``normalize``
-    turns it into, for a database to fold a location the same way."""
-    accented, plain = [], []
-    for code in range(0xC0, 0x250):
-        char = chr(code)
-        if char != char.lower():
-            continue
-        folded = unicodedata.normalize("NFKD", char).encode("ascii", "ignore").decode()
-        if len(folded) == 1 and folded.isalpha():
-            accented.append(char)
-            plain.append(folded.lower())
-    return "".join(accented), "".join(plain)
-
-
-# ("àáâ…", "aaa…"): what SQL's translate() needs to match ``market_words``.
-ACCENT_FOLDS = _accent_folds()
-
-
-def clip(text: str, limit: int) -> str:
-    """Text cut to at most ``limit`` characters, marked with an ellipsis when cut."""
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
 
 
 def canonical_key(*, company: str, title: str, location: str | None) -> str:
