@@ -87,8 +87,17 @@ export const api = {
   put: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
-  upload: <T>(path: string, file: File) => {
+  /** A file as multipart form data, with any plain fields beside it; a
+   * null field is left out. */
+  upload: <T>(
+    path: string,
+    file: File,
+    fields: Record<string, string | null> = {},
+  ) => {
     const form = new FormData();
+    for (const [name, value] of Object.entries(fields)) {
+      if (value !== null) form.append(name, value);
+    }
     form.append("file", file);
     return request<T>(path, { method: "POST", body: form });
   },

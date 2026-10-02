@@ -524,6 +524,14 @@ under `epic/no-ticket/own-posting-target`:
   `get_projection_digest` and `get_posting_fit_result`, store nothing.
   `rolemap.posting_fit` holds openings' fits only: no `basis`, `role_id`
   NOT NULL.
+- **Pasted or uploaded.** "Aim at a posting of your own" takes the JD as text
+  or as a PDF, Word or text file (`POST /own-postings/upload`, priced by
+  `/own-postings/upload-estimate` as a ceiling). The file is stored in object
+  storage and read by the worker, never in a request handler, with
+  `kernel.documents` (shared with the résumé parser), under
+  `OWN_POSTING_MAX_BYTES` / `OWN_POSTING_MAX_PAGES`; once read it becomes the
+  JD and the file is deleted. Migration 0031 added `source`, `filename`,
+  `content_type` and `storage_key`.
 - **`market` has no pasted JDs.** `PrivateJobPosting`, the paste methods and
   `GET /job-descriptions` are gone. Migration 0030 moved the data; 0015, 0025
   and 0028 are guarded so a fresh database still builds.

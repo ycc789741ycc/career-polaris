@@ -4,6 +4,7 @@ with the role map's fit kit, over the role map's own in-memory storage."""
 
 from __future__ import annotations
 
+import io
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -16,7 +17,7 @@ from advisor.target import TargetRef, TargetService
 from advisor.target.domain import RequirementBasis
 from kernel.errors import BudgetExceededError, NotFoundError, ValidationError
 from tests.unit.advisor.rolemap.fakes import FakeMarket, FakeRoleMapUnitOfWork
-from tests.unit.advisor.target.fakes import FakeTargetUnitOfWork
+from tests.unit.advisor.target.fakes import FakeObjectStore, FakeTargetUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
@@ -87,8 +88,21 @@ class NoAssessment:
         return None
 
 
+def _target(
+    uow: FakeTargetUnitOfWork, rolemap: RoleMapService, store: FakeObjectStore | None = None
+) -> TargetService:
+    return TargetService(
+        uow,
+        assessment=NoAssessment(),  # type: ignore[arg-type]
+        rolemap=rolemap,
+        object_store=store or FakeObjectStore(),  # type: ignore[arg-type]
+        upload_max_bytes=1_000,
+        upload_max_pages=2,
+    )
+
+
 def _services(
-    gateway: Any = None,
+    gateway: Any = None, store: FakeObjectStore | None = None
 ) -> tuple[TargetService, RoleMapService, FakeTargetUnitOfWork, FakeRoleMapUnitOfWork]:
     rolemap_uow = FakeRoleMapUnitOfWork()
     if gateway is None:
@@ -102,8 +116,7 @@ def _services(
         candidate_count=20,
     )
     uow = FakeTargetUnitOfWork()
-    target = TargetService(uow, assessment=NoAssessment(), rolemap=rolemap)  # type: ignore[arg-type]
-    return target, rolemap, uow, rolemap_uow
+    return _target(uow, rolemap, store), rolemap, uow, rolemap_uow
 
 
 async def _with_strengths(rolemap: RoleMapService, *, backend: int = 60) -> uuid.UUID:
@@ -213,7 +226,7 @@ async def test_a_posting_fit_is_never_an_ai_call() -> None:
         top_k=10,
         candidate_count=20,
     )
-    local = TargetService(uow, assessment=NoAssessment(), rolemap=local_rolemap)  # type: ignore[arg-type]
+    local = _target(uow, local_rolemap)
     strengths = await local_rolemap.strengths(OWNER)
     assert strengths is not None
     await local._create_fit(OWNER, strengths, source)
@@ -356,3 +369,135 @@ async def test_another_users_posting_is_not_found() -> None:
         await target.own_posting(OTHER, posting_id)
     with pytest.raises(NotFoundError):
         await target.snapshot(OTHER, TargetRef(private_job_posting_id=str(posting_id)))
+
+
+# --- uploaded as a file (ADR 0033) -------------------------------------------
+
+_JD_FILE = b"Own the ledger. Lead incident response."
+
+
+async def _upload(
+    target: TargetService,
+    content: bytes = _JD_FILE,
+    *,
+    content_type: str = "text/plain",
+) -> tuple[uuid.UUID, uuid.UUID]:
+    posting, run_id = await target.upload_own_posting(
+        OWNER,
+        title=" Staff Engineer ",
+        company_name=None,
+        filename="staff-engineer.txt",
+        content_type=content_type,
+        content=content,
+    )
+    return posting.private_job_posting_id, run_id
+
+
+async def test_an_uploaded_posting_is_stored_as_a_file_and_waits_to_be_read() -> None:
+    store = FakeObjectStore()
+    target, rolemap, uow, _ = _services(store=store)
+    await _with_strengths(rolemap)
+
+    posting_id, _run_id = await _upload(target)
+
+    [listed] = await target.own_postings(OWNER)
+    assert (listed.title, listed.source, listed.filename, listed.status) == (
+        "Staff Engineer",
+        "uploaded",
+        "staff-engineer.txt",
+        "running",
+    )
+    stored = uow.store.postings[posting_id]
+    assert stored.job_description is None and stored.storage_key is not None
+    # Nothing reads the file in the request: it is only stored.
+    assert store.objects == {stored.storage_key: _JD_FILE}
+
+
+async def test_scoring_an_uploaded_posting_reads_its_file_first_and_then_drops_it() -> None:
+    store = FakeObjectStore()
+    gateway = OwnPostingGateway(target=80)
+    target, rolemap, uow, _ = _services(gateway, store)
+    await _with_strengths(rolemap)
+    posting_id, run_id = await _upload(target)
+
+    await target.evaluate_own_posting(OWNER, run_id)
+
+    assert gateway.tasks == ["rolemap.extract", "rolemap.fit"]
+    assert "Own the ledger" in gateway.shown[0]["postings"]
+    stored = uow.store.postings[posting_id]
+    assert stored.job_description == _JD_FILE.decode()
+    assert stored.storage_key is None and store.objects == {}
+    [listed] = await target.own_postings(OWNER)
+    assert listed.status == "ready" and listed.fit is not None
+
+
+def _blank_pdf() -> bytes:
+    """A PDF with a page and no text on it."""
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [(b"not a pdf at all", "application/pdf"), (_blank_pdf(), "application/pdf")],
+)
+async def test_a_file_that_cannot_be_read_fails_the_run_and_spends_nothing(
+    content: bytes, content_type: str
+) -> None:
+    store = FakeObjectStore()
+    gateway = OwnPostingGateway()
+    target, rolemap, uow, _ = _services(gateway, store)
+    await _with_strengths(rolemap)
+    posting_id, run_id = await _upload(target, content, content_type=content_type)
+
+    await target.evaluate_own_posting(OWNER, run_id)
+
+    assert gateway.tasks == []
+    [listed] = await target.own_postings(OWNER)
+    assert listed.status == "failed" and listed.error_code == "validation_failed"
+    # The file stays until the posting is removed, and goes with it.
+    assert len(store.objects) == 1
+    await target.remove_own_posting(OWNER, posting_id)
+    assert store.objects == {} and uow.store.postings == {}
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type", "message"),
+    [
+        (b"x" * 1_001, "text/plain", "larger than we accept"),
+        (b"\x89PNG", "image/png", "not a format we can read"),
+        (b"", "text/plain", "empty"),
+    ],
+)
+async def test_an_upload_that_cannot_be_a_jd_is_refused_before_anything_is_stored(
+    content: bytes, content_type: str, message: str
+) -> None:
+    store = FakeObjectStore()
+    target, rolemap, uow, _ = _services(store=store)
+    await _with_strengths(rolemap)
+
+    with pytest.raises(ValidationError, match=message):
+        await _upload(target, content, content_type=content_type)
+    assert store.objects == {} and uow.store.postings == {}
+
+
+async def test_an_upload_needs_an_analysis_first_and_stores_nothing_without_one() -> None:
+    store = FakeObjectStore()
+    target, _rolemap, uow, _ = _services(store=store)
+
+    with pytest.raises(ValidationError):
+        await _upload(target)
+    assert store.objects == {} and uow.store.postings == {}
+
+
+async def test_an_upload_is_priced_as_a_ceiling_before_the_file_is_read() -> None:
+    target, _rolemap, _uow, _ = _services()
+
+    priced = await target.estimate_upload(OWNER, title="Staff Engineer", company_name=None)
+
+    assert priced == {"cost_usd": "0.20", "model_id": "claude-opus-5", "rate_is_published": True}

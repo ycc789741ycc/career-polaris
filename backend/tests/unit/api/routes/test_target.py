@@ -30,6 +30,8 @@ def _own(title: str, *, status: str, fit: int | None = None) -> OwnPostingView:
         private_job_posting_id=JD_ID,
         title=title,
         company_name="Northwind",
+        source="pasted",
+        filename=None,
         status=status,
         error_code=None,
         error_message=None,
@@ -42,6 +44,7 @@ def _own(title: str, *, status: str, fit: int | None = None) -> OwnPostingView:
 class FakeTarget:
     def __init__(self) -> None:
         self.added: list[dict[str, Any]] = []
+        self.uploaded: list[dict[str, Any]] = []
         self.removed: list[uuid.UUID] = []
         self.rescore_run: uuid.UUID | None = RUN_ID
 
@@ -55,6 +58,15 @@ class FakeTarget:
         self, owner_id: uuid.UUID, **kw: Any
     ) -> tuple[OwnPostingView, uuid.UUID]:
         self.added.append(kw)
+        return _own(kw["title"], status="running"), RUN_ID
+
+    async def estimate_upload(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
+        return {"cost_usd": "0.22", "model_id": "claude-opus-5", "rate_is_published": True}
+
+    async def upload_own_posting(
+        self, owner_id: uuid.UUID, **kw: Any
+    ) -> tuple[OwnPostingView, uuid.UUID]:
+        self.uploaded.append(kw)
         return _own(kw["title"], status="running"), RUN_ID
 
     async def rescore_own_posting(
@@ -202,3 +214,59 @@ def test_a_rescore_is_queued_unless_one_is_already_running(
 def test_a_posting_of_your_own_is_removed(client: TestClient, target: FakeTarget) -> None:
     assert client.delete(f"/own-postings/{JD_ID}").status_code == 204
     assert target.removed == [JD_ID]
+
+
+def test_an_upload_is_priced_from_its_title_alone(client: TestClient) -> None:
+    response = client.post("/own-postings/upload-estimate", json={"title": "Staff Engineer"})
+
+    assert response.status_code == 200
+    assert response.json()["cost_usd"] == "0.22"
+
+
+def test_an_uploaded_file_is_handed_over_as_it_came_and_queued_to_be_read(
+    client: TestClient,
+    target: FakeTarget,
+    activity: FakeActivity,
+    queued: list[dict[str, Any]],
+) -> None:
+    response = client.post(
+        "/own-postings/upload",
+        data={"title": "Staff Engineer", "company_name": "Northwind"},
+        files={"file": ("jd.pdf", b"%PDF-1.7 ...", "application/pdf")},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "running"
+    assert target.uploaded == [
+        {
+            "title": "Staff Engineer",
+            "company_name": "Northwind",
+            "filename": "jd.pdf",
+            "content_type": "application/pdf",
+            "content": b"%PDF-1.7 ...",
+        }
+    ]
+    assert [c["name"] for c in queued] == ["target.evaluate_own_posting"]
+    assert activity.requests == 0
+
+
+@pytest.mark.parametrize(
+    "form",
+    [{"title": ""}, {}, {"title": "x" * 256}],
+)
+def test_an_upload_needs_a_title(
+    client: TestClient, target: FakeTarget, form: dict[str, str]
+) -> None:
+    response = client.post(
+        "/own-postings/upload",
+        data=form,
+        files={"file": ("jd.txt", b"Own the ledger.", "text/plain")},
+    )
+
+    assert response.status_code == 422
+    assert target.uploaded == []
+
+
+def test_an_upload_needs_its_file(client: TestClient, target: FakeTarget) -> None:
+    assert client.post("/own-postings/upload", data={"title": "Staff"}).status_code == 422
+    assert target.uploaded == []

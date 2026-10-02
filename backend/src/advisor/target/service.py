@@ -7,7 +7,8 @@ user measures up into a ``TargetSnapshot``, which the plan or résumé stores.
 
 The role map picks a role and an opening. A posting of the user's own is
 Target's (ADR 0033): a job the role map does not show, brought to the Advisor
-by pasting its JD. It is stored here, read and scored on the user's key when
+by pasting its JD or uploading it as a file, which the worker reads before
+anything else. It is stored here, read and scored on the user's key when
 it is added, and rescored only when they ask; no build reads it. Its fit is
 scored with the role map's fit kit, so the fit rules stay in one place
 (ADR 0028). Resolving a Target spends nothing.
@@ -33,6 +34,7 @@ from advisor.rolemap import (
     get_projection_digest,
 )
 from advisor.target.domain import (
+    MAX_JOB_DESCRIPTION,
     DimensionGap,
     OwnerTarget,
     OwnPostingError,
@@ -54,10 +56,13 @@ from advisor.target.domain import (
     TargetUnitOfWork,
     UncoveredGap,
     parse_own_posting,
+    parse_title_and_company,
 )
 from kernel.clock import utcnow
+from kernel.documents import ACCEPTED_TYPES, read_document_text
 from kernel.errors import DomainError, NotFoundError, TargetUnusableError, ValidationError
 from kernel.logging import get_logger
+from kernel.storage import ObjectStore, object_key
 
 __all__ = [
     "DimensionGap",
@@ -91,6 +96,9 @@ class OwnPostingView:
     private_job_posting_id: uuid.UUID
     title: str
     company_name: str
+    # `pasted`, or `uploaded` with the file's name.
+    source: str
+    filename: str | None
     # The latest run: `running`, `ready` or `failed`; none before any.
     status: str | None
     error_code: str | None
@@ -108,10 +116,17 @@ class TargetService:
         *,
         assessment: AssessmentService,
         rolemap: RoleMapService,
+        object_store: ObjectStore,
+        upload_max_bytes: int,
+        upload_max_pages: int,
     ) -> None:
         self._uow = uow
         self._assessment = assessment
         self._rolemap = rolemap
+        self._store = object_store
+        # How large an uploaded JD may be, and how many pages a PDF of one.
+        self._upload_max_bytes = upload_max_bytes
+        self._upload_max_pages = upload_max_pages
 
     async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
         """Freeze the Target: what it requires and the user's fit to it.
@@ -198,6 +213,22 @@ class TargetService:
             "rate_is_published": extract.rate_is_published and fit.rate_is_published,
         }
 
+    async def estimate_upload(
+        self, owner_id: uuid.UUID, *, title: str, company_name: str | None
+    ) -> dict[str, Any]:
+        """What adding a posting from a file will cost, before it is read: a
+        ceiling, priced as if the file held the longest JD there may be."""
+        name, company = _title_and_company(title, company_name)
+        extract = await self._rolemap.estimate_requirements(
+            owner_id, title=name, company_name=company, job_description="x" * MAX_JOB_DESCRIPTION
+        )
+        fit = await self._rolemap.estimate_projection(owner_id)
+        return {
+            "cost_usd": str(extract.cost_usd + fit.cost_usd),
+            "model_id": extract.model_id,
+            "rate_is_published": extract.rate_is_published and fit.rate_is_published,
+        }
+
     async def estimate_rescore(
         self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
     ) -> dict[str, Any]:
@@ -246,6 +277,59 @@ class TargetService:
         log.info("target.own_posting_added", private_job_posting_id=str(posting.id))
         return await self.own_posting(owner_id, posting.id), run.id
 
+    async def upload_own_posting(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        company_name: str | None,
+        filename: str,
+        content_type: str,
+        content: bytes,
+    ) -> tuple[OwnPostingView, uuid.UUID]:
+        """Store a JD the user uploaded as a file, privately, and record the
+        run that reads it, then reads and scores its requirements, at the cost
+        they confirmed. The file is only stored here: reading it is the
+        worker's, never a request handler's."""
+        if len(content) > self._upload_max_bytes:
+            raise ValidationError(
+                "this file is larger than we accept", limit_bytes=self._upload_max_bytes
+            )
+        if content_type not in ACCEPTED_TYPES:
+            raise ValidationError(
+                f"{content_type} is not a format we can read: upload a PDF, a Word file"
+                " or plain text",
+                content_type=content_type,
+            )
+        if not content.strip():
+            raise ValidationError("this file is empty")
+        key = object_key(owner_id, "ownpostings", str(uuid.uuid4()))
+        try:
+            posting = PrivateJobPosting.uploaded(
+                owner_id=owner_id,
+                title=title,
+                company_name=company_name,
+                filename=filename,
+                content_type=content_type,
+                storage_key=key,
+            )
+        except OwnPostingError as exc:
+            raise ValidationError(str(exc)) from exc
+        await self._require_strengths(owner_id)
+        self._store.put(key, content, content_type)
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.postings.create(posting)
+            run = await mine.evaluations.create(
+                PostingEvaluation.requested(
+                    owner_id=owner_id,
+                    private_job_posting_id=posting.id,
+                    reads_requirements=True,
+                    at=utcnow(),
+                )
+            )
+        log.info("target.own_posting_uploaded", private_job_posting_id=str(posting.id))
+        return await self.own_posting(owner_id, posting.id), run.id
+
     async def rescore_own_posting(
         self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
     ) -> tuple[OwnPostingView, uuid.UUID | None]:
@@ -290,6 +374,8 @@ class TargetService:
             return
         try:
             posting = await self._posting(owner_id, run.private_job_posting_id)
+            if not posting.is_read:
+                posting = await self._read_file(owner_id, posting)
             if run.reads_requirements:
                 await self._extract_requirements(owner_id, posting)
             strengths = await self._require_strengths(owner_id)
@@ -349,9 +435,10 @@ class TargetService:
     async def remove_own_posting(
         self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
     ) -> None:
-        """Delete a posting of the user's own, its JD and everything made of it.
-        Plans and résumés aimed at it keep their snapshots."""
-        await self._posting(owner_id, private_job_posting_id)
+        """Delete a posting of the user's own, its JD and everything made of it,
+        the file it came in included. Plans and résumés aimed at it keep their
+        snapshots."""
+        posting = await self._posting(owner_id, private_job_posting_id)
         async with self._uow.for_owner(owner_id) as mine:
             for fit in await mine.fits.get_list(
                 OwnPostingFitFilter(private_job_posting_ids=(private_job_posting_id,))
@@ -370,6 +457,8 @@ class TargetService:
             ):
                 await mine.evaluations.delete(run.id)
             await mine.postings.delete(private_job_posting_id)
+        if posting.storage_key is not None:
+            self._store.delete(posting.storage_key)
         log.info("target.own_posting_removed", private_job_posting_id=str(private_job_posting_id))
 
     async def _posting(
@@ -383,6 +472,29 @@ class TargetService:
             raise NotFoundError(
                 "posting not found", private_job_posting_id=str(private_job_posting_id)
             )
+        return posting
+
+    async def _read_file(
+        self, owner_id: uuid.UUID, posting: PrivateJobPosting
+    ) -> PrivateJobPosting:
+        """The text of an uploaded JD becomes its JD; the file is then deleted.
+        Worker only. A file that cannot be read fails the run, and is kept so
+        the posting can be removed with it."""
+        if posting.storage_key is None or posting.content_type is None:
+            raise ValidationError("this posting has no file to read")
+        key = posting.storage_key
+        text, _pages = read_document_text(
+            self._store.get(key),
+            content_type=posting.content_type,
+            max_pages=self._upload_max_pages,
+        )
+        try:
+            posting.read(text)
+        except OwnPostingError as exc:
+            raise ValidationError(str(exc)) from exc
+        async with self._uow.for_owner(owner_id) as mine:
+            posting = await mine.postings.update(posting)
+        self._store.delete(key)
         return posting
 
     async def _own_posting_fit(
@@ -410,7 +522,7 @@ class TargetService:
             owner_id,
             title=posting.title,
             company_name=posting.company_name,
-            job_description=posting.job_description,
+            job_description=posting.job_description or "",
         )
         async with self._uow.for_owner(owner_id) as mine:
             for old in await mine.requirements.get_list(
@@ -604,6 +716,13 @@ def _uuid(value: str, ref: TargetRef) -> uuid.UUID:
         raise NotFoundError("target not found", **ref.to_dict()) from exc
 
 
+def _title_and_company(title: str, company_name: str | None) -> tuple[str, str | None]:
+    try:
+        return parse_title_and_company(title=title, company_name=company_name)
+    except OwnPostingError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
 def _own_posting(
     title: str, company_name: str | None, job_description: str
 ) -> tuple[str, str | None, str]:
@@ -653,6 +772,8 @@ def _own_posting_view(
         private_job_posting_id=posting.id,
         title=posting.title,
         company_name=posting.company_name or "",
+        source=str(posting.source),
+        filename=posting.filename,
         status=str(run.status) if run is not None else None,
         error_code=run.error_code if run is not None else None,
         error_message=run.error_message if run is not None else None,

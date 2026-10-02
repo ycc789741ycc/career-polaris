@@ -123,3 +123,19 @@ class FakeTargetUnitOfWork(TargetUnitOfWork):
     @asynccontextmanager
     async def for_owner(self, owner_id: uuid.UUID) -> AsyncIterator[FakeOwner]:
         yield FakeOwner(self.store, owner_id)
+
+
+class FakeObjectStore:
+    """Object storage in memory, keyed as the real one keys it."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        self.objects[key] = content
+
+    def get(self, key: str) -> bytes:
+        return self.objects[key]
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)

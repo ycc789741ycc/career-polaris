@@ -124,6 +124,9 @@ class Settings(BaseSettings):
     # --- Uploads / parsing --------------------------------------------------
     resume_max_bytes: int = Field(default=10_485_760, alias="RESUME_MAX_BYTES")
     resume_max_pages: int = Field(default=30, alias="RESUME_MAX_PAGES")
+    # A posting of the user's own uploaded as a file (ADR 0033).
+    own_posting_max_bytes: int = Field(default=5_242_880, alias="OWN_POSTING_MAX_BYTES")
+    own_posting_max_pages: int = Field(default=10, alias="OWN_POSTING_MAX_PAGES")
     parse_timeout_seconds: int = Field(default=60, alias="PARSE_TIMEOUT_SECONDS")
 
     # --- Crawler ------------------------------------------------------------

@@ -13,5 +13,9 @@ MAX_TITLE = 255
 
 MAX_COMPANY_NAME = 255
 
-# The most of a JD that is stored: a JD longer than this is not a JD.
+# The most of a JD that is stored: a JD longer than this is not a JD. A file's
+# text is cut to it.
 MAX_JOB_DESCRIPTION = 50_000
+
+# An uploaded file's name, as shown back to the user.
+MAX_FILENAME = 255
