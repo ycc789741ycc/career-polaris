@@ -26,12 +26,12 @@ function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   };
 }
 
-function fit(roleId: string, score: number): Fit {
+function fit(roleId: string, score: number, gaps: Fit["gaps"] = []): Fit {
   return {
     role_id: roleId,
     score,
     reasoning: "",
-    gaps: [],
+    gaps,
     uncovered: [],
     model_id: "claude-opus-5",
     computed_at: "2026-09-20T10:00:00Z",
@@ -44,7 +44,23 @@ function serve() {
       role("r1", "Backend Engineer"),
       role("r2", "Platform Engineer"),
     ]),
-    "/fits": page([fit("r1", 60), fit("r2", 84)]),
+    "/fits": page([
+      fit("r1", 60, [
+        {
+          dimension_key: "testing",
+          user_score: 70,
+          target_score: 55,
+          delta: 15,
+        },
+        {
+          dimension_key: "system_design",
+          user_score: 48,
+          target_score: 80,
+          delta: -32,
+        },
+      ]),
+      fit("r2", 84),
+    ]),
     "/assessments/latest": null,
     "/market-scope": {
       target_locations: ["Berlin", "Remote EU"],
@@ -237,6 +253,30 @@ describe("the role map's one Advisor target", () => {
     expect(
       screen.getAllByRole("button", { name: /^Target this/ }),
     ).toHaveLength(1);
+  });
+});
+
+describe("the selected role's fit", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows you against what the role asks on each dimension, most asked first", async () => {
+    renderRoles({ role: "r1" });
+
+    expect(
+      await screen.findByText("How you fit each dimension"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("you 48 · role asks 80")).toBeInTheDocument();
+    expect(screen.getByText("you 70 · role asks 55")).toBeInTheDocument();
+    const bars = screen.getAllByRole("img", { name: /: you \d+, the bar is/ });
+    expect(bars.map((bar) => bar.getAttribute("aria-label"))).toEqual([
+      "system_design: you 48, the bar is 80",
+      "testing: you 70, the bar is 55",
+    ]);
+    expect(screen.queryByText("-32")).not.toBeInTheDocument();
   });
 });
 

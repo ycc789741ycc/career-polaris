@@ -37,7 +37,7 @@ import { messageOf, useAsync } from "./useAsync";
  * never changes an earlier one's result. So the report reads only the evidence
  * and the analysis: no fit, role or bar from the role map, which reclusters
  * and rescores as the market moves. Comparing against a role's bar is the role
- * map's job, where "Where you clear it / where you don't" already does it.
+ * map's job, where "How you fit each dimension" already does it.
  *
  * An analysis reads the evidence as it stands, so it cannot start while a
  * source is still syncing or a résumé still parsing (ADR 0018); the running

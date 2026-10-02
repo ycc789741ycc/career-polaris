@@ -24,6 +24,7 @@ import {
   FitBadge,
   Loading,
   StatTile,
+  YouVsBar,
 } from "../components/ui";
 import { isBusy, useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
@@ -261,41 +262,59 @@ export function Roles() {
               {activeFit && activeFit.gaps.length > 0 && (
                 <>
                   <Eyebrow style={{ margin: "6px 0" }}>
-                    Where you clear it / where you don&apos;t
+                    How you fit each dimension
                   </Eyebrow>
-                  {[...activeFit.gaps]
-                    .sort((a, b) => a.delta - b.delta)
+                  {/* What the role asks most of comes first: the role's
+                      profile, with you laid over it. */}
+                  {activeFit.gaps
+                    .map((gap) => ({
+                      ...gap,
+                      name:
+                        dimensionNames.get(gap.dimension_key) ??
+                        gap.dimension_key,
+                    }))
+                    .sort(
+                      (a, b) =>
+                        b.target_score - a.target_score ||
+                        a.name.localeCompare(b.name),
+                    )
                     .map((gap) => {
                       const color =
-                        gap.delta >= 0
+                        gap.user_score >= gap.target_score
                           ? "var(--color-accent-2-700)"
                           : "var(--color-accent-700)";
                       return (
                         <div
                           key={gap.dimension_key}
-                          className="row"
                           style={{
-                            gap: 11,
-                            flexWrap: "nowrap",
-                            padding: "8px 0",
+                            padding: "8px 0 10px",
                             borderBottom:
                               "1px solid color-mix(in srgb, #201e1d 10%, transparent)",
                           }}
                         >
-                          <span
-                            className="dot"
-                            style={{ background: color }}
-                            aria-hidden="true"
-                          />
-                          <span style={{ fontSize: 13.5, flex: 1 }}>
-                            {dimensionNames.get(gap.dimension_key) ??
-                              gap.dimension_key}
-                          </span>
-                          <span
-                            style={{ fontSize: 12.5, fontWeight: 700, color }}
+                          <div
+                            className="row"
+                            style={{
+                              gap: 11,
+                              flexWrap: "nowrap",
+                              marginBottom: 7,
+                            }}
                           >
-                            {gap.delta >= 0 ? `+${gap.delta}` : gap.delta}
-                          </span>
+                            <span style={{ fontSize: 13.5, flex: 1 }}>
+                              {gap.name}
+                            </span>
+                            <span
+                              style={{ fontSize: 12.5, fontWeight: 700, color }}
+                            >
+                              you {gap.user_score} · role asks{" "}
+                              {gap.target_score}
+                            </span>
+                          </div>
+                          <YouVsBar
+                            you={gap.user_score}
+                            bar={gap.target_score}
+                            label={gap.name}
+                          />
                         </div>
                       );
                     })}
