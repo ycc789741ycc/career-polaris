@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -11,7 +10,6 @@ from advisor.market import (
     MAX_TARGET_LOCATION,
     MAX_TARGET_LOCATIONS,
     MarketScopeView,
-    PostingView,
     TargetLocationOptionView,
 )
 from api.schemas.common import ApiModel, Page, RequestModel
@@ -55,27 +53,3 @@ class MarketScope(ApiModel):
         return cls(
             target_locations=view.target_locations, open_posting_count=view.open_posting_count
         )
-
-
-class PastedJobDescription(ApiModel):
-    """A pasted JD. It is private to its owner and never enters shared data."""
-
-    id: uuid.UUID
-    company_name: str
-    title: str
-    location: str | None
-    visibility: str
-
-    @classmethod
-    def from_view(cls, posting: PostingView) -> PastedJobDescription:
-        return cls(
-            id=posting.id,
-            company_name=posting.company_name,
-            title=posting.title,
-            location=posting.location,
-            visibility=str(posting.visibility),
-        )
-
-
-class PastedJobDescriptionPage(Page[PastedJobDescription]):
-    pass

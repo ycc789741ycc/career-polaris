@@ -8,8 +8,10 @@ matching run locally on the platform — plain computation. The user's key is
 spent only on naming a role, pulling its requirements out, estimating its
 interview difficulty (domain decision 7), and scoring the fits.
 
-A posting the user brings themselves is evaluated here too, so the fit rules
-live in one place (ADR 0028), but it is never on the map (Phase 8).
+A posting the user brings themselves is Target's (ADR 0033). It is never on
+the map, but its fit is scored with the rules here, so they live in one place
+(ADR 0028): the fit kit below reads a JD's requirements and projects them, and
+stores nothing.
 """
 
 from __future__ import annotations
@@ -50,18 +52,9 @@ from advisor.rolemap.domain import (
     HiringBar,
     LineageEntry,
     MatchCandidate,
-    OwnerRoleMap,
-    OwnPostingError,
     PlacementOutcome,
-    PostingEvaluation,
-    PostingEvaluationFilter,
     PostingFit,
-    PostingFitBasis,
     PostingFitFilter,
-    PostingRequirement,
-    PostingRequirementFilter,
-    PostingRequirementFit,
-    PostingRequirementFitFilter,
     Reconciliation,
     Role,
     RoleCandidate,
@@ -90,18 +83,16 @@ from advisor.rolemap.domain import (
     evaluate,
     fit_estimates,
     get_opening_fit,
-    get_own_posting_key,
     get_posting_fit,
     get_requirement_relevance,
     get_requirements_digest,
     keep_on_market,
     max_role_count,
-    parse_own_posting,
     rank_matches,
     reconcile,
     spearman,
 )
-from kernel.ai_gateway import AiGateway, PromptTemplate
+from kernel.ai_gateway import AiGateway, Estimate, PromptTemplate
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.embeddings import embed
@@ -115,13 +106,17 @@ __all__ = [
     "FitView",
     "MarketWait",
     "MatchedPostingView",
-    "OwnPostingView",
+    "PostingFitResultView",
     "PostingFitView",
+    "ProjectionView",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
     "RoleView",
     "StrengthInput",
+    "StrengthsView",
+    "get_posting_fit_result",
+    "get_projection_digest",
 ]
 
 log = get_logger(__name__)
@@ -278,10 +273,11 @@ class FitView:
 @dataclass(frozen=True, slots=True)
 class PostingFitView:
     """The user's fit to one posting, worked out locally from an AI fit
-    (Phase 8): what the Advisor plans against when aimed at it."""
+    (Phase 8): what the Advisor plans against when aimed at it. An opening's
+    is worked out from its role's fit; a posting of the user's own's, by
+    Target, from its own projection (``posting_key`` is then its id)."""
 
     posting_key: str
-    basis: str
     score: int
     gaps: tuple[dict[str, Any], ...]
     uncovered: tuple[dict[str, Any], ...]
@@ -309,21 +305,38 @@ class PostingFitView:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnPostingView:
-    """A posting the user brought themselves, to aim the Advisor at (Phase 8):
-    the JD they pasted, where reading and scoring it stands, and its fit."""
+class StrengthsView:
+    """The dimension scores every fit is scored against: the latest analysis's,
+    as assessment handed them over with the candidates (ADR 0028)."""
 
-    private_job_posting_id: uuid.UUID
-    title: str
-    company_name: str
-    # The latest run: `running`, `ready` or `failed`; none before any.
-    status: str | None
-    error_code: str | None
-    error_message: str | None
-    fit: int | None
-    # Scored against an analysis older than the latest: worth rescoring.
-    is_stale: bool
-    scored_at: datetime | None
+    assessment_id: uuid.UUID
+    scores: dict[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionView:
+    """An AI fit of some requirements: each mapped onto one of the user's
+    dimensions or none, with a target for each dimension. The projection every
+    fit is scored with, taken for a caller that stores it (ADR 0033)."""
+
+    assessment_id: uuid.UUID
+    requirements: tuple[dict[str, Any], ...]
+    requirement_map: dict[str, str | None]
+    target_profile: dict[str, int]
+    reasoning: str
+    model_id: str
+    template_version: str
+    requirements_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class PostingFitResultView:
+    """A posting's fit worked out from a projection, locally: the score, gaps
+    and uncovered requirements, shaped as ``PostingFitView`` reads them."""
+
+    score: int
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1223,8 +1236,7 @@ class RoleMapService:
             )
         scores: dict[tuple[uuid.UUID, str], int] = {}
         for fit in found:
-            if fit.basis is PostingFitBasis.ROLE and fit.role_id is not None:
-                scores.setdefault((fit.role_id, fit.posting_key), fit.score)
+            scores.setdefault((fit.role_id, fit.posting_key), fit.score)
         return scores
 
     async def _derive_opening_fits(
@@ -1274,7 +1286,6 @@ class RoleMapService:
                             id=uuid.uuid4(),
                             owner_id=owner_id,
                             posting_key=_posting_key(opening),
-                            basis=PostingFitBasis.ROLE,
                             source_fit_id=fit.id,
                             assessment_id=fit.assessment_id,
                             score=result.score,
@@ -1423,217 +1434,37 @@ class RoleMapService:
             spearman=round(spearman([e for e, _ in pairs], [float(f) for _, f in pairs]), 3),
         )
 
-    # -- postings of the user's own (Phase 8) ------------------------------
+    # -- the fit kit, for Target (ADR 0033) ---------------------------------
 
-    async def estimate_own_posting(
+    async def strengths(self, owner_id: uuid.UUID) -> StrengthsView | None:
+        """The scores a fit is scored against; none before an analysis."""
+        strengths = await self._strengths(owner_id)
+        if not strengths:
+            return None
+        return StrengthsView(
+            assessment_id=strengths[0].assessment_id,
+            scores={s.dimension_key: s.score for s in strengths},
+        )
+
+    async def estimate_requirements(
         self,
         owner_id: uuid.UUID,
         *,
         title: str,
         company_name: str | None,
         job_description: str,
-    ) -> dict[str, Any]:
-        """What adding this posting will cost, before it is added: reading its
-        JD's requirements, then scoring the fit. Nothing else on it calls the
-        AI."""
-        name, company, description = _own_posting(title, company_name, job_description)
-        extract = await self._gateway.estimate(
+    ) -> Estimate:
+        """What reading a JD's requirements costs, before it is read."""
+        return await self._gateway.estimate(
             owner_id,
             task="rolemap.extract",
             template=load_template("role_extraction", "v2"),
-            inputs={"postings": _jd_block(name, company, description)},
+            inputs={"postings": _jd_block(title, company_name, job_description)},
             untrusted=frozenset({"postings"}),
         )
-        fit = await self._estimate_fit(owner_id)
-        return {
-            "cost_usd": str(extract.cost_usd + fit.cost_usd),
-            "model_id": extract.model_id,
-            "rate_is_published": extract.rate_is_published and fit.rate_is_published,
-        }
 
-    async def estimate_rescore(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> dict[str, Any]:
-        """What rescoring a posting of the user's own costs: the fit only, since
-        its requirements are kept."""
-        await self._market.private_posting(owner_id, private_job_posting_id)
-        fit = await self._estimate_fit(owner_id)
-        return {
-            "cost_usd": str(fit.cost_usd),
-            "model_id": fit.model_id,
-            "rate_is_published": fit.rate_is_published,
-        }
-
-    async def add_own_posting(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        title: str,
-        company_name: str | None,
-        job_description: str,
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        """Store a posting the user brought, privately, and record the run that
-        reads and scores it, at the cost they confirmed. Returns the posting
-        and the run for the caller to queue. Its fit needs the user's
-        strengths, so an analysis comes first."""
-        name, company, description = _own_posting(title, company_name, job_description)
-        await self._require_strengths(owner_id)
-        pasted = await self._market.paste_job_description(
-            owner_id, company_name=company or "", title=name, location=None, description=description
-        )
-        async with self._uow.for_owner(owner_id) as mine:
-            run = await mine.evaluations.create(
-                PostingEvaluation.requested(
-                    owner_id=owner_id,
-                    private_job_posting_id=pasted.id,
-                    reads_requirements=True,
-                    at=utcnow(),
-                )
-            )
-        log.info("rolemap.own_posting_added", private_job_posting_id=str(pasted.id))
-        return await self.own_posting(owner_id, pasted.id), run.id
-
-    async def rescore_own_posting(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> tuple[OwnPostingView, uuid.UUID | None]:
-        """Score a posting of the user's own again, against their latest
-        strengths. Only when they ask: never after an analysis by itself. A run
-        still going is returned as it is, with nothing to queue."""
-        await self._market.private_posting(owner_id, private_job_posting_id)
-        await self._require_strengths(owner_id)
-        async with self._uow.for_owner(owner_id) as mine:
-            latest = await _latest_evaluation(mine, private_job_posting_id)
-            if latest is not None and latest.is_running:
-                return await self.own_posting(owner_id, private_job_posting_id), None
-            requirements = await mine.posting_requirements.get_count(
-                PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
-            )
-            run = await mine.evaluations.create(
-                PostingEvaluation.requested(
-                    owner_id=owner_id,
-                    private_job_posting_id=private_job_posting_id,
-                    # Requirements are read once; only a failed first read
-                    # reads them again.
-                    reads_requirements=requirements == 0,
-                    at=utcnow(),
-                )
-            )
-        return await self.own_posting(owner_id, private_job_posting_id), run.id
-
-    async def evaluate_own_posting(self, owner_id: uuid.UUID, evaluation_id: uuid.UUID) -> None:
-        """The worker job for one recorded run: read the JD's requirements when
-        the run asks for it, score them against the user's strengths, and work
-        out the posting's fit from that locally.
-
-        An expected failure is recorded on the run and not raised: a retry
-        would spend the key again. Anything else is recorded as ``internal``
-        and re-raised for the log.
-        """
-        async with self._uow.for_owner(owner_id) as mine:
-            run = await mine.evaluations.get(evaluation_id)
-        if run is None:
-            raise NotFoundError("posting evaluation not found", evaluation_id=str(evaluation_id))
-        if not run.is_running:
-            return
-        try:
-            posting = await self._market.private_posting(owner_id, run.private_job_posting_id)
-            if run.reads_requirements:
-                await self._read_own_requirements(owner_id, posting)
-            strengths = await self._require_strengths(owner_id)
-            source = await self._project_own(owner_id, strengths, posting)
-            await self._store_posting_fit(owner_id, strengths, source)
-        except DomainError as exc:
-            log.warning("rolemap.own_posting_failed", code=str(exc.code))
-            await self._finish_evaluation(
-                owner_id, evaluation_id, failure=(str(exc.code), exc.message)
-            )
-            return
-        except Exception:
-            await self._finish_evaluation(
-                owner_id,
-                evaluation_id,
-                failure=(
-                    "internal",
-                    "Scoring your posting stopped unexpectedly. Try again in a moment.",
-                ),
-            )
-            raise
-        await self._finish_evaluation(owner_id, evaluation_id, failure=None)
-
-    async def own_postings(self, owner_id: uuid.UUID) -> list[OwnPostingView]:
-        """The postings the user brought, newest first, each with its latest
-        run and fit. One user's pasted JDs: a small set, read whole."""
-        pasted = await self._market.private_postings(owner_id)
-        async with self._uow.for_owner(owner_id) as mine:
-            runs = await mine.evaluations.get_list(PostingEvaluationFilter())
-            fits = await mine.posting_fits.get_list(
-                PostingFitFilter(posting_keys=tuple(get_own_posting_key(p.id) for p in pasted))
-                if pasted
-                else PostingFitFilter(posting_keys=())
-            )
-        latest_assessment = await self._latest_assessment(owner_id)
-        latest_run: dict[uuid.UUID, PostingEvaluation] = {}
-        for run in runs:
-            latest_run.setdefault(run.private_job_posting_id, run)
-        latest_fit: dict[str, PostingFit] = {}
-        for fit in fits:
-            latest_fit.setdefault(fit.posting_key, fit)
-        return [
-            _own_posting_view(
-                posting,
-                latest_run.get(posting.id),
-                latest_fit.get(get_own_posting_key(posting.id)),
-                latest_assessment,
-            )
-            for posting in pasted
-        ]
-
-    async def own_posting(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> OwnPostingView:
-        for found in await self.own_postings(owner_id):
-            if found.private_job_posting_id == private_job_posting_id:
-                return found
-        raise NotFoundError("posting not found", private_job_posting_id=str(private_job_posting_id))
-
-    async def own_posting_fit(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> PostingFitView | None:
-        """The current fit to a posting of the user's own, or none before it is
-        scored."""
-        async with self._uow.for_owner(owner_id) as mine:
-            found = await mine.posting_fits.get_list(
-                PostingFitFilter(posting_keys=(get_own_posting_key(private_job_posting_id),)),
-                page_size=1,
-            )
-        return _posting_fit_view(found[0]) if found else None
-
-    async def remove_own_posting(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> None:
-        """Delete a posting of the user's own, its JD with it. Plans and résumés
-        aimed at it keep their snapshots."""
-        await self._market.private_posting(owner_id, private_job_posting_id)
-        key = get_own_posting_key(private_job_posting_id)
-        async with self._uow.for_owner(owner_id) as mine:
-            for fit in await mine.posting_fits.get_list(PostingFitFilter(posting_keys=(key,))):
-                await mine.posting_fits.delete(fit.id)
-            for source in await mine.posting_requirement_fits.get_list(
-                PostingRequirementFitFilter(private_job_posting_id=private_job_posting_id)
-            ):
-                await mine.posting_requirement_fits.delete(source.id)
-            for requirement in await mine.posting_requirements.get_list(
-                PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
-            ):
-                await mine.posting_requirements.delete(requirement.id)
-            for run in await mine.evaluations.get_list(
-                PostingEvaluationFilter(private_job_posting_id=private_job_posting_id)
-            ):
-                await mine.evaluations.delete(run.id)
-        await self._market.delete_private_posting(owner_id, private_job_posting_id)
-        log.info("rolemap.own_posting_removed", private_job_posting_id=str(private_job_posting_id))
-
-    async def _estimate_fit(self, owner_id: uuid.UUID) -> Any:
+    async def estimate_projection(self, owner_id: uuid.UUID) -> Estimate:
+        """What projecting one set of requirements costs, at its largest."""
         return await self._gateway.estimate(
             owner_id,
             task="rolemap.fit",
@@ -1642,73 +1473,45 @@ class RoleMapService:
             untrusted=frozenset({"requirements"}),
         )
 
-    async def _require_strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
-        strengths = await self._strengths(owner_id)
-        if not strengths:
-            raise ValidationError("run an analysis before scoring a posting of your own")
-        return strengths
-
-    async def _latest_assessment(self, owner_id: uuid.UUID) -> uuid.UUID | None:
-        strengths = await self._strengths(owner_id)
-        return strengths[0].assessment_id if strengths else None
-
-    async def _read_own_requirements(self, owner_id: uuid.UUID, posting: PostingView) -> None:
-        """What the JD asks for, on the user's key: one call. Replaces what an
-        earlier, failed run may have left."""
+    async def extract_requirements(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        company_name: str | None,
+        job_description: str,
+    ) -> tuple[RequirementView, ...]:
+        """What a JD asks for, on the user's key: one call, with the prompt a
+        role's requirements are read with. Weightiest first; stores nothing."""
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
             template=load_template("role_extraction", "v2"),
-            inputs={
-                "postings": _jd_block(posting.title, posting.company_name, posting.description)
-            },
+            inputs={"postings": _jd_block(title, company_name, job_description)},
             output_schema=_RoleExtraction,
             untrusted=frozenset({"postings"}),
         )
-        async with self._uow.for_owner(owner_id) as mine:
-            for old in await mine.posting_requirements.get_list(
-                PostingRequirementFilter(private_job_posting_id=posting.id)
-            ):
-                await mine.posting_requirements.delete(old.id)
-            for read in extracted.value.requirements:
-                await mine.posting_requirements.create(
-                    PostingRequirement(
-                        id=uuid.uuid4(),
-                        owner_id=owner_id,
-                        private_job_posting_id=posting.id,
-                        statement=read.statement,
-                        weight=read.weight,
-                        expected_level=read.expected_level,
-                    )
-                )
-
-    async def _project_own(
-        self, owner_id: uuid.UUID, strengths: list[CandidateStrength], posting: PostingView
-    ) -> PostingRequirementFit:
-        """Map the posting's requirements onto the user's dimensions, with a
-        target for each, on the user's key: one call, the projection a role's
-        fit makes."""
-        async with self._uow.for_owner(owner_id) as mine:
-            read = await mine.posting_requirements.get_list(
-                PostingRequirementFilter(private_job_posting_id=posting.id)
-            )
-        if not read:
-            raise ValidationError("no requirements could be read out of this job description")
-        requirements = tuple(
+        return tuple(
             RequirementView(r.statement, r.weight, r.expected_level)
-            for r in sorted(read, key=lambda r: (-r.weight, r.statement))
+            for r in sorted(extracted.value.requirements, key=lambda r: (-r.weight, r.statement))
         )
-        digest = _digest(requirements)
-        async with self._uow.for_owner(owner_id) as mine:
-            earlier = await mine.posting_requirement_fits.get_list(
-                PostingRequirementFitFilter(private_job_posting_id=posting.id), page_size=1
-            )
-        # A rescore against the same scores and requirements would come out
-        # the same: the posting's fit is worked out from the one there is.
-        if earlier and earlier[0].is_current(
-            assessment_id=strengths[0].assessment_id, requirements_digest=digest
-        ):
-            return earlier[0]
+
+    async def project_requirements(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        requirements: Sequence[RequirementView],
+    ) -> ProjectionView:
+        """Map requirements onto the user's dimensions, with a target for each,
+        on the user's key: one call, the projection a role's fit makes. Stores
+        nothing; the caller keeps it, and asks ``get_projection_digest``
+        whether it still would come out the same."""
+        strengths = await self._strengths(owner_id)
+        if not strengths:
+            raise ValidationError("run an analysis before scoring a posting of your own")
+        if not requirements:
+            raise ValidationError("no requirements could be read out of this job description")
         known_keys = {s.dimension_key for s in strengths}
         projection = await self._gateway.run(
             owner_id,
@@ -1716,83 +1519,26 @@ class RoleMapService:
             template=_fit_template(),
             inputs={
                 "dimensions": _strengths_block(strengths),
-                "role_name": posting.title,
+                "role_name": title,
                 "requirements": _requirements_lines(requirements),
             },
             output_schema=_Projection,
             untrusted=frozenset({"requirements"}),
         )
-        async with self._uow.for_owner(owner_id) as mine:
-            return await mine.posting_requirement_fits.create(
-                PostingRequirementFit(
-                    id=uuid.uuid4(),
-                    owner_id=owner_id,
-                    private_job_posting_id=posting.id,
-                    assessment_id=strengths[0].assessment_id,
-                    requirements=_requirement_dicts(requirements),
-                    requirement_map=_requirement_map(projection.value, requirements, known_keys),
-                    target_profile={
-                        t.dimension_id: t.target
-                        for t in projection.value.target_scores
-                        if t.dimension_id in known_keys
-                    },
-                    reasoning=projection.value.reasoning,
-                    model_id=projection.model_id,
-                    template_version=projection.template_version,
-                    requirements_digest=digest,
-                )
-            )
-
-    async def _store_posting_fit(
-        self,
-        owner_id: uuid.UUID,
-        strengths: list[CandidateStrength],
-        source: PostingRequirementFit,
-    ) -> None:
-        """Work the posting's fit out from its AI fit, locally: no AI call."""
-        user_scores = {s.dimension_key: s.score for s in strengths}
-        found = get_posting_fit(
-            requirements=source.requirements,
-            requirement_map=source.requirement_map,
-            target_profile=source.target_profile,
-            user_scores=user_scores,
+        return ProjectionView(
+            assessment_id=strengths[0].assessment_id,
+            requirements=_requirement_dicts(requirements),
+            requirement_map=_requirement_map(projection.value, requirements, known_keys),
+            target_profile={
+                t.dimension_id: t.target
+                for t in projection.value.target_scores
+                if t.dimension_id in known_keys
+            },
+            reasoning=projection.value.reasoning,
+            model_id=projection.model_id,
+            template_version=projection.template_version,
+            requirements_digest=_digest(requirements),
         )
-        async with self._uow.for_owner(owner_id) as mine:
-            await mine.posting_fits.create(
-                PostingFit(
-                    id=uuid.uuid4(),
-                    owner_id=owner_id,
-                    posting_key=get_own_posting_key(source.private_job_posting_id),
-                    basis=PostingFitBasis.OWN,
-                    source_fit_id=source.id,
-                    assessment_id=source.assessment_id,
-                    score=found.score,
-                    requirements=source.requirements,
-                    requirement_map=dict(source.requirement_map),
-                    target_profile=dict(source.target_profile),
-                    gaps=_gap_dicts(found.gaps),
-                    uncovered=tuple(
-                        {"statement": u.statement, "weight": u.weight} for u in found.uncovered
-                    ),
-                )
-            )
-
-    async def _finish_evaluation(
-        self,
-        owner_id: uuid.UUID,
-        evaluation_id: uuid.UUID,
-        *,
-        failure: tuple[str, str] | None,
-    ) -> None:
-        async with self._uow.for_owner(owner_id) as mine:
-            run = await mine.evaluations.get(evaluation_id)
-            if run is None or not run.is_running:
-                return
-            if failure is None:
-                run.ready(utcnow())
-            else:
-                run.failed(code=failure[0], message=failure[1], at=utcnow())
-            await mine.evaluations.update(run)
 
     # -- internals ----------------------------------------------------------
 
@@ -1989,7 +1735,7 @@ def _posting_key(posting: PostingView) -> str:
 
 
 def _jd_block(title: str, company_name: str | None, description: str) -> str:
-    """A pasted JD as untrusted text, trimmed like a posting."""
+    """A JD the user brought, as untrusted text, trimmed like a posting."""
     return (
         f"### {title} — {company_name or 'company not stated'} (the user's own JD)\n"
         f"{description[:MAX_DESCRIPTION_CHARS]}"
@@ -2152,26 +1898,6 @@ def _fit_view(fit: RoleFit) -> FitView:
     )
 
 
-def _own_posting(
-    title: str, company_name: str | None, job_description: str
-) -> tuple[str, str | None, str]:
-    try:
-        return parse_own_posting(
-            title=title, company_name=company_name, job_description=job_description
-        )
-    except OwnPostingError as exc:
-        raise ValidationError(str(exc)) from exc
-
-
-async def _latest_evaluation(
-    mine: OwnerRoleMap, private_job_posting_id: uuid.UUID
-) -> PostingEvaluation | None:
-    found = await mine.evaluations.get_list(
-        PostingEvaluationFilter(private_job_posting_id=private_job_posting_id), page_size=1
-    )
-    return found[0] if found else None
-
-
 def _requirements_lines(requirements: Sequence[RequirementView]) -> str:
     return "\n".join(
         f"- {r.statement} (weight {r.weight}, expects {r.expected_level})" for r in requirements
@@ -2215,7 +1941,6 @@ def _posting_fit_view(fit: PostingFit) -> PostingFitView:
     assert fit.created_at is not None, "a stored fit has a creation time"
     return PostingFitView(
         posting_key=fit.posting_key,
-        basis=str(fit.basis),
         score=fit.score,
         gaps=fit.gaps,
         uncovered=fit.uncovered,
@@ -2230,26 +1955,32 @@ def _posting_fit_view(fit: PostingFit) -> PostingFitView:
     )
 
 
-def _own_posting_view(
-    posting: PostingView,
-    run: PostingEvaluation | None,
-    fit: PostingFit | None,
-    latest_assessment: uuid.UUID | None,
-) -> OwnPostingView:
-    return OwnPostingView(
-        private_job_posting_id=posting.id,
-        title=posting.title,
-        company_name=posting.company_name,
-        status=str(run.status) if run is not None else None,
-        error_code=run.error_code if run is not None else None,
-        error_message=run.error_message if run is not None else None,
-        fit=fit.score if fit is not None else None,
-        is_stale=(
-            fit is not None
-            and latest_assessment is not None
-            and fit.assessment_id != latest_assessment
-        ),
-        scored_at=fit.created_at if fit is not None else None,
+def get_projection_digest(requirements: Sequence[RequirementView]) -> str:
+    """What projecting these requirements reads, with today's fit prompt. A
+    projection with the same digest, taken against the same analysis, would
+    come out the same, so it need not be taken again."""
+    return _digest(requirements)
+
+
+def get_posting_fit_result(
+    *,
+    requirements: Sequence[dict[str, Any]],
+    requirement_map: dict[str, str | None],
+    target_profile: dict[str, int],
+    user_scores: dict[str, int],
+) -> PostingFitResultView:
+    """A posting's fit from a projection's mapping and targets, by the fit's
+    own arithmetic (``get_posting_fit``): never an AI call."""
+    found = get_posting_fit(
+        requirements=requirements,
+        requirement_map=requirement_map,
+        target_profile=target_profile,
+        user_scores=user_scores,
+    )
+    return PostingFitResultView(
+        score=found.score,
+        gaps=_gap_dicts(found.gaps),
+        uncovered=tuple({"statement": u.statement, "weight": u.weight} for u in found.uncovered),
     )
 
 

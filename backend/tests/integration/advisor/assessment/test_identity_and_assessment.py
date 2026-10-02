@@ -711,7 +711,7 @@ async def test_a_small_k_names_analyses_and_scores_only_k_roles(
         openings = await session.execute(
             text(
                 "SELECT count(*) FROM rolemap.posting_fit"
-                " WHERE owner_id = :owner AND basis = 'role'"
+                " WHERE owner_id = :owner AND role_id IS NOT NULL"
             ),
             {"owner": account},
         )

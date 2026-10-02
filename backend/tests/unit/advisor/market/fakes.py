@@ -36,9 +36,6 @@ from advisor.market.domain import (
     PostingEmbeddingRepository,
     PostingScope,
     PostingStatus,
-    PrivateJobPosting,
-    PrivateJobPostingFilter,
-    PrivateJobPostingRepository,
     SearchResult,
     SearchResultFilter,
     SearchResultRepository,
@@ -56,7 +53,6 @@ class Store:
     postings: dict[uuid.UUID, JobPosting] = field(default_factory=dict)
     embeddings: dict[uuid.UUID, PostingEmbedding] = field(default_factory=dict)
     markets: dict[uuid.UUID, MarketPreference] = field(default_factory=dict)
-    private_postings: dict[uuid.UUID, PrivateJobPosting] = field(default_factory=dict)
     search_results: dict[uuid.UUID, SearchResult] = field(default_factory=dict)
     events: list[MarketEvent] = field(default_factory=list)
 
@@ -228,20 +224,6 @@ class FakeMarkets(
         return _set(entity.market, filter.market)
 
 
-class FakePrivatePostings(
-    FakeRepository[PrivateJobPosting, PrivateJobPostingFilter],
-    PrivateJobPostingRepository,
-):
-    owner_field = "owner_id"
-    noun = "job description"
-
-    def matches(self, entity: PrivateJobPosting, filter: PrivateJobPostingFilter) -> bool:
-        return filter.has_vector is None or (entity.vector is not None) == filter.has_vector
-
-
-# --- scopes ----------------------------------------------------------------
-
-
 class _Scope:
     def __init__(self) -> None:
         self.pending: list[MarketEvent] = []
@@ -264,7 +246,6 @@ class FakeOwner(_Scope, OwnerMarket):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         super().__init__()
         self.markets = FakeMarkets(store.markets, owner_id=owner_id)
-        self.private_postings = FakePrivatePostings(store.private_postings, owner_id=owner_id)
 
 
 class FakeMarketUnitOfWork(MarketUnitOfWork):

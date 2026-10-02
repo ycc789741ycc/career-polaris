@@ -31,8 +31,6 @@ from advisor.market.domain import (
     PostingEmbeddingFilter,
     PostingScope,
     PostingStatus,
-    PrivateJobPosting,
-    PrivateJobPostingFilter,
     SalaryRange,
     SearchResultFilter,
     SourceKind,
@@ -113,32 +111,6 @@ async def test_an_owner_scope_sees_nobody_elses_rows(
             {"place": place},
         )
         assert rows.scalar_one() == 0
-
-
-async def test_pasted_jds_round_trip(database: Database, account: uuid.UUID) -> None:
-    uow = SqlAlchemyMarketUnitOfWork(database)
-    vector = [0.0] * 383 + [1.0]
-
-    async with uow.for_owner(account) as mine:
-        pasted = await mine.private_postings.create(
-            PrivateJobPosting.pasted(
-                owner_id=account,
-                company_name=" Repo Co ",
-                title="Backend",
-                location=None,
-                description="JD",
-                url=None,
-                shared_posting_id=None,
-            )
-        )
-
-    async with uow.for_owner(account) as mine:
-        assert await mine.private_postings.get(pasted.id) == pasted
-        assert await mine.private_postings.get_count(PrivateJobPostingFilter(has_vector=True)) == 0
-        pasted.vector = vector
-        await mine.private_postings.update(pasted)
-        [embedded] = await mine.private_postings.get_list(PrivateJobPostingFilter(has_vector=True))
-        assert embedded.vector == vector
 
 
 async def test_shared_postings_round_trip_through_the_crawler_role(

@@ -1,10 +1,8 @@
-"""A posting of the user's own: a JD they pasted to aim the Advisor at
-(Phase 8). It is never on the role map, and no build reads or scores it.
+"""A posting of the user's own: a job they found that the role map does not
+show, brought to the Advisor to aim at (ADR 0030, ADR 0033).
 
-Its text lives in ``market_user.private_job_posting``, which the crawler cannot
-reach. What the role map keeps is what the user's key read out of it: its
-requirements, read once, and the run that read and scored them, which the
-Advisor polls.
+It is a Target, never a role: no build reads it, and nothing outside its owner
+sees it. It lives in the ``target`` schema, which the crawler has no grant on.
 """
 
 from __future__ import annotations
@@ -14,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from advisor.rolemap.domain.constants import MAX_COMPANY_NAME, MAX_ROLE_TITLE
+from advisor.target.domain.constants import MAX_COMPANY_NAME, MAX_JOB_DESCRIPTION, MAX_TITLE
 
 
 class OwnPostingError(ValueError):
@@ -29,15 +27,50 @@ def parse_own_posting(
     name = title.strip()
     if not name:
         raise OwnPostingError("a posting of your own needs a job title")
-    if len(name) > MAX_ROLE_TITLE:
-        raise OwnPostingError(f"a job title is at most {MAX_ROLE_TITLE} characters")
+    if len(name) > MAX_TITLE:
+        raise OwnPostingError(f"a job title is at most {MAX_TITLE} characters")
     company = (company_name or "").strip() or None
     if company is not None and len(company) > MAX_COMPANY_NAME:
         raise OwnPostingError(f"a company name is at most {MAX_COMPANY_NAME} characters")
     description = job_description.strip()
     if not description:
         raise OwnPostingError("a posting of your own needs its job description")
+    if len(description) > MAX_JOB_DESCRIPTION:
+        raise OwnPostingError(f"a job description is at most {MAX_JOB_DESCRIPTION} characters")
     return name, company, description
+
+
+@dataclass(slots=True)
+class PrivateJobPosting:
+    """A posting of the user's own: the JD they brought. Private to them,
+    always."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    title: str
+    company_name: str | None
+    job_description: str
+    created_at: datetime | None = None
+
+    @classmethod
+    def added(
+        cls,
+        *,
+        owner_id: uuid.UUID,
+        title: str,
+        company_name: str | None,
+        job_description: str,
+    ) -> PrivateJobPosting:
+        name, company, description = parse_own_posting(
+            title=title, company_name=company_name, job_description=job_description
+        )
+        return cls(
+            id=uuid.uuid4(),
+            owner_id=owner_id,
+            title=name,
+            company_name=company,
+            job_description=description,
+        )
 
 
 class PostingEvaluationStatus(StrEnum):
@@ -96,16 +129,3 @@ class PostingEvaluation:
         self.error_code = code
         self.error_message = message
         self.finished_at = at
-
-
-@dataclass(slots=True)
-class PostingRequirement:
-    """Free text read out of a posting of the user's own: what its JD asks
-    for. It has no dimension; the fit maps it onto the user's."""
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    private_job_posting_id: uuid.UUID
-    statement: str
-    weight: float
-    expected_level: str

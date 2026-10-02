@@ -83,8 +83,9 @@ class CrawlSource(Base, TimestampMixin):
 class JobPosting(Base, TimestampMixin):
     """One normalised opening, shared by every user.
 
-    Pasted JDs are *not* here — they live in ``market_user.private_job_posting``
-    where the crawler role physically cannot reach them (domain decision 12).
+    Pasted JDs are *not* here — they live in ``target.private_job_posting``
+    where the crawler role physically cannot reach them (domain decision 12,
+    ADR 0033).
     """
 
     __tablename__ = "job_posting"
@@ -175,26 +176,3 @@ class MarketPreference(Base, OwnedMixin, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     market: Mapped[str] = mapped_column(String(128), nullable=False)
-
-
-class PrivateJobPosting(Base, OwnedMixin, TimestampMixin):
-    """A JD the user pasted. Used only for its owner.
-
-    It appears in the owner's role map, fit scoring and resume tailoring, and
-    never in anyone else's clustering, jobs list or salary bands.
-    """
-
-    __tablename__ = "private_job_posting"
-    __table_args__ = ({"schema": "market_user"},)
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    canonical_key: Mapped[str] = mapped_column(String(768), nullable=False, index=True)
-    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    title: Mapped[str] = mapped_column(String(512), nullable=False)
-    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # One-way link to a matching crawled posting, so the user gets weekly
-    # updates. Nothing ever flows back the other way.
-    shared_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    vector: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=True)

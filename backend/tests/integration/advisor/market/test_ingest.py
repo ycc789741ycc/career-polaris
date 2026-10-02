@@ -16,7 +16,6 @@ from sqlalchemy import text
 from advisor.market import (
     NormalizedPosting,
     SourceKind,
-    Visibility,
     create_crawl_ingest,
     create_market_service,
 )
@@ -120,41 +119,6 @@ async def test_a_posting_missing_from_a_crawl_is_expired_not_deleted(
             "Gone Role": "expired",
             "Senior Backend Engineer": "open",
         }
-
-
-async def test_a_pasted_jd_never_reaches_the_shared_tables(
-    database: Database, account: uuid.UUID
-) -> None:
-    market = create_market_service(database, windows=WINDOWS)
-    pasted = await market.paste_job_description(
-        account,
-        company_name="Uncrawlable Ltd",
-        title="Staff Engineer",
-        location="Remote EU",
-        description="A JD the user pasted themselves.",
-    )
-    assert pasted.visibility is Visibility.PRIVATE
-
-    async with database.shared() as session:
-        leaked = await session.execute(
-            text("SELECT count(*) FROM market.job_posting WHERE title = 'Staff Engineer'")
-        )
-        assert leaked.scalar_one() == 0
-
-
-async def test_another_users_pasted_jd_is_not_in_my_scope(
-    database: Database, account: uuid.UUID, other_account: uuid.UUID
-) -> None:
-    market = create_market_service(database, windows=WINDOWS)
-    await market.paste_job_description(
-        other_account,
-        company_name="Theirs",
-        title="Their Private Role",
-        location=None,
-        description="Only for them.",
-    )
-    mine = await market.postings_in_scope(account)
-    assert all(p.title != "Their Private Role" for p in mine)
 
 
 # -- the baseline boards -----------------------------------------------------

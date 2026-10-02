@@ -95,7 +95,6 @@ export type EvidencePage = Schemas["EvidencePage"];
 export type FitPage = Schemas["FitPage"];
 export type MatchedPostingPage = Schemas["MatchedPostingPage"];
 export type OwnPostingPage = Schemas["OwnPostingPage"];
-export type PastedJobDescriptionPage = Schemas["PastedJobDescriptionPage"];
 export type PlanSummaryPage = Schemas["PlanSummaryPage"];
 export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];

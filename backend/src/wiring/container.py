@@ -33,7 +33,7 @@ from advisor.profile import (
 )
 from advisor.resume import ResumeService, create_resume_service
 from advisor.rolemap import RoleMapService, create_rolemap_service
-from advisor.target import TargetService
+from advisor.target import TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
 from kernel.auth import ALGORITHM, JwksResolver, StaticSecretResolver, TokenVerifier
 from kernel.config import Settings, get_settings, must
@@ -178,7 +178,7 @@ def build(settings: Settings | None = None) -> Container:
         confidence_threshold=settings.assessment_confidence_threshold,
         candidate_count=settings.role_candidate_count,
     )
-    target = TargetService(assessment=assessment, rolemap=rolemap)
+    target = create_target_service(database, assessment=assessment, rolemap=rolemap)
     gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     gapplan = create_gapplan_service(
         database,

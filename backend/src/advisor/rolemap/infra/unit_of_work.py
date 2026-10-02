@@ -29,10 +29,7 @@ from advisor.rolemap.infra.repositories import (
     SqlAlchemyCandidatePlacementRepository,
     SqlAlchemyCandidateStrengthRepository,
     SqlAlchemyLineageEntryRepository,
-    SqlAlchemyPostingEvaluationRepository,
     SqlAlchemyPostingFitRepository,
-    SqlAlchemyPostingRequirementFitRepository,
-    SqlAlchemyPostingRequirementRepository,
     SqlAlchemyRoleCandidateRepository,
     SqlAlchemyRoleFitRepository,
     SqlAlchemyRoleMemberRepository,
@@ -54,13 +51,6 @@ class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
         self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
         self.strengths = SqlAlchemyCandidateStrengthRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
-        self.evaluations = SqlAlchemyPostingEvaluationRepository(session, owner_id=owner_id)
-        self.posting_requirements = SqlAlchemyPostingRequirementRepository(
-            session, owner_id=owner_id
-        )
-        self.posting_requirement_fits = SqlAlchemyPostingRequirementFitRepository(
-            session, owner_id=owner_id
-        )
         self.posting_fits = SqlAlchemyPostingFitRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 

@@ -62,6 +62,7 @@ def _register(app: App) -> None:
     from advisor.profile import jobs as profile_jobs
     from advisor.resume import jobs as resume_jobs
     from advisor.rolemap import jobs as rolemap_jobs
+    from advisor.target import jobs as target_jobs
 
     def deps() -> Container:
         return container()
@@ -101,9 +102,9 @@ def _register(app: App) -> None:
     async def compute_fits(owner_id: str) -> None:
         await rolemap_jobs.compute_fits(deps(), owner_id=owner_id)
 
-    @app.task(name="rolemap.evaluate_own_posting", queue=str(Queue.AI))
+    @app.task(name="target.evaluate_own_posting", queue=str(Queue.AI))
     async def evaluate_own_posting(owner_id: str, evaluation_id: str) -> None:
-        await rolemap_jobs.evaluate_own_posting(
+        await target_jobs.evaluate_own_posting(
             deps(), owner_id=owner_id, evaluation_id=evaluation_id
         )
 

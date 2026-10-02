@@ -42,7 +42,6 @@ from advisor.market.domain.posting import (
     PostingScope,
     PostingStatus,
 )
-from advisor.market.domain.private_posting import PrivateJobPosting
 from advisor.market.domain.search import SearchResult
 from advisor.market.domain.source import Company, CrawlSource, SourceOrigin, SourceStatus
 from advisor.market.domain.target_locations import MarketPreference
@@ -196,20 +195,8 @@ class MarketPreferenceRepository(
 ): ...
 
 
-@dataclass(frozen=True, slots=True)
-class PrivateJobPostingFilter:
-    # True: only pasted JDs that have been embedded.
-    has_vector: bool | None = None
-
-
-class PrivateJobPostingRepository(
-    Repository[PrivateJobPosting, PrivateJobPostingFilter], Protocol
-): ...
-
-
 class OwnerMarket(Protocol):
     markets: MarketPreferenceRepository
-    private_postings: PrivateJobPostingRepository
 
     def record(self, event: MarketEvent) -> None: ...
 

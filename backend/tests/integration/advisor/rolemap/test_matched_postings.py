@@ -107,13 +107,6 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
 
         market = create_market_service(database, windows=WINDOWS)
         await store_target_locations(database, account, [market_name])
-        pasted = await market.paste_job_description(
-            account,
-            company_name=northwind,
-            title=f"My own JD {tag}",
-            location=market_name,
-            description="Pasted by the user.",
-        )
 
         backend, platform, retired = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
         async with database.for_user(account) as session:
@@ -129,7 +122,8 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
                 (backend, str(ids[f"Backend A {tag}"])),
                 (backend, str(ids[f"Backend B {tag}"])),
                 (backend, str(ids[f"Backend Gone {tag}"])),
-                (backend, f"private:{pasted.id}"),
+                # A member left from a custom role's pasted JD, before ADR 0030.
+                (backend, f"private:{uuid.uuid4()}"),
                 (platform, str(ids[f"Platform {tag}"])),
                 (retired, str(ids[f"Retired {tag}"])),
             ]
@@ -167,8 +161,8 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
         ]
 
         # The map draws the same roles, each counting the openings Top matched
-        # can list for it: the expired posting and the pasted JD are not
-        # counted, and the retired role is not drawn.
+        # can list for it: the expired posting and the pasted JD's member are
+        # not counted, and the retired role is not drawn.
         drawn = {role.id: role.opening_count for role in await rolemap.map_roles(account)}
         assert drawn == {backend: 2, platform: 1}
         for role_id, count in drawn.items():

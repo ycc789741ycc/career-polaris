@@ -15,7 +15,8 @@ import advisor.identity
 import advisor.market
 import advisor.profile
 import advisor.resume
-import advisor.rolemap  # noqa: F401
+import advisor.rolemap
+import advisor.target  # noqa: F401
 from kernel.db.base import Base
 from kernel.outbox.models import OutboxEvent  # noqa: F401
 
@@ -27,6 +28,7 @@ SCHEMAS = (
     "market_user",
     "rolemap",
     "assessment",
+    "target",
     "gapfill",
     "gapplan",
     "resume",

@@ -24,7 +24,7 @@ from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import EvidenceSource, ProfileService, create_profile_service
 from advisor.rolemap import RoleMapService, create_rolemap_service
-from advisor.target import TargetRef, TargetService
+from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
@@ -68,6 +68,7 @@ class World:
     profile: ProfileService
     rolemap: RoleMapService
     assessment: AssessmentService
+    target: TargetService
     gapfill: GapFillService
 
 
@@ -113,7 +114,7 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
         candidate_count=settings.role_candidate_count,
     )
-    target = TargetService(assessment=assessment, rolemap=rolemap)
+    target = create_target_service(database, assessment=assessment, rolemap=rolemap)
     gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     stub.replies.append(
         json.dumps(
@@ -134,12 +135,12 @@ async def world(
         )
     )
     await assessment.run(account)
-    return World(stub, market, profile, rolemap, assessment, gapfill)
+    return World(stub, market, profile, rolemap, assessment, target, gapfill)
 
 
 async def _own_posting(world: World, account: uuid.UUID) -> TargetRef:
     """A posting of the user's own, read and scored when it is added (Phase 8)."""
-    posting, run_id = await world.rolemap.add_own_posting(
+    posting, run_id = await world.target.add_own_posting(
         account,
         title="Staff Platform Engineer",
         company_name="Meridian Labs",
@@ -166,7 +167,7 @@ async def _own_posting(world: World, account: uuid.UUID) -> TargetRef:
             }
         ),
     ]
-    await world.rolemap.evaluate_own_posting(account, run_id)
+    await world.target.evaluate_own_posting(account, run_id)
     return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
 
 

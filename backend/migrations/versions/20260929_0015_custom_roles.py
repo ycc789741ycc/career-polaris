@@ -10,7 +10,9 @@ its company, and the migration says how many. The next build reads its
 requirements from the JD.
 
 Written to be idempotent: the baseline migration builds tables from the live
-ORM metadata, so on a fresh database the columns already exist.
+ORM metadata, so on a fresh database the columns already exist, and since
+ADR 0033 ``market_user.private_job_posting`` does not: there is nothing to
+make into custom roles.
 
 Downgrading deletes custom roles (their fits and members go with them where
 they cascade) and drops the columns. The JDs themselves stay.
@@ -49,6 +51,8 @@ def upgrade() -> None:
         "CHECK (origin IN ('recommended', 'custom'))"
     )
 
+    if op.get_bind().execute(text("SELECT to_regclass(:t)"), {"t": _FORCED[1]}).scalar() is None:
+        return
     for table in _FORCED:
         op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
     created = (

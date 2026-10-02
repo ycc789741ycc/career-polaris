@@ -84,6 +84,7 @@ The prototype's Advisor opens every page with a **"Your target role" banner**: t
 - **`Target { role, posting? } | { ownPosting }`.** A posting of the user's own is a JD they pasted (title, optional company, the JD itself) to plan for and tailor a résumé to. It is never on the role map, and custom Roles are gone.
 - **Its requirements are its JD's**, read once when it is added, and the user's fit is worked out against them. The AI evaluates the requirements once (`PostingRequirementFit`); the **PostingFit** is worked out from that locally, never by an AI call.
 - **Where it is chosen:** in the Advisor, which lists the user's postings, adds one at a confirmed cost, and rescores one when the user asks after a new analysis. A Role and its openings are still chosen only on the role map.
+- **Whose it is:** the Target context's ([ADR 0033](decisions/0033-keep-a-posting-of-your-own-in-target.md)). It is what a user brings when nothing on the role map is what they want, so it belongs with what the Advisor aims at, not with the market or the role map. Its fit is still worked out by the role map's fit rules, which the role map lends without storing anything.
 
 ### 2.2 The role map is ten roles the system picks, plus the user's own
 The prototype's role map reads: *"The 10 best-fit roles on the market, plus the ones you add"* and *"Built after your strength analysis."* The "Roles to analyse" input is gone.
@@ -306,8 +307,6 @@ flowchart LR
     RoleCandidate[Candidate role] --> RoleSelection
     RoleSelection -->|first 10 on the market| Role
     Role --> RoleRequirement
-    OwnPosting[Posting of your own] --> PostingRequirement
-    PostingRequirement --> PostingRequirementFit --> PostingFit
     EstimatedDifficulty
     FitEvaluator --> RoleFit
     RoleFit --> TargetProfile
@@ -318,8 +317,10 @@ flowchart LR
     SkillAssessment --> SkillDimension
     SkillAssessment --> ProfileConfidence
   end
-  subgraph TargetCtx["Target (no storage)"]
+  subgraph TargetCtx["Target"]
     Target
+    OwnPosting[Posting of your own] --> PostingRequirement
+    PostingRequirement --> PostingRequirementFit --> PostingFit
   end
   subgraph GapFill["Gap fill"]
     QuestionSet --> GapQuestion
@@ -348,6 +349,8 @@ flowchart LR
   Role --> Target
   JobPosting -. optional opening .-> Target
   RoleFit --> Target
+  PostingFit --> Target
+  FitEvaluator -. fit rules .-> PostingRequirementFit
   Target --> QuestionSet
   SkillGap --> GapQuestion
   UncoveredRequirement --> GapQuestion
@@ -368,7 +371,7 @@ flowchart LR
   ProviderCredential -. runs all AI .-> ResumeCtx
 ```
 
-- **`Target`** is a value, not a table: a Role, an optional opening, and the frozen requirements snapshot. It has its own context because the question set, the plan and the résumé all aim at one, and none of them may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)).
+- **`Target`** is a value, not a table: a Role, an optional opening, or a posting of the user's own, and the frozen requirements snapshot. What the context stores is the postings of the user's own and their fits ([ADR 0033](decisions/0033-keep-a-posting-of-your-own-in-target.md)). It has its own context because the question set, the plan and the résumé all aim at one, and none of them may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)).
 - **Gap fill** is its own context too. The plan and the résumé both regenerate from its answers, and its questions depend on the Target and the fit, not on either consumer.
 - **`TargetLocation`** is shown in the profile but owned by Market, because what it decides is market scope.
 
@@ -437,8 +440,8 @@ flowchart LR
 | InterviewReport | A user's report of an interview. The shared part is aggregated for the hiring bar when ≥3 users reported; the private part becomes the reporter's Evidence and calibrates their fit | Market |
 | RoleSelection | The local, no-AI matching that keeps the first ten candidate roles with openings in the user's scope, in the analysis's order | Role map |
 | Role | A candidate role found on the market, named from the postings in *one user's* scope that are its openings, with what they ask for; stable id and lineage, hiring bar, salary bands per target location, opening count. Nothing in it is about the user | Role map |
-| Posting of your own | A JD the user pasted (title, optional company) to aim the Advisor at; never on the role map. Its requirements are read once, the AI evaluates them once (PostingRequirementFit), and its PostingFit is worked out from that locally (decision 34). Replaces the custom Role | Role map |
-| PostingFit | The user's fit to one posting, worked out locally from an AI fit; never an AI call | Role map |
+| Posting of your own | A JD the user pasted (title, optional company) to aim the Advisor at; never on the role map. Its requirements are read once, the AI evaluates them once (PostingRequirementFit), and its PostingFit is worked out from that locally (decision 34). Replaces the custom Role | Target |
+| PostingFit | The user's fit to one posting, worked out locally from an AI fit; never an AI call. An opening's is the role map's; a posting of the user's own's is Target's | Role map, Target |
 | Candidate role | A role the latest SkillAssessment recommended from the user's strengths, best fit first: the query a build searches the market and matches postings with (ADR 0024) | Role map |
 | CandidatePlacement | One build's record of what it made of one candidate role: placed on a Role, outside the top k, or too few openings, with its opening count and local fit estimate (ADR 0031) | Role map |
 | RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |

@@ -10,7 +10,7 @@ new record that supersedes the old one.
 | [0002](0002-analyse-only-the-ten-closest-roles.md) | Analyse only the ten roles closest to the user's profile | Superseded by 0003 |
 | [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md) | Let the user choose how many roles to analyse (3–20, default 10) | Superseded by 0020 |
 | [0004](0004-build-the-spa-on-the-prototypes-design-system.md) | Build the SPA on the prototype's design system and sidebar shell | Accepted |
-| [0005](0005-resolve-targets-in-their-own-module.md) | Resolve Targets in their own module | Accepted, amended by 0022 |
+| [0005](0005-resolve-targets-in-their-own-module.md) | Resolve Targets in their own module | Accepted, amended by 0022 and 0033 |
 | [0006](0006-report-ai-job-progress-through-a-status-the-page-polls.md) | Report AI job progress through a status the page polls | Accepted |
 | [0007](0007-render-resume-pdfs-with-weasyprint.md) | Render résumé PDFs with WeasyPrint, not a headless browser | Accepted |
 | [0008](0008-sign-in-with-google-by-our-own-oidc-exchange.md) | Sign in with Google through our own OpenID Connect exchange, and let a verified address take over an unverified one | Accepted |
@@ -35,9 +35,10 @@ new record that supersedes the old one.
 | [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) | Fetch the market only when a build needs it, and build the role map only when asked | Accepted, amended by 0030 and 0031 |
 | [0028](0028-score-the-fit-in-the-role-map.md) | Score the fit in the role map, against the scores the analysis hands over | Accepted, amended by 0032 |
 | [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md) | Set the candidate count and the top k as settings, and spend only on the k | Accepted |
-| [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) | Aim the Advisor at a posting of your own instead of adding a custom role | Accepted |
+| [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) | Aim the Advisor at a posting of your own instead of adding a custom role | Accepted, amended by 0033 |
 | [0031](0031-record-what-a-build-made-of-each-candidate-on-the-build.md) | Keep a role candidate as a query, and record what a build made of it on the build | Accepted |
 | [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md) | Work out every opening's fit locally from its role's, and rank a role's openings by it | Accepted |
+| [0033](0033-keep-a-posting-of-your-own-in-target.md) | Keep a posting of your own in Target, and score it with the role map's fit kit | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

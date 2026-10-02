@@ -18,7 +18,6 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
 from typing import Any
 
 from advisor.rolemap.domain.constants import (
@@ -205,68 +204,23 @@ class RoleFit:
 
 
 @dataclass(slots=True)
-class PostingRequirementFit:
-    """The AI's evaluation of a posting of the user's own (Phase 8): its JD's
-    requirements mapped onto the user's dimensions, with a target for each.
-
-    The same projection a ``RoleFit`` makes, over one pasted JD's requirements
-    instead of a role's. It is what a ``PostingFit`` is worked out from, so it
-    keeps everything that needs: the requirements, the mapping, the targets.
-    """
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    private_job_posting_id: uuid.UUID
-    assessment_id: uuid.UUID
-    requirements: tuple[dict[str, Any], ...]
-    requirement_map: dict[str, str | None]
-    target_profile: dict[str, int]
-    reasoning: str
-    model_id: str
-    template_version: str
-    # What it read, as on a ``RoleFit``.
-    requirements_digest: str | None = None
-    created_at: datetime | None = None
-
-    def is_current(self, *, assessment_id: uuid.UUID, requirements_digest: str) -> bool:
-        """Whether rescoring would read the same requirements and the same
-        analysis's scores, and so come out the same."""
-        return (
-            self.assessment_id == assessment_id
-            and self.requirements_digest is not None
-            and self.requirements_digest == requirements_digest
-        )
-
-
-class PostingFitBasis(StrEnum):
-    """Which AI fit a ``PostingFit`` was worked out from."""
-
-    # A posting of the user's own: its ``PostingRequirementFit``.
-    OWN = "own"
-    # An opening in one of the user's roles: its role's ``RoleFit``.
-    ROLE = "role"
-
-
-@dataclass(slots=True)
 class PostingFit:
-    """The user's fit to one posting, worked out locally from an AI fit. It is
-    never an AI call (Phase 8).
+    """The user's fit to one opening in one of their roles, worked out locally
+    from the role's ``RoleFit`` (Phase 8, ADR 0032). It is never an AI call.
 
-    ``posting_key`` names the posting as ``rolemap.role_member`` does:
-    ``private:<id>`` for a posting of the user's own, the shared posting's id
-    for an opening, whose ``role_id`` is its role. ``source_fit_id`` is the AI
-    fit it came from, and ``assessment_id`` the analysis whose scores it was
-    worked out against.
+    ``posting_key`` is the shared posting's id, and ``role_id`` its role.
+    ``source_fit_id`` is the role fit it came from, and ``assessment_id`` the
+    analysis whose scores it was worked out against.
 
-    An opening's is a cache of a pure computation: never edited, worked out
-    again by every build, and rebuildable from the fits and the embeddings
-    with no AI call.
+    It is a cache of a pure computation: never edited, worked out again by
+    every build, and rebuildable from the fits and the embeddings with no AI
+    call. A posting of the user's own has its fit in Target (ADR 0033).
     """
 
     id: uuid.UUID
     owner_id: uuid.UUID
     posting_key: str
-    basis: PostingFitBasis
+    role_id: uuid.UUID
     source_fit_id: uuid.UUID
     assessment_id: uuid.UUID
     score: int
@@ -275,17 +229,7 @@ class PostingFit:
     target_profile: dict[str, int]
     gaps: tuple[dict[str, Any], ...]
     uncovered: tuple[dict[str, Any], ...]
-    role_id: uuid.UUID | None = None
     created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if (self.basis is PostingFitBasis.ROLE) != (self.role_id is not None):
-            raise ValueError("an opening's fit names its role, and only an opening's does")
-
-
-def get_own_posting_key(private_job_posting_id: uuid.UUID) -> str:
-    """The key a posting of the user's own is stored under."""
-    return f"private:{private_job_posting_id}"
 
 
 def get_posting_fit(

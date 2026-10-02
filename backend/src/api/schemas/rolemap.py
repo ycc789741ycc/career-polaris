@@ -1,6 +1,6 @@
 """Role map's wire shapes: the bubble chart's roles and their fits, the
-openings inside them, the candidates they come from, what a rebuild costs,
-and the postings the user brings themselves."""
+openings inside them, the candidates they come from, and what a rebuild
+costs."""
 
 from __future__ import annotations
 
@@ -8,18 +8,13 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import Field
-
 from advisor.rolemap import (
-    MAX_COMPANY_NAME,
-    MAX_ROLE_TITLE,
     FitView,
     MatchedPostingView,
-    OwnPostingView,
     RoleCandidateView,
     RoleView,
 )
-from api.schemas.common import ApiModel, Page, RequestModel, Salary, Timestamp
+from api.schemas.common import ApiModel, Page, Salary, Timestamp
 
 
 class SalaryBand(ApiModel):
@@ -141,59 +136,6 @@ class RoleCandidate(ApiModel):
 
 
 class RoleCandidatePage(Page[RoleCandidate]):
-    pass
-
-
-class OwnPostingRequest(RequestModel):
-    """A posting of the user's own (Phase 8): a title, optionally a company,
-    and the job description, which stays private to the user."""
-
-    title: str = Field(min_length=1, max_length=MAX_ROLE_TITLE)
-    company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME)
-    job_description: str = Field(min_length=1, max_length=50_000)
-
-
-class OwnPostingEstimate(ApiModel):
-    """What reading and scoring a posting of the user's own costs, shown
-    before anything runs: two calls to add one, one to rescore it."""
-
-    cost_usd: str
-    model_id: str | None
-    rate_is_published: bool | None = None
-
-
-class OwnPosting(ApiModel):
-    """A posting the user brought themselves, to aim the Advisor at. Never on
-    the role map."""
-
-    private_job_posting_id: uuid.UUID
-    title: str
-    company_name: str
-    # The latest run reading and scoring it; null before any.
-    status: Literal["running", "ready", "failed"] | None
-    error_code: str | None
-    error_message: str | None
-    fit: int | None
-    # Scored against an analysis older than the latest: worth rescoring.
-    is_stale: bool
-    scored_at: Timestamp | None
-
-    @classmethod
-    def from_view(cls, posting: OwnPostingView) -> OwnPosting:
-        return cls(
-            private_job_posting_id=posting.private_job_posting_id,
-            title=posting.title,
-            company_name=posting.company_name,
-            status=posting.status,
-            error_code=posting.error_code,
-            error_message=posting.error_message,
-            fit=posting.fit,
-            is_stale=posting.is_stale,
-            scored_at=posting.scored_at,
-        )
-
-
-class OwnPostingPage(Page[OwnPosting]):
     pass
 
 

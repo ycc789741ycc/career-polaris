@@ -28,7 +28,6 @@ from advisor.market.infra.repositories import (
     SqlAlchemyJobPostingRepository,
     SqlAlchemyMarketPreferenceRepository,
     SqlAlchemyPostingEmbeddingRepository,
-    SqlAlchemyPrivateJobPostingRepository,
     SqlAlchemySearchResultRepository,
 )
 from kernel.db import Database
@@ -63,7 +62,6 @@ class SqlAlchemyOwnerMarket(_Events, OwnerMarket):
     def __init__(self, session: AsyncSession, owner_id: uuid.UUID) -> None:
         super().__init__()
         self.markets = SqlAlchemyMarketPreferenceRepository(session, owner_id=owner_id)
-        self.private_postings = SqlAlchemyPrivateJobPostingRepository(session, owner_id=owner_id)
 
 
 class SqlAlchemyMarketUnitOfWork(MarketUnitOfWork):

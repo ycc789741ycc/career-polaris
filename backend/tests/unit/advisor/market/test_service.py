@@ -17,7 +17,6 @@ from advisor.market import (
     SalaryRange,
     SourceKind,
     TargetLocationOptionView,
-    Visibility,
 )
 from advisor.market.domain import (
     Company,
@@ -121,9 +120,6 @@ async def test_the_scope_counts_the_open_shared_postings_in_the_target_locations
             replace(_posting("Backend"), location="Berlin, Germany"),
             replace(_posting("Data"), location="Lisbon, Portugal"),
         ],
-    )
-    await market.paste_job_description(
-        OWNER, company_name="Acme", title="Staff", location="Berlin", description="JD"
     )
     await market.set_target_locations(OWNER, ["Germany"])
 
@@ -248,22 +244,6 @@ async def test_a_place_takes_in_postings_naming_it_or_one_of_its_cities() -> Non
     await market.set_target_locations(OWNER, ["Europe", "Asia-Pacific"])
     in_scope = await market.postings_in_scope(OWNER)
     assert sorted(p.title for p in in_scope) == ["Backend", "Infra", "Platform"]
-
-
-async def test_a_pasted_jd_is_private_and_links_to_its_crawled_twin() -> None:
-    uow = FakeMarketUnitOfWork()
-    ingest, market = CrawlIngest(uow), _service(uow)
-    await ingest.record_crawl(_source(uow).id, [_posting("Backend")])
-
-    pasted = await market.paste_job_description(
-        OWNER, company_name="Acme", title="Backend", location="Berlin", description="JD"
-    )
-
-    assert pasted.visibility is Visibility.PRIVATE
-    (stored,) = uow.store.private_postings.values()
-    (crawled,) = uow.store.postings.values()
-    assert stored.shared_posting_id == crawled.id
-    assert await market.private_postings(OTHER) == []
 
 
 # --- baseline and demand sources -------------------------------------------
