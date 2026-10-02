@@ -27,6 +27,20 @@ from tests.integration.places import WINDOWS, store_target_locations
 pytestmark = pytest.mark.integration
 
 
+async def _recorded_build(database: Database, owner_id: uuid.UUID) -> uuid.UUID:
+    """A build row for a recluster to be the work of, as ``request_build``
+    records one: what each build made of the candidates hangs off it."""
+    from advisor.rolemap.domain import BuildRun
+    from advisor.rolemap.infra.unit_of_work import SqlAlchemyRoleMapUnitOfWork
+    from kernel.clock import utcnow
+
+    async with SqlAlchemyRoleMapUnitOfWork(database).for_owner(owner_id) as mine:
+        build = await mine.builds.create(
+            BuildRun.requested(owner_id=owner_id, at=utcnow(), wait=False)
+        )
+    return build.id
+
+
 class StubProvider(Provider):
     """Stands in for a real model. Returns whatever the test queued.
 
@@ -485,7 +499,7 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
             for group in order
         ],
     )
-    roles = await rolemap.recluster(account)
+    roles = await rolemap.recluster(account, await _recorded_build(database, account))
 
     assert len(roles) == top_k
     assert len(stub_provider.calls) == 2 * top_k
@@ -502,7 +516,7 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     assert [c.opening_count for c in candidates[:2]] == [0, 0]
 
     # The same market again: the roles are kept and nothing is spent.
-    again = await rolemap.recluster(account)
+    again = await rolemap.recluster(account, await _recorded_build(database, account))
     assert {r.id for r in again} == {r.id for r in roles}
     assert len(stub_provider.calls) == 2 * top_k
 
@@ -676,7 +690,7 @@ async def test_a_small_k_names_analyses_and_scores_only_k_roles(
         strengths=[StrengthInput("backend", "Backend", "Builds services.", 70, 0.8)],
     )
 
-    roles = await rolemap.recluster(account)
+    roles = await rolemap.recluster(account, await _recorded_build(database, account))
     fits = await rolemap.compute_fits(account)
 
     assert len(roles) == 3

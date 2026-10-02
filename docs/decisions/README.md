@@ -29,13 +29,14 @@ new record that supersedes the old one.
 | [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Superseded by 0030 |
 | [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted, amended by 0030 |
 | [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
-| [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Accepted, amended by 0027, 0028 and 0029 |
+| [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Accepted, amended by 0027, 0028, 0029 and 0031 |
 | [0025](0025-search-himalayas-for-the-candidate-roles.md) | Search Himalayas for the analysis's candidate roles, as ownerless demand sources | Accepted, amended by 0026 and 0027 |
 | [0026](0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md) | Choose target locations from a list of countries, regions and Remote | Accepted |
-| [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) | Fetch the market only when a build needs it, and build the role map only when asked | Accepted, amended by 0030 |
+| [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) | Fetch the market only when a build needs it, and build the role map only when asked | Accepted, amended by 0030 and 0031 |
 | [0028](0028-score-the-fit-in-the-role-map.md) | Score the fit in the role map, against the scores the analysis hands over | Accepted |
 | [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md) | Set the candidate count and the top k as settings, and spend only on the k | Accepted |
 | [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) | Aim the Advisor at a posting of your own instead of adding a custom role | Accepted |
+| [0031](0031-record-what-a-build-made-of-each-candidate-on-the-build.md) | Keep a role candidate as a query, and record what a build made of it on the build | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

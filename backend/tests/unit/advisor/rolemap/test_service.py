@@ -38,6 +38,8 @@ from tests.unit.advisor.rolemap.fakes import MARKET_AS_OF, FakeMarket, FakeRoleM
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
+# The build a recluster is the work of; the fakes need no row for it.
+BUILD = uuid.UUID("00000000-0000-0000-0000-0000000000b1")
 
 
 def _service(
@@ -401,7 +403,7 @@ async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
     service = _service(FakeRoleMapUnitOfWork())
     requested = await service.request_build(OWNER, wait=False)
 
-    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
         return []
 
     monkeypatch.setattr(service, "recluster", recluster)
@@ -421,7 +423,7 @@ async def test_a_failed_build_is_recorded_not_raised(monkeypatch: pytest.MonkeyP
     service = _service(FakeRoleMapUnitOfWork())
     requested = await service.request_build(OWNER, wait=False)
 
-    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
         raise ValidationError("no market chosen")
 
     monkeypatch.setattr(service, "recluster", recluster)
@@ -440,7 +442,7 @@ async def test_a_build_that_stops_unexpectedly_is_recorded_and_still_raised(
     service = _service(FakeRoleMapUnitOfWork())
     requested = await service.request_build(OWNER, wait=False)
 
-    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(service, "recluster", recluster)
@@ -862,7 +864,7 @@ async def test_only_the_top_k_are_named_and_analysed() -> None:
         ],
     )
 
-    roles = await rolemap.recluster(OWNER)
+    roles = await rolemap.recluster(OWNER, BUILD)
 
     assert len(roles) == 2
     assert len(gateway.shown) == 2 * 2  # extraction and difficulty, per kept role
@@ -901,7 +903,7 @@ async def test_without_candidates_a_build_names_no_recommended_role() -> None:
     gateway = ScriptedGateway()
     rolemap = _service(FakeRoleMapUnitOfWork(), _market(), gateway)
 
-    assert await rolemap.recluster(OWNER) == []
+    assert await rolemap.recluster(OWNER, BUILD) == []
     assert gateway.shown == []
 
 
@@ -914,7 +916,7 @@ async def test_a_candidate_the_market_has_becomes_a_role_named_from_its_openings
         OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
     )
 
-    [role] = await rolemap.recluster(OWNER)
+    [role] = await rolemap.recluster(OWNER, BUILD)
 
     assert role.name == "Whatever the model calls it" and role.opening_count == 3
     assert "Designer" not in gateway.shown[0]
@@ -938,7 +940,7 @@ async def test_what_a_candidates_search_found_is_its_and_a_loose_hit_is_left_out
         strengths=[StrengthInput("backend", "Data", "Data pipelines.", 80, 1.0)],
     )
 
-    [role] = await rolemap.recluster(OWNER)
+    [role] = await rolemap.recluster(OWNER, BUILD)
 
     [(_, openings)] = await rolemap.role_postings(OWNER)
     assert {p.title for p in openings} == {p.title for p in data}
@@ -962,7 +964,7 @@ async def test_a_candidate_the_market_lacks_is_left_unplaced_and_costs_nothing()
         ],
     )
 
-    [role] = await rolemap.recluster(OWNER)
+    [role] = await rolemap.recluster(OWNER, BUILD)
 
     payments, backend = await rolemap.candidates(OWNER)
     assert (payments.role_id, payments.opening_count) == (None, 0)
@@ -977,10 +979,10 @@ async def test_a_rebuild_on_an_unchanged_market_costs_nothing() -> None:
     await rolemap.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
     )
-    [first] = await rolemap.recluster(OWNER)
+    [first] = await rolemap.recluster(OWNER, BUILD)
     calls = len(gateway.shown)
 
-    [again] = await rolemap.recluster(OWNER)
+    [again] = await rolemap.recluster(OWNER, BUILD)
 
     assert again.id == first.id and len(gateway.shown) == calls
 
@@ -992,12 +994,12 @@ async def test_a_new_analysiss_candidates_retire_the_roles_they_no_longer_includ
     await rolemap.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
     )
-    [backend] = await rolemap.recluster(OWNER)
+    [backend] = await rolemap.recluster(OWNER, BUILD)
 
     await rolemap.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Designer", "Designer work.")]
     )
-    [designer] = await rolemap.recluster(OWNER)
+    [designer] = await rolemap.recluster(OWNER, BUILD)
 
     assert designer.id != backend.id
     assert uow.store.roles[backend.id].retired_at is not None
@@ -1011,10 +1013,10 @@ async def test_an_empty_market_keeps_the_roles_it_says_nothing_about() -> None:
     await rolemap.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
     )
-    [role] = await rolemap.recluster(OWNER)
+    [role] = await rolemap.recluster(OWNER, BUILD)
     market.postings = []
 
-    assert [r.id for r in await rolemap.recluster(OWNER)] == [role.id]
+    assert [r.id for r in await rolemap.recluster(OWNER, BUILD)] == [role.id]
     [candidate] = await rolemap.candidates(OWNER)
     assert candidate.role_id == role.id
 
@@ -1037,10 +1039,74 @@ async def test_candidates_replaced_during_a_build_are_left_for_the_next_one(
 
     monkeypatch.setattr(rolemap, "_record_lineage", analysis_finishes_meanwhile)
 
-    await rolemap.recluster(OWNER)
+    await rolemap.recluster(OWNER, BUILD)
 
     [candidate] = await rolemap.candidates(OWNER)
     assert (candidate.title, candidate.role_id) == ("Designer", None)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_build_records_what_it_made_of_each_candidate_and_leaves_them_alone() -> None:
+    """The candidate is the query; the outcome is the build's record (Phase 8)."""
+    uow = FakeRoleMapUnitOfWork()
+    market = FakeMarket(
+        [_posting(f"Backend Engineer {i}") for i in range(3)]
+        + [_posting(f"Designer {i}") for i in range(3)]
+        + [_posting("Data Platform 0")]
+    )
+    rolemap = _service(uow, market, ScriptedGateway(), top_k=1)
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [
+            _candidate("Backend Engineer", "Backend services."),
+            _candidate("Designer", "Designer work."),
+            _candidate("Data Engineer", "Data pipelines."),
+        ],
+    )
+    stored = {c.id: c for c in uow.store.candidates.values()}
+
+    [role] = await rolemap.recluster(OWNER, BUILD)
+
+    placements = sorted(uow.store.placements.values(), key=lambda p: p.rank)
+    assert [(p.title, str(p.outcome)) for p in placements] == [
+        ("Backend Engineer", "placed"),
+        ("Designer", "outside_top_k"),
+        ("Data Engineer", "too_few_openings"),
+    ]
+    assert placements[0].role_id == role.id and placements[0].opening_count == 3
+    assert (placements[1].role_id, placements[1].opening_count) == (None, 3)
+    assert placements[2].fit_estimate is None
+    assert {p.build_run_id for p in placements} == {BUILD}
+    # The candidates themselves are untouched: still only the query.
+    assert {c.id: c for c in uow.store.candidates.values()} == stored
+    candidates = await rolemap.candidates(OWNER)
+    assert [c.outcome for c in candidates] == ["placed", "outside_top_k", "too_few_openings"]
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_the_candidates_read_the_newest_build_that_placed_them() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    market = _market(backend=3)
+    rolemap = _service(uow, market, ScriptedGateway())
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    await rolemap.recluster(OWNER, BUILD)
+    # Two of its three openings go; the market still has enough to build on.
+    market.postings = [*market.postings[:1], _posting("Designer 0"), _posting("Designer 1")]
+
+    later = uuid.uuid4()
+    await rolemap.recluster(OWNER, later)
+
+    [candidate] = await rolemap.candidates(OWNER)
+    assert (candidate.outcome, candidate.role_id, candidate.opening_count) == (
+        "too_few_openings",
+        None,
+        1,
+    )
+    # The first build's record is kept beside the second's.
+    assert {p.build_run_id for p in uow.store.placements.values()} == {BUILD, later}
 
 
 # --- fits, scored once per build (ADR 0024) ---------------------------------
@@ -1053,7 +1119,7 @@ async def test_a_finished_build_announces_itself_for_its_fits(
     service = _service(uow)
     requested = await service.request_build(OWNER, wait=False)
 
-    async def recluster(owner_id: uuid.UUID) -> list[Any]:
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
         return []
 
     monkeypatch.setattr(service, "recluster", recluster)

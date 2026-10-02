@@ -26,6 +26,7 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.infra.repositories import (
     SqlAlchemyBuildRunRepository,
+    SqlAlchemyCandidatePlacementRepository,
     SqlAlchemyCandidateStrengthRepository,
     SqlAlchemyLineageEntryRepository,
     SqlAlchemyPostingEvaluationRepository,
@@ -49,6 +50,7 @@ class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
         self.requirements = SqlAlchemyRoleRequirementRepository(session, owner_id=owner_id)
         self.lineage = SqlAlchemyLineageEntryRepository(session, owner_id=owner_id)
         self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
+        self.placements = SqlAlchemyCandidatePlacementRepository(session, owner_id=owner_id)
         self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
         self.strengths = SqlAlchemyCandidateStrengthRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)

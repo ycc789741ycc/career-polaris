@@ -15,6 +15,9 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunRepository,
+    CandidatePlacement,
+    CandidatePlacementFilter,
+    CandidatePlacementRepository,
     CandidateStrength,
     CandidateStrengthFilter,
     CandidateStrengthRepository,
@@ -63,6 +66,7 @@ class Store:
     requirements: dict[uuid.UUID, RoleRequirement] = field(default_factory=dict)
     lineage: dict[uuid.UUID, LineageEntry] = field(default_factory=dict)
     builds: dict[uuid.UUID, BuildRun] = field(default_factory=dict)
+    placements: dict[uuid.UUID, CandidatePlacement] = field(default_factory=dict)
     candidates: dict[uuid.UUID, RoleCandidate] = field(default_factory=dict)
     strengths: dict[uuid.UUID, CandidateStrength] = field(default_factory=dict)
     fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
@@ -122,6 +126,19 @@ class FakeBuilds(FakeRepository[BuildRun, BuildRunFilter], BuildRunRepository):
 
     def matches(self, entity: BuildRun, filter: BuildRunFilter) -> bool:
         return filter.statuses is None or entity.status in filter.statuses
+
+
+class FakePlacements(
+    FakeRepository[CandidatePlacement, CandidatePlacementFilter], CandidatePlacementRepository
+):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "candidate placement"
+
+    def matches(self, entity: CandidatePlacement, filter: CandidatePlacementFilter) -> bool:
+        return (filter.build_run_id is None or entity.build_run_id == filter.build_run_id) and (
+            filter.candidate_ids is None or entity.candidate_id in filter.candidate_ids
+        )
 
 
 class FakeCandidates(
@@ -221,6 +238,7 @@ class FakeOwner(OwnerRoleMap):
         self.requirements = FakeRequirements(store.requirements, owner_id=owner_id)
         self.lineage = FakeLineage(store.lineage, owner_id=owner_id)
         self.builds = FakeBuilds(store.builds, owner_id=owner_id)
+        self.placements = FakePlacements(store.placements, owner_id=owner_id)
         self.candidates = FakeCandidates(store.candidates, owner_id=owner_id)
         self.strengths = FakeStrengths(store.strengths, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)

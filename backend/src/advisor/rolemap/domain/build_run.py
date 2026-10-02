@@ -1,5 +1,5 @@
 """One request to rebuild a user's role map, recorded before it is queued
-(ADR 0006, ADR 0018).
+(ADR 0006, ADR 0018), and what it made of each candidate (Phase 8).
 """
 
 from __future__ import annotations
@@ -108,3 +108,44 @@ class BuildRun:
         self.error_code = code
         self.error_message = message
         self.finished_at = at
+
+
+class PlacementOutcome(StrEnum):
+    """What a build made of one candidate (Phase 8)."""
+
+    # One of the top k: it became a role on the map.
+    PLACED = "placed"
+    # It had enough openings, and the local estimate kept others.
+    OUTSIDE_TOP_K = "outside_top_k"
+    # The user's locations had too few openings for it to be a role.
+    TOO_FEW_OPENINGS = "too_few_openings"
+
+
+@dataclass(slots=True)
+class CandidatePlacement:
+    """One build's record of what it made of one candidate: the role it
+    became, or why none. The build owns it; the candidate stays a query.
+
+    ``rank`` and ``title`` are copied from the candidate, so the record still
+    reads after the next analysis replaces the candidates and
+    ``candidate_id`` is cleared.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    build_run_id: uuid.UUID
+    candidate_id: uuid.UUID | None
+    rank: int
+    title: str
+    outcome: PlacementOutcome
+    opening_count: int
+    role_id: uuid.UUID | None = None
+    # How well its openings read like the user's strengths, by the local
+    # estimate that chose the k (ADR 0027); never shown as a fit. None for a
+    # candidate with too few openings to estimate.
+    fit_estimate: float | None = None
+    created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if (self.outcome is PlacementOutcome.PLACED) != (self.role_id is not None):
+            raise ValueError("a candidate has a role exactly when it was placed")

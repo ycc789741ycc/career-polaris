@@ -1159,6 +1159,21 @@ Open questions:
   fetched once.
 
 ## A role candidate is only a query
+**Done** (ADR 0031, migration 0026). Where the build differs from the plan
+below:
+
+* The outcome for a candidate with fewer openings than a role needs is
+  `too_few_openings`, not `no_openings`: one with one or two openings is not
+  without openings.
+* `GET /role-candidates` reads each candidate's newest placement, from
+  whichever build placed it, rather than only the latest `ready` build's. A
+  build that found nothing in scope places nobody, so the build before it
+  still speaks for its candidates, as the candidate's own columns did.
+* `recluster` takes the build it is the work of, so the placements hang off
+  it; tests that call it record a build first.
+* On the dev database, migration 0026 placed 20 candidates: 10 `placed`,
+  3 `outside_top_k` and 7 `too_few_openings`.
+
 Today `RoleCandidate` (`rolemap/domain/candidate.py`) does two jobs:
 
 | Job | Fields | Written by |

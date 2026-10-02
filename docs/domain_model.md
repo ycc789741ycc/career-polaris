@@ -439,7 +439,8 @@ flowchart LR
 | Role | A candidate role found on the market, named from the postings in *one user's* scope that are its openings, with what they ask for; stable id and lineage, hiring bar, salary bands per target location, opening count. Nothing in it is about the user | Role map |
 | Posting of your own | A JD the user pasted (title, optional company) to aim the Advisor at; never on the role map. Its requirements are read once, the AI evaluates them once (PostingRequirementFit), and its PostingFit is worked out from that locally (decision 34). Replaces the custom Role | Role map |
 | PostingFit | The user's fit to one posting, worked out locally from an AI fit; never an AI call | Role map |
-| Candidate role | A role the latest SkillAssessment recommended from the user's strengths, best fit first, before the market is searched for it; placed on the Role it became, or left unplaced when the user's locations lack openings for it (ADR 0024) | Role map |
+| Candidate role | A role the latest SkillAssessment recommended from the user's strengths, best fit first: the query a build searches the market and matches postings with (ADR 0024) | Role map |
+| CandidatePlacement | One build's record of what it made of one candidate role: placed on a Role, outside the top k, or too few openings, with its opening count and local fit estimate (ADR 0031) | Role map |
 | RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |
 | EstimatedDifficulty | AI estimate of interview difficulty from posting content, used until enough InterviewReports exist | Role map |
 | Hiring bar | A Role's interview difficulty (bubble chart X axis); blends estimate and reports, with sample size, confidence and basis | Role map |

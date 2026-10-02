@@ -403,6 +403,7 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
     dimensions `assessment` hands over with the candidates
     (`rolemap.candidate_strength`). It is stored as `fit_estimate`, never
     shown as a fit; `compute_fits` logs its Spearman agreement with the fits.
+    (On the build's `CandidatePlacement` since ADR 0031.)
   - **What's gone.** `PostingsChanged`, `RoleCandidatesReplaced`, the fan-out
     and its `fanout_read` policy, the weekly crawl and
     `market.request_searches`.
@@ -464,3 +465,12 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
     probing, and `request_sources`'s company ids. Migration 0025 moved custom
     roles with a JD to postings of the user's own, re-pointed what was aimed
     at them, and retired every custom role.
+- **A role candidate is only a query** (ADR 0031). `RoleCandidate` keeps
+  `rank`, `title`, `description`, `dimension_keys` and `assessment_id`; no
+  build writes to it. `recluster(owner_id, build_id)` records a
+  `CandidatePlacement` per candidate it read (`rolemap.candidate_placement`,
+  in `build_run.py`): `outcome` (`placed`, `outside_top_k`,
+  `too_few_openings`), `role_id`, `opening_count`, `fit_estimate`, and the
+  candidate's rank and title. `GET /role-candidates` answers unchanged from
+  each candidate's newest placement; a build that found nothing in scope
+  places nobody. Migration 0026 moved the outcomes off the candidates.
