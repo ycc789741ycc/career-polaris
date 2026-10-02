@@ -2644,9 +2644,7 @@ export interface operations {
     activity_api_v1_activity_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2693,9 +2691,7 @@ export interface operations {
     read_budget_api_v1_ai_budget_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2742,9 +2738,7 @@ export interface operations {
     set_budget_api_v1_ai_budget_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2795,9 +2789,7 @@ export interface operations {
     read_credential_api_v1_ai_credential_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2844,9 +2836,7 @@ export interface operations {
     set_credential_api_v1_ai_credential_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2897,9 +2887,7 @@ export interface operations {
     delete_credential_api_v1_ai_credential_delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2998,9 +2986,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3047,9 +3033,7 @@ export interface operations {
     run_assessment_api_v1_assessments_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3096,9 +3080,7 @@ export interface operations {
     cost_estimate_api_v1_assessments_cost_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3145,9 +3127,7 @@ export interface operations {
     latest_api_v1_assessments_latest_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3435,9 +3415,7 @@ export interface operations {
     sign_out_everywhere_api_v1_auth_sign_out_everywhere_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3487,9 +3465,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3536,9 +3512,7 @@ export interface operations {
     disconnect_api_v1_connections__kind__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3585,9 +3559,7 @@ export interface operations {
     start_authorization_api_v1_connections__kind__authorize_url_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3636,9 +3608,7 @@ export interface operations {
     complete_authorization_api_v1_connections__kind__callback_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3691,9 +3661,7 @@ export interface operations {
     sync_now_api_v1_connections__kind__sync_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3747,9 +3715,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3801,9 +3767,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3850,9 +3814,7 @@ export interface operations {
     compute_fits_api_v1_fits_compute_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3899,9 +3861,7 @@ export interface operations {
     set_task_done_api_v1_gap_plan_tasks__task_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 task_id: string;
             };
@@ -3957,9 +3917,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4006,9 +3964,7 @@ export interface operations {
     request_plan_api_v1_gap_plans_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4062,9 +4018,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4111,9 +4065,7 @@ export interface operations {
     get_plan_api_v1_gap_plans__plan_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 plan_id: string;
             };
@@ -4162,9 +4114,7 @@ export interface operations {
     request_set_api_v1_gap_question_sets_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4218,9 +4168,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4270,9 +4218,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4319,9 +4265,7 @@ export interface operations {
     get_set_api_v1_gap_question_sets__set_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4370,9 +4314,7 @@ export interface operations {
     submit_api_v1_gap_question_sets__set_id__answers_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4425,9 +4367,7 @@ export interface operations {
     submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4481,9 +4421,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4530,9 +4468,7 @@ export interface operations {
     market_scope_api_v1_market_scope_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4585,9 +4521,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4634,9 +4568,7 @@ export interface operations {
     me_api_v1_me_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4683,9 +4615,7 @@ export interface operations {
     read_profile_api_v1_profile_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4732,9 +4662,7 @@ export interface operations {
     get_export_api_v1_resume_exports__export_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 export_id: string;
             };
@@ -4788,9 +4716,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4837,9 +4763,7 @@ export interface operations {
     upload_resume_api_v1_resumes_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4890,9 +4814,7 @@ export interface operations {
     delete_resume_api_v1_resumes__resume_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -4939,9 +4861,7 @@ export interface operations {
     resume_url_api_v1_resumes__resume_id__download_url_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -4995,9 +4915,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5098,9 +5016,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5147,9 +5063,7 @@ export interface operations {
     cost_estimate_api_v1_roles_cost_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5196,9 +5110,7 @@ export interface operations {
     add_custom_role_api_v1_roles_custom_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5249,9 +5161,7 @@ export interface operations {
     custom_role_estimate_api_v1_roles_custom_cost_estimate_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5302,9 +5212,7 @@ export interface operations {
     remove_custom_role_api_v1_roles_custom__role_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 role_id: string;
             };
@@ -5351,9 +5259,7 @@ export interface operations {
     recluster_api_v1_roles_recluster_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5405,9 +5311,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5454,9 +5358,7 @@ export interface operations {
     write_resume_api_v1_tailored_resumes_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5510,9 +5412,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5561,9 +5461,7 @@ export interface operations {
             query?: {
                 version?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5612,9 +5510,7 @@ export interface operations {
     request_export_api_v1_tailored_resumes__resume_id__exports_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5667,9 +5563,7 @@ export interface operations {
     revise_api_v1_tailored_resumes__resume_id__revisions_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5722,9 +5616,7 @@ export interface operations {
     apply_revision_api_v1_tailored_resumes__resume_id__revisions__revision_id__apply_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
                 revision_id: string;
@@ -5774,9 +5666,7 @@ export interface operations {
     update_settings_api_v1_tailored_resumes__resume_id__settings_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5827,9 +5717,7 @@ export interface operations {
     save_version_api_v1_tailored_resumes__resume_id__versions_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5941,9 +5829,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5990,9 +5876,7 @@ export interface operations {
     set_target_locations_api_v1_target_locations_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
