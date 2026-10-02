@@ -40,12 +40,17 @@ FROM python:3.12.14-slim-bookworm AS base
 # WeasyPrint renders résumé PDFs through Pango (ADR 0007), and the templates set
 # type in DejaVu. Pinned to what bookworm ships; their own dependencies follow
 # Debian's security updates.
+# libexpat1 2.5.0-1+deb12u3, as the base ships it, carries six HIGH CVEs
+# (CVE-2026-93990 among them). The fix is pinned here until a python
+# slim-bookworm tag ships deb12u4 or later; then this line goes, and
+# `make scan` shows it is safe to drop.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libpango-1.0-0=1.50.12+ds-1 \
       libpangoft2-1.0-0=1.50.12+ds-1 \
       libharfbuzz-subset0=6.0.0+dfsg-3 \
       fonts-dejavu-core=2.37-6 \
+      libexpat1=2.5.0-1+deb12u4 \
  && rm -rf /var/lib/apt/lists/*
 
 # Source lives under src/ (package by component, docs/decisions/0009); every
