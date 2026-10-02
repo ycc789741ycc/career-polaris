@@ -991,10 +991,128 @@ Open questions:
   `market/domain/places.py` at 333 lines.
 
 # Phase 8
-A role candidate becomes only what an analysis asks the market for: the
-query a build searches and matches with. What a build made of each
-candidate becomes a record of that build. No screen or response body
-changes. One branch for now; more items can join this phase later.
+The role map becomes the market's side only, and evaluating the user moves
+out of it.
+* A **Role** is a group of openings and what they ask for: no company of its
+  own, no JD, nothing about the user.
+* A **RoleFit** is the evaluation: the user's strengths against a role, and
+  it references the role.
+* A **role candidate** is the query a build searches and matches with.
+
+A posting the user brings themselves is aimed at from the Advisor, not added
+to the map. Three branches, in this order, each cut from an epic,
+`epic/<ticket>/phase-8`, cut from mainline:
+
+1. "A posting of your own is a Target, not a role": custom roles leave the
+   role map, and `Role` loses everything only they used.
+2. "A role candidate is only a query": what a build made of each candidate
+   becomes a record of that build.
+3. "Score a fit only when what it reads has changed": a rebuild on an
+   unchanged market and unchanged strengths spends nothing.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
+`README.md` and `docs/architecture.md` saying what is built.
+
+## A posting of your own is a Target, not a role
+Today "Add a role of your own" (03 Roles) creates a `custom` `Role` from a
+title, an optional company and an optional pasted JD (ADR 0021).
+* It joins the role map, and every build matches it to postings by title
+  words, asks for its company's board, and analyses and fit-scores it.
+* What the user wants from it is to aim the Advisor at one posting. The role
+  map only ever offers them a role and one of its openings, so a posting
+  they found themselves has nowhere else to go.
+* It puts a company and a JD on `Role`, which is otherwise a group of
+  openings, and makes every build spend on a role the market did not make.
+
+In dev data: two live custom roles, both with a company and a JD, and one
+plan, one résumé and one question set aimed at them.
+
+Its own branch, `refactor/<ticket>/own-posting-target`.
+
+1. **The Advisor takes a posting of the user's own.** "Aim at a posting of
+   your own" in 04 Advisor (title, company, pasted JD) replaces "Add a role
+   of your own" in 03 Roles.
+   * The JD is stored as today, in `market_user.private_job_posting`, which
+     the crawler cannot reach.
+   * Before anything runs, its cost is confirmed: reading the JD's
+     requirements, then scoring the fit, on the user's key.
+   * The Advisor's hash names it as `?posting=<private_job_posting_id>`,
+     instead of `?role=` and `&opening=`.
+   * A JD is required: without one there is nothing to read requirements
+     from, now that nothing searches the market for it.
+2. **A Target is a role (and optionally one of its openings), or a posting
+   of the user's own.** `TargetRef` takes either `role_id` with an optional
+   `job_posting_id`, or `private_job_posting_id` alone, and refuses both or
+   neither. `gapplan.plan`, `resume.resume` and `gapfill.question_set` gain
+   a nullable `private_job_posting_id`, `role_id` becomes nullable, and a
+   check constraint keeps exactly one of them set. A posting of your own's
+   requirement basis is its JD, as a custom role's was.
+3. **The posting is evaluated beside the role fits, not in the map.** In
+   `rolemap`, which keeps the one set of fit rules (ADR 0028):
+   * `PostingRequirement` (table `rolemap.posting_requirement`) describes
+     the posting: what its JD asks for, read once when it is added.
+   * `PostingFit` (table `rolemap.posting_fit`) evaluates the user against
+     it, with the same score, gaps, uncovered requirements and closing lifts
+     as a `RoleFit`, referencing `private_job_posting_id`.
+   * Neither is listed, counted or drawn by the role map, and no build reads
+     or scores them.
+   * After a new analysis, the Advisor says the posting's fit was scored
+     against earlier strengths and offers to rescore it, with its cost. It
+     is never rescored unasked.
+4. **The role map loses custom roles.**
+   * Gone: `RoleOrigin`, `CustomRoleError`, `add_custom_role`, `POST
+     /roles/custom`, `/roles/custom/cost-estimate`, `CustomRoleAdded`, and
+     the "Your roles" part of 03 Roles.
+   * A build no longer asks for custom roles' companies' boards. Board
+     discovery (`market.discover_board`) has no caller left and goes with
+     them.
+   * `Role` loses `origin`, `company_name` and `private_posting_id`. Its
+     docstring says what it is: a group of openings in the user's target
+     locations, with what they ask for. Every role is recommended, and k
+     roles is the whole map.
+5. **A migration moves what is there.** For each custom role with a JD:
+   * its requirements become the posting's requirements;
+   * its latest fit becomes the posting's fit;
+   * the plans, résumés and question sets aimed at it are pointed at the
+     private posting.
+
+   Then the role is retired. A custom role without a JD is retired, and what
+   was aimed at it stays as history, like any retired role's. It lifts
+   `FORCE ROW LEVEL SECURITY` while it writes and guards with `IF EXISTS`.
+6. **An ADR** supersedes ADR 0021 and the parts of ADR 0022 (a Target is
+   always a role) and ADR 0027 (a build asks for custom roles' boards) it
+   changes, with the index updated.
+
+Tests:
+* Unit:
+  * `TargetRef` refuses both or neither;
+  * a snapshot for a posting of your own reads its JD's requirements and
+    its `PostingFit`;
+  * a build has no custom roles to match, analyse or score;
+  * the role map lists no posting of your own;
+  * rescoring after a new analysis is offered, not run.
+* Integration:
+  * adding a posting of your own stores the JD, its requirements and its
+    fit under row-level security, and another owner reads none of them;
+  * a plan and a résumé aimed at it draft against its JD;
+  * the migration moves a custom role with a JD and its plan, retires one
+    without, and runs twice without harm.
+
+What gets harder:
+* A Target has two shapes, so every reader of `TargetRef` handles both, and
+  the three tables carry two nullable columns and a check.
+* A posting of your own is no longer matched to other postings like it, so
+  nothing tells the user how many similar openings the market has.
+* `rolemap` scores something that is not on the map. The fit rules stay in
+  one place, at the cost of the component's name meaning a little less.
+* A posting's fit can go stale after an analysis until the user rescores it.
+
+Open questions:
+* Whether a posting of your own should be offered a role from the map that
+  is like it, as a second Target to compare against.
+* Whether a pasted link, rather than pasted text, should be accepted, and
+  fetched once.
 
 ## A role candidate is only a query
 Today `RoleCandidate` (`rolemap/domain/candidate.py`) does two jobs:
@@ -1014,7 +1132,7 @@ The second job does not belong to the candidate.
 * **An empty `role_id` hides why.** "The market has no openings for it"
   and "it has openings but fell outside the top k" look the same.
 
-Its own branch, `refactor/<ticket>/candidate-as-query`, cut from mainline.
+Its own branch, `refactor/<ticket>/candidate-as-query`, after the first.
 
 1. **`RoleCandidate` keeps the query only:** `id`, `owner_id`,
    `assessment_id`, `rank`, `title`, `description`, `dimension_keys`,
@@ -1087,3 +1205,51 @@ Open questions:
   change.
 * How long placements are kept. They go with their build run, which is
   never pruned today.
+
+## Score a fit only when what it reads has changed
+A build already reuses a role whose openings are exactly the last build's:
+it refreshes the count and salary bands and spends nothing on naming or
+requirements (`_keep_role`). That check is keyed on the members, not on
+when the searches were last fetched, on purpose:
+* Searches are shared, so another user's build can refetch one.
+* Boards expire postings.
+* A change of locations changes the scope.
+
+A search that is still fresh can therefore still bring different members.
+But `compute_fits` re-scores every role after every build, so a rebuild on
+an unchanged market and unchanged strengths still spends the key on k fits
+that come out the same.
+
+Its own branch, `feature/<ticket>/reuse-unchanged-fits`, after the second.
+
+1. **A fit records what it read.** `RoleFit` and `PostingFit` gain
+   `requirements_digest`, a hash of the requirements scored against
+   (statement, weight and expected level, in order) and of the fit
+   prompt's template version, and the `assessment_id` of the strengths.
+   A new fit prompt therefore re-scores everything once.
+2. **`compute_fits` skips a role whose latest fit read the same
+   requirements and the same analysis.** It scores only the rest, and logs
+   how many it reused. A posting of your own's fit is reused by the same
+   rule when the user asks to rescore it.
+3. **Estimates stay ceilings.** Before a build, nobody knows which roles'
+   members will change, so `fits_cost_usd` still prices every role that
+   could be scored. The ledger shows what was actually spent.
+4. **No ADR.** It changes what is spent, not what is stored or shown, and
+   reverts by removing the check.
+
+Tests:
+* Unit:
+  * a second `compute_fits` with unchanged requirements and strengths
+    scores nothing;
+  * a changed requirement re-scores that role only;
+  * a new analysis re-scores every role;
+  * the digest does not depend on how the requirements are loaded.
+* Integration: two builds over an unchanged market write one set of fits,
+  not two.
+
+What gets harder:
+* A fit can be older than the build that shows it. Its `created_at` says
+  when it was scored, not when the map was built.
+* A change to the fit rules outside the prompt (the weights, the lift
+  formula) does not re-score anything by itself. It needs a one-off rescore,
+  or a bump of the template version.
