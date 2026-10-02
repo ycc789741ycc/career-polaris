@@ -284,6 +284,11 @@ for it still gets its new scores shown against the roles that are there.
 
 ## 7. Fits, and what the user sees
 
+Every opening's fit is then worked out from its role's, locally (ADR 0032):
+the role's requirements are reweighted by how much each opening asks for each,
+by embedding similarity, and evaluated again. That is never an AI call, and
+it replaces the role's openings' fits as a set.
+
 The dispatcher routes `RoleMapBuildFinished` to `rolemap.compute_fits`
 (`ai` queue). The fit is the role map's (ADR 0028), scored against the
 dimension scores the analysis handed over with the candidates

@@ -228,7 +228,9 @@ class FakePostingFits(FakeRepository[PostingFit, PostingFitFilter], PostingFitRe
     noun = "posting fit"
 
     def matches(self, entity: PostingFit, filter: PostingFitFilter) -> bool:
-        return filter.posting_keys is None or entity.posting_key in filter.posting_keys
+        return (filter.posting_keys is None or entity.posting_key in filter.posting_keys) and (
+            filter.role_ids is None or entity.role_id in filter.role_ids
+        )
 
 
 class FakeOwner(OwnerRoleMap):

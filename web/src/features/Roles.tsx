@@ -68,10 +68,6 @@ export function Roles() {
     () => api.get("/role-map"),
     [settled.roleMap],
   );
-  const matched = useAsync<MatchedPosting[]>(
-    () => api.items<MatchedPostingPage>("/matched-postings?page_size=10"),
-    [settled.roleMap, settled.analysis],
-  );
 
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -115,6 +111,21 @@ export function Roles() {
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
   const activeBand = activeRole ? pickBand(activeRole.salary_bands) : null;
+  // The selected role's best openings, each ranked by its own fit (Phase 8),
+  // one per company; picking another role reloads them.
+  const matched = useAsync<MatchedPosting[]>(
+    () =>
+      activeId
+        ? api.items<MatchedPostingPage>(
+            `/matched-postings?${new URLSearchParams({
+              role_id: activeId,
+              one_per_company: "true",
+              page_size: "10",
+            })}`,
+          )
+        : Promise.resolve([]),
+    [activeId, settled.roleMap, settled.analysis],
+  );
   // An opening picked in "Top matched openings", while its role is selected.
   const pickedOpening =
     pickedId && focus?.opening
@@ -341,11 +352,14 @@ export function Roles() {
 
       {(matched.data ?? []).length > 0 && (
         <div className="panel" style={{ marginTop: 20 }}>
-          <h3>Top matched openings</h3>
+          <h3>
+            Top matched openings{activeRole ? ` in ${activeRole.name}` : ""}
+          </h3>
           <p className="subcopy">
-            Open postings inside your roles, the best one from each company,
-            ranked by how well you fit the role. Pick one to aim the Advisor at
-            that opening; its own requirements do not change its rank yet.
+            The selected role&apos;s open postings, the best one from each
+            company, ranked by how well you fit each opening: the role&apos;s
+            requirements, weighed by how much that opening asks for each. Pick
+            one to aim the Advisor at it.
           </p>
           <div className="stack" style={{ gap: 8, marginTop: 12 }}>
             {(matched.data ?? []).map((match, index) => (

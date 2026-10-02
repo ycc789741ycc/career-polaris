@@ -6,10 +6,14 @@ from __future__ import annotations
 import pytest
 
 from advisor.rolemap.domain import (
+    SkillGap,
     TargetScore,
     UncoveredRequirement,
+    closing_lifts,
     evaluate,
+    get_opening_fit,
     get_posting_fit,
+    get_requirement_relevance,
     get_requirements_digest,
 )
 
@@ -174,3 +178,98 @@ def test_a_new_fit_prompt_changes_every_digest() -> None:
     assert get_requirements_digest(_READ, template_version="fit@v2") != get_requirements_digest(
         _READ, template_version="fit@v1"
     )
+
+
+# -- every opening's fit, worked out from its role's (Phase 8) -----------------
+
+# The role's AI fit: Go services map to backend, wanted at 80, where the user
+# is 60 (a gap); SQL maps to data, wanted at 50, where the user is 90.
+_ROLE_REQUIREMENTS = [
+    {"statement": "Go services", "weight": 0.9, "expected_level": "expert"},
+    {"statement": "SQL", "weight": 0.5, "expected_level": "advanced"},
+    {"statement": "Kafka", "weight": 0.4, "expected_level": "advanced"},
+]
+_MAP = {"Go services": "backend", "SQL": "data", "Kafka": None}
+_TARGETS = {"backend": 80, "data": 50}
+_SCORES = {"backend": 60, "data": 90}
+
+
+def _opening(relevance: list[float]) -> tuple[object, tuple[dict[str, object], ...]]:
+    return get_opening_fit(
+        requirements=_ROLE_REQUIREMENTS,
+        requirement_map=_MAP,
+        target_profile=_TARGETS,
+        user_scores=_SCORES,
+        relevance=relevance,
+    )
+
+
+def test_an_opening_stressing_a_strength_scores_above_one_stressing_the_gap() -> None:
+    stresses_sql, _ = _opening([-0.1, 0.15, 0.0])
+    stresses_go, _ = _opening([0.15, -0.1, 0.0])
+
+    assert stresses_sql.score > stresses_go.score  # type: ignore[attr-defined]
+
+
+def test_with_every_opening_alike_each_scores_its_roles_fit() -> None:
+    alike, kept = _opening([0.0, 0.0, 0.0])
+    role = get_posting_fit(
+        requirements=_ROLE_REQUIREMENTS,
+        requirement_map=_MAP,
+        target_profile=_TARGETS,
+        user_scores=_SCORES,
+    )
+
+    assert alike.score == role.score  # type: ignore[attr-defined]
+    assert [r["weight"] for r in kept] == [0.9, 0.5, 0.4]
+
+
+def test_a_requirement_an_opening_barely_asks_for_drops_out_of_it() -> None:
+    result, kept = _opening([0.0, 0.0, -0.3])
+
+    assert [r["statement"] for r in kept] == ["Go services", "SQL"]
+    assert result.uncovered == ()  # type: ignore[attr-defined]
+
+
+def test_a_dimension_an_opening_does_not_ask_for_leaves_its_gaps() -> None:
+    result, _ = _opening([-0.3, 0.0, 0.0])
+
+    assert [g.dimension_id for g in result.gaps] == ["data"]  # type: ignore[attr-defined]
+
+
+def test_an_opening_counts_a_dimension_by_how_much_it_asks_for_it() -> None:
+    result, _ = _opening([0.1, 0.0, 0.0])
+
+    [backend] = [g for g in result.gaps if g.dimension_id == "backend"]  # type: ignore[attr-defined]
+    assert backend.weight == pytest.approx(1.4)
+
+
+def test_a_requirement_every_opening_asks_for_alike_moves_none_of_them() -> None:
+    openings = [[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]]
+
+    relevance = get_requirement_relevance([[1.0, 0.0], [0.6, 0.8]], openings)
+
+    assert relevance == [[0.0, 0.0]] * 3
+
+
+def test_an_opening_closer_to_a_requirement_than_the_others_stresses_it() -> None:
+    openings = [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+
+    relevance = get_requirement_relevance([[0.0, 1.0]], openings)
+
+    assert relevance[2][0] > 0 > relevance[0][0]
+    assert sum(row[0] for row in relevance) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_no_openings_have_no_relevance() -> None:
+    assert get_requirement_relevance([[1.0, 0.0]], []) == []
+
+
+def test_a_weighted_gap_is_worth_its_weight_in_closing() -> None:
+    plain = closing_lifts(gaps=[SkillGap("a", 60, 80), SkillGap("b", 60, 80)], uncovered=[])
+    weighted = closing_lifts(
+        gaps=[SkillGap("a", 60, 80, weight=2.0), SkillGap("b", 60, 80)], uncovered=[]
+    )
+
+    assert plain.by_dimension["a"] == plain.by_dimension["b"]
+    assert weighted.by_dimension["a"] > weighted.by_dimension["b"]

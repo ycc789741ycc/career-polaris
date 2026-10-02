@@ -380,6 +380,7 @@ flowchart LR
 | T25 | How many candidates an analysis recommends (`ROLE_CANDIDATE_COUNT`) and how many recommended roles a build keeps, names, analyses and scores (`ROLE_MAP_TOP_K`) are settings, both 10 by default ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md); supersedes T18's constant) |
 | T26 | A posting of the user's own is a Target, not a role ([ADR 0030](decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)): `TargetRef` is `role_id` (+ optional `job_posting_id`) or `private_job_posting_id`, one by check constraint in every consumer; its JD's requirements, the AI's evaluation of them and the `PostingFit` worked out locally live in `rolemap`, which no build reads; `Role` loses `origin`, `company_name` and `private_posting_id`, and board discovery goes |
 | T27 | A role candidate is only the query a build searches and matches with; each build records what it made of each in `rolemap.candidate_placement` ([ADR 0031](decisions/0031-record-what-a-build-made-of-each-candidate-on-the-build.md)) |
+| T28 | Every opening's fit is worked out locally from its role's `RoleFit` (embedding relevance, reweighted requirements, weighted gaps) and stored in `rolemap.posting_fit` with `basis = 'role'`, replaced per build as a cache; Top matched ranks a role's openings by it ([ADR 0032](decisions/0032-work-out-every-openings-fit-locally-from-its-roles.md)) |
 
 ### Coverage of domain decisions
 

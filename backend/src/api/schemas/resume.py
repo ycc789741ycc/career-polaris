@@ -148,7 +148,7 @@ class ResumeSnapshot(ApiModel):
     company: str
     role_name: str | None
     fit: int | None
-    basis: Literal["role", "posting"]
+    basis: Literal["role", "opening", "posting"]
 
 
 class Coverage(ApiModel):

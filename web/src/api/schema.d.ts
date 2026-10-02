@@ -661,11 +661,12 @@ export interface paths {
         };
         /**
          * Matched Postings
-         * @description The openings inside the user's roles, best first, for the role map's "Top
-         *     matched" list: ask for ``page_size=10`` for the top ten. Across all roles
-         *     it holds one opening per company, the best-ranked one. ``role_id`` keeps
-         *     one role's, every opening the Advisor can aim at in it. Ranked by the
-         *     role's fit; no AI runs to produce it.
+         * @description The openings inside the user's roles, best first. ``role_id`` keeps one
+         *     role's; "Top matched openings" asks for the selected role's with
+         *     ``one_per_company=true&page_size=10``, and the Advisor for all of them.
+         *     Each is ranked by its own fit, worked out locally from its role's by the
+         *     last build; no AI runs to produce it. ``one_per_company`` defaults to true
+         *     across all roles and false for one role.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;
@@ -1645,7 +1646,8 @@ export interface components {
         };
         /**
          * MatchedPosting
-         * @description An opening inside one of the user's roles, ranked by that role's fit.
+         * @description An opening inside one of the user's roles, ranked by its own fit,
+         *     worked out locally from its role's (Phase 8).
          */
         MatchedPosting: {
             /** Company Name */
@@ -1657,9 +1659,9 @@ export interface components {
             /**
              * Fit Basis
              * @default role
-             * @constant
+             * @enum {string}
              */
-            fit_basis: "role";
+            fit_basis: "role" | "posting";
             /** Location */
             location: string | null;
             /**
@@ -1930,7 +1932,7 @@ export interface components {
              * Basis
              * @enum {string}
              */
-            basis: "role" | "posting";
+            basis: "role" | "opening" | "posting";
             /** Company */
             company: string;
             /** Fit */
@@ -2202,7 +2204,7 @@ export interface components {
              * Basis
              * @enum {string}
              */
-            basis: "role" | "posting";
+            basis: "role" | "opening" | "posting";
             /** Company */
             company: string;
             /** Fit */
@@ -4597,6 +4599,7 @@ export interface operations {
         parameters: {
             query?: {
                 role_id?: string | null;
+                one_per_company?: boolean | null;
                 /** @description 1-based. */
                 page?: number;
                 /** @description Omit it for the whole list, on page 1. */

@@ -30,6 +30,20 @@ MAX_COMPANY_NAME = 255
 MAX_STRENGTHS = 10
 
 
+# --- fit -----------------------------------------------------------------------
+
+# How much an opening's stress on a requirement moves that requirement's weight
+# for the opening: its weight is scaled by 1 + this x the requirement's
+# similarity to the opening, less its mean over the role's openings (Phase 8).
+OPENING_EMPHASIS = 4.0
+
+# The least an opening's weight on a requirement can be scaled by before it
+# counts the requirement as not asked for, and the most it can be scaled by.
+OPENING_WEIGHT_FLOOR = 0.25
+
+OPENING_WEIGHT_CEILING = 2.0
+
+
 # --- hiring_bar --------------------------------------------------------------
 
 # Below this many distinct reporters a company+title figure could be traced

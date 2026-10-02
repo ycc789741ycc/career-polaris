@@ -706,6 +706,19 @@ async def test_a_small_k_names_analyses_and_scores_only_k_roles(
             {"owner": account},
         )
         assert stored.scalar_one() == 3
+        # Every opening of the three roles has its own fit, worked out from
+        # its role's with no call (Phase 8).
+        openings = await session.execute(
+            text(
+                "SELECT count(*) FROM rolemap.posting_fit"
+                " WHERE owner_id = :owner AND basis = 'role'"
+            ),
+            {"owner": account},
+        )
+        assert openings.scalar_one() == 9
+    [first, *_] = roles
+    ranked = await rolemap.matched_postings(account, limit=None, role_id=first.id)
+    assert len(ranked) == 3 and {m.fit_basis for m in ranked} == {"posting"}
     candidates = await rolemap.candidates(account)
     assert sum(1 for c in candidates if c.role_id is not None) == 3
     assert [c.opening_count for c in candidates if c.role_id is None] == [3, 3]

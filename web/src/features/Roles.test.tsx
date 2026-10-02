@@ -66,7 +66,7 @@ function serve() {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,
     },
-    "/matched-postings?page_size=10": page([
+    "/matched-postings?role_id=r1&one_per_company=true&page_size=10": page([
       {
         posting_id: "p1",
         role_id: "r1",
@@ -77,10 +77,12 @@ function serve() {
         url: null,
         salary: null,
         fit: 62,
-        fit_basis: "role",
+        fit_basis: "posting",
         source_kind: "atsBoard",
         credited_to: null,
       },
+    ]),
+    "/matched-postings?role_id=r2&one_per_company=true&page_size=10": page([
       {
         posting_id: "p2",
         role_id: "r2",
@@ -91,7 +93,7 @@ function serve() {
         url: "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
         salary: null,
         fit: 84,
-        fit_basis: "role",
+        fit_basis: "posting",
         source_kind: "publicApi",
         credited_to: "Himalayas",
       },
@@ -218,6 +220,34 @@ describe("the role map's one Advisor target", () => {
     expect(shell.setFocus).toHaveBeenCalledWith({ role: "r1", opening: "p1" });
   });
 
+  it("lists the selected role's openings in Top matched, by their own fit", async () => {
+    renderRoles({ role: "r1" });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Top matched openings in Backend Engineer",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Staff Engineer, Ledger/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Platform Engineer, Clusters/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("follows the picked role: another bubble, another list", async () => {
+    renderRoles({ role: "r2" });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Top matched openings in Platform Engineer",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Platform Engineer, Clusters/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Staff Engineer, Ledger/),
+    ).not.toBeInTheDocument();
+  });
+
   it("has no other button that aims the Advisor", async () => {
     renderRoles({ role: "r1" });
 
@@ -324,13 +354,15 @@ describe("an opening found through a job site", () => {
   });
 
   it("credits nobody for an opening from the employer's own board", async () => {
-    renderRoles(null);
+    // Backend Engineer's openings: only Northwind Pay's, from its own board.
+    renderRoles({ role: "r1" });
 
-    await screen.findByRole("link", { name: "Himalayas" });
-    expect(screen.getAllByRole("link", { name: "Himalayas" })).toHaveLength(1);
-    for (const row of screen.getAllByText(/Staff Engineer, Ledger/)) {
+    for (const row of await screen.findAllByText(/Staff Engineer, Ledger/)) {
       expect(row).not.toHaveTextContent("via");
     }
+    expect(
+      screen.queryByRole("link", { name: "Himalayas" }),
+    ).not.toBeInTheDocument();
   });
 });
 

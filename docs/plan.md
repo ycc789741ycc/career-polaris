@@ -1324,6 +1324,23 @@ What gets harder:
   or a bump of the template version.
 
 ## A fit for every opening
+**Done** (ADR 0032, migration 0028). Where the build differs from the plan
+below:
+
+* The rule is two functions, named by the domain's prefix rule:
+  `get_requirement_relevance` (the centred similarities) and
+  `get_opening_fit` (the reweighting and the evaluation), not
+  `fit_for_opening`.
+* A dimension's gaps count by `SkillGap.weight`, the share of its
+  requirements' weight the opening kept, so `evaluate` and `closing_lifts`
+  take a weight; a role's are all 1, as before.
+* Each build replaces a role's openings' fits as a set rather than adding a
+  row per opening per build, since they are a cache.
+* `one_per_company` is a query parameter. Unset, it holds across all roles
+  and not for one role, as before; the SPA asks for it on the selected role.
+* An opening the crawler has not embedded yet is embedded in the worker, as
+  a build does; one that has left the market drops out when the list is read.
+
 Today an opening has no fit of its own. Every row of "Top matched openings"
 carries its role's `RoleFit` score (`fit_basis: "role"`), so all of a
 role's openings score the same. The list is drawn across every role

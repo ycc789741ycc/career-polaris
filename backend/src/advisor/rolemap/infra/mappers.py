@@ -377,6 +377,7 @@ def posting_fit(row: models.PostingFit) -> PostingFit:
         target_profile=dict(row.target_profile),
         gaps=tuple(row.gaps),
         uncovered=tuple(row.uncovered),
+        role_id=row.role_id,
         created_at=row.created_at,
     )
 
@@ -391,6 +392,7 @@ def apply_posting_fit(row: models.PostingFit, entity: PostingFit) -> None:
     row.posting_key = entity.posting_key
     row.basis = str(entity.basis)
     row.source_fit_id = entity.source_fit_id
+    row.role_id = entity.role_id
     row.assessment_id = entity.assessment_id
     row.score = entity.score
     row.requirements = list(entity.requirements)

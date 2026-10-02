@@ -71,8 +71,9 @@ class PlanSnapshot(ApiModel):
     company: str
     role_name: str | None
     fit: int | None
-    # "role": the Role's requirements; "posting": read from the JD.
-    basis: Literal["role", "posting"]
+    # "role": the Role's requirements; "opening": the Role's, as the opening
+    # weighs them; "posting": read from a posting of the user's own's JD.
+    basis: Literal["role", "opening", "posting"]
     requirements: list[PlanRequirement]
     taken_at: Timestamp
 

@@ -482,3 +482,16 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   reuses its projection the same way, so a rebuild on an unchanged market and
   unchanged strengths spends nothing on fits. Estimates stay ceilings.
   Migration 0027 added the column; fits taken before it are scored once more.
+- **A fit for every opening** (ADR 0032). The AI scores each role once; every
+  opening's fit is worked out from it locally, never an AI call.
+  `get_requirement_relevance` centres each requirement's embedding similarity
+  to an opening on its mean over the role's openings, and `get_opening_fit`
+  reweights the role's requirements by it (`OPENING_EMPHASIS`, a floor and a
+  ceiling, in `constants.py`) and evaluates them with weighted gaps
+  (`SkillGap.weight`, which `closing_lifts` honours). `compute_fits` stores
+  them as `PostingFit`s with `basis = role` and the opening's `role_id`,
+  replaced per role by each build as a cache. `GET /matched-postings` ranks a
+  role's openings by them (`fit_basis: "posting"`); Top matched openings asks
+  for the selected role's with `one_per_company=true`, and reloads on every
+  pick. A Target with an opening plans against `rolemap.opening_fit`
+  (`RequirementBasis.OPENING`), or the role's fit before one exists.

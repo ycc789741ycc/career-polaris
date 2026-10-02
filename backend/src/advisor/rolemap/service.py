@@ -89,8 +89,10 @@ from advisor.rolemap.domain import (
     closing_lifts,
     evaluate,
     fit_estimates,
+    get_opening_fit,
     get_own_posting_key,
     get_posting_fit,
+    get_requirement_relevance,
     get_requirements_digest,
     keep_on_market,
     max_role_count,
@@ -290,10 +292,17 @@ class PostingFitView:
     created_at: datetime
 
     def lifts(self) -> ClosingLifts:
-        """Fit points each gap is worth, by the fit's own arithmetic."""
+        """Fit points each gap is worth, by the fit's own arithmetic: an
+        opening's gaps count by how much it asks for each dimension."""
         return closing_lifts(
             gaps=[
-                SkillGap(g["dimension_key"], g["user_score"], g["target_score"]) for g in self.gaps
+                SkillGap(
+                    g["dimension_key"],
+                    g["user_score"],
+                    g["target_score"],
+                    float(g.get("weight", 1.0)),
+                )
+                for g in self.gaps
             ],
             uncovered=[UncoveredRequirement(u["statement"], u["weight"]) for u in self.uncovered],
         )
@@ -319,7 +328,9 @@ class OwnPostingView:
 
 @dataclass(frozen=True, slots=True)
 class MatchedPostingView:
-    """One opening inside one of the user's roles, ranked by that role's fit."""
+    """One opening inside one of the user's roles, ranked by its own fit,
+    worked out locally from its role's (Phase 8), or by the role's when it has
+    none yet (``fit_basis``)."""
 
     posting_id: uuid.UUID
     role_id: uuid.UUID
@@ -336,6 +347,9 @@ class MatchedPostingView:
     # The job site to credit beside the opening's link, when it was found
     # through that site's API (ADR 0025).
     credited_to: str | None = None
+    # `posting`: the opening's own fit; `role`: its role's, before a build has
+    # worked the opening's out.
+    fit_basis: str = "role"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1084,6 +1098,7 @@ class RoleMapService:
                 continue
             await self._project(owner_id, strengths, role, digest=digest)
         log.info("rolemap.fits_reused", roles=len(roles), reused=reused)
+        await self._derive_opening_fits(owner_id, strengths)
 
         async with self._uow.for_owner(owner_id) as mine:
             mine.record(RoleFitsComputed(owner_id=owner_id, roles=len(roles)))
@@ -1122,18 +1137,22 @@ class RoleMapService:
         *,
         limit: int | None = DEFAULT_MATCHES,
         role_id: uuid.UUID | None = None,
+        one_per_company: bool | None = None,
     ) -> list[MatchedPostingView]:
         """The best openings inside the user's roles, or inside one of them:
         the openings a Target in that role can name (ADR 0022).
 
-        Ranked by the role's current fit; no AI runs here. Only shared
+        Ranked by each opening's own fit, worked out from its role's by the
+        last build (Phase 8), else by the role's; no AI runs here. Only shared
         postings are listed.
 
-        Across all roles the list keeps each company's best opening only, so
-        "Top matched" names different companies; one role's list
-        (``role_id``) keeps all its openings, as its bubble counts them.
+        ``one_per_company`` keeps each company's best opening only, so "Top
+        matched" names different companies. Unset, it holds across all roles
+        and not for one role's list (``role_id``), which keeps every opening,
+        as its bubble counts them and the Advisor can aim at any.
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
+        opening_fits = await self._opening_fit_scores(owner_id, role_id)
 
         by_row: dict[tuple[str, str], tuple[RoleView, PostingView]] = {}
         candidates: list[MatchCandidate] = []
@@ -1144,6 +1163,7 @@ class RoleMapService:
                 if posting.visibility is not Visibility.SHARED:
                     continue
                 by_row[(str(role.id), str(posting.id))] = (role, posting)
+                own = opening_fits.get((role.id, str(posting.id)))
                 candidates.append(
                     MatchCandidate(
                         posting_id=str(posting.id),
@@ -1151,12 +1171,13 @@ class RoleMapService:
                         role_name=role.name,
                         company_name=posting.company_name,
                         title=posting.title,
-                        fit=fit_by_role.get(role.id),
+                        fit=own if own is not None else fit_by_role.get(role.id),
                     )
                 )
 
+        distinct = role_id is None if one_per_company is None else one_per_company
         try:
-            ranked = rank_matches(candidates, limit=limit, one_per_company=role_id is None)
+            ranked = rank_matches(candidates, limit=limit, one_per_company=distinct)
         except ValueError as exc:
             raise ValidationError(str(exc), limit=limit) from exc
 
@@ -1176,9 +1197,124 @@ class RoleMapService:
                     fit=candidate.fit,
                     source_kind=posting.source_kind,
                     credited_to=posting.credited_to,
+                    fit_basis=("posting" if (role.id, str(posting.id)) in opening_fits else "role"),
                 )
             )
         return matched
+
+    async def opening_fit(
+        self, owner_id: uuid.UUID, role_id: uuid.UUID, job_posting_id: uuid.UUID
+    ) -> PostingFitView | None:
+        """One opening's own fit, worked out from its role's; none before a
+        build has worked it out."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.posting_fits.get_list(
+                PostingFitFilter(posting_keys=(str(job_posting_id),), role_ids=(role_id,)),
+                page_size=1,
+            )
+        return _posting_fit_view(found[0]) if found else None
+
+    async def _opening_fit_scores(
+        self, owner_id: uuid.UUID, role_id: uuid.UUID | None
+    ) -> dict[tuple[uuid.UUID, str], int]:
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.posting_fits.get_list(
+                PostingFitFilter(role_ids=(role_id,) if role_id is not None else None)
+            )
+        scores: dict[tuple[uuid.UUID, str], int] = {}
+        for fit in found:
+            if fit.basis is PostingFitBasis.ROLE and fit.role_id is not None:
+                scores.setdefault((fit.role_id, fit.posting_key), fit.score)
+        return scores
+
+    async def _derive_opening_fits(
+        self, owner_id: uuid.UUID, strengths: list[CandidateStrength]
+    ) -> None:
+        """Work out every opening's fit from its role's current fit, locally:
+        the role's requirements reweighted by how much each opening asks for
+        each, then evaluated. Never an AI call; the gateway is not touched.
+
+        Each role's openings are replaced as a set: they are a cache of this
+        computation, worked out again by every build.
+        """
+        latest = await self._latest_role_fits(owner_id)
+        pairs = [
+            (role, shared, latest[role.id])
+            for role, postings in await self.role_postings(owner_id)
+            if (shared := [p for p in postings if p.visibility is Visibility.SHARED])
+            and role.id in latest
+            and latest[role.id].requirements
+        ]
+        if not pairs:
+            return
+        vectors = await self._posting_vectors(owner_id)
+        user_scores = {s.dimension_key: s.score for s in strengths}
+        derived = 0
+        for role, postings, fit in pairs:
+            openings = [p for p in postings if _posting_key(p) in vectors]
+            requirement_vectors = embed(
+                [str(r["statement"]) for r in fit.requirements], model_name=self._embedding_model
+            )
+            relevance = get_requirement_relevance(
+                requirement_vectors, [vectors[_posting_key(p)] for p in openings]
+            )
+            async with self._uow.for_owner(owner_id) as mine:
+                for old in await mine.posting_fits.get_list(PostingFitFilter(role_ids=(role.id,))):
+                    await mine.posting_fits.delete(old.id)
+                for opening, weights in zip(openings, relevance, strict=True):
+                    result, kept = get_opening_fit(
+                        requirements=fit.requirements,
+                        requirement_map=fit.requirement_map,
+                        target_profile=fit.target_profile,
+                        user_scores=user_scores,
+                        relevance=weights,
+                    )
+                    await mine.posting_fits.create(
+                        PostingFit(
+                            id=uuid.uuid4(),
+                            owner_id=owner_id,
+                            posting_key=_posting_key(opening),
+                            basis=PostingFitBasis.ROLE,
+                            source_fit_id=fit.id,
+                            assessment_id=fit.assessment_id,
+                            score=result.score,
+                            requirements=kept,
+                            requirement_map=dict(fit.requirement_map),
+                            target_profile=dict(fit.target_profile),
+                            gaps=_gap_dicts(result.gaps),
+                            uncovered=tuple(
+                                {"statement": u.statement, "weight": u.weight}
+                                for u in result.uncovered
+                            ),
+                            role_id=role.id,
+                        )
+                    )
+                    derived += 1
+        log.info("rolemap.opening_fits_derived", roles=len(pairs), openings=derived)
+
+    async def _posting_vectors(self, owner_id: uuid.UUID) -> dict[str, list[float]]:
+        """Every posting in scope's vector, by its key; ones the crawler has not
+        embedded yet are embedded here. Local, no AI."""
+        scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
+        missing = [(key, posting) for key, posting, vector in scope if vector is None]
+        fresh: dict[str, list[float]] = {}
+        if missing:
+            texts = [
+                "\n".join(
+                    part for part in (p.title, p.title, p.location or "", p.description) if part
+                )
+                for _key, p in missing
+            ]
+            fresh = dict(
+                zip(
+                    (k for k, _ in missing),
+                    embed(texts, model_name=self._embedding_model),
+                    strict=True,
+                )
+            )
+        return {
+            key: vector if vector is not None else fresh[key] for key, _posting, vector in scope
+        }
 
     async def _strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
         async with self._uow.for_owner(owner_id) as mine:
@@ -2068,6 +2204,7 @@ def _gap_dicts(gaps: Sequence[SkillGap]) -> tuple[dict[str, Any], ...]:
             "user_score": gap.user_score,
             "target_score": gap.target_score,
             "delta": gap.delta,
+            "weight": gap.weight,
         }
         for gap in gaps
     )
