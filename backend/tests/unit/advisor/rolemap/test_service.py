@@ -261,18 +261,39 @@ async def test_the_map_counts_the_openings_a_role_has_now() -> None:
     assert len(listed) == drawn.opening_count
 
 
-async def test_an_opening_in_two_roles_is_listed_under_each() -> None:
+async def test_an_opening_in_two_roles_is_listed_under_each_role() -> None:
+    """Each role's own list has it, as each bubble counts it; the top list,
+    one per company, names it once."""
     shared = _posting("Staff Backend Engineer")
     rolemap = _service(FakeRoleMapUnitOfWork(), FakeMarket([shared]))
     first, second = uuid.uuid4(), uuid.uuid4()
     await _store(rolemap, first, [shared], "Backend Engineer")
     await _store(rolemap, second, [shared], "Staff Engineer")
 
-    listed = await rolemap.matched_postings(OWNER, limit=None)
+    for role_id in (first, second):
+        [listed] = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+        assert (listed.role_id, listed.posting_id) == (role_id, shared.id)
+    assert [m.posting_id for m in await rolemap.matched_postings(OWNER, limit=None)] == [shared.id]
 
-    assert sorted((str(m.role_id), m.posting_id) for m in listed) == sorted(
-        [(str(first), shared.id), (str(second), shared.id)]
-    )
+
+async def test_top_matched_names_each_company_once_and_a_roles_list_keeps_all() -> None:
+    """Across roles, one opening per company; one role's list stays whole, as
+    its bubble counts it."""
+    postings = [
+        _posting("Backend A", company="G2i"),
+        _posting("Backend B", company="G2i"),
+        _posting("Backend C", company="Acme"),
+    ]
+    rolemap = _service(FakeRoleMapUnitOfWork(), FakeMarket(postings))
+    role_id = uuid.uuid4()
+    await _store(rolemap, role_id, postings, "Backend Engineer")
+
+    top = await rolemap.matched_postings(OWNER, limit=None)
+    mine = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+    [drawn] = await rolemap.map_roles(OWNER)
+
+    assert sorted(m.company_name for m in top) == ["Acme", "G2i"]
+    assert len(mine) == drawn.opening_count == 3
 
 
 # --- builds (ADR 0006, ADR 0018) -------------------------------------------

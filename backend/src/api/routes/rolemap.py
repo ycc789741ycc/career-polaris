@@ -161,9 +161,10 @@ async def matched_postings(
     role_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> MatchedPostingPage:
     """The openings inside the user's roles, best first, for the role map's "Top
-    matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
-    one role's, the openings the Advisor can aim at in it. Ranked by the role's
-    fit; no AI runs to produce it."""
+    matched" list: ask for ``page_size=10`` for the top ten. Across all roles
+    it holds one opening per company, the best-ranked one. ``role_id`` keeps
+    one role's, every opening the Advisor can aim at in it. Ranked by the
+    role's fit; no AI runs to produce it."""
     ranked = await deps.rolemap.matched_postings(user, limit=None, role_id=role_id)
     return MatchedPostingPage.of(
         paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view

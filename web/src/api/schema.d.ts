@@ -662,9 +662,10 @@ export interface paths {
         /**
          * Matched Postings
          * @description The openings inside the user's roles, best first, for the role map's "Top
-         *     matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
-         *     one role's, the openings the Advisor can aim at in it. Ranked by the role's
-         *     fit; no AI runs to produce it.
+         *     matched" list: ask for ``page_size=10`` for the top ten. Across all roles
+         *     it holds one opening per company, the best-ranked one. ``role_id`` keeps
+         *     one role's, every opening the Advisor can aim at in it. Ranked by the
+         *     role's fit; no AI runs to produce it.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;

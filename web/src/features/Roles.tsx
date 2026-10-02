@@ -374,9 +374,9 @@ export function Roles() {
         <div className="panel" style={{ marginTop: 20 }}>
           <h3>Top matched openings</h3>
           <p className="subcopy">
-            Open postings inside your roles, ranked by how well you fit the
-            role. Pick one to aim the Advisor at that opening; its own
-            requirements do not change its rank yet.
+            Open postings inside your roles, the best one from each company,
+            ranked by how well you fit the role. Pick one to aim the Advisor at
+            that opening; its own requirements do not change its rank yet.
           </p>
           <div className="stack" style={{ gap: 8, marginTop: 12 }}>
             {(matched.data ?? []).map((match, index) => (
