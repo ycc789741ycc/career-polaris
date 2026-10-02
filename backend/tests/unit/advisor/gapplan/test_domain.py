@@ -59,7 +59,7 @@ def snapshot(**overrides: object) -> TargetSnapshot:
 
 
 def test_a_target_with_no_requirements_cannot_be_planned_for() -> None:
-    with pytest.raises(TargetError, match="add its job description"):
+    with pytest.raises(TargetError, match="no requirements to plan against"):
         snapshot(requirements=())
 
 
@@ -86,10 +86,44 @@ def test_a_snapshot_survives_being_stored() -> None:
     assert TargetSnapshot.from_dict(role_only.to_dict()) == role_only
 
 
-def test_a_target_is_a_role_and_an_optional_opening() -> None:
-    assert TargetRef("r1").to_dict() == {"role_id": "r1", "job_posting_id": None}
+def test_a_target_is_a_role_and_an_optional_opening_or_a_posting_of_your_own() -> None:
+    assert TargetRef("r1").to_dict() == {
+        "role_id": "r1",
+        "job_posting_id": None,
+        "private_job_posting_id": None,
+    }
+    own = TargetRef(private_job_posting_id="j1")
+    assert own.is_own_posting and own.role_id is None
+    assert TargetRef.from_dict(own.to_dict()) == own
+    # Stored before Phase 8: no private_job_posting_id key at all.
+    assert TargetRef.from_dict({"role_id": "r1", "job_posting_id": "p1"}) == TargetRef("r1", "p1")
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        {},
+        {"role_id": ""},
+        {"role_id": "r1", "private_job_posting_id": "j1"},
+        {"job_posting_id": "p1", "private_job_posting_id": "j1"},
+    ],
+)
+def test_a_target_is_exactly_one_of_the_two_shapes(ids: dict[str, str]) -> None:
     with pytest.raises(TargetError):
-        TargetRef("")
+        TargetRef(**ids)
+
+
+def test_a_posting_of_your_own_reads_as_its_title_and_company_with_no_role() -> None:
+    own = snapshot(
+        ref=TargetRef(private_job_posting_id="j1"),
+        title="Staff Platform Engineer",
+        company="Meridian Labs",
+        role_id=None,
+        role_name=None,
+        basis=RequirementBasis.POSTING,
+    )
+    assert own.label == "Staff Platform Engineer · Meridian Labs"
+    assert TargetSnapshot.from_dict(own.to_dict()) == own
 
 
 def test_an_uncovered_gap_keeps_its_key_when_reworded_only_in_case_and_spacing() -> None:

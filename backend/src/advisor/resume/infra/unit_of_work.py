@@ -66,7 +66,10 @@ def _outbox_entry(event: ResumeEvent) -> tuple[EventName, dict[str, Any], uuid.U
         case ResumeTailored():
             return (
                 EventName.RESUME_TAILORED,
-                {"resume_id": str(event.resume_id), "role_id": str(event.role_id)},
+                {
+                    "resume_id": str(event.resume_id),
+                    "role_id": str(event.role_id) if event.role_id else None,
+                },
                 event.owner_id,
             )
         case ResumeVersionSaved():

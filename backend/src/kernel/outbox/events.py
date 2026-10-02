@@ -27,7 +27,6 @@ class EventName(StrEnum):
     # Role map
     ROLES_RECLUSTERED = "RolesReclustered"
     ROLE_MAP_BUILD_FINISHED = "RoleMapBuildFinished"
-    CUSTOM_ROLE_ADDED = "CustomRoleAdded"
     GAP_ANSWERS_SUBMITTED = "GapAnswersSubmitted"
     ROLE_REQUIREMENTS_CHANGED = "RoleRequirementsChanged"
     ROLE_SPLIT_OR_MERGED = "RoleSplitOrMerged"

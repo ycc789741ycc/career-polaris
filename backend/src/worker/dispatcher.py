@@ -94,23 +94,12 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # resume never import each other (ADR 0023).
         target = {
             "owner_id": str(owner_id),
-            "role_id": event.payload["role_id"],
+            "role_id": event.payload.get("role_id"),
             "job_posting_id": event.payload.get("job_posting_id"),
+            "private_job_posting_id": event.payload.get("private_job_posting_id"),
         }
         await enqueue("gapplan.regenerate", **target)
         await enqueue("resume.regenerate", **target)
-        return
-
-    if name == EventName.CUSTOM_ROLE_ADDED:
-        # A company named on a custom role seeds board discovery. Only the
-        # company crosses over: the crawl source it may leave has no owner
-        # (domain decision 25). The route already recorded the build.
-        company_name = event.payload.get("company_name")
-        if company_name:
-            company_id = await deps.market.company_named(company_name)
-            await enqueue(
-                "market.discover_board", company_id=str(company_id), company_name=company_name
-            )
         return
 
     if name == EventName.TARGET_LOCATIONS_CHANGED:

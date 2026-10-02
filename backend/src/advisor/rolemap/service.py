@@ -5,8 +5,11 @@ The analysis recommends candidate roles (ADR 0024); a build searches the
 postings in the user's target locations for each and keeps the top k the
 market has, k a setting (ADR 0029). The split that matters is who pays for what. Embedding and
 matching run locally on the platform — plain computation. The user's key is
-spent only on naming a role, pulling its requirements out, and estimating its
-interview difficulty (domain decision 7).
+spent only on naming a role, pulling its requirements out, estimating its
+interview difficulty (domain decision 7), and scoring the fits.
+
+A posting the user brings themselves is evaluated here too, so the fit rules
+live in one place (ADR 0028), but it is never on the map (Phase 8).
 """
 
 from __future__ import annotations
@@ -42,11 +45,20 @@ from advisor.rolemap.domain import (
     CandidateStrength,
     CandidateStrengthFilter,
     ClosingLifts,
-    CustomRoleAdded,
-    CustomRoleError,
     HiringBar,
     LineageEntry,
     MatchCandidate,
+    OwnerRoleMap,
+    OwnPostingError,
+    PostingEvaluation,
+    PostingEvaluationFilter,
+    PostingFit,
+    PostingFitBasis,
+    PostingFitFilter,
+    PostingRequirement,
+    PostingRequirementFilter,
+    PostingRequirementFit,
+    PostingRequirementFitFilter,
     Reconciliation,
     Role,
     RoleCandidate,
@@ -60,7 +72,6 @@ from advisor.rolemap.domain import (
     RoleMapUnitOfWork,
     RoleMember,
     RoleMemberFilter,
-    RoleOrigin,
     RoleRequirement,
     RoleRequirementFilter,
     RoleRequirementsChanged,
@@ -75,8 +86,11 @@ from advisor.rolemap.domain import (
     closing_lifts,
     evaluate,
     fit_estimates,
+    get_own_posting_key,
+    get_posting_fit,
     keep_on_market,
     max_role_count,
+    parse_own_posting,
     rank_matches,
     reconcile,
     spearman,
@@ -95,6 +109,8 @@ __all__ = [
     "FitView",
     "MarketWait",
     "MatchedPostingView",
+    "OwnPostingView",
+    "PostingFitView",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
@@ -219,14 +235,6 @@ class RoleView:
     salary_bands: dict[str, Any]
     requirements: tuple[RequirementView, ...]
     is_coherent: bool
-    # `recommended` or `custom` (ADR 0021); a custom role is drawn as "yours".
-    origin: str = str(RoleOrigin.RECOMMENDED)
-    company_name: str | None = None
-    private_posting_id: uuid.UUID | None = None
-
-    @property
-    def is_custom(self) -> bool:
-        return self.origin == str(RoleOrigin.CUSTOM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +263,50 @@ class FitView:
             ],
             uncovered=[UncoveredRequirement(u["statement"], u["weight"]) for u in self.uncovered],
         )
+
+
+@dataclass(frozen=True, slots=True)
+class PostingFitView:
+    """The user's fit to one posting, worked out locally from an AI fit
+    (Phase 8): what the Advisor plans against when aimed at it."""
+
+    posting_key: str
+    basis: str
+    score: int
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    requirements: tuple[RequirementView, ...]
+    requirement_map: dict[str, str | None]
+    target_profile: dict[str, int]
+    assessment_id: uuid.UUID
+    created_at: datetime
+
+    def lifts(self) -> ClosingLifts:
+        """Fit points each gap is worth, by the fit's own arithmetic."""
+        return closing_lifts(
+            gaps=[
+                SkillGap(g["dimension_key"], g["user_score"], g["target_score"]) for g in self.gaps
+            ],
+            uncovered=[UncoveredRequirement(u["statement"], u["weight"]) for u in self.uncovered],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OwnPostingView:
+    """A posting the user brought themselves, to aim the Advisor at (Phase 8):
+    the JD they pasted, where reading and scoring it stands, and its fit."""
+
+    private_job_posting_id: uuid.UUID
+    title: str
+    company_name: str
+    # The latest run: `running`, `ready` or `failed`; none before any.
+    status: str | None
+    error_code: str | None
+    error_message: str | None
+    fit: int | None
+    # Scored against an analysis older than the latest: worth rescoring.
+    is_stale: bool
+    scored_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -551,22 +603,11 @@ class RoleMapService:
 
     async def _ask_market(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> BuildRequestView:
         """Ask the market for every source this build reads: the candidates'
-        searches in the user's places, the baseline boards, and the custom
-        roles' companies' boards. Only titles, places and company ids cross."""
+        searches in the user's places, and the baseline boards. Only titles and
+        places cross."""
         titles = [candidate.title for candidate in await self._candidates(owner_id)]
         places = await self._market.target_locations(owner_id)
-        async with self._uow.for_owner(owner_id) as mine:
-            custom = await mine.roles.get_list(
-                RoleFilter(is_retired=False, origin=RoleOrigin.CUSTOM)
-            )
-        company_ids = [
-            await self._market.company_named(role.company_name)
-            for role in custom
-            if role.company_name
-        ]
-        request = await self._market.request_sources(
-            titles=titles, places=places, company_ids=company_ids
-        )
+        request = await self._market.request_sources(titles=titles, places=places)
         now = utcnow()
         async with self._uow.for_owner(owner_id) as mine:
             build = await mine.builds.get(build_id)
@@ -699,15 +740,14 @@ class RoleMapService:
 
         Role ids survive: a goal or a saved fit pointing at a role must still
         find it after a crawl changes the underlying postings. With no
-        candidates yet — no analysis has succeeded — only custom roles are
-        placed, so nothing is spent on a map the user never priced.
+        candidates yet — no analysis has succeeded — nothing is built, so
+        nothing is spent on a map the user never priced.
         """
         candidates = await self._candidates(owner_id)
         if candidates:
             await self._build_recommended(owner_id, candidates)
         else:
             log.info("rolemap.no_candidates", owner_id=str(owner_id))
-        await self._build_custom(owner_id)
         return await self.roles(owner_id)
 
     async def _build_recommended(
@@ -900,8 +940,8 @@ class RoleMapService:
         block: str,
     ) -> None:
         """Name a role, read out what it requires and estimate its bar, on the
-        user's key: two calls. ``block`` is the untrusted text read — a
-        candidate's openings, or a custom role's JD."""
+        user's key: two calls. ``block`` is the untrusted text read: a
+        candidate's openings."""
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
@@ -948,18 +988,15 @@ class RoleMapService:
     # -- fits (ADR 0028) -----------------------------------------------------
 
     async def estimate_fits(
-        self, owner_id: uuid.UUID, *, recommended: int | None = None, extra_roles: int = 0
+        self, owner_id: uuid.UUID, *, recommended: int | None = None
     ) -> dict[str, Any]:
         """The most scoring a build's fits can cost: one projection per role the
-        map will hold — ``recommended`` roles (by default the ones on the map
-        now), the user's own, and ``extra_roles`` about to be added — each with
-        the most dimensions and requirements there can be. A ceiling, since
-        nothing is known about the roles yet."""
-        live = await self.roles(owner_id)
-        custom = sum(1 for role in live if role.is_custom)
+        map will hold — ``recommended`` roles, by default the ones on the map
+        now — each with the most dimensions and requirements there can be. A
+        ceiling, since nothing is known about the roles yet."""
         if recommended is None:
-            recommended = len(live) - custom
-        roles = min(recommended, self._top_k) + custom + extra_roles
+            recommended = len(await self.roles(owner_id))
+        roles = min(recommended, self._top_k)
         if roles == 0:
             return {"cost_usd": "0", "roles": 0, "rate_is_published": True}
         estimate = await self._gateway.estimate(
@@ -1025,11 +1062,8 @@ class RoleMapService:
         """The best openings inside the user's roles, or inside one of them:
         the openings a Target in that role can name (ADR 0022).
 
-        Ranked by the role's current fit; no AI runs here. A custom role's
-        private JD is not an opening: only shared postings are listed. An
-        opening inside two roles (a custom role's title can match a
-        recommended role's posting) is listed under each, as each role's
-        bubble counts it.
+        Ranked by the role's current fit; no AI runs here. Only shared
+        postings are listed.
 
         Across all roles the list keeps each company's best opening only, so
         "Top matched" names different companies; one role's list
@@ -1182,138 +1216,364 @@ class RoleMapService:
             spearman=round(spearman([e for e, _ in pairs], [float(f) for _, f in pairs]), 3),
         )
 
-    # -- custom roles (ADR 0021) ---------------------------------------------
+    # -- postings of the user's own (Phase 8) ------------------------------
 
-    async def add_custom_role(
+    async def estimate_own_posting(
         self,
         owner_id: uuid.UUID,
         *,
         title: str,
         company_name: str | None,
-        private_posting_id: uuid.UUID | None,
-    ) -> RoleView:
-        """A role the user named, placed beside the k. It is analysed by the
-        next build, whose cost the user confirmed when adding it."""
-        try:
-            role = Role.custom(
-                owner_id=owner_id,
-                title=title,
-                company_name=company_name,
-                private_posting_id=private_posting_id,
-            )
-        except CustomRoleError as exc:
-            raise ValidationError(str(exc)) from exc
-        async with self._uow.for_owner(owner_id) as mine:
-            created = await mine.roles.create(role)
-            mine.record(
-                CustomRoleAdded(
-                    owner_id=owner_id, role_id=created.id, company_name=created.company_name
-                )
-            )
-        log.info("rolemap.custom_role_added", role_id=str(created.id))
-        return _role_view(created, [])
-
-    async def remove_custom_role(self, owner_id: uuid.UUID, role_id: uuid.UUID) -> None:
-        """Take a custom role off the map. It is retired, not deleted, so plans
-        and résumés aimed at it keep their snapshots, like any retired role.
-        Idempotent; a recommended role is not the user's to remove."""
-        async with self._uow.for_owner(owner_id) as mine:
-            role = await mine.roles.get(role_id)
-            if role is None or not role.is_custom:
-                raise NotFoundError("custom role not found", role_id=str(role_id))
-            if role.retired_at is None:
-                role.retire(utcnow())
-                await mine.roles.update(role)
-
-    async def estimate_custom_role(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        title: str,
-        company_name: str | None,
-        job_description: str | None,
+        job_description: str,
     ) -> dict[str, Any]:
-        """What adding this role will cost, before it is added: its two calls,
-        read from the JD when there is one, else from the postings it matches."""
-        try:
-            Role.custom(
-                owner_id=owner_id, title=title, company_name=company_name, private_posting_id=None
-            )
-        except CustomRoleError as exc:
-            raise ValidationError(str(exc)) from exc
-        matches = _custom_matches(
-            title, company_name, await self._market.postings_in_scope(owner_id)
-        )
-        jd = (job_description or "").strip()
-        if not jd and not matches:
-            return {"matches": 0, "cost_usd": "0", "model_id": None}
-        block = _jd_block(title, company_name, jd) if jd else _postings_block(matches)
-        estimate = await self._gateway.estimate(
+        """What adding this posting will cost, before it is added: reading its
+        JD's requirements, then scoring the fit. Nothing else on it calls the
+        AI."""
+        name, company, description = _own_posting(title, company_name, job_description)
+        extract = await self._gateway.estimate(
             owner_id,
             task="rolemap.extract",
             template=load_template("role_extraction", "v1"),
-            inputs={"postings": block},
+            inputs={"postings": _jd_block(name, company, description)},
             untrusted=frozenset({"postings"}),
         )
+        fit = await self._estimate_fit(owner_id)
         return {
-            "matches": len(matches),
-            "cost_usd": str(estimate.cost_usd * 2),
-            "model_id": estimate.model_id,
-            "rate_is_published": estimate.rate_is_published,
+            "cost_usd": str(extract.cost_usd + fit.cost_usd),
+            "model_id": extract.model_id,
+            "rate_is_published": extract.rate_is_published and fit.rate_is_published,
         }
 
-    async def _build_custom(self, owner_id: uuid.UUID) -> None:
-        """Place each custom role: match the postings in scope by title words,
-        narrowed to its company, and read its requirements from its JD when it
-        has one, else from those matches. Unchanged roles cost nothing."""
-        async with self._uow.for_owner(owner_id) as mine:
-            custom = await mine.roles.get_list(
-                RoleFilter(is_retired=False, origin=RoleOrigin.CUSTOM)
-            )
-            members = (
-                await mine.members.get_list(
-                    RoleMemberFilter(role_ids=tuple(role.id for role in custom))
-                )
-                if custom
-                else []
-            )
-        if not custom:
-            return
-        previous: dict[uuid.UUID, set[str]] = {}
-        for member in members:
-            previous.setdefault(member.role_id, set()).add(member.posting_key)
-        in_scope = await self._market.postings_in_scope(owner_id)
+    async def estimate_rescore(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> dict[str, Any]:
+        """What rescoring a posting of the user's own costs: the fit only, since
+        its requirements are kept."""
+        await self._market.private_posting(owner_id, private_job_posting_id)
+        fit = await self._estimate_fit(owner_id)
+        return {
+            "cost_usd": str(fit.cost_usd),
+            "model_id": fit.model_id,
+            "rate_is_published": fit.rate_is_published,
+        }
 
-        for role in custom:
-            matches = _custom_matches(role.name, role.company_name, in_scope)
-            keys = {_posting_key(p) for p in matches}
-            unchanged = previous.get(role.id, set()) == keys and role.model_id is not None
-            if unchanged and await self._keep_role(owner_id, role_id=role.id, postings=matches):
-                continue
-            jd = await self._custom_jd(owner_id, role)
-            if jd is None and not matches:
-                # Nothing to read requirements from: on the map, unscored.
-                await self._keep_role(owner_id, role_id=role.id, postings=[])
-                continue
-            await self._analyse(
+    async def add_own_posting(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        title: str,
+        company_name: str | None,
+        job_description: str,
+    ) -> tuple[OwnPostingView, uuid.UUID]:
+        """Store a posting the user brought, privately, and record the run that
+        reads and scores it, at the cost they confirmed. Returns the posting
+        and the run for the caller to queue. Its fit needs the user's
+        strengths, so an analysis comes first."""
+        name, company, description = _own_posting(title, company_name, job_description)
+        await self._require_strengths(owner_id)
+        pasted = await self._market.paste_job_description(
+            owner_id, company_name=company or "", title=name, location=None, description=description
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            run = await mine.evaluations.create(
+                PostingEvaluation.requested(
+                    owner_id=owner_id,
+                    private_job_posting_id=pasted.id,
+                    reads_requirements=True,
+                    at=utcnow(),
+                )
+            )
+        log.info("rolemap.own_posting_added", private_job_posting_id=str(pasted.id))
+        return await self.own_posting(owner_id, pasted.id), run.id
+
+    async def rescore_own_posting(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> tuple[OwnPostingView, uuid.UUID | None]:
+        """Score a posting of the user's own again, against their latest
+        strengths. Only when they ask: never after an analysis by itself. A run
+        still going is returned as it is, with nothing to queue."""
+        await self._market.private_posting(owner_id, private_job_posting_id)
+        await self._require_strengths(owner_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            latest = await _latest_evaluation(mine, private_job_posting_id)
+            if latest is not None and latest.is_running:
+                return await self.own_posting(owner_id, private_job_posting_id), None
+            requirements = await mine.posting_requirements.get_count(
+                PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
+            )
+            run = await mine.evaluations.create(
+                PostingEvaluation.requested(
+                    owner_id=owner_id,
+                    private_job_posting_id=private_job_posting_id,
+                    # Requirements are read once; only a failed first read
+                    # reads them again.
+                    reads_requirements=requirements == 0,
+                    at=utcnow(),
+                )
+            )
+        return await self.own_posting(owner_id, private_job_posting_id), run.id
+
+    async def evaluate_own_posting(self, owner_id: uuid.UUID, evaluation_id: uuid.UUID) -> None:
+        """The worker job for one recorded run: read the JD's requirements when
+        the run asks for it, score them against the user's strengths, and work
+        out the posting's fit from that locally.
+
+        An expected failure is recorded on the run and not raised: a retry
+        would spend the key again. Anything else is recorded as ``internal``
+        and re-raised for the log.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            run = await mine.evaluations.get(evaluation_id)
+        if run is None:
+            raise NotFoundError("posting evaluation not found", evaluation_id=str(evaluation_id))
+        if not run.is_running:
+            return
+        try:
+            posting = await self._market.private_posting(owner_id, run.private_job_posting_id)
+            if run.reads_requirements:
+                await self._read_own_requirements(owner_id, posting)
+            strengths = await self._require_strengths(owner_id)
+            source = await self._project_own(owner_id, strengths, posting)
+            await self._store_posting_fit(owner_id, strengths, source)
+        except DomainError as exc:
+            log.warning("rolemap.own_posting_failed", code=str(exc.code))
+            await self._finish_evaluation(
+                owner_id, evaluation_id, failure=(str(exc.code), exc.message)
+            )
+            return
+        except Exception:
+            await self._finish_evaluation(
                 owner_id,
-                role_id=role.id,
-                keys=keys,
-                postings=matches,
-                block=(
-                    _jd_block(role.name, role.company_name, jd.description)
-                    if jd is not None
-                    else _postings_block(matches)
+                evaluation_id,
+                failure=(
+                    "internal",
+                    "Scoring your posting stopped unexpectedly. Try again in a moment.",
                 ),
             )
+            raise
+        await self._finish_evaluation(owner_id, evaluation_id, failure=None)
 
-    async def _custom_jd(self, owner_id: uuid.UUID, role: Role) -> PostingView | None:
-        if role.private_posting_id is None:
-            return None
-        try:
-            return await self._market.private_posting(owner_id, role.private_posting_id)
-        except NotFoundError:
-            return None
+    async def own_postings(self, owner_id: uuid.UUID) -> list[OwnPostingView]:
+        """The postings the user brought, newest first, each with its latest
+        run and fit. One user's pasted JDs: a small set, read whole."""
+        pasted = await self._market.private_postings(owner_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            runs = await mine.evaluations.get_list(PostingEvaluationFilter())
+            fits = await mine.posting_fits.get_list(
+                PostingFitFilter(posting_keys=tuple(get_own_posting_key(p.id) for p in pasted))
+                if pasted
+                else PostingFitFilter(posting_keys=())
+            )
+        latest_assessment = await self._latest_assessment(owner_id)
+        latest_run: dict[uuid.UUID, PostingEvaluation] = {}
+        for run in runs:
+            latest_run.setdefault(run.private_job_posting_id, run)
+        latest_fit: dict[str, PostingFit] = {}
+        for fit in fits:
+            latest_fit.setdefault(fit.posting_key, fit)
+        return [
+            _own_posting_view(
+                posting,
+                latest_run.get(posting.id),
+                latest_fit.get(get_own_posting_key(posting.id)),
+                latest_assessment,
+            )
+            for posting in pasted
+        ]
+
+    async def own_posting(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> OwnPostingView:
+        for found in await self.own_postings(owner_id):
+            if found.private_job_posting_id == private_job_posting_id:
+                return found
+        raise NotFoundError("posting not found", private_job_posting_id=str(private_job_posting_id))
+
+    async def own_posting_fit(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> PostingFitView | None:
+        """The current fit to a posting of the user's own, or none before it is
+        scored."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.posting_fits.get_list(
+                PostingFitFilter(posting_keys=(get_own_posting_key(private_job_posting_id),)),
+                page_size=1,
+            )
+        return _posting_fit_view(found[0]) if found else None
+
+    async def remove_own_posting(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> None:
+        """Delete a posting of the user's own, its JD with it. Plans and résumés
+        aimed at it keep their snapshots."""
+        await self._market.private_posting(owner_id, private_job_posting_id)
+        key = get_own_posting_key(private_job_posting_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            for fit in await mine.posting_fits.get_list(PostingFitFilter(posting_keys=(key,))):
+                await mine.posting_fits.delete(fit.id)
+            for source in await mine.posting_requirement_fits.get_list(
+                PostingRequirementFitFilter(private_job_posting_id=private_job_posting_id)
+            ):
+                await mine.posting_requirement_fits.delete(source.id)
+            for requirement in await mine.posting_requirements.get_list(
+                PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
+            ):
+                await mine.posting_requirements.delete(requirement.id)
+            for run in await mine.evaluations.get_list(
+                PostingEvaluationFilter(private_job_posting_id=private_job_posting_id)
+            ):
+                await mine.evaluations.delete(run.id)
+        await self._market.delete_private_posting(owner_id, private_job_posting_id)
+        log.info("rolemap.own_posting_removed", private_job_posting_id=str(private_job_posting_id))
+
+    async def _estimate_fit(self, owner_id: uuid.UUID) -> Any:
+        return await self._gateway.estimate(
+            owner_id,
+            task="rolemap.fit",
+            template=load_template("fit_projection", "v1"),
+            inputs=_worst_case_fit_inputs(),
+            untrusted=frozenset({"requirements"}),
+        )
+
+    async def _require_strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
+        strengths = await self._strengths(owner_id)
+        if not strengths:
+            raise ValidationError("run an analysis before scoring a posting of your own")
+        return strengths
+
+    async def _latest_assessment(self, owner_id: uuid.UUID) -> uuid.UUID | None:
+        strengths = await self._strengths(owner_id)
+        return strengths[0].assessment_id if strengths else None
+
+    async def _read_own_requirements(self, owner_id: uuid.UUID, posting: PostingView) -> None:
+        """What the JD asks for, on the user's key: one call. Replaces what an
+        earlier, failed run may have left."""
+        extracted = await self._gateway.run(
+            owner_id,
+            task="rolemap.extract",
+            template=load_template("role_extraction", "v1"),
+            inputs={
+                "postings": _jd_block(posting.title, posting.company_name, posting.description)
+            },
+            output_schema=_RoleExtraction,
+            untrusted=frozenset({"postings"}),
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            for old in await mine.posting_requirements.get_list(
+                PostingRequirementFilter(private_job_posting_id=posting.id)
+            ):
+                await mine.posting_requirements.delete(old.id)
+            for read in extracted.value.requirements:
+                await mine.posting_requirements.create(
+                    PostingRequirement(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        private_job_posting_id=posting.id,
+                        statement=read.statement,
+                        weight=read.weight,
+                        expected_level=read.expected_level,
+                    )
+                )
+
+    async def _project_own(
+        self, owner_id: uuid.UUID, strengths: list[CandidateStrength], posting: PostingView
+    ) -> PostingRequirementFit:
+        """Map the posting's requirements onto the user's dimensions, with a
+        target for each, on the user's key: one call, the projection a role's
+        fit makes."""
+        async with self._uow.for_owner(owner_id) as mine:
+            read = await mine.posting_requirements.get_list(
+                PostingRequirementFilter(private_job_posting_id=posting.id)
+            )
+        if not read:
+            raise ValidationError("no requirements could be read out of this job description")
+        requirements = tuple(
+            RequirementView(r.statement, r.weight, r.expected_level)
+            for r in sorted(read, key=lambda r: (-r.weight, r.statement))
+        )
+        known_keys = {s.dimension_key for s in strengths}
+        projection = await self._gateway.run(
+            owner_id,
+            task="rolemap.fit",
+            template=load_template("fit_projection", "v1"),
+            inputs={
+                "dimensions": _strengths_block(strengths),
+                "role_name": posting.title,
+                "requirements": _requirements_lines(requirements),
+            },
+            output_schema=_Projection,
+            untrusted=frozenset({"requirements"}),
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            return await mine.posting_requirement_fits.create(
+                PostingRequirementFit(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    private_job_posting_id=posting.id,
+                    assessment_id=strengths[0].assessment_id,
+                    requirements=_requirement_dicts(requirements),
+                    requirement_map=_requirement_map(projection.value, requirements, known_keys),
+                    target_profile={
+                        t.dimension_id: t.target
+                        for t in projection.value.target_scores
+                        if t.dimension_id in known_keys
+                    },
+                    reasoning=projection.value.reasoning,
+                    model_id=projection.model_id,
+                    template_version=projection.template_version,
+                )
+            )
+
+    async def _store_posting_fit(
+        self,
+        owner_id: uuid.UUID,
+        strengths: list[CandidateStrength],
+        source: PostingRequirementFit,
+    ) -> None:
+        """Work the posting's fit out from its AI fit, locally: no AI call."""
+        user_scores = {s.dimension_key: s.score for s in strengths}
+        found = get_posting_fit(
+            requirements=source.requirements,
+            requirement_map=source.requirement_map,
+            target_profile=source.target_profile,
+            user_scores=user_scores,
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.posting_fits.create(
+                PostingFit(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    posting_key=get_own_posting_key(source.private_job_posting_id),
+                    basis=PostingFitBasis.OWN,
+                    source_fit_id=source.id,
+                    assessment_id=source.assessment_id,
+                    score=found.score,
+                    requirements=source.requirements,
+                    requirement_map=dict(source.requirement_map),
+                    target_profile=dict(source.target_profile),
+                    gaps=_gap_dicts(found.gaps),
+                    uncovered=tuple(
+                        {"statement": u.statement, "weight": u.weight} for u in found.uncovered
+                    ),
+                )
+            )
+
+    async def _finish_evaluation(
+        self,
+        owner_id: uuid.UUID,
+        evaluation_id: uuid.UUID,
+        *,
+        failure: tuple[str, str] | None,
+    ) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            run = await mine.evaluations.get(evaluation_id)
+            if run is None or not run.is_running:
+                return
+            if failure is None:
+                run.ready(utcnow())
+            else:
+                run.failed(code=failure[0], message=failure[1], at=utcnow())
+            await mine.evaluations.update(run)
 
     # -- internals ----------------------------------------------------------
 
@@ -1347,15 +1607,14 @@ class RoleMapService:
         ]
 
     async def _previous_members(self, owner_id: uuid.UUID) -> dict[str, set[str]]:
-        """Every recommended role's postings from the last run, retired ones
-        included. Custom roles are left out, so reconciliation can never retire
-        one (ADR 0021). One user's map, read whole."""
+        """Every role's postings from the last run, retired ones included. One
+        user's map, read whole."""
         async with self._uow.for_owner(owner_id) as mine:
-            recommended = await mine.roles.get_list(RoleFilter(origin=RoleOrigin.RECOMMENDED))
-            if not recommended:
+            roles = await mine.roles.get_list(RoleFilter())
+            if not roles:
                 return {}
             members = await mine.members.get_list(
-                RoleMemberFilter(role_ids=tuple(r.id for r in recommended))
+                RoleMemberFilter(role_ids=tuple(r.id for r in roles))
             )
         previous: dict[str, set[str]] = {}
         for member in members:
@@ -1510,22 +1769,8 @@ def _posting_key(posting: PostingView) -> str:
     return str(posting.id)
 
 
-def _custom_matches(
-    title: str, company_name: str | None, postings: list[PostingView]
-) -> list[PostingView]:
-    """The postings a custom role takes in: every word of its title in theirs,
-    and every word of its company in theirs when one was named. The same word
-    rule as a location in a target location."""
-    return [
-        p
-        for p in postings
-        if names_every_word(p.title, title)
-        and (not company_name or names_every_word(p.company_name, company_name))
-    ]
-
-
 def _jd_block(title: str, company_name: str | None, description: str) -> str:
-    """A custom role's pasted JD as untrusted text, trimmed like a posting."""
+    """A pasted JD as untrusted text, trimmed like a posting."""
     return (
         f"### {title} — {company_name or 'company not stated'} (the user's own JD)\n"
         f"{description[:MAX_DESCRIPTION_CHARS]}"
@@ -1586,9 +1831,6 @@ def _role_view(role: Role, requirements: list[RoleRequirement]) -> RoleView:
             for r in sorted(requirements, key=lambda r: (-r.weight, r.statement))
         ),
         is_coherent=role.is_coherent,
-        origin=str(role.origin),
-        company_name=role.company_name,
-        private_posting_id=role.private_posting_id,
     )
 
 
@@ -1685,4 +1927,104 @@ def _fit_view(fit: RoleFit) -> FitView:
             for r in fit.requirements
         ),
         requirement_map=dict(fit.requirement_map),
+    )
+
+
+def _own_posting(
+    title: str, company_name: str | None, job_description: str
+) -> tuple[str, str | None, str]:
+    try:
+        return parse_own_posting(
+            title=title, company_name=company_name, job_description=job_description
+        )
+    except OwnPostingError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+async def _latest_evaluation(
+    mine: OwnerRoleMap, private_job_posting_id: uuid.UUID
+) -> PostingEvaluation | None:
+    found = await mine.evaluations.get_list(
+        PostingEvaluationFilter(private_job_posting_id=private_job_posting_id), page_size=1
+    )
+    return found[0] if found else None
+
+
+def _requirements_lines(requirements: Sequence[RequirementView]) -> str:
+    return "\n".join(
+        f"- {r.statement} (weight {r.weight}, expects {r.expected_level})" for r in requirements
+    )
+
+
+def _requirement_dicts(requirements: Sequence[RequirementView]) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {"statement": r.statement, "weight": r.weight, "expected_level": r.expected_level}
+        for r in requirements
+    )
+
+
+def _requirement_map(
+    projection: _Projection, requirements: Sequence[RequirementView], known_keys: set[str]
+) -> dict[str, str | None]:
+    """Requirement statement -> the user's dimension it maps to, or None. A
+    statement mapped more than once keeps a dimension the user has."""
+    found: dict[str, str | None] = {r.statement: None for r in requirements}
+    for mapping in projection.mappings:
+        if mapping.requirement_statement in found and mapping.dimension_id in known_keys:
+            found[mapping.requirement_statement] = mapping.dimension_id
+    return found
+
+
+def _gap_dicts(gaps: Sequence[SkillGap]) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "dimension_key": gap.dimension_id,
+            "user_score": gap.user_score,
+            "target_score": gap.target_score,
+            "delta": gap.delta,
+        }
+        for gap in gaps
+    )
+
+
+def _posting_fit_view(fit: PostingFit) -> PostingFitView:
+    # Set by the database when the fit was stored.
+    assert fit.created_at is not None, "a stored fit has a creation time"
+    return PostingFitView(
+        posting_key=fit.posting_key,
+        basis=str(fit.basis),
+        score=fit.score,
+        gaps=fit.gaps,
+        uncovered=fit.uncovered,
+        requirements=tuple(
+            RequirementView(r["statement"], r["weight"], r["expected_level"])
+            for r in fit.requirements
+        ),
+        requirement_map=dict(fit.requirement_map),
+        target_profile=dict(fit.target_profile),
+        assessment_id=fit.assessment_id,
+        created_at=fit.created_at,
+    )
+
+
+def _own_posting_view(
+    posting: PostingView,
+    run: PostingEvaluation | None,
+    fit: PostingFit | None,
+    latest_assessment: uuid.UUID | None,
+) -> OwnPostingView:
+    return OwnPostingView(
+        private_job_posting_id=posting.id,
+        title=posting.title,
+        company_name=posting.company_name,
+        status=str(run.status) if run is not None else None,
+        error_code=run.error_code if run is not None else None,
+        error_message=run.error_message if run is not None else None,
+        fit=fit.score if fit is not None else None,
+        is_stale=(
+            fit is not None
+            and latest_assessment is not None
+            and fit.assessment_id != latest_assessment
+        ),
+        scored_at=fit.created_at if fit is not None else None,
     )

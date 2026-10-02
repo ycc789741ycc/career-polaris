@@ -31,16 +31,6 @@ class RolesReclustered:
 
 
 @dataclass(frozen=True, slots=True)
-class CustomRoleAdded:
-    """A role the user named. A company named with it goes to board discovery,
-    with nothing about the user attached (domain decision 25)."""
-
-    owner_id: uuid.UUID
-    role_id: uuid.UUID
-    company_name: str | None
-
-
-@dataclass(frozen=True, slots=True)
 class RoleMapBuildFinished:
     """A build closed, ``ready`` or ``failed``. The one trigger for scoring the
     fits, so each build is scored once, whatever it changed (ADR 0024)."""
@@ -59,8 +49,7 @@ class RoleFitsComputed:
 
 
 RoleMapEvent = (
-    CustomRoleAdded
-    | RoleFitsComputed
+    RoleFitsComputed
     | RoleMapBuildFinished
     | RoleRequirementsChanged
     | RoleSplitOrMerged

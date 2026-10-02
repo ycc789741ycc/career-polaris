@@ -200,9 +200,10 @@ def stepping_stones(
 class GapPlan:
     id: uuid.UUID
     owner_id: uuid.UUID
-    # The Target (ADR 0022): one of the user's roles, and optionally one
-    # opening in it. Plain ids: the target component owns what they mean.
-    role_id: uuid.UUID
+    # The Target (ADR 0022): one of the user's roles and optionally one
+    # opening in it, or a posting of the user's own (Phase 8). Plain ids: the
+    # target component owns what they mean.
+    role_id: uuid.UUID | None
     job_posting_id: uuid.UUID | None
     target_label: str
     version: int
@@ -217,23 +218,26 @@ class GapPlan:
     model_id: str | None = None
     template_version: str | None = None
     drafted_at: datetime | None = None
+    private_job_posting_id: uuid.UUID | None = None
 
     @classmethod
     def requested(
         cls,
         *,
         owner_id: uuid.UUID,
-        role_id: uuid.UUID,
+        role_id: uuid.UUID | None,
         job_posting_id: uuid.UUID | None,
         label: str,
         version: int,
         at: datetime,
+        private_job_posting_id: uuid.UUID | None = None,
     ) -> GapPlan:
         return cls(
             id=uuid.uuid4(),
             owner_id=owner_id,
             role_id=role_id,
             job_posting_id=job_posting_id,
+            private_job_posting_id=private_job_posting_id,
             target_label=label[:400],
             version=version,
             status=PlanStatus.DRAFTING,

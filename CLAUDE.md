@@ -221,8 +221,8 @@ contract.
 - **The crawler holds no secrets and has no grant on any user schema.** It
   fetches only the sources a build marked due, and announces nothing: no market
   change is ever resolved to users, and nothing reads across users (ADR 0027).
-- **A role map is built only when the user asks.** An analysis, "Rebuild role
-  map" or a custom role, each with a cost they confirmed. Neither the market
+- **A role map is built only when the user asks.** An analysis, or "Rebuild
+  role map", each with a cost they confirmed. Neither the market
   nor a change of locations builds one, because a build spends their key.
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
   `market_user.private_job_posting`, which the crawler role physically cannot
@@ -310,9 +310,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   is searched on a public job API for the roles the analysis recommends
   (ADR 0025).
 - **No watchlist** (ADR 0019). Role subscriptions, manual re-crawls and the
-  `subscription` Target kind are gone. Board discovery stays as an ownerless
-  `market.discover_board(company_id, company_name)`, for the companies custom
-  roles will name; it leaves a company that already has a source alone.
+  `subscription` Target kind are gone. Board discovery stayed, for the
+  companies custom roles named, until Phase 8 removed both (ADR 0030).
 - **Ten roles, built after every analysis** (ADR 0020). Since ADR 0029 the
   ten is the `ROLE_MAP_TOP_K` setting (Phase 6). `AnalysisFinished`
   goes to `activity.build_after_analysis`: a successful analysis always builds
@@ -323,7 +322,7 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   and `rolemap.role_candidate` holds the latest set. A build matches them to
   the postings in scope locally (embeddings, plus title words) and keeps the
   first ten with openings; nothing clusters any more. With no candidates, a
-  build places custom roles only. Fits are scored once per build, when
+  build places nothing. Fits are scored once per build, when
   `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
   to a build includes them (`fits_cost_usd`). `GET /role-candidates` lets the
   role map name the recommended roles the market lacks.
@@ -334,19 +333,12 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   work open worldwide is in scope for every listed location. An opening found
   there carries `credited_to` and is shown "via Himalayas" with its link.
   Since ADR 0027 a build asks for these searches itself (Phase 6).
-- **Custom roles** (ADR 0021). `rolemap.role.origin` is `recommended` or
-  `custom`; a custom role has an optional company and private JD, is never
-  retired by reconciliation, and is removed by the user (retired, not deleted).
-  Each build matches it to postings by title words (and company) through
-  `market.names_every_word`, and reads requirements from its JD, else its
-  matches. `POST /roles/custom` (priced by `/roles/custom/cost-estimate`) stores
-  the JD and records the build; `CustomRoleAdded` sends the company to board
-  discovery. Pasted JDs are no longer clustered, and every one belongs to a
-  custom role.
+- **Custom roles** (ADR 0021), gone since Phase 8: a pasted JD is now a
+  posting of the user's own, aimed at from the Advisor (ADR 0030).
 - **A Target is a role, plus an optional opening** (ADR 0022). `TargetRef` is
-  `(role_id, job_posting_id?)`; plans and résumés store both columns. A custom
-  role's JD is its requirement basis, else the role's own; the fit is the
-  role's, so resolving a Target spends nothing. `/targets` and the private-JD
+  `(role_id, job_posting_id?)`; plans and résumés store both columns. The
+  fit is the role's, so resolving a Target spends nothing. Since ADR 0030 a
+  Target can instead be a posting of the user's own (Phase 8). `/targets` and the private-JD
   scoring path are gone; `GET /matched-postings?role_id=` lists a role's
   openings.
 - **Fill the gap** (ADR 0023). A new `advisor/gapfill` component
@@ -381,11 +373,12 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   (`tests/integration/places.py`).
 - **The market on demand** (ADR 0027).
   - **What a build asks for.** A build asks
-    `market.request_sources(titles, places, company_ids)` for every source it
+    `market.request_sources(titles, places)` for every source it
     reads:
     - the candidates' searches in each searchable place;
-    - the baseline boards;
-    - its custom roles' companies' boards.
+    - the baseline boards.
+
+    (Until ADR 0030 it also asked for its custom roles' companies' boards.)
 
     Each is stamped as asked for. One whose last fetch is older than
     `MARKET_SEARCH_FRESH_HOURS` / `MARKET_BOARD_FRESH_HOURS` is marked due.
@@ -432,7 +425,7 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   `skill_assessment` v3 prompt names it and the reply's schema enforces it.
   `ROLE_MAP_TOP_K` (default 10, at most the candidate count) is how many a
   build keeps by the local estimate, and only those k are named, analysed and
-  fit-scored; custom roles are on top. They reach `RoleMapService(top_k,
+  fit-scored; they are the whole map since ADR 0030. They reach `RoleMapService(top_k,
   candidate_count)` and `AssessmentService(candidate_count)` through the
   factories; the selection rules take them as `limit` and `ceiling`.
   `RECOMMENDED_ROLE_COUNT` and `CANDIDATE_ROLE_COUNT` are gone, and the SPA
@@ -443,3 +436,31 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   answers from `rolemap.map_roles`, which counts each role's openings live
   against the current scope, as `matched_postings` lists them; an opening in
   two roles is listed under each.
+
+## Phase 8 scope
+
+The role map becomes the market's side only, and evaluating the user moves
+out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
+
+- **A posting of your own is a Target, not a role** (ADR 0030). "Aim at a
+  posting of your own" in 04 Advisor (title, company, JD required) replaces
+  "Add a role of your own" in 03 Roles.
+  - **The Target.** `TargetRef` is `role_id` with an optional
+    `job_posting_id`, or `private_job_posting_id` alone; `gapplan.plan`,
+    `resume.resume` and `gapfill.question_set` keep exactly one, by check
+    constraint. Routes take the three ids in bodies and query strings
+    (`api.dependencies.TargetQuery`); the hash says `?posting=`.
+  - **Its evaluation, in `rolemap`.** `POST /own-postings` (priced by
+    `/own-postings/cost-estimate`) stores the JD privately and records a
+    `PostingEvaluation` run, which `rolemap.evaluate_own_posting` works
+    through and the Advisor polls. The run reads `PostingRequirement`s
+    (`rolemap.extract`) and the AI's `PostingRequirementFit` (`rolemap.fit`),
+    then works out the `PostingFit` (`basis = own`) locally with
+    `get_posting_fit`: a `PostingFit` is never an AI call. No build reads or
+    scores it; after a new analysis it is `is_stale`, and
+    `/own-postings/{id}/rescore` re-runs the projection only when asked.
+  - **What went.** `Role.origin`, `company_name` and `private_posting_id`,
+    `/roles/custom`, `CustomRoleAdded`, `market.discover_board` and its
+    probing, and `request_sources`'s company ids. Migration 0025 moved custom
+    roles with a JD to postings of the user's own, re-pointed what was aimed
+    at them, and retired every custom role.

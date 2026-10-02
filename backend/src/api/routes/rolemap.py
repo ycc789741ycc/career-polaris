@@ -1,6 +1,7 @@
 """Role map HTTP surface: the bubble chart's roles and their fits, the
-openings inside them, the candidates they come from, and the ones the user
-adds."""
+openings inside them, the candidates they come from, and the postings the user
+brings themselves to aim the Advisor at (Phase 8), which are never on the
+map."""
 
 from __future__ import annotations
 
@@ -15,12 +16,14 @@ from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
 from api.schemas.common import Accepted
 from api.schemas.rolemap import (
-    CustomRoleEstimate,
-    CustomRoleRequest,
     Fit,
     FitPage,
     MatchedPosting,
     MatchedPostingPage,
+    OwnPosting,
+    OwnPostingEstimate,
+    OwnPostingPage,
+    OwnPostingRequest,
     Role,
     RoleCandidate,
     RoleCandidatePage,
@@ -37,8 +40,7 @@ router = APIRouter(tags=["rolemap"])
 
 @router.get("/roles")
 async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
-    """The analysed roles: the top k recommended ones at most (ADR 0029), and
-    the user's own."""
+    """The analysed roles: the top k recommended ones at most (ADR 0029)."""
     # Paged here, not in the service: other components read the roles whole.
     # Counted live, so a bubble's openings are the ones Top matched can list.
     found = paginate(await deps.rolemap.map_roles(user), paging.page, paging.page_size)
@@ -86,52 +88,76 @@ async def recluster(user: CurrentUser, deps: Deps) -> RunStatus:
     return RunStatus.from_build(await _request_build(user, deps))
 
 
-@router.post("/roles/custom/cost-estimate")
-async def custom_role_estimate(
-    body: CustomRoleRequest, user: CurrentUser, deps: Deps
-) -> CustomRoleEstimate:
-    """Priced before "Add to Role Map", so nothing is spent unasked. A POST,
-    because a pasted JD does not fit in a query string."""
-    estimate = await deps.rolemap.estimate_custom_role(
+@router.get("/own-postings")
+async def own_postings(user: CurrentUser, deps: Deps, paging: Paging) -> OwnPostingPage:
+    """The postings the user brought themselves, newest first, each with where
+    reading and scoring it stands and its fit. Polled while one runs."""
+    found = paginate(await deps.rolemap.own_postings(user), paging.page, paging.page_size)
+    return OwnPostingPage.of(found, OwnPosting.from_view)
+
+
+@router.post("/own-postings/cost-estimate")
+async def own_posting_estimate(
+    body: OwnPostingRequest, user: CurrentUser, deps: Deps
+) -> OwnPostingEstimate:
+    """Priced before "Aim at it", so nothing is spent unasked: reading the JD's
+    requirements, then scoring the fit. A POST, because a pasted JD does not
+    fit in a query string."""
+    return OwnPostingEstimate.model_validate(
+        await deps.rolemap.estimate_own_posting(
+            user,
+            title=body.title,
+            company_name=body.company_name,
+            job_description=body.job_description,
+        )
+    )
+
+
+@router.post("/own-postings", status_code=202)
+async def add_own_posting(body: OwnPostingRequest, user: CurrentUser, deps: Deps) -> OwnPosting:
+    """Store the JD privately and queue reading and scoring it; poll
+    ``GET /own-postings``. Never placed on the role map, and builds nothing."""
+    posting, evaluation_id = await deps.rolemap.add_own_posting(
         user,
         title=body.title,
         company_name=body.company_name,
         job_description=body.job_description,
     )
-    # The build that places it scores every role's fit, this one's included.
-    fits = await deps.rolemap.estimate_fits(user, extra_roles=1)
-    return CustomRoleEstimate.model_validate(_with_fits(estimate, fits))
-
-
-@router.post("/roles/custom", status_code=201)
-async def add_custom_role(body: CustomRoleRequest, user: CurrentUser, deps: Deps) -> Role:
-    """Place a role the user named beside the top k (ADR 0021). Its JD, if any,
-    is stored privately; the build that analyses it is recorded here, so the
-    page sees it at once, and waits for a running analysis (ADR 0018)."""
-    jd = (body.job_description or "").strip()
-    private_posting_id = None
-    if jd:
-        pasted = await deps.market.paste_job_description(
-            user,
-            company_name=body.company_name or "",
-            title=body.title,
-            location=None,
-            description=jd,
-        )
-        private_posting_id = pasted.id
-    role = await deps.rolemap.add_custom_role(
-        user,
-        title=body.title,
-        company_name=body.company_name,
-        private_posting_id=private_posting_id,
+    await enqueue(
+        "rolemap.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
     )
-    await _request_build(user, deps)
-    return Role.from_view(role)
+    return OwnPosting.from_view(posting)
 
 
-@router.delete("/roles/custom/{role_id}", status_code=204)
-async def remove_custom_role(role_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
-    await deps.rolemap.remove_custom_role(user, role_id)
+@router.get("/own-postings/{private_job_posting_id}/rescore-estimate")
+async def rescore_estimate(
+    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+) -> OwnPostingEstimate:
+    """What scoring it again against the latest strengths costs: the fit only."""
+    return OwnPostingEstimate.model_validate(
+        await deps.rolemap.estimate_rescore(user, private_job_posting_id)
+    )
+
+
+@router.post("/own-postings/{private_job_posting_id}/rescore", status_code=202)
+async def rescore(private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps) -> OwnPosting:
+    """Score it again against the latest strengths, at the cost the user
+    confirmed. Asking while a run is going returns that one."""
+    posting, evaluation_id = await deps.rolemap.rescore_own_posting(user, private_job_posting_id)
+    if evaluation_id is not None:
+        await enqueue(
+            "rolemap.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
+        )
+    return OwnPosting.from_view(posting)
+
+
+@router.delete("/own-postings/{private_job_posting_id}", status_code=204)
+async def remove_own_posting(
+    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+) -> None:
+    """Delete it, its JD with it. Plans and résumés aimed at it keep their
+    snapshots."""
+    await deps.rolemap.remove_own_posting(user, private_job_posting_id)
 
 
 def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]:

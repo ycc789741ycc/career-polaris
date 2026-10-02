@@ -21,9 +21,10 @@ class ResumeStatus(StrEnum):
 class TailoredResume:
     id: uuid.UUID
     owner_id: uuid.UUID
-    # The Target (ADR 0022): one of the user's roles, and optionally one
-    # opening in it. Plain ids: the target component owns what they mean.
-    role_id: uuid.UUID
+    # The Target (ADR 0022): one of the user's roles and optionally one
+    # opening in it, or a posting of the user's own (Phase 8). Plain ids: the
+    # target component owns what they mean.
+    role_id: uuid.UUID | None
     job_posting_id: uuid.UUID | None
     target_label: str
     template: Template
@@ -35,24 +36,27 @@ class TailoredResume:
     coverage: tuple[dict[str, Any], ...] = ()
     error_code: str | None = None
     error_message: str | None = None
+    private_job_posting_id: uuid.UUID | None = None
 
     @classmethod
     def requested(
         cls,
         *,
         owner_id: uuid.UUID,
-        role_id: uuid.UUID,
+        role_id: uuid.UUID | None,
         job_posting_id: uuid.UUID | None,
         label: str,
         template: Template,
         options: Options,
         at: datetime,
+        private_job_posting_id: uuid.UUID | None = None,
     ) -> TailoredResume:
         return cls(
             id=uuid.uuid4(),
             owner_id=owner_id,
             role_id=role_id,
             job_posting_id=job_posting_id,
+            private_job_posting_id=private_job_posting_id,
             target_label=label[:400],
             template=template,
             options=options,

@@ -63,7 +63,7 @@ The prototype's Advisor opens every page with a **"Your target role" banner**: t
 
 **Decision 26: a Target is one Role, and optionally one opening in it.** This amends decision 16, which allowed three kinds of Target.
 - **`Target { role, posting? }`.**
-  - `role` is one of the user's Roles, either recommended or custom (2.4).
+  - `role` is one of the user's Roles. (Until decision 34, recommended or custom, 2.4.)
   - `posting` is an optional shared `JobPosting` inside that Role: a row of the "Top matched openings" list.
   - A subscribed role is no longer a kind of Target, because subscriptions are gone (decision 22).
   - A pasted JD is not a Target of its own either. It belongs to the custom Role it came with.
@@ -79,6 +79,11 @@ The prototype's Advisor opens every page with a **"Your target role" banner**: t
 - **The core loop is unchanged, and it is still the point of the product.** Tasks produce real work, the next connector sync brings new Evidence, the user re-assesses, and the plan shows progress. Gap fill (2.8) adds a shorter loop: answering a question is new Evidence today.
 - **Role drift** (decision 20): when a Role splits or merges, a Target keeps its snapshot, and the app suggests the successor Role with the most requirement overlap.
 - **Where the Target is chosen:** only on the role map. The selection travels to the Advisor as the Role, plus the opening when one was picked.
+
+**Decision 34: a Target can also be a posting of the user's own, chosen in the Advisor** ([ADR 0030](decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)). This supersedes decision 25 and amends 26.
+- **`Target { role, posting? } | { ownPosting }`.** A posting of the user's own is a JD they pasted (title, optional company, the JD itself) to plan for and tailor a résumé to. It is never on the role map, and custom Roles are gone.
+- **Its requirements are its JD's**, read once when it is added, and the user's fit is worked out against them. The AI evaluates the requirements once (`PostingRequirementFit`); the **PostingFit** is worked out from that locally, never by an AI call.
+- **Where it is chosen:** in the Advisor, which lists the user's postings, adds one at a confirmed cost, and rescores one when the user asks after a new analysis. A Role and its openings are still chosen only on the role map.
 
 ### 2.2 The role map is ten roles the system picks, plus the user's own
 The prototype's role map reads: *"The 10 best-fit roles on the market, plus the ones you add"* and *"Built after your strength analysis."* The "Roles to analyse" input is gone.
@@ -97,7 +102,7 @@ The prototype's role map reads: *"The 10 best-fit roles on the market, plus the 
 - The rules from ADR 0018 hold: an analysis waits for syncs and parses to finish, and a build waits for a running analysis.
 
 **Two lists from one map** (unchanged):
-- The **bubble chart** plots the Roles: hiring bar, salary band and fit, with custom Roles drawn in green and labelled "yours".
+- The **bubble chart** plots the Roles: hiring bar, salary band and fit. (Custom Roles, drawn green until decision 34, are gone.)
 - The **Top matched openings** list ranks postings inside those Roles, using RoleFit plus a per-posting adjustment. It has no actions of its own: rows are no longer subscribed to or written for from the list. Picking one only selects it, and the Advisor target bar aims the Advisor at it.
 - Role-level and opening-level fit differ on purpose. The prototype's Staff Backend role shows 81%, while its Northwind Pay opening shows 86%.
 
@@ -105,11 +110,13 @@ The prototype's role map reads: *"The 10 best-fit roles on the market, plus the 
 v3 draws one Background worker that crawls job platforms, dumps "Crawled Roles", and builds the Role Map (2e–2h). The v2 finding still applies:
 - **What the crawler produces is `JobPosting`.** The v3 "Crawled Role" is a posting. Postings are shared, and they involve no AI and no user data.
 - **Roles are per user** (decisions 2 and 7). A per-user **role-map job** groups the postings in that user's scope into Roles, names them, extracts their requirements and builds the map. It runs on the user's key.
-- **A custom Role's JD is private** (decision 12). It never feeds the shared crawl or anyone else's Roles.
+- **A posting of the user's own is private** (decisions 12 and 34). It never feeds the shared crawl, anyone else's Roles, or the user's own role map.
 
 Draw the worker as two units: the crawler (shared) → JobPosting, and the role-map job (per user) → Role → Role map.
 
 ### 2.4 Custom roles
+*Superseded by decision 34* ([ADR 0030](decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)): what the user brings is a posting of their own, aimed at from the Advisor (2.1), not a Role. `Role.origin`, custom Roles and the board discovery they drove are gone. The rest of this section records what was built in Phase 5.
+
 The prototype's role map asks *"Not seeing a role you want?"* It takes a **job title (required)**, a **company name (optional)** and a **job description (optional, "sharpens the analysis")**. "Add to Role Map" analyses the role against the user's strengths and places it on the map. *"A pasted JD stays private to you."*
 
 **Decision 25: a user can add their own Roles, which sit beside the ten.**
@@ -140,8 +147,8 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
   - `RoleSubscription`, and the `subscription` kind of Target.
   - The weekly **MatchDigest** and the rate-limited manual re-crawl of a subscribed company.
 - **What stays:**
-  - Posting expiry and board discovery. Discovery is now driven by companies named on custom Roles (2.4) instead of subscription URLs. (The weekly crawl itself went with decision 31.)
-  - Decision 13's manual fallback is now: a custom Role whose company has no crawlable board runs on its JD.
+  - Posting expiry and board discovery. Discovery is now driven by companies named on custom Roles (2.4) instead of subscription URLs. (The weekly crawl itself went with decision 31, and discovery with decision 34.)
+  - Decision 13's manual fallback is now: a custom Role whose company has no crawlable board runs on its JD. (Since decision 34: a posting of the user's own runs on its JD.)
 - **Why:** a watchlist was a second way to aim the Advisor, next to the role map's selection. With exactly one control, the watched role had nothing left to do. A digest with no watchlist would only repeat the role map.
 - **What it costs:** nothing tells the user when a company they care about opens a role. They find out by opening the role map.
 
@@ -154,7 +161,7 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
 | **Public job APIs / open data** (e.g. Adzuna, Bundesagentur für Arbeit) | **Yes, for market breadth** | Wide coverage per market under published terms |
 | **LinkedIn, Indeed, Glassdoor pages** | **No** (decision 6) | Terms of service forbid scraping; LinkedIn has litigated it |
 
-- **Baseline plus demand** (decision 15). `CrawlSource.origin: baseline | demand`. Demand sources now come from target locations and custom-role companies. A source never records who asked for it.
+- **Baseline plus demand** (decision 15). `CrawlSource.origin: baseline | demand`. Demand sources now come from the candidate roles searched in the target locations (custom-role companies until decision 34). A source never records who asked for it.
 - `CrawlSource { kind: atsBoard | jsonLd | publicApi, origin, company?, market?, endpoint, lastFetchedAt, status }`. Each kind is one adapter behind the anti-corruption layer.
 - **Crawler hygiene:**
   - Respect `robots.txt` and rate limits, and identify the user agent.
@@ -266,7 +273,7 @@ The rest is unchanged:
 ### 2.12 Where the original requirements and prototype drift from the model
 | Where | Says | Model |
 |---|---|---|
-| Original requirements: Role Map | "User can decide the number of k by themself" | Ten, chosen by the system, plus the user's custom Roles (decisions 23, 25) |
+| Original requirements: Role Map | "User can decide the number of k by themself" | k, a deployment setting (decision 33); postings of the user's own in the Advisor (decision 34) |
 | Original requirements: Follow Up Questions, AI | Questions after profile analysis when the context isn't enough | Questions per gap of the Target, in the Advisor (decision 27) |
 | Original requirements: Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
 | Original requirements: User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
@@ -298,8 +305,9 @@ flowchart LR
   subgraph RoleMap["Role map (per user, user's key)"]
     RoleCandidate[Candidate role] --> RoleSelection
     RoleSelection -->|first 10 on the market| Role
-    CustomRole[Role, origin custom] --> Role
     Role --> RoleRequirement
+    OwnPosting[Posting of your own] --> PostingRequirement
+    PostingRequirement --> PostingRequirementFit --> PostingFit
     EstimatedDifficulty
     FitEvaluator --> RoleFit
     RoleFit --> TargetProfile
@@ -327,7 +335,6 @@ flowchart LR
   end
 
   TargetLocation -. adds APIs to .-> CrawlSource
-  CustomRole -. company seeds board discovery .-> CrawlSource
   TargetLocation -->|scope| RoleSelection
   JobPosting -->|user's scope| RoleSelection
   SkillAssessment -->|recommends| RoleCandidate
@@ -370,7 +377,8 @@ flowchart LR
 - SkillAssessment 1 — 5..10 SkillDimension (per user; ids stable across assessments), 1 — 1 profile confidence
 - Account 1 — 0..3 TargetLocation
 - CrawlSource 1 — * JobPosting; JobPosting is shared by all users (except private ones)
-- Account 1 — ≤10 recommended Role + * custom Role; Role * — * JobPosting; Role 1 — * RoleRequirement; custom Role 1 — 0..1 private JobPosting
+- Account 1 — ≤k Role; Role * — * JobPosting; Role 1 — * RoleRequirement
+- Account 1 — * posting of your own (a private JobPosting); each 1 — * PostingRequirement, 1 — 0..1 current PostingFit
 - Account × Role → 0..1 current RoleFit (plus history)
 - Target 1 — * QuestionSet (one current); QuestionSet 1 — * GapQuestion; GapQuestion 1 — 0..1 Answer
 - Target 1 — * GapPlan (versions); Account 1 — * GapPlan (plan history across Targets)
@@ -385,7 +393,6 @@ flowchart LR
   ProfileUpdated -. explicit Analyze .-> AnalysisCostEstimated --> AnalysisCostConfirmed --> AssessmentRequested
   AssessmentRequested --> AssessmentCompleted --> DimensionsChanged
   AssessmentCompleted --> AnalysisFinished --> RoleMapBuildRequested
-  CustomRoleAdded --> RoleMapBuildRequested
   RoleMapBuildRequested --> MarketSourcesRequested --> CrawlCompleted
   CrawlCompleted --> PostingsExpired
   CrawlCompleted --> RoleMapBuildStarted
@@ -424,13 +431,14 @@ flowchart LR
 | Answer | The user's submitted reply to a GapQuestion, stored as Evidence with source `user_answer` ("Your answers") | Profile |
 | CareerProfile | Career timeline plus all Evidence for one user; facts only, one per user | Profile |
 | TargetLocation | One of the user's 1–3 places to work, picked from a list: Remote, a region or a country (ADR 0026); scopes the role map, the salary bands and demand crawling. Shown in the profile, owned by Market. Replaces MarketPreference | Market |
-| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or a search of a public job API for one job title in one place); `origin` is `baseline` (platform-curated) or `demand` (a custom Role's company, or a candidate role in a target location, asked for it), never who asked | Market |
-| JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a custom Role's JD is private to its owner. Tracks first/last seen and open/expired | Market |
+| CrawlSource | A crawlable source that permits it (public ATS job board, career page with JSON-LD, or a search of a public job API for one job title in one place); `origin` is `baseline` (platform-curated) or `demand` (a candidate role's search in a target location asked for it), never who asked | Market |
+| JobPosting | One normalized opening, deduplicated by company + title + location. Crawled postings are shared; a posting of the user's own is private to its owner. Tracks first/last seen and open/expired | Market |
 | Company | An employer seen in the market | Market |
 | InterviewReport | A user's report of an interview. The shared part is aggregated for the hiring bar when ≥3 users reported; the private part becomes the reporter's Evidence and calibrates their fit | Market |
 | RoleSelection | The local, no-AI matching that keeps the first ten candidate roles with openings in the user's scope, in the analysis's order | Role map |
-| Role | A candidate role found on the market, named from the postings in *one user's* scope that are its openings (`origin: recommended`), or a role the user added (`origin: custom`); stable id and lineage, hiring bar, salary bands per target location, opening count | Role map |
-| Custom role | A Role the user added by title, with an optional company and optional private JD; placed on the map beside the ten and never retired by reclustering | Role map |
+| Role | A candidate role found on the market, named from the postings in *one user's* scope that are its openings, with what they ask for; stable id and lineage, hiring bar, salary bands per target location, opening count. Nothing in it is about the user | Role map |
+| Posting of your own | A JD the user pasted (title, optional company) to aim the Advisor at; never on the role map. Its requirements are read once, the AI evaluates them once (PostingRequirementFit), and its PostingFit is worked out from that locally (decision 34). Replaces the custom Role | Role map |
+| PostingFit | The user's fit to one posting, worked out locally from an AI fit; never an AI call | Role map |
 | Candidate role | A role the latest SkillAssessment recommended from the user's strengths, best fit first, before the market is searched for it; placed on the Role it became, or left unplaced when the user's locations lack openings for it (ADR 0024) | Role map |
 | RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |
 | EstimatedDifficulty | AI estimate of interview difficulty from posting content, used until enough InterviewReports exist | Role map |
@@ -476,14 +484,14 @@ The current model and decisions govern implementation.
 | **Assessment:** skill strength radar; dimensions decided by profile analysis | SkillAssessment over the user's own 5–10 SkillDimensions, with per-dimension and profile confidence |
 | Bubble chart: size = fit, X = hiring bar, Y = salary, one bubble per role | Role (hiring bar, salary band) + RoleFit |
 | **Background worker:** Glassdoor / LinkedIn / Indeed | **Changed:** not crawled (decision 6). Permitted sources only. LinkedIn stays a Profile connector. |
-| User subscribes to company jobs | **Changed:** removed (decision 22). A custom Role naming a company seeds that company's board. |
+| User subscribes to company jobs | **Changed:** removed (decision 22). Nothing seeds a company's board since decision 34. |
 | Fetched system wide | Shared JobPosting pool from a baseline crawl plus demand sources (decision 15) |
-| User-uploaded JD | The optional JD of a custom Role: a private JobPosting, the Role's requirement basis (decision 25) |
+| User-uploaded JD | A posting of the user's own: a private JobPosting the Advisor aims at, its own requirement basis (decision 34) |
 | **Role Map:** top k similar roles from assessment and profile | Candidate roles from the SkillAssessment → RoleSelection (the first ten the market has), built after each analysis → RoleFit; Top matched openings in those Roles |
-| User decides k | **Changed:** ten, decided by the system; the user adds custom Roles instead (decisions 23, 25) |
+| User decides k | **Changed:** k, a deployment setting (decision 33); a job the map misses is brought as a posting of the user's own (decision 34) |
 | **Gap Plan:** generated for the role the user selected | Target → GapPlan → Milestone → Task, from SkillGap + UncoveredRequirement and the submitted answers |
 | Gap plan history can be revisited | GapPlan versions per Target; plan history across Targets |
-| **Resume Advisor:** generate for a role from the bubble chart or typed in | Resume for a Target: a Role on the map, including a custom Role the user typed in |
+| **Resume Advisor:** generate for a role from the bubble chart or typed in | Resume for a Target: a Role on the map, or a posting of the user's own pasted in the Advisor (decision 34) |
 | AI writes from evidence to fit the role; first version customized to the role | RequirementCoverage + Evidence-cited bullets; first ResumeVersion written for the Target |
 | Manual edit; chat with AI to improve | ResumeVersion, RevisionThread |
 | Save / reopen résumés | ResumeVersion, "Saved résumés" per Target |
@@ -502,10 +510,10 @@ The current model and decisions govern implementation.
 | | "What it found so far" (GitHub / Résumé / Your answers), "Where the work lives", evidence table filterable by source | Evidence by source, including `user_answer`; tallies by repository and epic (ADRs 0016, 0017) |
 | `Strengths.dc.html` — 02 Strengths | Radar, "Least certain first" list with per-dimension confidence, thin-evidence note pointing to Sources, cited facts, Profile confidence next to Re-analyse | SkillAssessment, SkillDimension, confidence per dimension, profile confidence; no role fit |
 | `Roles.dc.html` — 03 Role map | "The 10 best-fit roles on the market, plus the ones you add", "Built after your strength analysis", postings counted in the target locations | RoleSelection (decisions 23, 24), TargetLocation scope |
-| | Bubble chart; dashed = estimated bar; green "yours" = custom | Role, RoleFit, EstimatedDifficulty, `Role.origin` |
+| | Bubble chart; dashed = estimated bar | Role, RoleFit, EstimatedDifficulty |
 | | Selected role: fit, band, openings, where you clear it or don't, "No evidence at all for these", what the role asks for | RoleFit, SkillGap, UncoveredRequirement, RoleRequirement |
 | | Top matched openings (rank, fit, title · company, band, posting, location) | JobPosting inside a Role, per-posting fit |
-| | "Add a role of your own": title (required), company, JD (private), "Add to Role Map" | Custom Role, private JobPosting (decision 25) |
+| | "Add a role of your own" moved to the Advisor as "Aim at a posting of your own" (decision 34) | Posting of your own, PostingFit |
 | | Sticky "Advisor target" bar, "Target this role" | The only way a Target is chosen (decision 26) |
 | `Gaps.dc.html` — Fill the gap | Target banner; gap cards (Partial / No evidence, "up to +N fit pts"); questions with "Asked because" and choice / free text; "4 of 5 answered", cost, one "Submit answers" | Target, QuestionSet, GapQuestion, SkillGap / UncoveredRequirement, Answer → `user_answer` Evidence (decision 27) |
 | `Plan.dc.html` — Gap plan | "Generate gap plan", Plan history (per role · company, version), provenance "uses your 4 answers", ranked gaps with citations, stepping stones, milestones and tasks with progress, projects that prove it | GapPlan versions per Target, plan history, Milestone, Task; stepping stones are higher-fit Roles near the Target's |
@@ -531,7 +539,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 9 | 2026-09-14 | Launch markets | **User selects** — *Superseded by 21* | MarketPreference; replaced by TargetLocation |
 | 10 | 2026-09-14 | Goal when its role splits | **App suggests a successor** — *amended by 20* | 2.1 |
 | 11 | 2026-09-14 | Interview-report incentive | **More accurate analysis for the reporter** | 2.5: private outcome becomes Evidence; shared part aggregated at ≥ 3 reporters |
-| 12 | 2026-09-14 | Pasted JDs | **Private to their owner** | 2.4 / 2.5: `JobPosting.visibility`; now a custom Role's JD |
+| 12 | 2026-09-14 | Pasted JDs | **Private to their owner** | 2.4 / 2.5: `JobPosting.visibility`; a custom Role's JD, now a posting of the user's own (34) |
 | 13 | 2026-09-14 | Uncrawlable companies | **Manual fallback (paste JDs)** — *amended by 22* | 2.4: a custom Role whose company has no crawlable board runs on its JD |
 | 14 | 2026-09-14 | Crawl frequency | **Weekly** — *amended by 22* (no digest, no manual re-crawl); *superseded by 31* | 2.5: posting expiry |
 | 15 | 2026-09-22 | What "fetched system wide" means | **A platform-curated baseline crawl alongside demand-driven crawling** | 2.5: `CrawlSource.origin`; platform pays for the baseline |
@@ -541,11 +549,11 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 19 | 2026-09-22 | What a subscription is to | **A role at a company, with an optional careers or JD URL** — *Superseded by 22* | RoleSubscription; removed |
 | 20 | 2026-09-22 | Target when its role splits | **App suggests a successor; the Target keeps its snapshot until the user accepts** | 2.1: amends 10 now that goals are gone |
 | 21 | 2026-09-29 | Where the user wants to work | **1–3 target locations, set in the profile; they scope the role map, salary bands and demand crawling** — *amended by ADR 0026: picked from a list of Remote, regions and countries* | 2.5: TargetLocation replaces MarketPreference; supersedes 9 |
-| 22 | 2026-09-29 | Watching roles and companies | **No subscriptions and no match digest; a custom Role's company seeds board discovery** | 2.4 / 2.5: RoleSubscription and MatchDigest removed; supersedes 19, amends 13 and 14 |
+| 22 | 2026-09-29 | Watching roles and companies | **No subscriptions and no match digest; a custom Role's company seeds board discovery** — *amended by 34: no discovery* | 2.4 / 2.5: RoleSubscription and MatchDigest removed; supersedes 19, amends 13 and 14 |
 | 23 | 2026-09-29 | How many roles the map analyses | **Ten, decided by the system** | 2.2: RoleSelection has a fixed cut-off; supersedes 17 (and ADR 0003 when built) |
 | 24 | 2026-09-29 | When the role map is built | **After every analysis, confirmed with the analysis's cost estimate; market changes still rebuild it** — *amended by 31: only when asked* | 2.2 |
-| 25 | 2026-09-29 | Roles the recommendation misses | **The user adds a custom Role (title required; company and a private JD optional), searched on the market and placed beside the ten** | 2.4: `Role.origin`; the JD is the Role's requirement basis |
-| 26 | 2026-09-29 | What the Advisor aims at | **One Target: a Role (recommended or custom) and optionally an opening in it, chosen only on the role map** | 2.1: amends 16; the subscription and pasted-JD kinds are gone |
+| 25 | 2026-09-29 | Roles the recommendation misses | **The user adds a custom Role (title required; company and a private JD optional), searched on the market and placed beside the ten** — *Superseded by 34* | 2.4: `Role.origin`; the JD is the Role's requirement basis |
+| 26 | 2026-09-29 | What the Advisor aims at | **One Target: a Role (recommended or custom) and optionally an opening in it, chosen only on the role map** — *amended by 34* | 2.1: amends 16; the subscription and pasted-JD kinds are gone |
 | 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** | 2.8: Gap fill; the Analyzer no longer asks questions |
 | 28 | 2026-09-29 | Where profile confidence lives | **On the SkillAssessment, shown on 02 Strengths** | 2.7 |
 | 29 | 2026-09-30 | Where the recommended Roles come from | **The analysis recommends candidate roles from the strengths; the role map keeps the first ten the user's market has openings for, and fits are scored once per build** | 2.2: RoleCandidate, RoleSelection; supersedes 2 ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
@@ -553,14 +561,14 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 31 | 2026-10-02 | When the market is fetched, and the map built | **Only when the user asks for a build: it asks for the sources it reads, waits for the stale ones, and the ten are chosen by a free local fit estimate; nothing the market does builds a map, and nothing reads across users** | 2.5: supersedes 14, amends 24 ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
 | 32 | 2026-10-03 | Where the fit lives | **In the Role Map, scored against the dimension scores the Analyzer hands over with the candidate roles; the Assessment describes only the user** | 2.5: moves RoleFit, SkillGap, UncoveredRequirement and the Top matched ranking from Assessment to Role Map ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
 | 33 | 2026-10-03 | How many roles a build keeps, and how many an analysis recommends | **Both are deployment settings: the top k (default 10) are named, analysed and scored, of the candidates an analysis recommends (default 10); custom roles are on top** | 2.2: supersedes 23 ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)) |
+| 34 | 2026-10-04 | What a user brings of their own | **A posting of their own (title, optional company, JD required), aimed at from the Advisor and never on the role map; its fit is worked out locally from one AI evaluation of its JD** | 2.1: supersedes 25, amends 22 and 26; custom Roles and board discovery go ([ADR 0030](decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)) |
 
 ### 6.2 Remaining questions
 
 These are the defaults chosen for this update. Change them if they don't fit.
 - **Profile confidence:** the mean of the dimensions' confidence, unweighted. Weighting by how much each dimension matters would need a role, and Strengths shows none.
 - **Resubmitting answers:** submitting again adds new Evidence and keeps the old. An answer is a fact the user stated at a point in time, like any other.
-- **Custom-role search:** matching is on title words (the same accent-folded word rule as locations), narrowed to the company when one is given. Clustering the matches with the recommended Roles is not needed.
-- **Removing a custom Role:** its plans and résumés keep their snapshots, like a Target whose Role retired.
+- **Removing a posting of your own:** its JD goes with it; its plans and résumés keep their snapshots, like a Target whose Role retired.
 - **Baseline list:** a short list kept in the repo, reviewed like code.
 - **Plan history retention:** keep every plan, most recent first.
 - **Minimum group size for shared difficulty:** 3 distinct reporters.

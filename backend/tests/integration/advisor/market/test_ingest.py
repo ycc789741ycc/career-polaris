@@ -157,7 +157,7 @@ async def test_another_users_pasted_jd_is_not_in_my_scope(
     assert all(p.title != "Their Private Role" for p in mine)
 
 
-# -- board discovery (domain decisions 13 and 22) ---------------------------
+# -- the baseline boards -----------------------------------------------------
 
 
 async def _company(crawler_database: Database, name: str):
@@ -166,55 +166,6 @@ async def _company(crawler_database: Database, name: str):
 
     async with SqlAlchemyMarketUnitOfWork(crawler_database).shared() as market:
         return await market.companies.create(Company.named(name))
-
-
-async def test_a_named_company_reaches_board_discovery_without_its_owner(
-    database: Database,
-    crawler_database: Database,
-    settings,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The crawler learns where to look, never who asked."""
-    from types import SimpleNamespace
-
-    import advisor.market.crawling.discovery
-    from advisor.market import jobs
-    from advisor.market.crawling.discovery import DiscoveredBoard
-
-    market = create_market_service(database, windows=WINDOWS)
-    company = await _company(crawler_database, f"Northwind {uuid.uuid4().hex[:8]}")
-
-    probed: list[str] = []
-    endpoint = f"https://boards-api.greenhouse.io/v1/boards/{uuid.uuid4().hex}/jobs"
-
-    async def fake_probe(client, company_name, *, url=None, user_agent="*", **_):
-        probed.append(company_name)
-        return DiscoveredBoard(adapter_name="greenhouse", endpoint=endpoint, posting_count=1)
-
-    monkeypatch.setattr(advisor.market.crawling.discovery, "discover_board", fake_probe)
-    deps = SimpleNamespace(settings=settings, market=market)
-    await jobs.discover_board(deps, company_id=str(company.id), company_name=company.name)
-    # A company with a source already is not probed again.
-    await jobs.discover_board(deps, company_id=str(company.id), company_name=company.name)
-
-    assert probed == [company.name]
-    async with database.shared() as session:
-        row = await session.execute(
-            text("SELECT * FROM market.crawl_source WHERE endpoint = :endpoint"),
-            {"endpoint": endpoint},
-        )
-        stored = row.mappings().one()
-    assert stored["company_id"] == company.id
-    assert stored["origin"] == "demand"
-    assert not {"owner_id", "user_id", "url"} & set(stored.keys())
-    async with database.shared() as session:
-        await session.execute(
-            text("DELETE FROM market.crawl_source WHERE endpoint = :endpoint"),
-            {"endpoint": endpoint},
-        )
-
-
-# -- the baseline crawl (domain decision 15) --------------------------------
 
 
 async def test_seeding_the_baseline_is_idempotent_and_retires_what_was_dropped(
@@ -293,53 +244,6 @@ async def test_a_user_with_no_market_sees_baseline_postings_and_one_with_a_marke
             await session.execute(
                 text("DELETE FROM market.crawl_source WHERE id = :id"), {"id": source_id}
             )
-
-
-async def test_discovery_leaves_a_baseline_company_alone(
-    database: Database,
-    settings,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A company already on the baseline list gets no second source."""
-    from types import SimpleNamespace
-
-    import advisor.market.crawling.discovery
-    from advisor.market import BASELINE_SOURCES, jobs
-
-    baseline = BASELINE_SOURCES[0]
-    market = create_market_service(database, windows=WINDOWS)
-    await market.seed_baseline()
-    async with database.shared() as session:
-        found = await session.execute(
-            text("SELECT id FROM market.company WHERE name = :name"),
-            {"name": baseline.company_name},
-        )
-        company_id = found.scalar_one()
-
-    probed: list[str] = []
-
-    async def record_probe(client, company_name, **_):
-        probed.append(company_name)
-        return None
-
-    monkeypatch.setattr(advisor.market.crawling.discovery, "discover_board", record_probe)
-    await jobs.discover_board(
-        SimpleNamespace(settings=settings, market=market),
-        company_id=str(company_id),
-        company_name=baseline.company_name,
-    )
-
-    assert probed == []
-    async with database.shared() as session:
-        found = await session.execute(
-            text(
-                "SELECT origin, count(*) FROM market.crawl_source cs "
-                "JOIN market.company c ON c.id = cs.company_id "
-                "WHERE c.name = :name GROUP BY origin"
-            ),
-            {"name": baseline.company_name},
-        )
-        assert {origin: count for origin, count in found.all()} == {"baseline": 1}
 
 
 async def test_a_posting_listing_every_office_still_stores(

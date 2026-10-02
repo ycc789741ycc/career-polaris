@@ -1,6 +1,6 @@
 # 0021. Let users add roles of their own beside the ten, and make a pasted JD belong to one
 
-**Status:** Accepted — 2026-09-29.
+**Status:** Superseded by [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) — 2026-09-29.
 
 ## Context
 

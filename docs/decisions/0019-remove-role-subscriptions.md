@@ -1,6 +1,6 @@
 # 0019. Remove role subscriptions, and drive board discovery from named companies
 
-**Status:** Accepted — 2026-09-29.
+**Status:** Accepted — 2026-09-29. Amended by [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md).
 
 ## Context
 

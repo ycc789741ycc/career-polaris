@@ -22,9 +22,6 @@ function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
     salary_bands: {},
     is_coherent: true,
     requirements: [],
-    origin: "recommended",
-    company_name: null,
-    private_posting_id: null,
     ...overrides,
   };
 }
@@ -57,19 +54,11 @@ function candidate(
   };
 }
 
-const yours = role("r3", "Staff Platform Engineer", {
-  origin: "custom",
-  company_name: "Meridian Labs",
-  private_posting_id: "jd-1",
-  opening_count: 0,
-});
-
 function serve() {
   const routes: Record<string, unknown> = {
     "/roles": page([
       role("r1", "Backend Engineer"),
       role("r2", "Platform Engineer"),
-      yours,
     ]),
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
     "/assessments/latest": null,
@@ -193,20 +182,12 @@ describe("the role map's one Advisor target", () => {
     expect(bar).toHaveTextContent("Backend Engineer");
   });
 
-  it("aims at a custom role as a role, like any other", async () => {
-    const user = userEvent.setup();
-    const shell = renderRoles({ role: "r3" });
+  it("leaves a posting of your own to the Advisor: the map selects roles", async () => {
+    renderRoles({ posting: "j1" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
-    expect(
-      await within(bar).findByText("Staff Platform Engineer · Meridian Labs"),
-    ).toBeInTheDocument();
-    await user.click(
-      within(bar).getByRole("button", { name: "Target this role" }),
-    );
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { role: "r3" },
-    });
+    // Nothing picked here, so the best fit is what the map shows.
+    expect(bar).toHaveTextContent("Platform Engineer");
   });
 
   it("aims at an opening picked in its role", async () => {
@@ -436,71 +417,20 @@ describe("roles from your strengths that the market lacks", () => {
     expect(shell.navigate).toHaveBeenCalledWith("sources");
   });
 });
-
-describe("roles of your own", () => {
+describe("no roles of your own", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("prices a role before adding it, then adds it and selects it", async () => {
-    const calls: { method: string; url: string; body: unknown }[] = [];
+  it("has nothing to add to the map: a posting of your own is the Advisor's", async () => {
     serve();
-    const base = globalThis.fetch;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input).replace("http://api.test/api/v1", "");
-        const method = init?.method ?? "GET";
-        calls.push({
-          method,
-          url,
-          body: init?.body ? JSON.parse(String(init.body)) : null,
-        });
-        if (url === "/roles/custom/cost-estimate") {
-          return Response.json({
-            cost_usd: "0.08",
-            fits_cost_usd: "0.03",
-            model_id: "claude-opus-5",
-            matches: 3,
-          });
-        }
-        if (url === "/roles/custom" && method === "POST") {
-          return Response.json(
-            role("r9", "Principal Engineer", {
-              origin: "custom",
-              company_name: "Halden Labs",
-            }),
-          );
-        }
-        return base(input, init);
-      }),
-    );
-    const user = userEvent.setup();
-    const shell = renderRoles(null);
+    renderRoles(null);
 
-    await user.type(
-      await screen.findByLabelText("Job title"),
-      "Principal Engineer",
-    );
-    await user.type(screen.getByLabelText(/Company name/), "Halden Labs");
-    await user.click(screen.getByRole("button", { name: "Add to Role Map" }));
-
+    await screen.findByRole("region", { name: "Advisor target" });
     expect(
-      await screen.findByText(/It takes in 3 open postings in your locations/),
-    ).toBeInTheDocument();
-    expect(calls.some((c) => c.url === "/roles/custom")).toBe(false);
-
-    await user.click(screen.getByRole("button", { name: "Run it" }));
-
-    expect(
-      await screen.findByText("Principal Engineer · Halden Labs"),
-    ).toBeInTheDocument();
-    expect(calls.find((c) => c.url === "/roles/custom")?.body).toEqual({
-      title: "Principal Engineer",
-      company_name: "Halden Labs",
-      job_description: null,
-    });
-    expect(shell.setFocus).toHaveBeenCalledWith({ role: "r9" });
+      screen.queryByRole("button", { name: "Add to Role Map" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Job title")).not.toBeInTheDocument();
   });
 });

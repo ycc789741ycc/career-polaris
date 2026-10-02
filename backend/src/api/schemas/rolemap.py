@@ -1,6 +1,6 @@
 """Role map's wire shapes: the bubble chart's roles and their fits, the
-openings inside them, the candidates they come from, and what a rebuild
-costs."""
+openings inside them, the candidates they come from, what a rebuild costs,
+and the postings the user brings themselves."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from advisor.rolemap import (
     MAX_ROLE_TITLE,
     FitView,
     MatchedPostingView,
+    OwnPostingView,
     RoleCandidateView,
     RoleView,
 )
@@ -54,12 +55,6 @@ class Role(ApiModel):
     salary_bands: dict[str, SalaryBand]
     is_coherent: bool
     requirements: list[RoleRequirement]
-    # `recommended`, one of the top k, or `custom`: added by the user and drawn
-    # as "yours" (ADR 0021).
-    origin: Literal["recommended", "custom"]
-    company_name: str | None
-    # A custom role's private JD, when the user pasted one.
-    private_posting_id: uuid.UUID | None
 
     @classmethod
     def from_view(cls, role: RoleView) -> Role:
@@ -79,9 +74,6 @@ class Role(ApiModel):
                 )
                 for r in role.requirements
             ],
-            origin="custom" if role.is_custom else "recommended",
-            company_name=role.company_name,
-            private_posting_id=role.private_posting_id,
         )
 
 
@@ -152,25 +144,57 @@ class RoleCandidatePage(Page[RoleCandidate]):
     pass
 
 
-class CustomRoleRequest(RequestModel):
-    """A role of the user's own (domain decision 25): a title, and optionally a
-    company and a job description, which stays private to the user."""
+class OwnPostingRequest(RequestModel):
+    """A posting of the user's own (Phase 8): a title, optionally a company,
+    and the job description, which stays private to the user."""
 
     title: str = Field(min_length=1, max_length=MAX_ROLE_TITLE)
     company_name: str | None = Field(default=None, max_length=MAX_COMPANY_NAME)
-    job_description: str | None = Field(default=None, max_length=50_000)
+    job_description: str = Field(min_length=1, max_length=50_000)
 
 
-class CustomRoleEstimate(ApiModel):
-    """What adding a custom role will cost, shown before "Add to Role Map".
-    ``cost_usd`` includes scoring the fits once its build ends (ADR 0024)."""
+class OwnPostingEstimate(ApiModel):
+    """What reading and scoring a posting of the user's own costs, shown
+    before anything runs: two calls to add one, one to rescore it."""
 
     cost_usd: str
     model_id: str | None
-    fits_cost_usd: str
-    # Open postings in scope the role takes in, by title (and company).
-    matches: int
     rate_is_published: bool | None = None
+
+
+class OwnPosting(ApiModel):
+    """A posting the user brought themselves, to aim the Advisor at. Never on
+    the role map."""
+
+    private_job_posting_id: uuid.UUID
+    title: str
+    company_name: str
+    # The latest run reading and scoring it; null before any.
+    status: Literal["running", "ready", "failed"] | None
+    error_code: str | None
+    error_message: str | None
+    fit: int | None
+    # Scored against an analysis older than the latest: worth rescoring.
+    is_stale: bool
+    scored_at: Timestamp | None
+
+    @classmethod
+    def from_view(cls, posting: OwnPostingView) -> OwnPosting:
+        return cls(
+            private_job_posting_id=posting.private_job_posting_id,
+            title=posting.title,
+            company_name=posting.company_name,
+            status=posting.status,
+            error_code=posting.error_code,
+            error_message=posting.error_message,
+            fit=posting.fit,
+            is_stale=posting.is_stale,
+            scored_at=posting.scored_at,
+        )
+
+
+class OwnPostingPage(Page[OwnPosting]):
+    pass
 
 
 class FitGap(ApiModel):

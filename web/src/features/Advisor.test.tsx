@@ -2,11 +2,17 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Fit, MatchedPosting, PlanSummary, Role } from "../api/types";
+import type {
+  Fit,
+  MatchedPosting,
+  OwnPosting,
+  PlanSummary,
+  Role,
+} from "../api/types";
 import type { AdvisorTab, Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { Advisor, focusOf, targetFor } from "./Advisor";
+import { Advisor, focusOf, ownTargetFor, targetFor } from "./Advisor";
 import { page } from "../test/page";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
@@ -30,9 +36,6 @@ function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
     },
     is_coherent: true,
     requirements: [],
-    origin: "recommended",
-    company_name: null,
-    private_posting_id: null,
     ...overrides,
   };
 }
@@ -50,11 +53,22 @@ function fit(roleId: string, score: number): Fit {
 }
 
 const backend = role("r1", "Staff Backend Engineer");
-const yours = role("r3", "Principal Engineer", {
-  origin: "custom",
-  company_name: "Halden Labs",
-  salary_bands: {},
-});
+const principal = role("r3", "Principal Engineer", { salary_bands: {} });
+
+function own(id: string, overrides: Partial<OwnPosting> = {}): OwnPosting {
+  return {
+    private_job_posting_id: id,
+    title: "Staff Platform Engineer",
+    company_name: "Meridian Labs",
+    status: "ready",
+    error_code: null,
+    error_message: null,
+    fit: 64,
+    is_stale: false,
+    scored_at: "2026-10-03T09:00:00Z",
+    ...overrides,
+  };
+}
 
 const northwind: MatchedPosting = {
   posting_id: "p1",
@@ -71,11 +85,22 @@ const northwind: MatchedPosting = {
   credited_to: null,
 };
 
-function plan(roleId: string, opening: string | null, id: string): PlanSummary {
+function plan(
+  roleId: string | null,
+  opening: string | null,
+  id: string,
+  posting: string | null = null,
+): PlanSummary {
   return {
     id,
-    target: { role_id: roleId, job_posting_id: opening },
-    label: "Principal Engineer · Halden Labs",
+    target: {
+      role_id: roleId,
+      job_posting_id: opening,
+      private_job_posting_id: posting,
+    },
+    label: posting
+      ? "Staff Platform Engineer · Meridian Labs"
+      : "Principal Engineer",
     version: 1,
     status: "ready",
     error: null,
@@ -93,7 +118,7 @@ function serve() {
       const url = String(input).replace("http://api.test/api/v1", "");
       const body =
         url === "/roles"
-          ? page([backend, yours])
+          ? page([backend, principal])
           : url === "/fits"
             ? page([fit("r1", 81), fit("r3", 64)])
             : url.startsWith("/matched-postings?role_id=r1")
@@ -101,10 +126,18 @@ function serve() {
               : url.startsWith("/matched-postings")
                 ? page([])
                 : url === "/gap-plans"
-                  ? page([plan("r3", null, "plan-1")])
+                  ? page([
+                      plan("r3", null, "plan-1"),
+                      plan(null, null, "plan-2", "j1"),
+                    ])
                   : url === "/tailored-resumes"
                     ? page([])
-                    : null;
+                    : url === "/own-postings"
+                      ? page([
+                          own("j1"),
+                          own("j2", { status: "running", fit: null }),
+                        ])
+                      : null;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -143,10 +176,54 @@ describe("the Advisor's one target role", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks for a role when the role map has not aimed it", () => {
+  it("asks for a target, and offers a posting of your own, when nothing is aimed", async () => {
     renderAdvisor(null);
+    expect(screen.getByText("Pick a target first")).toBeInTheDocument();
     expect(
-      screen.getByText("Pick a role on the role map first"),
+      screen.getByRole("heading", { name: "Aim at a posting of your own" }),
+    ).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Your postings" });
+    expect(list).toHaveTextContent("Reading and scoring it…");
+  });
+
+  it("aims at a scored posting of your own from its list", async () => {
+    const user = userEvent.setup();
+    const shell = renderAdvisor(null);
+
+    const list = await screen.findByRole("list", { name: "Your postings" });
+    await user.click(
+      within(list).getByRole("button", { name: "Aim the Advisor at it" }),
+    );
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      focus: { posting: "j1" },
+    });
+  });
+
+  it("measures everything against a posting of your own's own requirements", async () => {
+    const user = userEvent.setup();
+    const shell = renderAdvisor({ posting: "j1" });
+
+    const banner = await screen.findByRole("region", {
+      name: "Your target role",
+    });
+    expect(banner).toHaveTextContent("Your target posting");
+    expect(banner).toHaveTextContent("Staff Platform Engineer");
+    expect(banner).toHaveTextContent("at Meridian Labs");
+    expect(banner).toHaveTextContent("64%");
+    expect(banner).toHaveTextContent(
+      "measured against this posting's own requirements",
+    );
+    await user.click(
+      within(banner).getByRole("button", { name: "Change posting" }),
+    );
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { focus: null });
+  });
+
+  it("waits for a posting of your own to be scored before aiming at it", async () => {
+    renderAdvisor({ posting: "j2" });
+
+    expect(
+      await screen.findByText("Staff Platform Engineer is not scored yet"),
     ).toBeInTheDocument();
   });
 
@@ -218,9 +295,9 @@ describe("the Advisor's one target role", () => {
     const user = userEvent.setup();
     const shell = renderAdvisor({ role: "r1" });
 
-    const row = (
-      await screen.findByText("Principal Engineer · Halden Labs")
-    ).closest(".history-row") as HTMLElement;
+    const row = (await screen.findByText("Principal Engineer")).closest(
+      ".history-row",
+    ) as HTMLElement;
     await user.click(within(row).getByRole("button", { name: "Revisit" }));
     expect(shell.navigate).toHaveBeenCalledWith("advisor", {
       focus: { role: "r3" },
@@ -236,7 +313,11 @@ describe("what a focus aims at", () => {
       [fit("r1", 81)],
       [northwind],
     );
-    expect(target?.ref).toEqual({ role_id: "r1", job_posting_id: "p1" });
+    expect(target?.ref).toEqual({
+      role_id: "r1",
+      job_posting_id: "p1",
+      private_job_posting_id: null,
+    });
     expect(target?.band).toBe("EUR 165k–190k");
     expect(target?.fit).toBe(86);
     expect(target?.creditedTo).toBeNull();
@@ -258,11 +339,17 @@ describe("what a focus aims at", () => {
     expect(target?.url).toBe(found.url);
   });
 
-  it("is a custom role with its own company, drawn as yours", () => {
-    const target = targetFor({ role: "r3" }, [yours], [fit("r3", 64)], []);
-    expect(target?.label).toBe("Principal Engineer · Halden Labs");
-    expect(target?.isCustom).toBe(true);
-    expect(target?.band).toBeNull();
+  it("is a posting of your own, by its title and company, once it is scored", () => {
+    const target = ownTargetFor("j1", [own("j1")]);
+    expect(target?.label).toBe("Staff Platform Engineer · Meridian Labs");
+    expect(target?.ref).toEqual({
+      role_id: null,
+      job_posting_id: null,
+      private_job_posting_id: "j1",
+    });
+    expect(target?.isOwnPosting).toBe(true);
+    expect(ownTargetFor("j1", [own("j1", { fit: null })])).toBeNull();
+    expect(ownTargetFor("gone", [own("j1")])).toBeNull();
   });
 
   it("is nothing when the opening has left the role", () => {
@@ -279,5 +366,12 @@ describe("what a focus aims at", () => {
     expect(focusOf({ role_id: "r1", job_posting_id: null })).toEqual({
       role: "r1",
     });
+    expect(
+      focusOf({
+        role_id: null,
+        job_posting_id: null,
+        private_job_posting_id: "j1",
+      }),
+    ).toEqual({ posting: "j1" });
   });
 });

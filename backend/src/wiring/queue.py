@@ -59,7 +59,6 @@ def _register(app: App) -> None:
     from advisor.assessment import jobs as assessment_jobs
     from advisor.gapfill import jobs as gapfill_jobs
     from advisor.gapplan import jobs as gapplan_jobs
-    from advisor.market import jobs as market_jobs
     from advisor.profile import jobs as profile_jobs
     from advisor.resume import jobs as resume_jobs
     from advisor.rolemap import jobs as rolemap_jobs
@@ -74,10 +73,6 @@ def _register(app: App) -> None:
     @app.task(name="profile.parse_resume", queue=str(Queue.SYNC))
     async def parse_resume(owner_id: str, resume_id: str) -> None:
         await profile_jobs.parse_resume(deps(), owner_id=owner_id, resume_id=resume_id)
-
-    @app.task(name="market.discover_board", queue=str(Queue.SYNC))
-    async def discover_board(company_id: str, company_name: str) -> None:
-        await market_jobs.discover_board(deps(), company_id=company_id, company_name=company_name)
 
     @app.task(name="rolemap.recluster", queue=str(Queue.AI))
     async def recluster(owner_id: str, build_id: str) -> None:
@@ -106,14 +101,29 @@ def _register(app: App) -> None:
     async def compute_fits(owner_id: str) -> None:
         await rolemap_jobs.compute_fits(deps(), owner_id=owner_id)
 
+    @app.task(name="rolemap.evaluate_own_posting", queue=str(Queue.AI))
+    async def evaluate_own_posting(owner_id: str, evaluation_id: str) -> None:
+        await rolemap_jobs.evaluate_own_posting(
+            deps(), owner_id=owner_id, evaluation_id=evaluation_id
+        )
+
     @app.task(name="gapplan.draft", queue=str(Queue.AI))
     async def draft_plan(owner_id: str, plan_id: str) -> None:
         await gapplan_jobs.draft(deps(), owner_id=owner_id, plan_id=plan_id)
 
     @app.task(name="gapplan.regenerate", queue=str(Queue.AI))
-    async def regenerate_plan(owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+    async def regenerate_plan(
+        owner_id: str,
+        role_id: str | None,
+        job_posting_id: str | None,
+        private_job_posting_id: str | None = None,
+    ) -> None:
         await gapplan_jobs.regenerate(
-            deps(), owner_id=owner_id, role_id=role_id, job_posting_id=job_posting_id
+            deps(),
+            owner_id=owner_id,
+            role_id=role_id,
+            job_posting_id=job_posting_id,
+            private_job_posting_id=private_job_posting_id,
         )
 
     @app.task(name="gapfill.write", queue=str(Queue.AI))
@@ -121,9 +131,18 @@ def _register(app: App) -> None:
         await gapfill_jobs.write(deps(), owner_id=owner_id, set_id=set_id)
 
     @app.task(name="resume.regenerate", queue=str(Queue.AI))
-    async def regenerate_resume(owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+    async def regenerate_resume(
+        owner_id: str,
+        role_id: str | None,
+        job_posting_id: str | None,
+        private_job_posting_id: str | None = None,
+    ) -> None:
         await resume_jobs.regenerate(
-            deps(), owner_id=owner_id, role_id=role_id, job_posting_id=job_posting_id
+            deps(),
+            owner_id=owner_id,
+            role_id=role_id,
+            job_posting_id=job_posting_id,
+            private_job_posting_id=private_job_posting_id,
         )
 
     @app.task(name="resume.generate", queue=str(Queue.AI))

@@ -137,20 +137,13 @@ async def world(
     return World(stub, market, profile, rolemap, assessment, gapfill)
 
 
-async def _custom_role(world: World, account: uuid.UUID) -> TargetRef:
-    """A role of the user's own, placed and scored by a build (ADR 0021)."""
-    posting = await world.market.paste_job_description(
-        account,
-        company_name="Meridian Labs",
-        title="Staff Platform Engineer",
-        location=None,
-        description="Set technical direction across three product teams...",
-    )
-    role = await world.rolemap.add_custom_role(
+async def _own_posting(world: World, account: uuid.UUID) -> TargetRef:
+    """A posting of the user's own, read and scored when it is added (Phase 8)."""
+    posting, run_id = await world.rolemap.add_own_posting(
         account,
         title="Staff Platform Engineer",
         company_name="Meridian Labs",
-        private_posting_id=posting.id,
+        job_description="Set technical direction across three product teams...",
     )
     world.stub.replies += [
         json.dumps(
@@ -162,7 +155,6 @@ async def _custom_role(world: World, account: uuid.UUID) -> TargetRef:
                 ],
             }
         ),
-        json.dumps({"difficulty": 70, "confidence": 0.5, "reasoning": "A guess."}),
         json.dumps(
             {
                 "mappings": [
@@ -174,9 +166,8 @@ async def _custom_role(world: World, account: uuid.UUID) -> TargetRef:
             }
         ),
     ]
-    await world.rolemap.recluster(account)
-    await world.rolemap.compute_fits(account)
-    return TargetRef(str(role.id))
+    await world.rolemap.evaluate_own_posting(account, run_id)
+    return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
 
 
 def _questions() -> str:
@@ -205,7 +196,7 @@ def _questions() -> str:
 async def test_questions_are_written_for_the_gaps_and_answers_become_evidence(
     world: World, database: Database, account: uuid.UUID
 ) -> None:
-    ref = await _custom_role(world, account)
+    ref = await _own_posting(world, account)
     world.stub.replies.append(_questions())
 
     requested = await world.gapfill.request(account, ref)
@@ -244,14 +235,15 @@ async def test_questions_are_written_for_the_gaps_and_answers_become_evidence(
             {"owner": account},
         )
         [payload] = rows.scalars().all()
-    assert payload["role_id"] == ref.role_id and payload["job_posting_id"] is None
+    assert payload["private_job_posting_id"] == ref.private_job_posting_id
+    assert payload["role_id"] is None and payload["job_posting_id"] is None
     assert sorted(payload["evidence_ids"]) == sorted(str(e) for e in done.evidence_ids)
 
 
 async def test_another_user_cannot_read_the_questions(
     world: World, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:
-    ref = await _custom_role(world, account)
+    ref = await _own_posting(world, account)
     requested = await world.gapfill.request(account, ref)
 
     with pytest.raises(NotFoundError):

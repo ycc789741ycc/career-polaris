@@ -1,6 +1,6 @@
 # 0027. Fetch the market only when a build needs it, and build the role map only when asked
 
-**Status:** Accepted — 2026-10-02.
+**Status:** Accepted — 2026-10-02. Amended by [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md).
 
 ## Context
 

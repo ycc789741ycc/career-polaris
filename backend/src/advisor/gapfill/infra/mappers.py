@@ -21,6 +21,7 @@ def question_set(row: models.QuestionSet) -> QuestionSet:
         owner_id=row.owner_id,
         role_id=row.role_id,
         job_posting_id=row.job_posting_id,
+        private_job_posting_id=row.private_job_posting_id,
         label=row.label,
         status=QuestionSetStatus(row.status),
         gaps=tuple(_gap(g) for g in row.gaps),
@@ -40,6 +41,7 @@ def question_set_row(entity: QuestionSet) -> models.QuestionSet:
         owner_id=entity.owner_id,
         role_id=entity.role_id,
         job_posting_id=entity.job_posting_id,
+        private_job_posting_id=entity.private_job_posting_id,
         created_at=entity.created_at,
     )
     apply_question_set(row, entity)

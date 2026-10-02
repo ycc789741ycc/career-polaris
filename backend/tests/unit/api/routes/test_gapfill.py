@@ -117,7 +117,11 @@ def test_requesting_questions_queues_them_and_returns_the_set(
     assert response.status_code == 202
     body = response.json()
     assert body["status"] == "writing"
-    assert body["target"] == {"role_id": str(ROLE), "job_posting_id": None}
+    assert body["target"] == {
+        "role_id": str(ROLE),
+        "job_posting_id": None,
+        "private_job_posting_id": None,
+    }
     [gap] = body["gaps"]
     assert (gap["key"], gap["status"], gap["lift"]) == ("dim:incidents", "partial", 9)
     assert [(c["name"], c["set_id"]) for c in queued] == [("gapfill.write", str(SET_ID))]

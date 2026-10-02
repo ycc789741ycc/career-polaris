@@ -19,7 +19,7 @@ const matched: AdvisorTarget = {
   creditedTo: null,
   fit: 88,
   band: "USD 178k–196k",
-  isCustom: false,
+  isOwnPosting: false,
 };
 
 const summary: ResumeSummary = {

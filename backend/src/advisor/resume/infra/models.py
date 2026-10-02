@@ -34,14 +34,17 @@ class Resume(Base, OwnedMixin):
     __table_args__ = (
         CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
         CheckConstraint("template IN ('organic', 'plain')", name="template"),
+        CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
         {"schema": "resume"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    # The Target (ADR 0022): a role, and optionally one opening in it.
-    role_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    # The Target (ADR 0022): a role and optionally one opening in it, or a
+    # posting of the user's own (Phase 8); exactly one of the two.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    private_job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     target_label: Mapped[str] = mapped_column(String(400), nullable=False)
     snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # RequirementCoverage for the snapshot: [{requirement, verdict, dimension_key,

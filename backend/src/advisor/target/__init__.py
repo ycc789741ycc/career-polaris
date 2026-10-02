@@ -10,6 +10,7 @@ import only what is listed here (import-linter contract
 
 from advisor.target.service import (
     DimensionGap,
+    TargetError,
     TargetPreview,
     TargetRef,
     TargetService,
@@ -20,6 +21,7 @@ from advisor.target.service import (
 
 __all__ = [
     "DimensionGap",
+    "TargetError",
     "TargetPreview",
     "TargetRef",
     "TargetService",

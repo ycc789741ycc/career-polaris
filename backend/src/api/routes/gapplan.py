@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from advisor.target import TargetRef
-from api.dependencies import CurrentUser, Deps, Paging
+from api.dependencies import CurrentUser, Deps, Paging, TargetQuery
 from api.schemas.common import TargetEstimate
 from api.schemas.gapplan import Plan, PlanSummary, PlanSummaryPage, TargetRequest, TaskDoneRequest
 from wiring.queue import enqueue
@@ -17,22 +15,15 @@ router = APIRouter(tags=["gapplan"])
 
 
 @router.get("/gap-plans/cost-estimate")
-async def cost_estimate(
-    role_id: Annotated[uuid.UUID, Query()],
-    user: CurrentUser,
-    deps: Deps,
-    job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> TargetEstimate:
+async def cost_estimate(target: TargetQuery, user: CurrentUser, deps: Deps) -> TargetEstimate:
     """Drafting runs on the user's key, so it is priced first."""
-    return TargetEstimate.model_validate(
-        await deps.gapplan.estimate_cost(user, _ref(role_id, job_posting_id))
-    )
+    return TargetEstimate.model_validate(await deps.gapplan.estimate_cost(user, target))
 
 
 @router.post("/gap-plans", status_code=202)
 async def request_plan(body: TargetRequest, user: CurrentUser, deps: Deps) -> PlanSummary:
     """Records the plan as drafting and queues it; poll ``GET /gap-plans/{id}``."""
-    plan = await deps.gapplan.request(user, _ref(body.role_id, body.job_posting_id))
+    plan = await deps.gapplan.request(user, body.ref())
     await enqueue("gapplan.draft", owner_id=str(user), plan_id=str(plan.id))
     return PlanSummary.from_view(plan)
 
@@ -54,7 +45,3 @@ async def set_task_done(
     task_id: uuid.UUID, body: TaskDoneRequest, user: CurrentUser, deps: Deps
 ) -> None:
     await deps.gapplan.set_task_done(user, task_id, body.done)
-
-
-def _ref(role_id: uuid.UUID, job_posting_id: uuid.UUID | None) -> TargetRef:
-    return TargetRef(str(role_id), str(job_posting_id) if job_posting_id else None)

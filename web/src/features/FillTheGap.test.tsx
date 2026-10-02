@@ -19,7 +19,7 @@ const target: AdvisorTarget = {
   creditedTo: null,
   fit: 86,
   band: null,
-  isCustom: false,
+  isOwnPosting: false,
 };
 
 const ready: QuestionSet = {

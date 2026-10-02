@@ -56,6 +56,8 @@ class SqlAlchemyQuestionSetRepository(
             found.append(sets.job_posting_id == filter.job_posting_id)
         elif filter.role_only:
             found.append(sets.job_posting_id.is_(None))
+        if filter.private_job_posting_id is not None:
+            found.append(sets.private_job_posting_id == filter.private_job_posting_id)
         if filter.statuses is not None:
             found.append(sets.status.in_([str(s) for s in filter.statuses]))
         return found

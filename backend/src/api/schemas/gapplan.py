@@ -16,16 +16,14 @@ from api.schemas.common import (
     RequestModel,
     Timestamp,
 )
-from api.schemas.target import TargetRefBody
+from api.schemas.target import TargetFields, TargetRefBody
 
 PlanStatusName = Literal["drafting", "ready", "failed"]
 
 
-class TargetRequest(RequestModel):
-    """A role, and optionally one opening in it (ADR 0022)."""
-
-    role_id: uuid.UUID
-    job_posting_id: uuid.UUID | None = None
+class TargetRequest(TargetFields):
+    """A role and optionally one opening in it (ADR 0022), or a posting of the
+    user's own."""
 
 
 class TaskDoneRequest(RequestModel):

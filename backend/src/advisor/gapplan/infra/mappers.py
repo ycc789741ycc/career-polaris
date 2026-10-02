@@ -1,6 +1,7 @@
 """ORM rows to gap-plan entities and back. No rules live here, only shape.
 
-A plan's Target is a role and an optional opening, as two columns.
+A plan's Target is a role and an optional opening, or a posting of the user's
+own, as three columns.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ def plan(row: models.GapPlan) -> GapPlan:
         owner_id=row.owner_id,
         role_id=row.role_id,
         job_posting_id=row.job_posting_id,
+        private_job_posting_id=row.private_job_posting_id,
         target_label=row.target_label,
         version=row.version,
         status=PlanStatus(row.status),
@@ -37,6 +39,7 @@ def plan_row(entity: GapPlan) -> models.GapPlan:
         owner_id=entity.owner_id,
         role_id=entity.role_id,
         job_posting_id=entity.job_posting_id,
+        private_job_posting_id=entity.private_job_posting_id,
         created_at=entity.created_at,
     )
     apply_plan(row, entity)

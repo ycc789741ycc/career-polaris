@@ -104,7 +104,11 @@ def test_requesting_a_plan_queues_it_and_returns_its_status(
     assert response.status_code == 202
     body = response.json()
     assert body["status"] == "drafting"
-    assert body["target"] == {"role_id": role, "job_posting_id": opening}
+    assert body["target"] == {
+        "role_id": role,
+        "job_posting_id": opening,
+        "private_job_posting_id": None,
+    }
     assert [(job["name"], job["plan_id"]) for job in queued] == [("gapplan.draft", str(PLAN_ID))]
 
 
@@ -119,10 +123,27 @@ def test_a_target_that_cannot_be_planned_for_is_refused_before_anything_is_queue
     assert queued == []
 
 
-def test_a_target_without_a_role_is_refused_in_the_envelope(client: TestClient) -> None:
-    response = client.get(f"/gap-plans/cost-estimate?job_posting_id={uuid.uuid4()}")
+@pytest.mark.parametrize(
+    "query",
+    [
+        f"job_posting_id={uuid.uuid4()}",
+        "",
+        f"role_id={uuid.uuid4()}&private_job_posting_id={uuid.uuid4()}",
+    ],
+)
+def test_a_target_that_is_not_one_shape_is_refused_in_the_envelope(
+    client: TestClient, query: str
+) -> None:
+    response = client.get(f"/gap-plans/cost-estimate?{query}")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+
+
+def test_a_plan_can_aim_at_a_posting_of_your_own(client: TestClient, plans: FakeGapPlans) -> None:
+    own = uuid.uuid4()
+    response = client.get(f"/gap-plans/cost-estimate?private_job_posting_id={own}")
+    assert response.status_code == 200
+    assert plans.priced == [TargetRef(private_job_posting_id=str(own))]
 
 
 def test_the_estimate_is_for_the_target_asked_about(

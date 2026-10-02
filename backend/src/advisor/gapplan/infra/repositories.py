@@ -59,6 +59,8 @@ class SqlAlchemyGapPlanRepository(
             found.append(plan.job_posting_id == filter.job_posting_id)
         elif filter.role_only:
             found.append(plan.job_posting_id.is_(None))
+        if filter.private_job_posting_id is not None:
+            found.append(plan.private_job_posting_id == filter.private_job_posting_id)
         return found
 
 

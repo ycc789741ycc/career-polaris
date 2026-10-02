@@ -53,8 +53,8 @@ async def market_scope(user: CurrentUser, deps: Deps) -> MarketScope:
 
 @router.get("/job-descriptions")
 async def list_pasted(user: CurrentUser, deps: Deps, paging: Paging) -> PastedJobDescriptionPage:
-    """The user's pasted JDs, newest first. Each came with a custom role, which
-    is where one is added (``POST /roles/custom``)."""
+    """The user's pasted JDs, newest first. Each is a posting of the user's
+    own, which is where one is added (``POST /own-postings``)."""
     found = paginate(await deps.market.private_postings(user), paging.page, paging.page_size)
     return PastedJobDescriptionPage.of(found, PastedJobDescription.from_view)
 

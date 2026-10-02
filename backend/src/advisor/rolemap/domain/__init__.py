@@ -16,7 +16,6 @@ from advisor.rolemap.domain.constants import (
     UNCITED_DIMENSION_WEIGHT,
 )
 from advisor.rolemap.domain.events import (
-    CustomRoleAdded,
     RoleFitsComputed,
     RoleMapBuildFinished,
     RoleMapEvent,
@@ -27,12 +26,17 @@ from advisor.rolemap.domain.events import (
 from advisor.rolemap.domain.fit import (
     ClosingLifts,
     FitResult,
+    PostingFit,
+    PostingFitBasis,
+    PostingRequirementFit,
     RoleFit,
     SkillGap,
     TargetScore,
     UncoveredRequirement,
     closing_lifts,
     evaluate,
+    get_own_posting_key,
+    get_posting_fit,
 )
 from advisor.rolemap.domain.hiring_bar import BarBasis, HiringBar, blend
 from advisor.rolemap.domain.lineage import (
@@ -44,6 +48,13 @@ from advisor.rolemap.domain.lineage import (
     reconcile,
 )
 from advisor.rolemap.domain.matches import MatchCandidate, rank_matches
+from advisor.rolemap.domain.own_posting import (
+    OwnPostingError,
+    PostingEvaluation,
+    PostingEvaluationStatus,
+    PostingRequirement,
+    parse_own_posting,
+)
 from advisor.rolemap.domain.repositories import (
     BuildRunFilter,
     BuildRunRepository,
@@ -52,6 +63,14 @@ from advisor.rolemap.domain.repositories import (
     LineageEntryFilter,
     LineageEntryRepository,
     OwnerRoleMap,
+    PostingEvaluationFilter,
+    PostingEvaluationRepository,
+    PostingFitFilter,
+    PostingFitRepository,
+    PostingRequirementFilter,
+    PostingRequirementFitFilter,
+    PostingRequirementFitRepository,
+    PostingRequirementRepository,
     Repository,
     RoleCandidateFilter,
     RoleCandidateRepository,
@@ -65,13 +84,7 @@ from advisor.rolemap.domain.repositories import (
     RoleRequirementFilter,
     RoleRequirementRepository,
 )
-from advisor.rolemap.domain.role import (
-    CustomRoleError,
-    Role,
-    RoleMember,
-    RoleOrigin,
-    RoleRequirement,
-)
+from advisor.rolemap.domain.role import Role, RoleMember, RoleRequirement
 from advisor.rolemap.domain.selection import (
     assign_postings,
     choose_by_estimate,
@@ -102,15 +115,28 @@ __all__ = [
     "CandidateStrengthFilter",
     "CandidateStrengthRepository",
     "ClosingLifts",
-    "CustomRoleAdded",
-    "CustomRoleError",
     "FitResult",
     "HiringBar",
     "LineageEntry",
     "LineageEntryFilter",
     "LineageEntryRepository",
     "MatchCandidate",
+    "OwnPostingError",
     "OwnerRoleMap",
+    "PostingEvaluation",
+    "PostingEvaluationFilter",
+    "PostingEvaluationRepository",
+    "PostingEvaluationStatus",
+    "PostingFit",
+    "PostingFitBasis",
+    "PostingFitFilter",
+    "PostingFitRepository",
+    "PostingRequirement",
+    "PostingRequirementFilter",
+    "PostingRequirementFit",
+    "PostingRequirementFitFilter",
+    "PostingRequirementFitRepository",
+    "PostingRequirementRepository",
     "Reconciliation",
     "Repository",
     "Role",
@@ -130,7 +156,6 @@ __all__ = [
     "RoleMember",
     "RoleMemberFilter",
     "RoleMemberRepository",
-    "RoleOrigin",
     "RoleRepository",
     "RoleRequirement",
     "RoleRequirementFilter",
@@ -147,9 +172,12 @@ __all__ = [
     "closing_lifts",
     "evaluate",
     "fit_estimates",
+    "get_own_posting_key",
+    "get_posting_fit",
     "keep_on_market",
     "max_role_count",
     "overlap",
+    "parse_own_posting",
     "rank_matches",
     "reconcile",
     "spearman",

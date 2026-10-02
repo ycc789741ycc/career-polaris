@@ -408,7 +408,6 @@ forbidden_modules =
     advisor.market.service
     advisor.market.domain
     advisor.market.infra
-    advisor.market.jobs
     advisor.market.baseline
     advisor.market.crawling
 # Direct imports only: the crawler goes through advisor.market, which

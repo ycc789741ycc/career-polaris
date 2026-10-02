@@ -20,9 +20,18 @@ async def generate(deps: Any, *, owner_id: str, resume_id: str) -> None:
     log.info("resume.generate_finished", resume_id=resume_id)
 
 
-async def regenerate(deps: Any, *, owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+async def regenerate(
+    deps: Any,
+    *,
+    owner_id: str,
+    role_id: str | None,
+    job_posting_id: str | None,
+    private_job_posting_id: str | None = None,
+) -> None:
     """Write the Target's résumé again after answers were submitted."""
-    written = await deps.resume.regenerate(uuid.UUID(owner_id), TargetRef(role_id, job_posting_id))
+    written = await deps.resume.regenerate(
+        uuid.UUID(owner_id), TargetRef(role_id, job_posting_id, private_job_posting_id)
+    )
     log.info("resume.regenerate_finished", resume_id=str(written) if written else None)
 
 

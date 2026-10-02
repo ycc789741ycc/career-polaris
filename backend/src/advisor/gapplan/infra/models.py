@@ -34,14 +34,17 @@ class GapPlan(Base, OwnedMixin):
     __tablename__ = "plan"
     __table_args__ = (
         CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
+        CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_plan_owner_created", "owner_id", "created_at"),
         {"schema": "gapplan"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    # The Target (ADR 0022): a role, and optionally one opening in it.
-    role_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    # The Target (ADR 0022): a role and optionally one opening in it, or a
+    # posting of the user's own (Phase 8); exactly one of the two.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    private_job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     # "{role} · {company}", kept so history reads without the snapshot.
     target_label: Mapped[str] = mapped_column(String(400), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)

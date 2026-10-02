@@ -20,19 +20,19 @@ const option: AdvisorTarget = {
   creditedTo: null,
   fit: 71,
   band: null,
-  isCustom: false,
+  isOwnPosting: false,
 };
 
 const yours: AdvisorTarget = {
   ...option,
-  ref: { role_id: "r3", job_posting_id: null },
+  ref: { role_id: null, job_posting_id: null, private_job_posting_id: "j1" },
   label: "Staff Platform Engineer · Meridian Labs",
   roleName: "Staff Platform Engineer",
   company: "Meridian Labs",
   location: null,
   postingTitle: null,
   fit: null,
-  isCustom: true,
+  isOwnPosting: true,
 };
 
 const summary: PlanSummary = {
@@ -273,7 +273,7 @@ describe("gap plan screen", () => {
     });
   });
 
-  it("prices a role of your own by its role alone", async () => {
+  it("prices a posting of your own by the posting alone", async () => {
     const calls = serve((_method, url) => {
       if (url.startsWith("/gap-plans/cost-estimate"))
         return { cost_usd: "0.09" };
@@ -290,10 +290,10 @@ describe("gap plan screen", () => {
       await screen.findByRole("region", { name: "Cost estimate" }),
     ).toHaveTextContent("$0.09");
     expect(calls.map((c) => c.url)).toContain(
-      "/gap-plans/cost-estimate?role_id=r3",
+      "/gap-plans/cost-estimate?private_job_posting_id=j1",
     );
     expect(
-      screen.getByText(/requirements of the role you added/),
+      screen.getByText(/requirements of your posting/),
     ).toBeInTheDocument();
   });
 

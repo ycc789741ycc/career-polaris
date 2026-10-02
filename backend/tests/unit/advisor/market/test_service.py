@@ -293,8 +293,13 @@ async def test_a_demand_board_becomes_baseline_when_listed() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
     company = _company(uow)
-    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/a")
-    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/a")
+    board = CrawlSource.board(
+        kind="lever",
+        endpoint="https://lever.test/a",
+        company_id=company.id,
+        origin=SourceOrigin.DEMAND,
+    )
+    uow.store.sources[board.id] = board
 
     await market.seed_baseline(
         (BaselineSource(kind="lever", company_name="Acme", endpoint="https://lever.test/a"),)
@@ -303,19 +308,6 @@ async def test_a_demand_board_becomes_baseline_when_listed() -> None:
     (source,) = uow.store.sources.values()
     assert source.origin is SourceOrigin.BASELINE
     assert source.company_id == company.id
-
-
-async def test_a_company_with_a_board_needs_no_discovery() -> None:
-    uow = FakeMarketUnitOfWork()
-    market = _service(uow)
-    company = _company(uow)
-
-    assert await market.company_needing_source(company.id, "Acme") == "Acme"
-    await market.register_board(company.id, kind="lever", endpoint="https://lever.test/acme")
-
-    assert await market.company_needing_source(company.id, "Acme") is None
-    (source,) = uow.store.sources.values()
-    assert source.origin is SourceOrigin.DEMAND
 
 
 # --- the sources a build needs (ADR 0027) -----------------------------------
@@ -331,22 +323,22 @@ def _searches(uow: FakeMarketUnitOfWork) -> list[CrawlSource]:
     return sorted((s for s in uow.store.sources.values() if s.is_search), key=lambda s: s.endpoint)
 
 
-async def test_a_build_needs_a_search_per_title_and_place_the_baseline_and_named_boards() -> None:
+async def test_a_build_needs_a_search_per_title_and_place_and_the_baseline() -> None:
     uow = FakeMarketUnitOfWork()
     baseline = _source(uow, origin=SourceOrigin.BASELINE)
     company = _company(uow)
-    named = CrawlSource.board(
+    # A company's board that is not on the baseline: no build asks for it.
+    other = CrawlSource.board(
         kind="lever",
         endpoint="https://lever.test/beta",
         company_id=company.id,
         origin=SourceOrigin.DEMAND,
     )
-    uow.store.sources[named.id] = named
+    uow.store.sources[other.id] = other
 
     request = await _service(uow).request_sources(
         titles=["Data Engineer", "ML Engineer"],
         places=["Taiwan", "Remote", "Europe"],
-        company_ids=[company.id],
         at=NOW,
     )
 
@@ -358,7 +350,7 @@ async def test_a_build_needs_a_search_per_title_and_place_the_baseline_and_named
         s.company_id is None and s.origin is SourceOrigin.DEMAND and not hasattr(s, "owner_id")
         for s in searches
     )
-    assert set(request.needed) == {s.id for s in searches} | {baseline.id, named.id}
+    assert set(request.needed) == {s.id for s in searches} | {baseline.id}
     # Nothing has been fetched yet, so the build waits for all of it.
     assert set(request.due) == set(request.needed)
     assert all(uow.store.sources[i].due_at == NOW for i in request.needed)
@@ -370,7 +362,6 @@ async def test_each_title_is_searched_by_its_words_in_each_place_under_one_name(
     await _service(uow).request_sources(
         titles=["Data Engineer", "Platform Engineer"],
         places=["Taiwan", "Remote"],
-        company_ids=[],
         at=NOW,
     )
 
@@ -389,9 +380,7 @@ async def test_a_fresh_source_is_reused_and_a_stale_one_is_due() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
     board = _source(uow, origin=SourceOrigin.BASELINE)
-    first = await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    first = await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     for source in uow.store.sources.values():
         source.record_fetch(NOW, None)
         source.fetched()
@@ -399,9 +388,7 @@ async def test_a_fresh_source_is_reused_and_a_stale_one_is_due() -> None:
     # A day and a bit later: the board's 24-hour window has passed, the search's
     # 72-hour one has not.
     later = NOW + timedelta(hours=30)
-    again = await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=later
-    )
+    again = await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=later)
 
     assert set(again.needed) == set(first.needed)
     assert again.due == (board.id,)
@@ -413,11 +400,9 @@ async def test_two_builds_needing_one_stale_source_wait_on_one_fetch() -> None:
     uow = FakeMarketUnitOfWork()
     market = _service(uow)
 
-    first = await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    first = await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     second = await market.request_sources(
-        titles=["data engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(minutes=1)
+        titles=["data engineer"], places=["Taiwan"], at=NOW + timedelta(minutes=1)
     )
 
     (search,) = _searches(uow)
@@ -431,7 +416,7 @@ async def test_a_build_with_no_searchable_place_needs_only_boards() -> None:
     _source(uow, origin=SourceOrigin.BASELINE)
 
     request = await _service(uow).request_sources(
-        titles=["Data Engineer"], places=["Europe"], company_ids=[], at=NOW
+        titles=["Data Engineer"], places=["Europe"], at=NOW
     )
 
     assert _searches(uow) == [] and len(request.needed) == 1
@@ -442,7 +427,7 @@ async def test_the_crawler_sees_only_due_sources_and_a_fetch_stops_the_wait() ->
     ingest = CrawlIngest(uow)
     idle = _source(uow)
     request = await _service(uow).request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+        titles=["Data Engineer"], places=["Taiwan"], at=NOW
     )
 
     due = await ingest.due_sources()
@@ -461,9 +446,7 @@ async def test_a_search_fetch_replaces_its_list_and_expires_nothing() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
     await market.set_target_locations(OWNER, ["Taiwan"])
-    await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     (search,) = _searches(uow)
 
     first = await ingest.record_crawl(search.id, [_remote("Data"), _remote("ML")])
@@ -480,7 +463,7 @@ async def test_a_posting_on_any_current_list_or_board_stays_in_scope() -> None:
     market, ingest = _service(uow), CrawlIngest(uow)
     await market.set_target_locations(OWNER, ["Taiwan"])
     await market.request_sources(
-        titles=["Data Engineer", "Analytics Engineer"], places=["Taiwan"], company_ids=[], at=NOW
+        titles=["Data Engineer", "Analytics Engineer"], places=["Taiwan"], at=NOW
     )
     data, analytics = _searches(uow)
     await ingest.record_crawl(data.id, [_remote("Data")])
@@ -495,9 +478,7 @@ async def test_a_posting_on_any_current_list_or_board_stays_in_scope() -> None:
 async def test_the_postings_each_title_search_found_best_first() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
-    await market.request_sources(
-        titles=["Data Engineer", "ML Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    await market.request_sources(titles=["Data Engineer", "ML Engineer"], places=["Taiwan"], at=NOW)
     data = next(s for s in _searches(uow) if "data" in s.endpoint)
     await ingest.record_crawl(data.id, [_remote("Second"), _remote("First")])
     ids = {p.title: p.id for p in uow.store.postings.values()}
@@ -535,11 +516,9 @@ async def test_a_search_no_build_needs_any_more_is_retired_and_its_list_emptied(
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
     await market.set_target_locations(OWNER, ["Taiwan"])
+    await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
-    await market.request_sources(
-        titles=["Platform Engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(days=60)
+        titles=["Platform Engineer"], places=["Taiwan"], at=NOW + timedelta(days=60)
     )
     idle = next(s for s in _searches(uow) if "data" in s.endpoint)
     await ingest.record_crawl(idle.id, [_remote("Data")])
@@ -560,16 +539,14 @@ async def test_a_search_no_build_needs_any_more_is_retired_and_its_list_emptied(
 async def test_a_retired_search_needed_again_is_fetched_afresh() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
-    await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     (search,) = _searches(uow)
     await ingest.record_crawl(search.id, [])
     await ingest.mark_fetched([search.id])
     await ingest.retire_idle_searches(idle_since=NOW + timedelta(days=1))
 
     again = await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW + timedelta(days=2)
+        titles=["Data Engineer"], places=["Taiwan"], at=NOW + timedelta(days=2)
     )
 
     assert again.due == (search.id,)
@@ -580,9 +557,7 @@ async def test_a_posting_nothing_holds_is_thinned_and_one_held_is_not() -> None:
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
     board = _source(uow)
-    await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     (search,) = _searches(uow)
     await ingest.record_crawl(board.id, [_posting("Closed"), _posting("Open")])
     await ingest.record_crawl(board.id, [_posting("Open")])
@@ -609,9 +584,7 @@ async def test_an_opening_found_through_a_job_site_is_credited_wherever_it_is_re
     uow = FakeMarketUnitOfWork()
     market, ingest = _service(uow), CrawlIngest(uow)
     await market.set_target_locations(OWNER, ["Taiwan"])
-    await market.request_sources(
-        titles=["Data Engineer"], places=["Taiwan"], company_ids=[], at=NOW
-    )
+    await market.request_sources(titles=["Data Engineer"], places=["Taiwan"], at=NOW)
     (search,) = _searches(uow)
     found = replace(
         _remote("Data", "Remote, Worldwide"),

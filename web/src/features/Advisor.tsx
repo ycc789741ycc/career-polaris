@@ -5,6 +5,7 @@ import type {
   FitPage,
   MatchedPosting,
   MatchedPostingPage,
+  OwnPosting,
   PlanSummary,
   PlanSummaryPage,
   ResumeSummary,
@@ -22,11 +23,17 @@ import {
   PillToggle,
   StatTile,
 } from "../components/ui";
-import type { AdvisorTab, Focus } from "../shell/navigation";
+import {
+  type AdvisorTab,
+  type Focus,
+  type RoleFocus,
+  roleFocus,
+} from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { FillTheGap } from "./FillTheGap";
 import { GapPlan } from "./GapPlan";
+import { OwnPostingForm, OwnPostingList, useOwnPostings } from "./OwnPosting";
 import { Resume } from "./Resume";
 import { Credit, pickBand } from "./Roles";
 import type { AdvisorTarget } from "./target";
@@ -36,24 +43,27 @@ import { useAsync } from "./useAsync";
  * The Advisor: Fill the gap first, then either the gap plan or the tailored
  * résumé, for one Target (ADR 0023).
  *
- * The Target is what the role map selected — one role, and optionally one
- * opening in it (ADR 0022) — carried in the hash. There is no picker here:
- * "Change role" goes back to the role map, the only place a Target is chosen.
+ * The Target is carried in the hash: what the role map selected — one role,
+ * and optionally one opening in it (ADR 0022) — or a posting the user brought
+ * themselves, picked here (Phase 8). A posting of your own is never on the
+ * role map: it is added, scored and chosen on this screen.
  */
 export function Advisor({ tab }: { tab: AdvisorTab }) {
   const { focus, navigate } = useShell();
   const flash = useToast();
+  const picked = roleFocus(focus);
   const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
   const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
   const openings = useAsync<MatchedPosting[]>(
     () =>
-      focus
+      picked
         ? api.items<MatchedPostingPage>(
-            `/matched-postings?${new URLSearchParams({ role_id: focus.role })}`,
+            `/matched-postings?${new URLSearchParams({ role_id: picked.role })}`,
           )
         : Promise.resolve([]),
-    [focus?.role],
+    [picked?.role],
   );
+  const own = useOwnPostings();
   const plans = useAsync<PlanSummary[]>(
     () => api.items<PlanSummaryPage>("/gap-plans"),
     [],
@@ -63,37 +73,79 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     [],
   );
 
+  const aimAt = (posting: OwnPosting) =>
+    navigate("advisor", { focus: { posting: posting.private_job_posting_id } });
+  const yours = (
+    <>
+      <OwnPostingList
+        postings={own.data ?? []}
+        onAim={aimAt}
+        onChanged={own.reload}
+      />
+      <OwnPostingForm
+        onAdded={async (posting) => {
+          await own.reload();
+          flash(`Reading and scoring ${posting.title}.`);
+        }}
+      />
+    </>
+  );
+
   if (!focus) {
     return (
-      <EmptyState title="Pick a role on the role map first">
-        Select a role — or one of its openings — and press the target button at
-        the bottom of the map. The Advisor then plans a route to it and writes
-        your résumé for it.
-        <span style={{ display: "block", marginTop: 14 }}>
-          <Button onClick={() => navigate("roles")}>Open the role map</Button>
-        </span>
-      </EmptyState>
+      <section>
+        <EmptyState title="Pick a target first">
+          Select a role on the role map — or one of its openings — and press the
+          target button at the bottom of the map. Or aim at a posting of your
+          own, below. The Advisor then plans a route to it and writes your
+          résumé for it.
+          <span style={{ display: "block", marginTop: 14 }}>
+            <Button onClick={() => navigate("roles")}>Open the role map</Button>
+          </span>
+        </EmptyState>
+        <ErrorNote error={own.error} />
+        {yours}
+      </section>
     );
   }
 
   const failed =
-    roles.error ?? fits.error ?? openings.error ?? plans.error ?? resumes.error;
+    roles.error ??
+    fits.error ??
+    openings.error ??
+    plans.error ??
+    resumes.error ??
+    own.error;
   if (failed) return <ErrorNote error={failed} />;
   if (
     !roles.data ||
     !fits.data ||
     !openings.data ||
     !plans.data ||
-    !resumes.data
+    !resumes.data ||
+    !own.data
   ) {
     return <Loading what="the Advisor" />;
   }
 
-  const target = targetFor(focus, roles.data, fits.data, openings.data);
+  const target =
+    "posting" in focus
+      ? ownTargetFor(focus.posting, own.data)
+      : targetFor(focus, roles.data, fits.data, openings.data);
 
   /** Reopen a plan or résumé kept for another Target. */
   function revisit(ref: TargetRef) {
-    if (!(roles.data ?? []).some((role) => role.id === ref.role_id)) {
+    if (ref.private_job_posting_id) {
+      if (
+        !(own.data ?? []).some(
+          (posting) =>
+            posting.private_job_posting_id === ref.private_job_posting_id,
+        )
+      ) {
+        flash("That posting has been removed, so there is nothing to aim at.");
+        return;
+      }
+    } else if (!(roles.data ?? []).some((role) => role.id === ref.role_id)) {
       flash(
         "That role is no longer on your map, so there is nothing to aim at.",
       );
@@ -103,6 +155,27 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
   }
 
   if (!target) {
+    if ("posting" in focus) {
+      const posting = own.data.find(
+        (p) => p.private_job_posting_id === focus.posting,
+      );
+      return (
+        <section>
+          <EmptyState
+            title={
+              posting
+                ? `${posting.title} is not scored yet`
+                : "That posting has been removed"
+            }
+          >
+            {posting
+              ? "It is planned against once its requirements are read and your fit is scored. Its progress is below."
+              : "Pick another posting of your own, or a role on the role map."}
+          </EmptyState>
+          {yours}
+        </section>
+      );
+    }
     return (
       <EmptyState title="That target is no longer on your role map">
         The role, or the opening in it, has left the map since you picked it.
@@ -115,7 +188,7 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
 
   return (
     <Aimed
-      key={`${target.ref.role_id}:${target.ref.job_posting_id ?? ""}`}
+      key={`${target.ref.role_id ?? ""}:${target.ref.job_posting_id ?? ""}:${target.ref.private_job_posting_id ?? ""}`}
       target={target}
       tab={tab}
       plans={plans.data}
@@ -157,7 +230,14 @@ function Aimed({
 
   return (
     <section>
-      <TargetBanner target={target} onChange={() => navigate("roles")} />
+      <TargetBanner
+        target={target}
+        onChange={() =>
+          target.isOwnPosting
+            ? navigate("advisor", { focus: null })
+            : navigate("roles")
+        }
+      />
 
       <div
         className="row advisor-steps"
@@ -240,7 +320,7 @@ function TargetBanner({
       >
         <div style={{ minWidth: 0 }}>
           <Eyebrow>
-            {target.isCustom ? "Your target role · yours" : "Your target role"}
+            {target.isOwnPosting ? "Your target posting" : "Your target role"}
           </Eyebrow>
           <div
             style={{
@@ -259,7 +339,9 @@ function TargetBanner({
             </div>
           )}
           <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
-            Everything on this page is measured against this one role.
+            {target.isOwnPosting
+              ? "Everything on this page is measured against this posting's own requirements."
+              : "Everything on this page is measured against this one role."}
           </p>
         </div>
         <div className="row" style={{ gap: 10, alignItems: "stretch" }}>
@@ -269,7 +351,7 @@ function TargetBanner({
           />
           <StatTile label="Band" value={target.band ?? "—"} />
           <Button variant="ghost" onClick={onChange}>
-            Change role
+            {target.isOwnPosting ? "Change posting" : "Change role"}
           </Button>
         </div>
       </div>
@@ -282,7 +364,7 @@ function TargetBanner({
  * or the opening in it, has left the map. Pure.
  */
 export function targetFor(
-  focus: Focus,
+  focus: RoleFocus,
   roles: Role[],
   fits: Fit[],
   openings: MatchedPosting[],
@@ -298,9 +380,13 @@ export function targetFor(
   if (focus.opening && !opening) return null;
 
   const roleBand = pickBand(role.salary_bands);
-  const company = opening?.company_name ?? role.company_name ?? null;
+  const company = opening?.company_name ?? null;
   return {
-    ref: { role_id: role.id, job_posting_id: opening?.posting_id ?? null },
+    ref: {
+      role_id: role.id,
+      job_posting_id: opening?.posting_id ?? null,
+      private_job_posting_id: null,
+    },
     label: company ? `${role.name} · ${company}` : role.name,
     roleName: role.name,
     company,
@@ -314,15 +400,46 @@ export function targetFor(
       : roleBand
         ? money(roleBand.currency, roleBand.low, roleBand.high)
         : null,
-    isCustom: role.origin === "custom",
+    isOwnPosting: false,
   };
 }
 
-/** Where a Target sits on the role map. Pure. */
+/**
+ * The Target a posting of the user's own names; null when it is gone, or not
+ * scored yet, since there is nothing to plan against before it is. Pure.
+ */
+export function ownTargetFor(
+  postingId: string,
+  postings: OwnPosting[],
+): AdvisorTarget | null {
+  const posting = postings.find((p) => p.private_job_posting_id === postingId);
+  if (!posting || posting.fit === null) return null;
+  const company = posting.company_name || null;
+  return {
+    ref: {
+      role_id: null,
+      job_posting_id: null,
+      private_job_posting_id: posting.private_job_posting_id,
+    },
+    label: company ? `${posting.title} · ${company}` : posting.title,
+    roleName: posting.title,
+    company,
+    location: null,
+    postingTitle: null,
+    url: null,
+    creditedTo: null,
+    fit: posting.fit,
+    band: null,
+    isOwnPosting: true,
+  };
+}
+
+/** Where a Target is chosen: on the role map, or among your postings. Pure. */
 export function focusOf(ref: TargetRef): Focus {
-  return ref.job_posting_id
-    ? { role: ref.role_id, opening: ref.job_posting_id }
-    : { role: ref.role_id };
+  if (ref.private_job_posting_id)
+    return { posting: ref.private_job_posting_id };
+  const role = ref.role_id ?? "";
+  return ref.job_posting_id ? { role, opening: ref.job_posting_id } : { role };
 }
 
 function money(currency: string, low: number, high: number): string {

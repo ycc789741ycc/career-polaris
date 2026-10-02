@@ -31,8 +31,8 @@ from kernel.db.base import Base, OwnedMixin, TimestampMixin, new_id
 
 
 class Role(Base, OwnedMixin, TimestampMixin):
-    """A cluster of postings in one user's target locations, or a role the user
-    added.
+    """A group of openings in one user's target locations, and what they ask
+    for.
 
     ``id`` is stable across re-clustering: goals and fits point at it, so
     renumbering on every crawl would break them.
@@ -41,17 +41,11 @@ class Role(Base, OwnedMixin, TimestampMixin):
     __tablename__ = "role"
     __table_args__ = (
         Index("ix_role_owner_name", "owner_id", "name"),
-        CheckConstraint("origin IN ('recommended', 'custom')", name="origin"),
         {"schema": "rolemap"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # `recommended` (one of the ten) or `custom` (added by the user, ADR 0021).
-    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="recommended")
-    company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # The custom role's pasted JD, in market_user.private_job_posting.
-    private_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     is_coherent: Mapped[bool] = mapped_column(nullable=False, server_default="true")
     opening_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
@@ -245,6 +239,111 @@ class RoleFit(Base, OwnedMixin):
     )
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PostingEvaluation(Base, OwnedMixin):
+    """One run reading and scoring a posting of the user's own (Phase 8),
+    recorded before it is queued so the Advisor can poll it (ADR 0006)."""
+
+    __tablename__ = "posting_evaluation"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        Index(
+            "ix_posting_evaluation_owner_posting",
+            "owner_id",
+            "private_job_posting_id",
+            "requested_at",
+        ),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    # The pasted JD, in market_user.private_job_posting. No foreign key: the
+    # schemas belong to different components.
+    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # False for a rescore, which keeps the requirements already read.
+    reads_requirements: Mapped[bool] = mapped_column(nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PostingRequirement(Base, OwnedMixin):
+    """Free text read out of a posting of the user's own. It has no dimension."""
+
+    __tablename__ = "posting_requirement"
+    __table_args__ = ({"schema": "rolemap"},)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_level: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class PostingRequirementFit(Base, OwnedMixin):
+    """The AI's evaluation of a posting of the user's own: its requirements
+    mapped onto the user's dimensions, with targets. Every one taken is kept;
+    the newest per posting is the current one."""
+
+    __tablename__ = "posting_requirement_fit"
+    __table_args__ = (
+        Index(
+            "ix_posting_requirement_fit_owner_posting",
+            "owner_id",
+            "private_job_posting_id",
+            "created_at",
+        ),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    # [{statement, weight, expected_level}], as scored.
+    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PostingFit(Base, OwnedMixin):
+    """The user's fit to one posting, worked out locally from an AI fit; never
+    an AI call. Every one worked out is kept; the newest per posting is the
+    current one."""
+
+    __tablename__ = "posting_fit"
+    __table_args__ = (
+        CheckConstraint("basis IN ('own')", name="basis"),
+        Index("ix_posting_fit_owner_key", "owner_id", "posting_key", "created_at"),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    # "private:<id>" for a posting of the user's own, as role_member keys it.
+    posting_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    basis: Mapped[str] = mapped_column(String(8), nullable=False)
+    # The AI fit it was worked out from: a posting_requirement_fit for `own`.
+    source_fit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    uncovered: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

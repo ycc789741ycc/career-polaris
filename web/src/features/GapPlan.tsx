@@ -187,8 +187,8 @@ export function GapPlan({
           <div>
             <Eyebrow>Plan a route to {target.label}</Eyebrow>
             <p className="subcopy" style={{ margin: "6px 0 12px" }}>
-              {target.isCustom
-                ? "The gaps, milestones and tasks below are planned against the requirements of the role you added."
+              {target.isOwnPosting
+                ? "The gaps, milestones and tasks below are planned against the requirements of your posting."
                 : "The plan closes the distance to this role, drafted on your model from your own evidence."}
             </p>
             <div className="row" style={{ marginTop: 16 }}>

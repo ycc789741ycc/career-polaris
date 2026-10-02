@@ -31,7 +31,8 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 class FakeTarget:
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> Any:
-        return SimpleNamespace(label=f"Target {ref.role_id[:8]}")
+        named = ref.role_id or ref.private_job_posting_id or ""
+        return SimpleNamespace(label=f"Target {named[:8]}")
 
 
 class FakeProfile:

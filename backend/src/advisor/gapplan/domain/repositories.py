@@ -42,11 +42,13 @@ class Repository[Entity, Filter](Protocol):
 @dataclass(frozen=True, slots=True)
 class GapPlanFilter:
     """``role_only`` narrows a ``role_id`` to plans aimed at the role itself,
-    with no opening; otherwise ``job_posting_id`` picks one opening."""
+    with no opening; otherwise ``job_posting_id`` picks one opening.
+    ``private_job_posting_id`` picks a posting of the user's own."""
 
     role_id: uuid.UUID | None = None
     job_posting_id: uuid.UUID | None = None
     role_only: bool = False
+    private_job_posting_id: uuid.UUID | None = None
 
 
 class GapPlanRepository(Repository[GapPlan, GapPlanFilter], Protocol): ...
