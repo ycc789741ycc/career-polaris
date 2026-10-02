@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from advisor.market.service import NormalizedPosting, SalaryRange, SourceKind
+from advisor.market.service import NormalizedPosting, SalaryRange, SourceKind, yearly_range
 from kernel.parsing import parse_date, strip_html
 
 __all__ = ["BoardAdapter", "PostingSource", "parse_date", "salary_from", "strip_html"]
@@ -33,8 +33,11 @@ class BoardAdapter(PostingSource, Protocol):
     def endpoint_for(self, slug: str) -> str: ...
 
 
-def salary_from(minimum: Any, maximum: Any, currency: Any) -> SalaryRange | None:
-    """Only build a range when the board actually published one."""
+def salary_from(
+    minimum: Any, maximum: Any, currency: Any, *, period: Any = None
+) -> SalaryRange | None:
+    """Only build a range when the board actually published one, as a year's
+    pay: ``period`` is the board's own word for how often it is paid."""
     try:
         low = int(float(minimum))
         high = int(float(maximum)) if maximum is not None else low
@@ -45,4 +48,4 @@ def salary_from(minimum: Any, maximum: Any, currency: Any) -> SalaryRange | None
     code = str(currency or "").upper()[:3]
     if not code:
         return None
-    return SalaryRange(min_amount=low, max_amount=max(low, high), currency=code)
+    return yearly_range(low, max(low, high), code, period=str(period) if period else None)

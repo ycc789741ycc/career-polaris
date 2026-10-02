@@ -87,6 +87,7 @@ export function Roles() {
       hiringBar: role.hiring_bar,
       barBasis: role.bar_basis,
       salaryMid: band?.mid ?? null,
+      salaryCurrency: band?.currency ?? null,
       salaryLabel: band ? bandLabel(band) : null,
       openings: role.opening_count,
       fit: fit?.score ?? null,
@@ -244,8 +245,16 @@ export function Roles() {
                   value={activeFit ? `${activeFit.score}%` : "—"}
                 />
                 <StatTile
-                  label="Band"
-                  value={activeBand ? bandShort(activeBand) : "—"}
+                  label="Annual pay"
+                  value={
+                    activeBand
+                      ? payRange(
+                          activeBand.currency,
+                          activeBand.low,
+                          activeBand.high,
+                        )
+                      : "—"
+                  }
                 />
                 <StatTile
                   label="Openings"
@@ -425,7 +434,11 @@ export function Roles() {
                   >
                     {[
                       match.salary
-                        ? `${match.salary.currency} ${Math.round(match.salary.min / 1000)}k–${Math.round(match.salary.max / 1000)}k`
+                        ? annualPay(
+                            match.salary.currency,
+                            match.salary.min,
+                            match.salary.max,
+                          )
                         : null,
                       match.location,
                     ]
@@ -531,12 +544,22 @@ export function pickBand(
   return entries.find((band) => band.is_confident) ?? entries[0] ?? null;
 }
 
-function bandShort(band: SalaryBand): string {
-  return `${Math.round(band.low / 1000)}–${Math.round(band.high / 1000)}k`;
+/**
+ * A pay range with its currency code, in thousands: "EUR 80k–105k". Every
+ * amount the market stores is yearly — the crawlers drop hourly and monthly
+ * rates — so the range is always a year's pay. Pure.
+ */
+export function payRange(currency: string, low: number, high: number): string {
+  return `${currency} ${Math.round(low / 1000)}k–${Math.round(high / 1000)}k`;
+}
+
+/** {@link payRange}, saying that it is a year's pay. Pure. */
+export function annualPay(currency: string, low: number, high: number): string {
+  return `${payRange(currency, low, high)} a year`;
 }
 
 function bandLabel(band: SalaryBand): string {
-  return `${band.currency} ${bandShort(band)}${band.is_confident ? "" : " (thin sample)"}`;
+  return `${annualPay(band.currency, band.low, band.high)}${band.is_confident ? "" : " (thin sample)"}`;
 }
 
 /**

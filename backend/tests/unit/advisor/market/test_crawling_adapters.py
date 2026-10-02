@@ -131,6 +131,68 @@ def test_ashby_picks_the_salary_component_not_the_equity_one() -> None:
     assert (posting.salary.min_amount, posting.salary.max_amount) == (75_000, 95_000)
 
 
+def test_lever_drops_pay_published_by_the_hour() -> None:
+    job = {
+        "id": "h-1",
+        "text": "Support Engineer",
+        "salaryRange": {"min": 40, "max": 55, "currency": "USD", "interval": "per-hour-wage"},
+    }
+    assert LeverAdapter().parse([job], company_name="Meridian Labs")[0].salary is None
+
+
+def test_lever_keeps_pay_published_by_the_year() -> None:
+    job = {
+        "id": "y-1",
+        "text": "Support Engineer",
+        "salaryRange": {
+            "min": 90_000,
+            "max": 110_000,
+            "currency": "USD",
+            "interval": "per-year-salary",
+        },
+    }
+    posting = LeverAdapter().parse([job], company_name="Meridian Labs")[0]
+    assert posting.salary == SalaryRange(min_amount=90_000, max_amount=110_000, currency="USD")
+
+
+def test_ashby_drops_pay_published_by_the_month() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": "m-1",
+                "title": "Data Engineer",
+                "compensation": {
+                    "summaryComponents": [
+                        {
+                            "compensationType": "Salary",
+                            "interval": "1 MONTH",
+                            "minValue": 6_000,
+                            "maxValue": 7_500,
+                            "currencyCode": "EUR",
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+    assert AshbyAdapter().parse(payload, company_name="Fieldnote")[0].salary is None
+
+
+def test_greenhouse_drops_pay_too_small_to_be_a_year() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 1,
+                "title": "Barista",
+                "pay_input_ranges": [
+                    {"min_cents": 2_000, "max_cents": 2_500, "currency_type": "USD"}
+                ],
+            }
+        ]
+    }
+    assert GreenhouseAdapter().parse(payload, company_name="Northwind")[0].salary is None
+
+
 # -- JSON-LD ----------------------------------------------------------------
 
 
@@ -152,6 +214,14 @@ def test_json_ld_unescapes_entities_and_drops_markup() -> None:
 def test_one_malformed_json_ld_block_does_not_lose_the_page() -> None:
     """The second <script> in the fixture is deliberately broken."""
     assert len(JsonLdAdapter().parse(load("career_page.html"), company_name="x")) == 1
+
+
+def test_json_ld_drops_pay_published_by_the_hour() -> None:
+    page = """<script type="application/ld+json">{"@type": "JobPosting",
+      "title": "Courier", "baseSalary": {"@type": "MonetaryAmount", "currency": "GBP",
+      "value": {"@type": "QuantitativeValue", "minValue": 12, "maxValue": 15,
+      "unitText": "HOUR"}}}</script>"""
+    assert JsonLdAdapter().parse(page, company_name="x")[0].salary is None
 
 
 def test_a_page_with_no_job_markup_yields_nothing() -> None:

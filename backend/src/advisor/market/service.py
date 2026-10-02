@@ -66,6 +66,7 @@ from advisor.market.domain import (
     salary_in_text,
     search_scope,
     target_location_options,
+    yearly_range,
 )
 from kernel.clock import utcnow
 from kernel.errors import NotFoundError, ValidationError
@@ -102,6 +103,7 @@ __all__ = [
     "remote_location",
     "salary_in_text",
     "search_scope",
+    "yearly_range",
 ]
 
 
