@@ -30,11 +30,11 @@ MAX_STRENGTHS = 10
 class RoleOrigin(StrEnum):
     """Where a role came from (domain decision 25).
 
-    ``recommended`` is one of the ten candidates from the latest analysis that
+    ``recommended`` is one of the top k candidates from the latest analysis that
     the market has openings for (ADR 0024), retired by reconciliation when it
     falls out. ``custom`` is one the user added by
     title; it is never retired by reconciliation, does not count toward the
-    ten, and stays until the user removes it.
+    k, and stays until the user removes it.
     """
 
     RECOMMENDED = "recommended"
@@ -167,7 +167,7 @@ class RoleCandidate:
     role_id: uuid.UUID | None = None
     opening_count: int = 0
     # How well its openings read like the user's strengths, by the local
-    # estimate that chose the ten (ADR 0027); never shown as a fit.
+    # estimate that chose the k (ADR 0027); never shown as a fit.
     fit_estimate: float | None = None
     created_at: datetime | None = None
 

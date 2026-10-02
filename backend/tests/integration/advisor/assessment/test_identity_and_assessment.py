@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from advisor.identity import IdentityService, create_identity_service
 from advisor.profile import ProfileService, create_profile_service
-from advisor.rolemap import RECOMMENDED_ROLE_COUNT, create_rolemap_service
+from advisor.rolemap import create_rolemap_service
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
@@ -318,6 +318,8 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
         market=market,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
     assessment = create_assessment_service(
         database,
@@ -325,6 +327,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
         rolemap=rolemap,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
+        candidate_count=settings.role_candidate_count,
     )
 
     dimensions = [
@@ -386,6 +389,8 @@ async def test_the_role_map_estimate_runs_no_local_ml(
         market=market,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
 
     estimate = await rolemap.estimate_cost(account)
@@ -442,8 +447,10 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     await store_target_locations(database, account, [place])
     # Groups 12 and 13 have no openings; 0 to 11 do, and only ten are kept.
     order = [13, 12, *range(12)]
+    # Set here rather than read from .env: fourteen candidates, ten kept.
+    top_k, candidate_count = 10, 20
 
-    for group in range(RECOMMENDED_ROLE_COUNT):
+    for group in range(top_k):
         stub_provider.replies.append(
             json.dumps(
                 {
@@ -463,6 +470,8 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
         market=market,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
+        top_k=top_k,
+        candidate_count=candidate_count,
     )
     await rolemap.replace_candidates(
         account,
@@ -478,8 +487,8 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     )
     roles = await rolemap.recluster(account)
 
-    assert len(roles) == RECOMMENDED_ROLE_COUNT
-    assert len(stub_provider.calls) == 2 * RECOMMENDED_ROLE_COUNT
+    assert len(roles) == top_k
+    assert len(stub_provider.calls) == 2 * top_k
     analysed = {
         match.group(1)
         for call in stub_provider.calls
@@ -495,7 +504,7 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     # The same market again: the roles are kept and nothing is spent.
     again = await rolemap.recluster(account)
     assert {r.id for r in again} == {r.id for r in roles}
-    assert len(stub_provider.calls) == 2 * RECOMMENDED_ROLE_COUNT
+    assert len(stub_provider.calls) == 2 * top_k
 
 
 async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
@@ -525,6 +534,8 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         market=market,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
     assessment = create_assessment_service(
         database,
@@ -532,6 +543,7 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         rolemap=rolemap,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
+        candidate_count=settings.role_candidate_count,
     )
     stub_provider.replies.append(
         json.dumps(
@@ -575,7 +587,110 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
 # -- ten roles, fixed (ADR 0020) ---------------------------------------------
 
 
-async def test_the_ceiling_is_ten_roles_however_large_the_market(
+async def test_a_small_k_names_analyses_and_scores_only_k_roles(
+    database: Database,
+    identity: IdentityService,
+    settings: Settings,
+    account: uuid.UUID,
+    crawled: Crawl,
+    stub_provider: StubProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Five candidates on the market and k = 3: three roles are named and
+    analysed, three fits scored, and the other two are kept unplaced with their
+    openings counted. Nothing is sent to the model for them (ADR 0029)."""
+    import json
+    import re
+
+    import advisor.rolemap.service as rolemap_service
+    from advisor.market import create_market_service
+    from advisor.rolemap import CandidateInput, StrengthInput
+    from kernel.embeddings import EMBEDDING_DIMENSIONS
+
+    def fake_embed(texts: list[str], *, model_name: str) -> list[list[float]]:
+        vectors = []
+        for text_ in texts:
+            vector = [0.0] * EMBEDDING_DIMENSIONS
+            for marker in re.findall(r"group-(\d+)", text_):
+                vector[int(marker)] += 1.0
+            vectors.append(vector)
+        return vectors
+
+    monkeypatch.setattr(rolemap_service, "embed", fake_embed)
+    await identity.set_credential(
+        account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
+    )
+    market = create_market_service(database, windows=WINDOWS)
+    place = await crawled(
+        [
+            (f"Company {group}-{copy}", f"Role group-{group}", "What the job involves.")
+            for group in range(5)
+            for copy in range(3)
+        ]
+    )
+    await store_target_locations(database, account, [place])
+    for group in range(3):
+        stub_provider.replies.append(
+            json.dumps(
+                {
+                    "name": f"Role {group}",
+                    "requirements": [
+                        {"statement": "Python", "weight": 0.5, "expected_level": "senior"}
+                    ],
+                }
+            )
+        )
+        stub_provider.replies.append(
+            json.dumps({"difficulty": 50, "confidence": 0.5, "reasoning": "A guess."})
+        )
+    for _ in range(3):
+        stub_provider.replies.append(
+            json.dumps(
+                {
+                    "mappings": [{"requirement_statement": "Python", "dimension_id": "backend"}],
+                    "target_scores": [{"dimension_id": "backend", "target": 80}],
+                    "reasoning": "Close.",
+                }
+            )
+        )
+
+    rolemap = create_rolemap_service(
+        database,
+        market=market,
+        gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
+        embedding_model=settings.embedding_model_name,
+        top_k=3,
+        candidate_count=5,
+    )
+    await rolemap.replace_candidates(
+        account,
+        uuid.uuid4(),
+        [
+            CandidateInput(
+                title=f"Candidate group-{group}",
+                description=f"The group-{group} work.",
+                dimension_keys=("backend",),
+            )
+            for group in range(5)
+        ],
+        strengths=[StrengthInput("backend", "Backend", "Builds services.", 70, 0.8)],
+    )
+
+    roles = await rolemap.recluster(account)
+    fits = await rolemap.compute_fits(account)
+
+    assert len(roles) == 3
+    assert len(fits) == 3
+    # Two calls to name and read each kept role, one to score each fit.
+    assert len(stub_provider.calls) == 3 * 3
+    candidates = await rolemap.candidates(account)
+    assert sum(1 for c in candidates if c.role_id is not None) == 3
+    assert [c.opening_count for c in candidates if c.role_id is None] == [3, 3]
+    estimate = await rolemap.estimate_cost(account)
+    assert estimate["max_roles"] == 3
+
+
+async def test_the_ceiling_is_k_roles_however_large_the_market(
     database: Database,
     identity: IdentityService,
     profile: ProfileService,
@@ -598,9 +713,11 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
         market=market,
         gateway=AiGateway(settings=settings, credentials=identity, budget=identity),
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
 
     estimate = await rolemap.estimate_cost(account)
 
-    assert estimate["max_roles"] == RECOMMENDED_ROLE_COUNT
+    assert estimate["max_roles"] == settings.role_map_top_k
     assert "role_count" not in estimate

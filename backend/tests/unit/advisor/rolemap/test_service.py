@@ -13,7 +13,6 @@ import pytest
 
 from advisor.market import PostingView, SalaryRange, Visibility
 from advisor.rolemap import (
-    CANDIDATE_ROLE_COUNT,
     MAX_STRENGTHS,
     CandidateInput,
     MarketWait,
@@ -43,13 +42,20 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 def _service(
-    uow: FakeRoleMapUnitOfWork, market: FakeMarket | None = None, gateway: Any = None
+    uow: FakeRoleMapUnitOfWork,
+    market: FakeMarket | None = None,
+    gateway: Any = None,
+    *,
+    top_k: int = 10,
+    candidate_count: int = 20,
 ) -> RoleMapService:
     return RoleMapService(
         uow,
         market=market or FakeMarket(),  # type: ignore[arg-type]
         gateway=gateway,
         embedding_model="test-model",
+        top_k=top_k,
+        candidate_count=candidate_count,
     )
 
 
@@ -612,12 +618,66 @@ async def test_no_more_dimensions_are_handed_over_than_a_fit_is_priced_for() -> 
         await rolemap.replace_candidates(OWNER, uuid.uuid4(), [], strengths=too_many)
 
 
-async def test_an_analysis_recommends_no_more_than_twenty_roles() -> None:
-    rolemap = _service(FakeRoleMapUnitOfWork())
-    too_many = [_candidate(f"Role {i}", "work") for i in range(CANDIDATE_ROLE_COUNT + 1)]
+async def test_an_analysis_recommends_no_more_roles_than_configured() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), top_k=3, candidate_count=5)
+    too_many = [_candidate(f"Role {i}", "work") for i in range(6)]
 
-    with pytest.raises(ValidationError, match="at most"):
+    with pytest.raises(ValidationError, match="at most 5"):
         await rolemap.replace_candidates(OWNER, uuid.uuid4(), too_many)
+
+
+@pytest.mark.parametrize(("top_k", "candidate_count"), [(0, 10), (11, 10)])
+def test_a_build_keeps_between_one_and_every_candidate(top_k: int, candidate_count: int) -> None:
+    with pytest.raises(ValueError, match="between 1 and candidate_count"):
+        _service(FakeRoleMapUnitOfWork(), top_k=top_k, candidate_count=candidate_count)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_only_the_top_k_are_named_and_analysed() -> None:
+    """Three candidates on the market and k = 2: the third is kept unplaced,
+    with its openings counted, and nothing is sent to the model for it
+    (ADR 0029)."""
+    gateway = ScriptedGateway()
+    market = FakeMarket(
+        [_posting(f"Backend Engineer {i}") for i in range(3)]
+        + [_posting(f"Designer {i}") for i in range(3)]
+        + [_posting(f"Data Platform {i}") for i in range(3)]
+    )
+    rolemap = _service(FakeRoleMapUnitOfWork(), market, gateway, top_k=2, candidate_count=3)
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [
+            _candidate("Backend Engineer", "Backend services."),
+            _candidate("Designer", "Designer work."),
+            _candidate("Data Engineer", "Data pipelines."),
+        ],
+    )
+
+    roles = await rolemap.recluster(OWNER)
+
+    assert len(roles) == 2
+    assert len(gateway.shown) == 2 * 2  # extraction and difficulty, per kept role
+    backend, designer, data = await rolemap.candidates(OWNER)
+    assert backend.role_id is not None and designer.role_id is not None
+    assert (data.role_id, data.opening_count) == (None, 3)
+
+
+async def test_a_build_is_priced_for_k_roles(monkeypatch: pytest.MonkeyPatch) -> None:
+    market = _market(backend=60)
+    rolemap = _service(FakeRoleMapUnitOfWork(), market, ProjectingGateway(), top_k=3)
+
+    assert (await rolemap.estimate_cost(OWNER))["max_roles"] == 3
+
+    # A search will run first, so nothing stored bounds it below k.
+    async def searchable(owner_id: uuid.UUID) -> bool:
+        return True
+
+    monkeypatch.setattr(market, "has_searchable_place", searchable)
+    thin = _service(FakeRoleMapUnitOfWork(), market, ProjectingGateway(), top_k=4)
+    market.postings = []
+    assert (await thin.estimate_cost(OWNER))["max_roles"] == 4
+    assert (await thin.estimate_fits(OWNER, recommended=10))["roles"] == 4
 
 
 async def test_candidates_are_per_user() -> None:
@@ -811,6 +871,7 @@ async def test_a_failed_build_still_announces_itself_for_its_fits() -> None:
 
 class _Estimated:
     cost_usd = Decimal("0.10")
+    model_id = "claude-opus-5"
     rate_is_published = True
 
 

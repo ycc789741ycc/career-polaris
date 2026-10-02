@@ -302,13 +302,13 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `subscription` Target kind are gone. Board discovery stays as an ownerless
   `market.discover_board(company_id, company_name)`, for the companies custom
   roles will name; it leaves a company that already has a source alone.
-- **Ten roles, built after every analysis** (ADR 0020). `RECOMMENDED_ROLE_COUNT`
-  is a `rolemap` domain constant; there is no setting. `AnalysisFinished`
+- **Ten roles, built after every analysis** (ADR 0020). Since ADR 0029 the
+  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). `AnalysisFinished`
   goes to `activity.build_after_analysis`: a successful analysis always builds
   the map, a failed one only releases a build that waited. Analyze's estimate
   (`AnalysisEstimate`) includes the build's, so it is confirmed once.
 - **Roles come from the strengths** (ADR 0024). The analysis recommends up to
-  20 candidate roles; `assessment` hands them to `rolemap.replace_candidates`,
+  `ROLE_CANDIDATE_COUNT` candidate roles (20 until ADR 0029, 10 now); `assessment` hands them to `rolemap.replace_candidates`,
   and `rolemap.role_candidate` holds the latest set. A build matches them to
   the postings in scope locally (embeddings, plus title words) and keeps the
   first ten with openings; nothing clusters any more. With no candidates, a
@@ -416,3 +416,13 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   keep their paths on the role map's router; a fit's body has no
   `private_posting_id`. Migration 0023 moved the fits and backfilled the
   scores.
+- **The counts are settings** (ADR 0029). `ROLE_CANDIDATE_COUNT` (default 10,
+  1–20) is how many roles an analysis recommends, every one searched for; the
+  `skill_assessment` v3 prompt names it and the reply's schema enforces it.
+  `ROLE_MAP_TOP_K` (default 10, at most the candidate count) is how many a
+  build keeps by the local estimate, and only those k are named, analysed and
+  fit-scored; custom roles are on top. They reach `RoleMapService(top_k,
+  candidate_count)` and `AssessmentService(candidate_count)` through the
+  factories; the selection rules take them as `limit` and `ceiling`.
+  `RECOMMENDED_ROLE_COUNT` and `CANDIDATE_ROLE_COUNT` are gone, and the SPA
+  says `max_roles`, never "ten".

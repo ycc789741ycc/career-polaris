@@ -73,9 +73,7 @@ from advisor.rolemap.domain.repositories import (
 )
 from advisor.rolemap.domain.selection import (
     CANDIDATE_MATCH_THRESHOLD,
-    CANDIDATE_ROLE_COUNT,
     MIN_POSTINGS_FOR_A_ROLE,
-    RECOMMENDED_ROLE_COUNT,
     UNCITED_DIMENSION_WEIGHT,
     assign_postings,
     choose_by_estimate,
@@ -86,7 +84,6 @@ from advisor.rolemap.domain.selection import (
 
 __all__ = [
     "CANDIDATE_MATCH_THRESHOLD",
-    "CANDIDATE_ROLE_COUNT",
     "DEFAULT_MATCHES",
     "MAX_COMPANY_NAME",
     "MAX_MATCHES",
@@ -96,7 +93,6 @@ __all__ = [
     "MIN_MATCHES",
     "MIN_POSTINGS_FOR_A_ROLE",
     "MIN_REPORTERS",
-    "RECOMMENDED_ROLE_COUNT",
     "SAME_ROLE_THRESHOLD",
     "UNCITED_DIMENSION_WEIGHT",
     "BarBasis",

@@ -153,7 +153,8 @@ class AnalysisEstimate(CostEstimate):
     ADR 0024). ``cost_usd`` is their sum."""
 
     analysis_cost_usd: str
-    # A ceiling: the ten recommended roles at most, fewer on a thin market.
+    # A ceiling: the top k recommended roles at most (ROLE_MAP_TOP_K, ADR 0029),
+    # fewer on a thin market.
     role_map_cost_usd: str
     # A ceiling: one projection per role the map can hold.
     fits_cost_usd: str

@@ -786,6 +786,19 @@ Tests:
   before.
 
 #### `feature/<ticket>/role-map-top-k`: the two counts become settings
+**Done** ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)). Where the
+build differs from the plan below:
+
+* `ROLE_CANDIDATE_COUNT` is also capped at 20, the old constant: each
+  candidate is one Himalayas search per searchable place.
+* The reply's schema is built per service with the configured maximum, so a
+  reply with too many candidates fails validation and the gateway asks
+  again, rather than being cut short.
+* `keep_on_market` takes no limit by default; a build keeps every candidate
+  with openings eligible and lets `choose_by_estimate` cut to k.
+* The SPA already said `max_roles` wherever it showed the number; only
+  comments said "ten".
+
 1. **Two optional `.env` settings**, read once into `Settings` and validated
    at startup:
    * `ROLE_CANDIDATE_COUNT`, 10 by default: how many roles an analysis

@@ -1,11 +1,12 @@
 """Which recommended candidates become roles, and how many there can be.
 
-The analysis recommends up to ``CANDIDATE_ROLE_COUNT`` roles from the user's
-strengths (ADR 0024). A build has the market searched for each one, and keeps
-the ``RECOMMENDED_ROLE_COUNT`` that read most like the user's strengths among
-those with at least ``MIN_POSTINGS_FOR_A_ROLE`` openings (ADR 0027). Every
-kept role costs two calls on the user's key, so the ten bound what a build can
-spend.
+The analysis recommends up to ``ROLE_CANDIDATE_COUNT`` roles from the user's
+strengths (ADR 0024, ADR 0029). A build has the market searched for each one,
+and keeps the top k (``ROLE_MAP_TOP_K``) that read most like the user's
+strengths among those with at least ``MIN_POSTINGS_FOR_A_ROLE`` openings
+(ADR 0027). Every kept role costs three calls on the user's key (naming,
+difficulty, fit), so k bounds what a build can spend. Both numbers are
+settings, passed in here as ``limit`` and ``ceiling``.
 
 Everything here is local and free: embeddings compared by cosine, plus the
 title-word rule custom roles use.
@@ -14,12 +15,12 @@ title-word rule custom roles use.
   relevant to it; one a search found for no candidate it is relevant to is
   left out. A posting no search found (a company board's) goes to the nearest
   candidate, as before.
-* Each posting goes to one candidate at most, so the ten roles never share an
+* Each posting goes to one candidate at most, so the kept roles never share an
   opening, and ``max_role_count`` stays a true ceiling for the cost the api
   shows before any embedding runs.
 * ``fit_estimates`` ranks the candidates the market has against the user's
-  dimensions, so the ten chosen are the ones most like the user's strengths,
-  not merely the first ten the analysis listed.
+  dimensions, so the k chosen are the ones most like the user's strengths,
+  not merely the first k the analysis listed.
 """
 
 from __future__ import annotations
@@ -28,13 +29,6 @@ from collections.abc import Sequence
 
 # Below this, a candidate has no openings worth naming a role after.
 MIN_POSTINGS_FOR_A_ROLE = 3
-# How many recommended roles one role map analyses on the user's key: fixed by
-# the system, so the cost is predictable (domain decision 23, ADR 0020). Roles
-# the user adds themselves do not count toward it.
-RECOMMENDED_ROLE_COUNT = 10
-# How many candidates one analysis may recommend: twice the ten, so a candidate
-# the market lacks leaves room for the next (ADR 0024).
-CANDIDATE_ROLE_COUNT = 20
 # The least cosine at which a posting counts as an opening for a candidate it
 # does not name by title. Set for all-MiniLM-L6-v2 over a candidate's title and
 # description against a posting's title and description.
@@ -46,11 +40,14 @@ UNCITED_DIMENSION_WEIGHT = 0.25
 Vector = Sequence[float]
 
 
-def max_role_count(posting_count: int) -> int:
-    """The most recommended roles ``posting_count`` postings can turn into."""
+def max_role_count(posting_count: int, *, ceiling: int) -> int:
+    """The most recommended roles ``posting_count`` postings can turn into,
+    when a build keeps at most ``ceiling`` of them."""
     if posting_count < 0:
         raise ValueError("posting_count cannot be negative")
-    return min(posting_count // MIN_POSTINGS_FOR_A_ROLE, RECOMMENDED_ROLE_COUNT)
+    if ceiling < 0:
+        raise ValueError("ceiling cannot be negative")
+    return min(posting_count // MIN_POSTINGS_FOR_A_ROLE, ceiling)
 
 
 def assign_postings(
@@ -160,7 +157,7 @@ def fit_estimates(
 
 
 def choose_by_estimate(
-    estimates: Sequence[float], eligible: Sequence[int], *, limit: int = RECOMMENDED_ROLE_COUNT
+    estimates: Sequence[float], eligible: Sequence[int], *, limit: int
 ) -> list[int]:
     """The ``limit`` eligible candidates with the best estimate, best first;
     the analysis's order (the lower index) breaks a tie."""
@@ -179,12 +176,13 @@ def _centroid(vectors: Sequence[Vector]) -> list[float]:
 def keep_on_market(
     opening_counts: Sequence[int],
     *,
-    limit: int = RECOMMENDED_ROLE_COUNT,
+    limit: int | None = None,
     minimum: int = MIN_POSTINGS_FOR_A_ROLE,
 ) -> list[int]:
     """The candidates the market has: those with at least ``minimum``
-    openings, in the analysis's order, at most ``limit`` of them."""
-    if limit < 0:
+    openings, in the analysis's order, at most ``limit`` of them (all, when
+    ``limit`` is None)."""
+    if limit is not None and limit < 0:
         raise ValueError("limit cannot be negative")
     if minimum < 1:
         raise ValueError("a role needs at least one opening")

@@ -1,10 +1,11 @@
 # Role-map build process
 
 A role-map build turns the analysis's candidate roles into the role map on
-03 Roles. It keeps the ten the market has that read most like the user's
-strengths, analyses each one's requirements and hiring bar on the user's key,
-and places the user's custom roles beside them. Fits are then scored once per
-build.
+03 Roles. It keeps the top k the market has that read most like the user's
+strengths (k is `ROLE_MAP_TOP_K`, 10 by default, ADR 0029), analyses each
+one's requirements and hiring bar on the user's key, and places the user's
+custom roles beside them. Fits are then scored once per build, for those k and
+the custom roles only.
 
 The market is fetched only when a build needs it (ADR 0027). So a build first
 asks the market for the sources it reads, waits while stale ones are fetched,
@@ -57,9 +58,9 @@ There is no scheduled rebuild.
 `rolemap.estimate_cost` is a ceiling, because the api runs no embeddings:
 
 - **Roles counted:**
-  - `max_role_count(postings in scope)`, which is one role per 3 postings,
-    capped at 10;
-  - the full 10 whenever the user has a searchable place, because the search
+  - `max_role_count(postings in scope, ceiling=k)`, which is one role per 3
+    postings, capped at k;
+  - the full k whenever the user has a searchable place, because the search
     that runs first could find anything;
   - and no build cost at all when that comes to 0 roles.
 - **Calls per role:** two, `role_extraction` and `difficulty_estimate`, each
@@ -186,7 +187,7 @@ step 6:
    - With fewer than 3 postings in scope, the build stops here and keeps the
      map as it is.
 2. **Assign** (`assign_postings`). Each posting becomes an opening for at most
-   one candidate, so the ten roles never share an opening:
+   one candidate, so the kept roles never share an opening:
    - **found by a search:** it goes to the nearest candidate whose own
      search found it, if the posting is relevant to that candidate (it names
      every word of the title, or its cosine is at least 0.40). Otherwise it
@@ -202,8 +203,9 @@ step 6:
    - A dimension's similarity to a role is centred on that dimension's mean
      across every role, so a broad dimension lifts none of them.
    - Dimensions the candidate rests on count fully; the rest count 0.25.
-5. **Choose** (`choose_by_estimate`). The 10 eligible candidates with the
-   best estimate, ties broken by the analysis's order.
+5. **Choose** (`choose_by_estimate`). The k eligible candidates with the
+   best estimate, ties broken by the analysis's order. Nothing below is spent
+   on the rest: they are recorded unplaced in step 8.
 6. **Reconcile and analyse.** `reconcile` keeps role ids stable across builds
    by matching member postings to the last build's roles, so a Target or a
    saved fit still finds its role. For each kept role:
@@ -274,7 +276,7 @@ running bar and the Rebuild button:
 | `running` | "Building your role map on <model>" | "Building…" |
 
 When the build ends, 03 Roles reloads:
-- `GET /roles` (with the ten recommended roles at most, plus custom roles);
+- `GET /roles` (with the k recommended roles at most, plus custom roles);
 - `GET /fits`;
 - `GET /role-candidates`;
 - `GET /role-map`, which gives `market_data_at` ("Market data as of …"),
@@ -314,3 +316,4 @@ When the build ends, 03 Roles reloads:
 - [ADR 0026: target locations from a list](../decisions/0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md)
 - [ADR 0027: fetch the market only when a build needs it](../decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)
 - [ADR 0028: score the fit in the role map](../decisions/0028-score-the-fit-in-the-role-map.md)
+- [ADR 0029: the candidate count and the top k as settings](../decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)

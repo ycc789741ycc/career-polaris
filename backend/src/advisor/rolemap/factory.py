@@ -19,10 +19,14 @@ def create_rolemap_service(
     market: MarketService,
     gateway: AiGateway,
     embedding_model: str,
+    top_k: int,
+    candidate_count: int,
 ) -> RoleMapService:
     return RoleMapService(
         SqlAlchemyRoleMapUnitOfWork(database),
         market=market,
         gateway=gateway,
         embedding_model=embedding_model,
+        top_k=top_k,
+        candidate_count=candidate_count,
     )

@@ -12,7 +12,7 @@ const EMPTY: Draft = { title: "", company: "", jd: "" };
 
 /**
  * "Add a role of your own" (ADR 0021): a role the recommendation missed,
- * placed on the map beside the ten. A title is enough; a company narrows the
+ * placed on the map beside the recommended ones. A title is enough; a company narrows the
  * search for its postings, and a pasted JD, which stays private, is what its
  * requirements are read from. The cost is shown before anything is spent.
  */

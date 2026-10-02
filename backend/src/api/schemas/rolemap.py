@@ -54,7 +54,7 @@ class Role(ApiModel):
     salary_bands: dict[str, SalaryBand]
     is_coherent: bool
     requirements: list[RoleRequirement]
-    # `recommended`, one of the ten, or `custom`: added by the user and drawn
+    # `recommended`, one of the top k, or `custom`: added by the user and drawn
     # as "yours" (ADR 0021).
     origin: Literal["recommended", "custom"]
     company_name: str | None

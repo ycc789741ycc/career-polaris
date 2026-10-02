@@ -41,6 +41,7 @@ class World:
             rolemap=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.5,
+            candidate_count=10,
         )
         self.market = FakeMarket()
         self.rolemap = RoleMapService(
@@ -48,6 +49,8 @@ class World:
             market=self.market,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
+            top_k=10,
+            candidate_count=10,
         )
         self.activity = ActivityService(
             profile=self.profile,  # type: ignore[arg-type]

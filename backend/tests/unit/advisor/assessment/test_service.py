@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from advisor.assessment import AssessmentService
 from advisor.assessment.domain import (
@@ -91,6 +92,7 @@ def _service(
         rolemap=None,  # type: ignore[arg-type]
         gateway=gateway,  # type: ignore[arg-type]
         confidence_threshold=0.5,
+        candidate_count=10,
     )
 
 
@@ -355,6 +357,7 @@ def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentS
         rolemap=_PricedRoleMap(role_map_cost, custom_roles),  # type: ignore[arg-type]
         gateway=_PricedGateway(),  # type: ignore[arg-type]
         confidence_threshold=0.5,
+        candidate_count=10,
     )
 
 
@@ -426,7 +429,9 @@ def _reply(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _analysing(reply: dict[str, Any]) -> tuple[AssessmentService, _RecordingRoleMap, Any]:
+def _analysing(
+    reply: dict[str, Any], *, candidate_count: int = 10
+) -> tuple[AssessmentService, _RecordingRoleMap, Any]:
     uow = FakeAssessmentUnitOfWork()
     rolemap = _RecordingRoleMap()
     service = AssessmentService(
@@ -435,8 +440,38 @@ def _analysing(reply: dict[str, Any]) -> tuple[AssessmentService, _RecordingRole
         rolemap=rolemap,  # type: ignore[arg-type]
         gateway=FakeGateway(reply),  # type: ignore[arg-type]
         confidence_threshold=0.5,
+        candidate_count=candidate_count,
     )
     return service, rolemap, uow
+
+
+def _roles(count: int) -> list[dict[str, Any]]:
+    return [
+        {"title": f"Role {i}", "description": "The work.", "dimension_ids": ["backend"]}
+        for i in range(count)
+    ]
+
+
+async def test_the_analysis_asks_for_the_configured_number_of_roles() -> None:
+    """The prompt names the number (ADR 0029), and a reply within it is kept."""
+    service, rolemap, _uow = _analysing(_reply(_roles(3)), candidate_count=3)
+
+    await service.run(OWNER)
+
+    gateway: Any = service._gateway
+    assert gateway.calls[0]["candidate_count"] == "3"
+    [(_, candidates)] = rolemap.handed
+    assert len(candidates) == 3
+
+
+async def test_a_reply_with_more_roles_than_configured_fails_its_schema() -> None:
+    """Failing the schema is what makes the gateway ask again, rather than the
+    surplus being cut off here."""
+    service, rolemap, _uow = _analysing(_reply(_roles(4)), candidate_count=3)
+
+    with pytest.raises(PydanticValidationError):
+        await service.run(OWNER)
+    assert rolemap.handed == []
 
 
 async def test_an_analysis_hands_the_roles_it_recommends_to_the_role_map() -> None:
