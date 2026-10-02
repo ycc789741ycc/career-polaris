@@ -10,11 +10,16 @@ composition rules mostly push people toward `Password1!`.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
-MIN_PASSWORD_LENGTH = 12
-MAX_PASSWORD_LENGTH = 200
+from advisor.identity.domain.constants import (
+    LOCKOUT_WINDOW,
+    MAX_FAILED_ATTEMPTS,
+    MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
+)
 
 # A small sample of what credential-stuffing lists try first.
 #
@@ -69,9 +74,6 @@ def assert_acceptable(password: str, *, email: str | None = None) -> None:
 
 # --- brute-force resistance -------------------------------------------------
 
-MAX_FAILED_ATTEMPTS = 5
-LOCKOUT_WINDOW = timedelta(minutes=15)
-
 
 @dataclass(frozen=True, slots=True)
 class LockoutState:
@@ -107,3 +109,42 @@ class LockoutState:
 def normalize_email(email: str) -> str:
     """One account per address, however it was typed."""
     return email.strip().lower()
+
+
+@dataclass(slots=True)
+class PasswordCredential:
+    id: uuid.UUID
+    account_id: uuid.UUID
+    password_hash: str
+    failed_attempts: int
+    last_failed_at: datetime | None
+    password_updated_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def set_for(
+        cls, account_id: uuid.UUID, *, password_hash: str, at: datetime
+    ) -> PasswordCredential:
+        return cls(
+            id=uuid.uuid4(),
+            account_id=account_id,
+            password_hash=password_hash,
+            failed_attempts=0,
+            last_failed_at=None,
+            password_updated_at=at,
+        )
+
+    @property
+    def lockout(self) -> LockoutState:
+        return LockoutState(
+            failed_attempts=self.failed_attempts, last_failed_at=self.last_failed_at
+        )
+
+    def record_lockout(self, state: LockoutState) -> None:
+        self.failed_attempts = state.failed_attempts
+        self.last_failed_at = state.last_failed_at
+
+    def rehash(self, password_hash: str, *, at: datetime) -> None:
+        self.password_hash = password_hash
+        self.password_updated_at = at

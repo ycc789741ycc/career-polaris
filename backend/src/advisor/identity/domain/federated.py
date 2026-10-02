@@ -19,6 +19,7 @@ from __future__ import annotations
 import hmac
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -117,3 +118,28 @@ def resolve_federated_account(
     return FederatedResolution(
         AccountAction.LINK, email_account_id, remove_password=email_account_has_password
     )
+
+
+@dataclass(slots=True)
+class FederatedIdentity:
+    """An outside identity (Google's ``sub``) linked to one of our accounts."""
+
+    id: uuid.UUID
+    account_id: uuid.UUID
+    provider: str
+    subject: str
+    email_at_link: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def linked(
+        cls, account_id: uuid.UUID, *, provider: str, subject: str, email: str
+    ) -> FederatedIdentity:
+        return cls(
+            id=uuid.uuid4(),
+            account_id=account_id,
+            provider=provider,
+            subject=subject,
+            email_at_link=email,
+        )

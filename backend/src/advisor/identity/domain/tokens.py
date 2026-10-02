@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-# Long enough that guessing is hopeless; opaque, so it carries no claims.
-REFRESH_TOKEN_BYTES = 32
+from advisor.identity.domain.constants import REFRESH_TOKEN_BYTES
 
 
 class TokenKind(StrEnum):
@@ -72,3 +72,48 @@ def digest(token: str) -> str:
     the database leaks.
     """
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+@dataclass(slots=True)
+class RefreshToken:
+    """One issued refresh token, held only as a digest.
+
+    ``family_id`` ties a rotation chain together, so a reused token can take
+    the whole chain down with it.
+    """
+
+    id: uuid.UUID
+    account_id: uuid.UUID
+    token_hash: str
+    family_id: uuid.UUID
+    expires_at: datetime
+    used_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+
+    @classmethod
+    def issued(
+        cls,
+        account_id: uuid.UUID,
+        *,
+        token_hash: str,
+        family_id: uuid.UUID,
+        expires_at: datetime,
+    ) -> RefreshToken:
+        return cls(
+            id=uuid.uuid4(),
+            account_id=account_id,
+            token_hash=token_hash,
+            family_id=family_id,
+            expires_at=expires_at,
+        )
+
+    @property
+    def state(self) -> RefreshTokenState:
+        return RefreshTokenState(
+            expires_at=self.expires_at, revoked_at=self.revoked_at, used_at=self.used_at
+        )
+
+    def use(self, at: datetime) -> None:
+        """Single-use: rotation spends a token the moment it is exchanged."""
+        self.used_at = at

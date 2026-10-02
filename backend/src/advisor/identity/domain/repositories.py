@@ -26,16 +26,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from advisor.identity.domain.entities import (
-    Account,
-    AiUsageBudget,
-    AiUsageEntry,
-    FederatedIdentity,
-    PasswordCredential,
-    ProviderCredential,
-    RefreshToken,
-)
+from advisor.identity.domain.account import Account
+from advisor.identity.domain.budget import AiUsageBudget, AiUsageEntry
+from advisor.identity.domain.credential import ProviderCredential
 from advisor.identity.domain.events import IdentityEvent
+from advisor.identity.domain.federated import FederatedIdentity
+from advisor.identity.domain.password import PasswordCredential
+from advisor.identity.domain.tokens import RefreshToken
 
 
 class Repository[Entity, Filter](Protocol):
