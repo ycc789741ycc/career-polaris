@@ -127,6 +127,17 @@ async def test_storing_a_role_replaces_its_members_and_requirements() -> None:
     )
 
 
+async def test_a_role_is_stored_without_the_work_arrangement_its_name_came_with() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    postings = [_posting("Data Scientist")]
+    rolemap = _service(uow, FakeMarket(postings))
+
+    await _store(rolemap, uuid.uuid4(), postings, "Senior Data Scientist (Remote)")
+
+    [role] = await rolemap.roles(OWNER)
+    assert role.name == "Senior Data Scientist"
+
+
 async def test_keeping_a_role_refreshes_only_what_needs_no_model() -> None:
     uow = FakeRoleMapUnitOfWork()
     postings = [_posting("Backend"), _posting("Platform")]

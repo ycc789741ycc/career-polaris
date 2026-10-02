@@ -97,7 +97,7 @@ from advisor.rolemap.domain.repositories import (
     RoleRequirementFilter,
     RoleRequirementRepository,
 )
-from advisor.rolemap.domain.role import Role, RoleMember, RoleRequirement
+from advisor.rolemap.domain.role import Role, RoleMember, RoleRequirement, parse_role_name
 from advisor.rolemap.domain.selection import (
     assign_postings,
     choose_by_estimate,
@@ -201,6 +201,7 @@ __all__ = [
     "max_role_count",
     "overlap",
     "parse_own_posting",
+    "parse_role_name",
     "rank_matches",
     "reconcile",
     "spearman",
