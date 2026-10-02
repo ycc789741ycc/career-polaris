@@ -1,17 +1,21 @@
-from advisor.gapfill.domain.entities import GapQuestion, QuestionSet, QuestionSetStatus
-from advisor.gapfill.domain.events import GapAnswersSubmitted, GapFillEvent
-from advisor.gapfill.domain.questions import (
+from advisor.gapfill.domain.constants import (
     ASKED_GAPS,
     MAX_ANSWER_CHARS,
     MAX_CHOICES,
     MAX_QUESTIONS_PER_GAP,
     MIN_CHOICES,
+)
+from advisor.gapfill.domain.events import GapAnswersSubmitted, GapFillEvent
+from advisor.gapfill.domain.questions import (
     Answer,
     AnswerType,
     AskedGap,
     DraftQuestion,
     GapFillError,
+    GapQuestion,
     GapStatus,
+    QuestionSet,
+    QuestionSetStatus,
     answer_fact,
     assert_questions_valid,
 )

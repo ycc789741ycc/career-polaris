@@ -17,8 +17,8 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.gapfill.domain.entities import GapQuestion, QuestionSet, QuestionSetStatus
 from advisor.gapfill.domain.events import GapFillEvent
+from advisor.gapfill.domain.questions import GapQuestion, QuestionSet, QuestionSetStatus
 
 
 class Repository[Entity, Filter](Protocol):
