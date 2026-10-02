@@ -172,7 +172,6 @@ def build(settings: Settings | None = None) -> Container:
         database,
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )

@@ -39,7 +39,6 @@ class World:
             self.assessments,
             profile=None,  # type: ignore[arg-type]
             rolemap=None,  # type: ignore[arg-type]
-            market=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.5,
         )

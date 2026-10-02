@@ -225,7 +225,7 @@ async def test_a_closed_build_scores_the_fits_once(
 
     await dispatcher._handle(_container(), event)
 
-    assert queued == [{"name": "assessment.compute_fits", "owner_id": str(OWNER)}]
+    assert queued == [{"name": "rolemap.compute_fits", "owner_id": str(OWNER)}]
 
 
 @pytest.mark.parametrize(

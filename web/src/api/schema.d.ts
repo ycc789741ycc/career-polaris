@@ -1530,12 +1530,13 @@ export interface components {
             gaps: components["schemas"]["FitGap"][];
             /** Model Id */
             model_id: string;
-            /** Private Posting Id */
-            private_posting_id: string | null;
             /** Reasoning */
             reasoning: string;
-            /** Role Id */
-            role_id: string | null;
+            /**
+             * Role Id
+             * Format: uuid
+             */
+            role_id: string;
             /** Score */
             score: number;
             /** Uncovered */
@@ -2226,7 +2227,8 @@ export interface components {
         };
         /**
          * Role
-         * @description One bubble. Its size, the fit, is the assessment's (``GET /fits``).
+         * @description One bubble. Its size is its fit (``GET /fits``), kept apart because it
+         *     belongs to the User x Role pair.
          */
         Role: {
             /** Bar Basis */

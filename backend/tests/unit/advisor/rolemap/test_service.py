@@ -6,6 +6,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import replace
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ import pytest
 from advisor.market import PostingView, SalaryRange, Visibility
 from advisor.rolemap import (
     CANDIDATE_ROLE_COUNT,
+    MAX_STRENGTHS,
     CandidateInput,
     MarketWait,
     RoleMapService,
@@ -24,6 +26,7 @@ from advisor.rolemap.domain import (
     CustomRoleAdded,
     HiringBar,
     RoleChange,
+    RoleFitsComputed,
     RoleLineage,
     RoleMapBuildFinished,
     RoleRequirementsChanged,
@@ -564,7 +567,7 @@ async def test_candidates_come_with_the_strengths_that_weigh_them_and_announce_n
         OWNER,
         uuid.uuid4(),
         [_candidate("First", "a")],
-        strengths=[StrengthInput("old", "Old", "read", 0.5)],
+        strengths=[StrengthInput("old", "Old", "read", 50, 1.0)],
     )
 
     await rolemap.replace_candidates(
@@ -572,16 +575,41 @@ async def test_candidates_come_with_the_strengths_that_weigh_them_and_announce_n
         uuid.uuid4(),
         [_candidate("Second", "b")],
         strengths=[
-            StrengthInput("backend", "Backend", "Built services.", 0.72),
-            StrengthInput("data", "Data", "Some pipelines.", 1.4),
+            StrengthInput("backend", "Backend", "Built services.", 90, 0.8),
+            StrengthInput("data", "Data", "Some pipelines.", 100, 1.0),
         ],
     )
 
-    stored = {s.dimension_key: s.weight for s in uow.store.strengths.values()}
-    # Replaced with the candidates; a weight is kept between 0 and 1.
-    assert stored == {"backend": 0.72, "data": 1.0}
+    stored = {
+        s.dimension_key: (s.score, s.confidence, s.weight) for s in uow.store.strengths.values()
+    }
+    # Replaced with the candidates; the weight is score times confidence, and
+    # the score itself is kept for the fits (ADR 0028).
+    assert stored == {"backend": (90, 0.8, pytest.approx(0.72)), "data": (100, 1.0, 1.0)}
     # The market is asked by the build that follows, not told here (ADR 0027).
     assert uow.store.events == []
+
+
+@pytest.mark.parametrize(
+    "strength",
+    [
+        StrengthInput("backend", "Backend", "read", 120, 0.5),
+        StrengthInput("backend", "Backend", "read", 60, 1.5),
+    ],
+)
+async def test_a_strength_off_its_scale_is_refused(strength: StrengthInput) -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork())
+
+    with pytest.raises(ValidationError, match="scored 0 to 100"):
+        await rolemap.replace_candidates(OWNER, uuid.uuid4(), [], strengths=[strength])
+
+
+async def test_no_more_dimensions_are_handed_over_than_a_fit_is_priced_for() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork())
+    too_many = [StrengthInput(f"d{i}", "D", "read", 50, 0.5) for i in range(MAX_STRENGTHS + 1)]
+
+    with pytest.raises(ValidationError, match="at most"):
+        await rolemap.replace_candidates(OWNER, uuid.uuid4(), [], strengths=too_many)
 
 
 async def test_an_analysis_recommends_no_more_than_twenty_roles() -> None:
@@ -639,7 +667,7 @@ async def test_what_a_candidates_search_found_is_its_and_a_loose_hit_is_left_out
         OWNER,
         uuid.uuid4(),
         [_candidate("Data Engineer", "Data pipelines."), _candidate("Payments Engineer", "")],
-        strengths=[StrengthInput("backend", "Data", "Data pipelines.", 0.8)],
+        strengths=[StrengthInput("backend", "Data", "Data pipelines.", 80, 1.0)],
     )
 
     [role] = await rolemap.recluster(OWNER)
@@ -776,3 +804,138 @@ async def test_a_failed_build_still_announces_itself_for_its_fits() -> None:
 
     finished = [e for e in uow.store.events if isinstance(e, RoleMapBuildFinished)]
     assert finished == [RoleMapBuildFinished(OWNER, requested.build.id, "failed")]
+
+
+# --- fits (ADR 0028) ---------------------------------------------------------
+
+
+class _Estimated:
+    cost_usd = Decimal("0.10")
+    rate_is_published = True
+
+
+class ProjectingGateway:
+    """Answers fit projections: every requirement maps to ``backend``, which the
+    role wants at ``target``. Records what it was shown."""
+
+    def __init__(self, target: int = 80) -> None:
+        self.target = target
+        self.shown: list[dict[str, str]] = []
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **_: Any):
+        from advisor.rolemap.service import _Projection
+
+        assert task == "rolemap.fit"
+        self.shown.append(inputs)
+        return _Reply(
+            _Projection.model_validate(
+                {
+                    "mappings": [
+                        {"requirement_statement": "skill 0.9", "dimension_id": "backend"},
+                        {"requirement_statement": "skill 0.4", "dimension_id": "nowhere"},
+                    ],
+                    "target_scores": [
+                        {"dimension_id": "backend", "target": self.target},
+                        {"dimension_id": "invented", "target": 90},
+                    ],
+                    "reasoning": "Close on services, nothing on the rest.",
+                }
+            )
+        )
+
+    async def estimate(self, owner_id: uuid.UUID, **_: Any) -> _Estimated:
+        return _Estimated()
+
+
+async def _scored_map(gateway: Any) -> tuple[RoleMapService, FakeRoleMapUnitOfWork, uuid.UUID]:
+    """One analysed role, and the strengths an analysis handed over."""
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, FakeMarket([_posting("Backend")]), gateway)
+    role_id = uuid.uuid4()
+    await _store(rolemap, role_id, [_posting("Backend")], "Backend Engineer")
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [],
+        strengths=[
+            StrengthInput("backend", "Backend", "Built services.", 60, 0.9),
+            StrengthInput("data", "Data", "Some pipelines.", 40, 0.5),
+        ],
+    )
+    return rolemap, uow, role_id
+
+
+async def test_a_fit_is_scored_against_the_strengths_the_analysis_handed_over() -> None:
+    gateway = ProjectingGateway(target=80)
+    rolemap, uow, role_id = await _scored_map(gateway)
+
+    [fit] = await rolemap.compute_fits(OWNER)
+
+    # The prompt names the user's own scores, from the hand-over.
+    assert "backend: Backend — scored 60/100 (confidence 0.90)" in gateway.shown[0]["dimensions"]
+    assert fit.role_id == role_id
+    # A target on a dimension the user lacks is the model drifting: dropped.
+    assert fit.target_profile == {"backend": 80}
+    assert [(g["dimension_key"], g["delta"]) for g in fit.gaps] == [("backend", -20)]
+    # A requirement mapped nowhere the user has is uncovered, not dropped.
+    assert [u["statement"] for u in fit.uncovered] == ["skill 0.4"]
+    assert fit.requirement_map == {"skill 0.9": "backend", "skill 0.4": None}
+    assert fit.assessment_id == next(iter(uow.store.strengths.values())).assessment_id
+    assert RoleFitsComputed(owner_id=OWNER, roles=1) in uow.store.events
+
+
+async def test_fits_need_an_analysis_to_score_against() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, FakeMarket([_posting("Backend")]), ProjectingGateway())
+    await _store(rolemap, uuid.uuid4(), [_posting("Backend")], "Backend Engineer")
+
+    with pytest.raises(ValidationError, match="run an analysis"):
+        await rolemap.compute_fits(OWNER)
+
+
+async def test_the_current_fit_is_the_newest_per_role() -> None:
+    rolemap, uow, role_id = await _scored_map(ProjectingGateway(target=90))
+    await rolemap.compute_fits(OWNER)
+    rolemap._gateway = ProjectingGateway(target=60)  # type: ignore[assignment]
+    await rolemap.compute_fits(OWNER)
+
+    [fit] = await rolemap.fits(OWNER)
+
+    assert len(uow.store.fits) == 2
+    assert (fit.role_id, fit.target_profile) == (role_id, {"backend": 60})
+
+
+async def test_a_fit_says_what_closing_each_gap_is_worth() -> None:
+    rolemap, _uow, _role_id = await _scored_map(ProjectingGateway(target=80))
+    [fit] = await rolemap.compute_fits(OWNER)
+
+    lifts = fit.lifts()
+
+    assert lifts.by_dimension["backend"] > 0
+    assert len(lifts.by_uncovered) == 1
+
+
+async def test_fits_are_priced_per_role_the_map_will_hold() -> None:
+    """$0.10 a projection: the ten recommended roles a build may make, and the
+    user's own on top."""
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, gateway=ProjectingGateway())
+    await rolemap.add_custom_role(
+        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
+    )
+
+    priced = await rolemap.estimate_fits(OWNER, recommended=10)
+    adding = await rolemap.estimate_fits(OWNER, extra_roles=1)
+
+    assert (priced["roles"], priced["cost_usd"]) == (11, "1.10")
+    assert (adding["roles"], adding["cost_usd"]) == (2, "0.20")
+
+
+async def test_no_roles_cost_no_fits() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), gateway=ProjectingGateway())
+
+    assert await rolemap.estimate_fits(OWNER, recommended=0) == {
+        "cost_usd": "0",
+        "roles": 0,
+        "rate_is_published": True,
+    }

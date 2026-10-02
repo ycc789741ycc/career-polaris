@@ -40,7 +40,6 @@ function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
 function fit(roleId: string, score: number): Fit {
   return {
     role_id: roleId,
-    private_posting_id: null,
     score,
     reasoning: "",
     gaps: [],

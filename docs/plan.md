@@ -718,6 +718,22 @@ Two branches, in this order, because a branch that needs two kinds is two
 branches. Both are cut from the Phase 6 epic and merged back into it.
 
 #### `refactor/<ticket>/fits-in-rolemap`: the fit moves into the role map
+**Done** ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)). Where the
+build differs from the plan below:
+
+* The fit's body drops `private_posting_id` and its `role_id` is never null;
+  paths stay the same. The SPA read neither.
+* `assessment.estimate_cost` asks `rolemap` for the build's estimate and its
+  fits' separately, as the role map's own estimate route does, rather than in
+  one call.
+* At most `MAX_STRENGTHS` (10) dimensions are handed over, the number a fit is
+  priced for, and each must be scored 0 to 100 with a confidence from 0 to 1.
+* The migration also gives strengths to a user whose latest analysis predates
+  the hand-over, so their fits can be scored without analysing again. Fits
+  for pasted JDs, unwritten since ADR 0022, are not carried over.
+* The ledger names a fit projection `rolemap.fit`; older rows keep
+  `assessment.fit`.
+
 Behaviour does not change; only where the fit lives.
 
 1. **What moves.**

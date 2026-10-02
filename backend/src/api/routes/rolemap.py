@@ -1,20 +1,26 @@
-"""Role map HTTP surface: the bubble chart's roles, the candidates they come
-from, and the ones the user adds."""
+"""Role map HTTP surface: the bubble chart's roles and their fits, the
+openings inside them, the candidates they come from, and the ones the user
+adds."""
 
 from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from advisor.rolemap import BuildRunView
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
+from api.schemas.common import Accepted
 from api.schemas.rolemap import (
     CustomRoleEstimate,
     CustomRoleRequest,
+    Fit,
+    FitPage,
+    MatchedPosting,
+    MatchedPostingPage,
     Role,
     RoleCandidate,
     RoleCandidatePage,
@@ -24,7 +30,7 @@ from api.schemas.rolemap import (
 )
 from kernel.paging import paginate
 from wiring.container import Container
-from wiring.queue import queue_build
+from wiring.queue import enqueue, queue_build
 
 router = APIRouter(tags=["rolemap"])
 
@@ -66,7 +72,7 @@ async def cost_estimate(user: CurrentUser, deps: Deps) -> RoleMapEstimate:
     """Shown before a rebuild runs, so nothing is spent unasked: the build, and
     the fits scored once it ends."""
     estimate = await deps.rolemap.estimate_cost(user)
-    fits = await deps.assessment.estimate_fits(user, recommended=estimate["max_roles"])
+    fits = await deps.rolemap.estimate_fits(user, recommended=estimate["max_roles"])
     return RoleMapEstimate.model_validate(_with_fits(estimate, fits))
 
 
@@ -91,7 +97,7 @@ async def custom_role_estimate(
         job_description=body.job_description,
     )
     # The build that places it scores every role's fit, this one's included.
-    fits = await deps.assessment.estimate_fits(user, extra_roles=1)
+    fits = await deps.rolemap.estimate_fits(user, extra_roles=1)
     return CustomRoleEstimate.model_validate(_with_fits(estimate, fits))
 
 
@@ -135,6 +141,37 @@ def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]
         "rate_is_published": estimate.get("rate_is_published") is not False
         and fits["rate_is_published"],
     }
+
+
+@router.get("/fits")
+async def fits(user: CurrentUser, deps: Deps, paging: Paging) -> FitPage:
+    """Bubble sizes. Fit belongs to the User x Role pair, never to the role."""
+    # Paged here, not in the service: other components read the fits whole.
+    found = paginate(await deps.rolemap.fits(user), paging.page, paging.page_size)
+    return FitPage.of(found, Fit.from_view)
+
+
+@router.get("/matched-postings")
+async def matched_postings(
+    user: CurrentUser,
+    deps: Deps,
+    paging: Paging,
+    role_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> MatchedPostingPage:
+    """The openings inside the user's roles, best first, for the role map's "Top
+    matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
+    one role's, the openings the Advisor can aim at in it. Ranked by the role's
+    fit; no AI runs to produce it."""
+    ranked = await deps.rolemap.matched_postings(user, limit=None, role_id=role_id)
+    return MatchedPostingPage.of(
+        paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
+    )
+
+
+@router.post("/fits/compute", status_code=202)
+async def compute_fits(user: CurrentUser, deps: Deps) -> Accepted:
+    await enqueue("rolemap.compute_fits", owner_id=str(user))
+    return Accepted()
 
 
 async def _request_build(user: uuid.UUID, deps: Container) -> BuildRunView:

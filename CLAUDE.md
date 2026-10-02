@@ -405,3 +405,14 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   - **What the user sees.** `GET /role-map` says how old the map's market is
     and whether the locations changed; the running bar and the Rebuild button
     say "Searching the market…".
+- **The fit is the role map's** (ADR 0028). `RoleFit` (table
+  `rolemap.role_fit`), its gaps, uncovered requirements and closing lifts,
+  `compute_fits`, `estimate_fits` and the "Top matched" ranking live in
+  `rolemap`; `assessment` keeps only the strength report. A fit is scored
+  against the dimension scores `assessment` hands over with the candidates:
+  `StrengthInput` and `rolemap.candidate_strength` carry `score` and
+  `confidence`, and `weight` is their product. `RoleMapBuildFinished` queues
+  `rolemap.compute_fits`. `/fits`, `/fits/compute` and `/matched-postings`
+  keep their paths on the role map's router; a fit's body has no
+  `private_posting_id`. Migration 0023 moved the fits and backfilled the
+  scores.

@@ -102,9 +102,9 @@ def _register(app: App) -> None:
     async def run_assessment(owner_id: str, run_id: str) -> None:
         await assessment_jobs.run(deps(), owner_id=owner_id, run_id=run_id)
 
-    @app.task(name="assessment.compute_fits", queue=str(Queue.AI))
+    @app.task(name="rolemap.compute_fits", queue=str(Queue.AI))
     async def compute_fits(owner_id: str) -> None:
-        await assessment_jobs.compute_fits(deps(), owner_id=owner_id)
+        await rolemap_jobs.compute_fits(deps(), owner_id=owner_id)
 
     @app.task(name="gapplan.draft", queue=str(Queue.AI))
     async def draft_plan(owner_id: str, plan_id: str) -> None:

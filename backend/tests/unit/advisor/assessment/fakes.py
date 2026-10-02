@@ -20,9 +20,6 @@ from advisor.assessment.domain import (
     DimensionChangeFilter,
     DimensionChangeRepository,
     OwnerAssessment,
-    RoleFit,
-    RoleFitFilter,
-    RoleFitRepository,
     SkillAssessment,
     SkillAssessmentFilter,
     SkillAssessmentRepository,
@@ -40,7 +37,6 @@ class Store:
     scores: dict[uuid.UUID, AssessedScore] = field(default_factory=dict)
     changes: dict[uuid.UUID, DimensionChange] = field(default_factory=dict)
     runs: dict[uuid.UUID, AnalysisRun] = field(default_factory=dict)
-    fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
     events: list[AssessmentEvent] = field(default_factory=list)
 
 
@@ -100,22 +96,6 @@ class FakeRuns(FakeRepository[AnalysisRun, AnalysisRunFilter], AnalysisRunReposi
         return filter.status is None or entity.status is filter.status
 
 
-class FakeFits(FakeRepository[RoleFit, RoleFitFilter], RoleFitRepository):
-    updated_field = None
-    owner_field = "owner_id"
-    noun = "fit"
-
-    def matches(self, entity: RoleFit, filter: RoleFitFilter) -> bool:
-        return (
-            (filter.role_id is None or entity.role_id == filter.role_id)
-            and (
-                filter.private_posting_id is None
-                or entity.private_posting_id == filter.private_posting_id
-            )
-            and (filter.assessment_id is None or entity.assessment_id == filter.assessment_id)
-        )
-
-
 class FakeOwner(OwnerAssessment):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.dimensions = FakeDimensions(store.dimensions, owner_id=owner_id)
@@ -123,7 +103,6 @@ class FakeOwner(OwnerAssessment):
         self.scores = FakeScores(store.scores, owner_id=owner_id)
         self.changes = FakeChanges(store.changes, owner_id=owner_id)
         self.runs = FakeRuns(store.runs, owner_id=owner_id)
-        self.fits = FakeFits(store.fits, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 
     def record(self, event: AssessmentEvent) -> None:

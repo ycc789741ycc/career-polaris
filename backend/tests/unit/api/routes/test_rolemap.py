@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from advisor.rolemap import BuildRequestView, BuildRunView, RoleCandidateView, RoleView
+from advisor.rolemap import BuildRequestView, BuildRunView, FitView, RoleCandidateView, RoleView
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import rolemap as rolemap_api
@@ -29,6 +29,39 @@ class FakeRoleMap:
         self.added: list[dict[str, Any]] = []
         self.removed: list[uuid.UUID] = []
         self.finished: BuildRunView | None = None
+        # How many recommended roles each fits estimate was asked to price.
+        self.priced: list[dict[str, Any]] = []
+        self.matched_for: list[uuid.UUID | None] = []
+
+    async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
+        self.priced.append(kw)
+        return {"cost_usd": "0.30", "roles": 10, "rate_is_published": True}
+
+    async def fits(self, owner_id: uuid.UUID) -> list[FitView]:
+        return [
+            FitView(
+                role_id=ROLE_ID,
+                score=72,
+                reasoning="Close on services.",
+                gaps=(
+                    {
+                        "dimension_key": "backend",
+                        "user_score": 60,
+                        "target_score": 80,
+                        "delta": -20,
+                    },
+                ),
+                uncovered=({"statement": "Kubernetes", "weight": 0.5},),
+                model_id="claude-opus-5",
+                created_at=datetime(2026, 10, 3, 9, 0, tzinfo=UTC),
+            )
+        ]
+
+    async def matched_postings(
+        self, owner_id: uuid.UUID, *, limit: int | None, role_id: uuid.UUID | None
+    ) -> list[Any]:
+        self.matched_for.append(role_id)
+        return []
 
     async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         return self.finished
@@ -75,18 +108,6 @@ class FakeRoleMap:
                 [("Backend Engineer", ROLE_ID), ("Payments Engineer", None)]
             )
         ]
-
-
-class FakeAssessment:
-    """Prices a build's fits, and records how many recommended roles it was asked
-    to price them for."""
-
-    def __init__(self) -> None:
-        self.priced: list[dict[str, Any]] = []
-
-    async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
-        self.priced.append(kw)
-        return {"cost_usd": "0.30", "roles": 10, "rate_is_published": True}
 
 
 ROLE_ID = uuid.uuid4()
@@ -150,11 +171,6 @@ def activity() -> FakeActivity:
 
 
 @pytest.fixture
-def assessment() -> FakeAssessment:
-    return FakeAssessment()
-
-
-@pytest.fixture
 def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
 
@@ -167,6 +183,8 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     # The route hands every build request to wiring's one helper, which queues
     # it or schedules its check on the market (ADR 0027).
     monkeypatch.setattr(queue, "enqueue", enqueue)
+    # Scoring fits on request queues its job directly.
+    monkeypatch.setattr(rolemap_api, "enqueue", enqueue)
     monkeypatch.setattr(queue, "enqueue_later", enqueue_later)
     monkeypatch.setattr(queue, "get_settings", lambda: SimpleNamespace(crawl_due_poll_seconds=15))
     return calls
@@ -177,7 +195,6 @@ def client(
     rolemap: FakeRoleMap,
     activity: FakeActivity,
     market: FakeMarket,
-    assessment: FakeAssessment,
     queued: list[Any],
 ) -> TestClient:
     app = FastAPI()
@@ -186,13 +203,13 @@ def client(
     user = uuid.uuid4()
     app.dependency_overrides[current_user] = lambda: user
     app.dependency_overrides[get_container] = lambda: SimpleNamespace(
-        rolemap=rolemap, activity=activity, market=market, assessment=assessment
+        rolemap=rolemap, activity=activity, market=market
     )
     return TestClient(app, raise_server_exceptions=False)
 
 
 def test_the_estimate_prices_the_ten_recommended_roles_and_their_fits(
-    client: TestClient, assessment: FakeAssessment
+    client: TestClient, rolemap: FakeRoleMap
 ) -> None:
     response = client.get("/roles/cost-estimate")
     assert response.status_code == 200
@@ -203,7 +220,7 @@ def test_the_estimate_prices_the_ten_recommended_roles_and_their_fits(
         "fits_cost_usd": "0.30",
         "rate_is_published": True,
     }
-    assert assessment.priced == [{"recommended": 10}]
+    assert rolemap.priced == [{"recommended": 10}]
 
 
 def test_the_candidates_say_which_ones_the_market_had(client: TestClient) -> None:
@@ -363,3 +380,37 @@ def test_with_no_map_or_one_from_before_there_is_nothing_to_say(
         "built_for_locations": None,
         "locations_changed": False,
     }
+
+
+# --- fits and the openings inside the roles (ADR 0028) -----------------------
+
+
+def test_fits_are_the_role_maps_and_answer_as_a_page(client: TestClient) -> None:
+    response = client.get("/fits")
+
+    assert response.status_code == 200
+    [fit] = response.json()["items"]
+    assert (fit["role_id"], fit["score"]) == (str(ROLE_ID), 72)
+    assert fit["gaps"] == [
+        {"dimension_key": "backend", "user_score": 60, "target_score": 80, "delta": -20}
+    ]
+    assert "private_posting_id" not in fit
+
+
+def test_scoring_fits_queues_the_role_maps_job(
+    client: TestClient, queued: list[dict[str, Any]]
+) -> None:
+    response = client.post("/fits/compute")
+
+    assert response.status_code == 202
+    assert [call["name"] for call in queued] == ["rolemap.compute_fits"]
+
+
+def test_matched_postings_can_be_narrowed_to_one_role(
+    client: TestClient, rolemap: FakeRoleMap
+) -> None:
+    response = client.get("/matched-postings", params={"role_id": str(ROLE_ID)})
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert rolemap.matched_for == [ROLE_ID]

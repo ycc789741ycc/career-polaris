@@ -1,24 +1,13 @@
-"""Assessment HTTP surface: the radar and the fits."""
+"""Assessment HTTP surface: the analysis and the radar."""
 
 from __future__ import annotations
 
-import uuid
-from typing import Annotated
-
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
-from api.schemas.assessment import (
-    Assessment,
-    AssessmentPage,
-    Fit,
-    FitPage,
-    MatchedPosting,
-    MatchedPostingPage,
-)
-from api.schemas.common import Accepted, AnalysisEstimate
-from kernel.paging import paginate
+from api.schemas.assessment import Assessment, AssessmentPage
+from api.schemas.common import AnalysisEstimate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["assessment"])
@@ -52,37 +41,6 @@ async def history(user: CurrentUser, deps: Deps, paging: Paging) -> AssessmentPa
     """Every analysis, newest first."""
     found = await deps.assessment.history(user, page=paging.page, page_size=paging.page_size)
     return AssessmentPage.of(found, Assessment.from_view)
-
-
-@router.get("/fits")
-async def fits(user: CurrentUser, deps: Deps, paging: Paging) -> FitPage:
-    """Bubble sizes. Fit belongs to the User x Role pair, never to the role."""
-    # Paged here, not in the service: other components read the fits whole.
-    found = paginate(await deps.assessment.fits(user), paging.page, paging.page_size)
-    return FitPage.of(found, Fit.from_view)
-
-
-@router.get("/matched-postings")
-async def matched_postings(
-    user: CurrentUser,
-    deps: Deps,
-    paging: Paging,
-    role_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> MatchedPostingPage:
-    """The openings inside the user's roles, best first, for the role map's "Top
-    matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
-    one role's, the openings the Advisor can aim at in it. Ranked by the role's
-    fit; no AI runs to produce it."""
-    ranked = await deps.assessment.matched_postings(user, limit=None, role_id=role_id)
-    return MatchedPostingPage.of(
-        paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view
-    )
-
-
-@router.post("/fits/compute", status_code=202)
-async def compute_fits(user: CurrentUser, deps: Deps) -> Accepted:
-    await enqueue("assessment.compute_fits", owner_id=str(user))
-    return Accepted()
 
 
 __all__ = ["router"]

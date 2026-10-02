@@ -38,10 +38,4 @@ class DimensionsChanged:
     retired: int
 
 
-@dataclass(frozen=True, slots=True)
-class RoleFitsComputed:
-    owner_id: uuid.UUID
-    roles: int
-
-
-AssessmentEvent = AssessmentCompleted | AnalysisFinished | DimensionsChanged | RoleFitsComputed
+AssessmentEvent = AssessmentCompleted | AnalysisFinished | DimensionsChanged

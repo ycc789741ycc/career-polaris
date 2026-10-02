@@ -8,7 +8,6 @@ from advisor.assessment.domain import (
     AssessedScore,
     DimensionChange,
     LineageKind,
-    RoleFit,
     SkillAssessment,
     SkillDimension,
 )
@@ -143,44 +142,3 @@ def apply_analysis_run(row: models.AnalysisRun, entity: AnalysisRun) -> None:
     row.error_code = entity.error_code
     row.error_message = entity.error_message
     row.finished_at = entity.finished_at
-
-
-def fit(row: models.RoleFit) -> RoleFit:
-    return RoleFit(
-        id=row.id,
-        owner_id=row.owner_id,
-        assessment_id=row.assessment_id,
-        role_id=row.role_id,
-        private_posting_id=row.private_posting_id,
-        score=row.score,
-        reasoning=row.reasoning,
-        target_profile=dict(row.target_profile),
-        gaps=tuple(row.gaps),
-        uncovered=tuple(row.uncovered),
-        model_id=row.model_id,
-        template_version=row.template_version,
-        requirements=tuple(row.requirements or []),
-        requirement_map=dict(row.requirement_map or {}),
-        created_at=row.created_at,
-    )
-
-
-def fit_row(entity: RoleFit) -> models.RoleFit:
-    row = models.RoleFit(id=entity.id, owner_id=entity.owner_id)
-    apply_fit(row, entity)
-    return row
-
-
-def apply_fit(row: models.RoleFit, entity: RoleFit) -> None:
-    row.assessment_id = entity.assessment_id
-    row.role_id = entity.role_id
-    row.private_posting_id = entity.private_posting_id
-    row.score = entity.score
-    row.reasoning = entity.reasoning
-    row.target_profile = dict(entity.target_profile)
-    row.gaps = list(entity.gaps)
-    row.uncovered = list(entity.uncovered)
-    row.requirements = list(entity.requirements)
-    row.requirement_map = dict(entity.requirement_map)
-    row.model_id = entity.model_id
-    row.template_version = entity.template_version

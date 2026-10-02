@@ -1,8 +1,8 @@
 """Assessment's entities: this user's dimensions, the assessments and scores
-taken against them, the analyses that produce them, and fits against roles
-and postings.
+taken against them, and the analyses that produce them. Fits against roles
+belong to the role map (ADR 0028).
 
-Assessments, scores and fits are immutable snapshots: each records the profile
+Assessments and scores are immutable snapshots: each records the profile
 version, model and template it came from, so a stale one can be detected
 (domain section 2.4). ``advisor.assessment.infra`` maps these to and from the
 database.
@@ -11,10 +11,9 @@ database.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
 
 from advisor.assessment.domain.dimensions import LineageKind
 
@@ -126,39 +125,3 @@ class AnalysisRun:
         self.error_code = code
         self.error_message = message
         self.finished_at = at
-
-
-@dataclass(slots=True)
-class RoleFit:
-    """Fit between this user and one role or one pasted posting.
-
-    Fit lives on the User x Role pair, never on the role. Exactly one of
-    ``role_id`` and ``private_posting_id`` is set.
-    """
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    assessment_id: uuid.UUID
-    role_id: uuid.UUID | None
-    private_posting_id: uuid.UUID | None
-    score: int
-    reasoning: str
-    target_profile: dict[str, int]
-    gaps: tuple[dict[str, Any], ...]
-    uncovered: tuple[dict[str, Any], ...]
-    model_id: str
-    template_version: str
-    requirements: tuple[dict[str, Any], ...] = ()
-    requirement_map: dict[str, str | None] = field(default_factory=dict)
-    created_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if (self.role_id is None) == (self.private_posting_id is None):
-            raise ValueError("a fit is for exactly one role or one posting")
-
-    @property
-    def target(self) -> uuid.UUID:
-        """What the fit is against: the role, or the pasted posting."""
-        target = self.role_id or self.private_posting_id
-        assert target is not None
-        return target

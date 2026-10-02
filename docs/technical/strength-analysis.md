@@ -55,7 +55,7 @@ once:
 |---|---|---|
 | `analysis_cost_usd` | `ai_gateway.estimate` on `skill_assessment` v2 | The real prompt: the user's evidence and timeline |
 | `role_map_cost_usd` | `rolemap.estimate_cost` | Two calls per role, up to `max_roles`. When the user has a searchable place (a country or "Remote"), this is the full 10, because the search that runs first could find anything. |
-| `fits_cost_usd` | `assessment.estimate_fits` | One `fit_projection` call for each recommended and custom role, priced at its worst-case prompt |
+| `fits_cost_usd` | `rolemap.estimate_fits` | One `fit_projection` call for each recommended and custom role, priced at its worst-case prompt |
 
 With no evidence, the estimate is refused with `ValidationError`, which tells
 the user to connect a source or upload a résumé first.
@@ -148,9 +148,10 @@ Nothing the model returns is believed until it is checked:
 
 - **`RoleCandidate`:** title, description and dimension keys, in the
   analysis's order.
-- **`CandidateStrength`:** one per dimension: its name, its read, and a
-  weight of `score / 100 × confidence`. The build's free local fit estimate
-  weighs dimensions by this (ADR 0027).
+- **`CandidateStrength`:** one per dimension: its name, its read, its score
+  and confidence, and a weight of `score / 100 × confidence`. The build's
+  free local fit estimate weighs dimensions by the weight (ADR 0027), and the
+  fits are scored against the score (ADR 0028).
 
 `assessment` sits above `rolemap`, so it hands these over through `rolemap`'s
 public service rather than storing them itself.
@@ -221,3 +222,4 @@ finishes.
 - [ADR 0020: build the map after every analysis](../decisions/0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md)
 - [ADR 0024: roles from the assessment](../decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)
 - [ADR 0027: fetch the market only when a build needs it](../decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)
+- [ADR 0028: score the fit in the role map](../decisions/0028-score-the-fit-in-the-role-map.md)

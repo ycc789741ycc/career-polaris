@@ -36,7 +36,7 @@ flowchart TD
 
     Start --> Build["rolemap.build → recluster<br>(ai queue, user's key)"]
     Build --> Finished["Build ready + RoleMapBuildFinished"]
-    Finished --> Fits["assessment.compute_fits<br>one fit per role"]
+    Finished --> Fits["rolemap.compute_fits<br>one fit per role"]
 ```
 
 ## 1. What asks for a build
@@ -64,7 +64,7 @@ There is no scheduled rebuild.
   - and no build cost at all when that comes to 0 roles.
 - **Calls per role:** two, `role_extraction` and `difficulty_estimate`, each
   priced on the costliest prompt the postings could fill.
-- **Fits:** `assessment.estimate_fits` adds one `fit_projection` per
+- **Fits:** `rolemap.estimate_fits` adds one `fit_projection` per
   recommended and custom role.
 
 ## 2. Record the build (`rolemap.request_build`)
@@ -253,12 +253,14 @@ for it still gets its new scores shown against the roles that are there.
 
 ## 7. Fits, and what the user sees
 
-The dispatcher routes `RoleMapBuildFinished` to `assessment.compute_fits`
-(`ai` queue):
+The dispatcher routes `RoleMapBuildFinished` to `rolemap.compute_fits`
+(`ai` queue). The fit is the role map's (ADR 0028), scored against the
+dimension scores the analysis handed over with the candidates
+(`rolemap.candidate_strength`):
 - **Fits:** one `fit_projection` per role with requirements. It maps each
-  requirement to a dimension, sets target scores, and stores the fit with its
-  gaps and uncovered requirements.
-- **The estimate's agreement:** logged as `assessment.estimate_agreement`, the
+  requirement to a dimension, sets target scores, and stores the fit in
+  `rolemap.role_fit` with its gaps and uncovered requirements.
+- **The estimate's agreement:** logged as `rolemap.estimate_agreement`, the
   Spearman rank correlation between the local estimate and the fits. Numbers
   only, no user data.
 
@@ -311,3 +313,4 @@ When the build ends, 03 Roles reloads:
 - [ADR 0025: search Himalayas for candidate roles](../decisions/0025-search-himalayas-for-the-candidate-roles.md)
 - [ADR 0026: target locations from a list](../decisions/0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md)
 - [ADR 0027: fetch the market only when a build needs it](../decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)
+- [ADR 0028: score the fit in the role map](../decisions/0028-score-the-fit-in-the-role-map.md)

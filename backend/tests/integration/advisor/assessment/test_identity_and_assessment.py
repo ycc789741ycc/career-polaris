@@ -323,7 +323,6 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
         database,
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )
@@ -531,7 +530,6 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         database,
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )

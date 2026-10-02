@@ -1,6 +1,6 @@
 # 0018. Gate the journey's stages on the status each stage records while it runs
 
-**Status:** Accepted — 2026-09-28. Amended by [0027](0027-fetch-the-market-only-when-a-build-needs-it.md).
+**Status:** Accepted — 2026-09-28. Amended by [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) and [0028](0028-score-the-fit-in-the-role-map.md).
 
 ## Context
 

@@ -1,5 +1,5 @@
-"""Worker handlers for the role map: builds run on the ``ai`` queue, checks on
-the market on ``sync``."""
+"""Worker handlers for the role map: builds and fits run on the ``ai`` queue,
+checks on the market on ``sync``."""
 
 from __future__ import annotations
 
@@ -26,3 +26,9 @@ async def await_market(deps: Any, *, owner_id: str, build_id: str) -> Any:
         uuid.UUID(build_id),
         deadline=timedelta(seconds=deps.settings.market_wait_seconds),
     )
+
+
+async def compute_fits(deps: Any, *, owner_id: str) -> None:
+    """Score the fits of the build that just closed (ADR 0028)."""
+    fits = await deps.rolemap.compute_fits(uuid.UUID(owner_id))
+    log.info("rolemap.fits_computed", fits=len(fits))

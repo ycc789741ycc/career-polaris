@@ -1,4 +1,4 @@
-"""The role map's "Top matched" list, against a real database.
+"""The role map's "Top matched" list, against a real database (ADR 0028).
 
 What is worth proving: expired postings, retired roles and pasted JDs stay
 out; the order follows the role's fit; and a row knows when the user already
@@ -14,7 +14,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 
-from advisor.assessment import FitView, create_assessment_service
 from advisor.identity import create_identity_service
 from advisor.market import (
     NormalizedPosting,
@@ -23,14 +22,12 @@ from advisor.market import (
     create_market_service,
 )
 from advisor.market.infra.models import CrawlSource
-from advisor.profile import create_profile_service
-from advisor.rolemap import create_rolemap_service
+from advisor.rolemap import FitView, create_rolemap_service
 from advisor.rolemap.infra.models import Role, RoleMember
 from kernel.ai_gateway import AiGateway
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.db.base import utcnow
-from kernel.storage import ObjectStore
 from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
@@ -53,7 +50,6 @@ def _posting(title: str, company: str, market: str) -> NormalizedPosting:
 def _fit(role_id: uuid.UUID, score: int) -> FitView:
     return FitView(
         role_id=role_id,
-        private_posting_id=None,
         score=score,
         reasoning="",
         gaps=(),
@@ -143,15 +139,6 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             )
 
         identity = create_identity_service(database, default_monthly_cap_usd=Decimal("20"))
-        profile = create_profile_service(
-            database,
-            object_store=ObjectStore(settings),
-            connectors={},
-            resume_max_bytes=settings.resume_max_bytes,
-            resume_max_pages=settings.resume_max_pages,
-            http_timeout_seconds=5,
-            user_agent="test",
-        )
         gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
         rolemap = create_rolemap_service(
             database,
@@ -159,21 +146,13 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             gateway=gateway,
             embedding_model=settings.embedding_model_name,
         )
-        assessment = create_assessment_service(
-            database,
-            profile=profile,
-            rolemap=rolemap,
-            market=market,
-            gateway=gateway,
-            confidence_threshold=settings.assessment_confidence_threshold,
-        )
 
         async def fits(owner_id: uuid.UUID) -> list[FitView]:
             return [_fit(backend, 80), _fit(platform, 91), _fit(retired, 99)]
 
-        monkeypatch.setattr(assessment, "fits", fits)
+        monkeypatch.setattr(rolemap, "fits", fits)
 
-        matched = await assessment.matched_postings(account, limit=10)
+        matched = await rolemap.matched_postings(account, limit=10)
 
         # Equal fits break by company: Kestrel before Northwind.
         assert [(m.title, m.fit) for m in matched] == [
@@ -181,7 +160,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             (f"Backend B {tag}", 80),
             (f"Backend A {tag}", 80),
         ]
-        assert [m.title for m in await assessment.matched_postings(account, limit=1)] == [
+        assert [m.title for m in await rolemap.matched_postings(account, limit=1)] == [
             f"Platform {tag}"
         ]
     finally:
