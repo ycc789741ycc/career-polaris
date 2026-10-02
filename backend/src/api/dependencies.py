@@ -6,7 +6,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header, Query, Request
+from fastapi import Depends, Query, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from kernel.errors import UnauthenticatedError
 from kernel.logging import trace_id_var
@@ -23,8 +24,15 @@ def get_container() -> Container:
     return container()
 
 
+# Declared as a security scheme, not a plain header, so the OpenAPI document
+# says which routes need a token and Swagger UI can hold one for all of them.
+# auto_error is off: a missing token is our own UnauthenticatedError, in the
+# error envelope, rather than FastAPI's bare 403.
+bearer = HTTPBearer(auto_error=False, description="The access token from sign-in.")
+
+
 async def current_user(
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     deps: Container = Depends(get_container),
 ) -> uuid.UUID:
     """Verify the access token and return the account it belongs to.
@@ -33,10 +41,10 @@ async def current_user(
     database round trip is needed to resolve it. Signature, issuer, audience
     and expiry are still checked on every request.
     """
-    if not authorization or not authorization.lower().startswith("bearer "):
+    if credentials is None:
         raise UnauthenticatedError("a bearer token is required")
 
-    user = deps.verifier.verify(authorization.split(" ", 1)[1].strip())
+    user = deps.verifier.verify(credentials.credentials)
     try:
         account_id = uuid.UUID(user.subject)
     except ValueError as exc:

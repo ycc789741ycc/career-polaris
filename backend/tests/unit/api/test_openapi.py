@@ -89,3 +89,12 @@ def test_every_list_is_a_page_with_the_same_two_parameters(document: dict[str, A
             assert set(resolved["required"]) == {"items", "page", "page_size", "total"}
             names = {p["name"] for p in get.get("parameters", []) if p["in"] == "query"}
             assert {"page", "page_size"} <= names, f"GET {path} pages without the parameters"
+
+
+def test_signed_in_routes_declare_the_bearer_scheme(document: dict[str, Any]) -> None:
+    """Swagger UI's Authorize button holds the token for every route that declares it."""
+    assert document["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    me = document["paths"]["/api/v1/me"]["get"]
+    assert me["security"] == [{"HTTPBearer": []}]
+    assert "authorization" not in {p["name"] for p in me.get("parameters", [])}
+    assert "security" not in document["paths"]["/api/v1/auth/sign-in"]["post"]
