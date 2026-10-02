@@ -187,6 +187,14 @@ async def test_shared_postings_round_trip_through_the_crawler_role(
             assert posting in await market.postings.get_open_in_scope(
                 PostingScope(markets=("Berlin",))
             )
+            # A country takes in its cities, and a region its countries (ADR 0026).
+            for place in ("Germany", "Europe"):
+                assert posting in await market.postings.get_open_in_scope(
+                    PostingScope(markets=(place,))
+                )
+            assert posting not in await market.postings.get_open_in_scope(
+                PostingScope(markets=("Asia-Pacific",))
+            )
 
             assert (
                 await market.postings.get_count(
@@ -497,18 +505,33 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
                 )
 
 
-async def test_the_fan_out_finds_users_by_any_name_for_the_place(
+async def test_the_fan_out_finds_users_of_a_place_and_of_its_regions(
     database: Database, account: uuid.UUID
 ) -> None:
     from advisor.market import create_market_service
 
     market = create_market_service(database)
     tag = uuid.uuid4().hex[:8]
-    await market.set_target_locations(account, ["Remote Taiwan", f"Zyx{tag} UK"])
+    await market.set_target_locations(account, ["Taiwan", "Europe", "Remote"])
 
     assert account in await market.owners_affected_by(market="Taiwan")
+    # Through Europe: the user did not choose the country itself (ADR 0026).
     assert account in await market.owners_affected_by(market="United Kingdom")
     assert account in await market.owners_affected_by(market="Remote")
     assert account not in await market.owners_affected_by(market="Singapore")
     assert await market.owners_affected_by(market=f"Nowhere{tag}") == []
     assert await market.owners_affected_by(market="---") == []
+
+
+async def test_only_places_on_the_list_are_saved(database: Database, account: uuid.UUID) -> None:
+    from advisor.market import create_market_service
+
+    market = create_market_service(database)
+
+    assert await market.set_target_locations(account, ["united kingdom", "Remote"]) == [
+        "Remote",
+        "United Kingdom",
+    ]
+    with pytest.raises(ValidationError):
+        await market.set_target_locations(account, ["Taipei"])
+    assert await market.target_locations(account) == ["Remote", "United Kingdom"]

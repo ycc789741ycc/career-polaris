@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from advisor.market import (
     MarketScopeView,
     PostingView,
+    TargetLocationOptionView,
     Visibility,
 )
 from api import errors
@@ -35,7 +36,14 @@ class FakeMarket:
         return sorted(locations)
 
     async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
-        return MarketScopeView(target_locations=["Berlin", "Remote EU"], open_posting_count=1284)
+        return MarketScopeView(target_locations=["Germany", "Remote"], open_posting_count=1284)
+
+    def target_location_options(self) -> list[TargetLocationOptionView]:
+        return [
+            TargetLocationOptionView(name="Remote", kind="remote"),
+            TargetLocationOptionView(name="Europe", kind="region"),
+            TargetLocationOptionView(name="Taiwan", kind="country"),
+        ]
 
     async def paste_job_description(self, owner_id: uuid.UUID, **kw: Any) -> PostingView:
         return PostingView(
@@ -72,10 +80,26 @@ def test_a_jd_is_added_with_a_custom_role_not_on_its_own(client: TestClient) -> 
 
 
 def test_target_locations_are_saved_as_a_whole_set(client: TestClient) -> None:
-    response = client.put("/target-locations", json={"locations": ["Remote EU", "Berlin"]})
+    response = client.put("/target-locations", json={"locations": ["Remote", "Germany"]})
 
     assert response.status_code == 200
-    assert response.json() == ["Berlin", "Remote EU"]
+    assert response.json() == ["Germany", "Remote"]
+
+
+def test_the_places_to_pick_from_come_as_a_page_with_their_kinds(client: TestClient) -> None:
+    response = client.get("/target-location-options")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {"name": "Remote", "kind": "remote"},
+            {"name": "Europe", "kind": "region"},
+            {"name": "Taiwan", "kind": "country"},
+        ],
+        "page": 1,
+        "page_size": None,
+        "total": 3,
+    }
 
 
 def test_a_fourth_target_location_is_refused_before_the_service(
@@ -96,6 +120,6 @@ def test_the_market_scope_says_how_many_postings_the_locations_take_in(
 
     assert response.status_code == 200
     assert response.json() == {
-        "target_locations": ["Berlin", "Remote EU"],
+        "target_locations": ["Germany", "Remote"],
         "open_posting_count": 1284,
     }

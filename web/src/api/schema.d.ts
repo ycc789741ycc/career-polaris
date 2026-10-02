@@ -1087,6 +1087,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/target-location-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Target Location Options
+         * @description The places a user may pick: "Remote", the regions, then the countries,
+         *     each group A to Z (ADR 0026).
+         */
+        get: operations["list_target_location_options_api_v1_target_location_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/target-locations": {
         parameters: {
             query?: never;
@@ -1101,8 +1122,9 @@ export interface paths {
         get: operations["list_target_locations_api_v1_target_locations_get"];
         /**
          * Set Target Locations
-         * @description Replace the whole set. A change rebuilds a role map the user already
-         *     has, on the new scope; the worker does that from the event it records.
+         * @description Replace the whole set, each a place from ``/target-location-options``.
+         *     A change rebuilds a role map the user already has, on the new scope; the
+         *     worker does that from the event it records.
          */
         put: operations["set_target_locations_api_v1_target_locations_put"];
         post?: never;
@@ -2481,9 +2503,35 @@ export interface components {
             rate_is_published: boolean;
         };
         /**
+         * TargetLocationOption
+         * @description One place on the list: ``kind`` is "remote", "region" or "country". A
+         *     region is matched by its member countries and never searched (ADR 0026).
+         */
+        TargetLocationOption: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "remote" | "region" | "country";
+            /** Name */
+            name: string;
+        };
+        /** TargetLocationOptionPage */
+        TargetLocationOptionPage: {
+            /** Items */
+            items: components["schemas"]["TargetLocationOption"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
+        /**
          * TargetLocationsRequest
          * @description The user's whole set of target locations (domain decision 21). The
-         *     market domain checks the cap again; this rejects an oversized body early.
+         *     market domain checks again that each is on the list and the cap holds
+         *     (ADR 0026); this rejects an oversized body early.
          */
         TargetLocationsRequest: {
             /** Locations */
@@ -5713,6 +5761,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersion"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_target_location_options_api_v1_target_location_options_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetLocationOptionPage"];
                 };
             };
             /** @description The request could not be read. */

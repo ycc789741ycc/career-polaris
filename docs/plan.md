@@ -306,6 +306,7 @@ every gate passing with nothing skipped, an ADR each with the index, and
 `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
 
 ## Choose target locations from a list
+**Done** ([ADR 0026](decisions/0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md)).
 "Where you want to work" in 01 Sources is a free-text box today. Whatever the
 user types is matched against posting locations word by word, and only a
 country or "Remote" gets a search (ADR 0025). A city, a region or a typo
@@ -440,7 +441,7 @@ for anyone, and is built once. Nothing is fetched for a user who asks for
 nothing.
 
 One branch, `feature/<ticket>/market-on-demand`, cut from mainline after the
-location list has merged. Its ADR (0026 at the time of writing) supersedes
+location list has merged. Its ADR (0027 at the time of writing) supersedes
 domain decision 14 (weekly crawl) and amends ADRs 0018, 0020, 0024 and 0025.
 
 1. **A source is fetched when a build needs it and it isn't fresh.**

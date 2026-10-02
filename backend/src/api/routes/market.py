@@ -10,11 +10,23 @@ from api.schemas.market import (
     MarketScope,
     PastedJobDescription,
     PastedJobDescriptionPage,
+    TargetLocationOption,
+    TargetLocationOptionPage,
     TargetLocationsRequest,
 )
 from kernel.paging import paginate
 
 router = APIRouter(tags=["market"])
+
+
+@router.get("/target-location-options")
+async def list_target_location_options(
+    user: CurrentUser, deps: Deps, paging: Paging
+) -> TargetLocationOptionPage:
+    """The places a user may pick: "Remote", the regions, then the countries,
+    each group A to Z (ADR 0026)."""
+    found = paginate(deps.market.target_location_options(), paging.page, paging.page_size)
+    return TargetLocationOptionPage.of(found, TargetLocationOption.from_view)
 
 
 @router.get("/target-locations")
@@ -28,8 +40,9 @@ async def list_target_locations(user: CurrentUser, deps: Deps, paging: Paging) -
 async def set_target_locations(
     body: TargetLocationsRequest, user: CurrentUser, deps: Deps
 ) -> list[str]:
-    """Replace the whole set. A change rebuilds a role map the user already
-    has, on the new scope; the worker does that from the event it records."""
+    """Replace the whole set, each a place from ``/target-location-options``.
+    A change rebuilds a role map the user already has, on the new scope; the
+    worker does that from the event it records."""
     return await deps.market.set_target_locations(user, body.locations)
 
 

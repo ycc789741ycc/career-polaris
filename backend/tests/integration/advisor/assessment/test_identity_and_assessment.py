@@ -22,6 +22,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
+from tests.integration.places import store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -380,7 +381,7 @@ async def test_the_role_map_estimate_runs_no_local_ml(
             for i in range(7)
         ]
     )
-    await market.set_target_locations(account, [place])
+    await store_target_locations(database, account, [place])
     rolemap = create_rolemap_service(
         database,
         market=market,
@@ -439,7 +440,7 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
             for copy in range(3)
         ]
     )
-    await market.set_target_locations(account, [place])
+    await store_target_locations(database, account, [place])
     # Groups 12 and 13 have no openings; 0 to 11 do, and only ten are kept.
     order = [13, 12, *range(12)]
 
@@ -593,7 +594,7 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
     place = await crawled(
         [(f"Company {i}", "Backend engineer", "Python, Postgres and queues.") for i in range(60)]
     )
-    await market.set_target_locations(account, [place])
+    await store_target_locations(database, account, [place])
     rolemap = create_rolemap_service(
         database,
         market=market,

@@ -22,6 +22,7 @@ from advisor.market import (
 )
 from advisor.market.infra.models import CrawlSource
 from kernel.db import Database
+from tests.integration.places import store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -295,7 +296,7 @@ async def test_a_user_with_no_market_sees_baseline_postings_and_one_with_a_marke
             source_id, [posting("Baseline Engineer", company=company, location="Lisbon")]
         )
         market = create_market_service(database)
-        await market.set_target_locations(other_account, [f"Elsewhere {uuid.uuid4().hex[:8]}"])
+        await store_target_locations(database, other_account, [f"Elsewhere {uuid.uuid4().hex[:8]}"])
 
         mine = await market.postings_in_scope(account)
         theirs = await market.postings_in_scope(other_account)
