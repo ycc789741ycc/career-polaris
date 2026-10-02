@@ -324,8 +324,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   first ten with openings; nothing clusters any more. With no candidates, a
   build places nothing. Fits are scored once per build, when
   `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
-  to a build includes them (`fits_cost_usd`). `GET /role-candidates` lets the
-  role map name the recommended roles the market lacks.
+  to a build includes them (`fits_cost_usd`). `GET /role-candidates` lists the
+  candidates; since Phase 8 the role map no longer shows them.
 - **Candidate roles are searched for** (ADR 0025). There is one ownerless
   `himalayas` crawl source per job title and place: a country, or "Remote"
   (`market.domain.search_scope`; a region adds none, ADR 0026). Only the title
@@ -500,3 +500,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   names, and to name one job rather than a group. `parse_role_name` takes a
   trailing work-arrangement or gender tag off every name a build stores, as a
   backstop; migration 0029 applied it to the names already stored.
+- **The role map shows roles and openings only.** 03 Roles no longer lists
+  the recommended roles that did not make the map, and does not call
+  `GET /role-candidates`. Each Top matched opening reads "title · company",
+  with pay, location and any credit beneath; the role it is in is the one
+  selected, so no row names it.

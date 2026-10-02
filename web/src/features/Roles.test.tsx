@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Activity, Fit, Role, RoleCandidate } from "../api/types";
+import type { Activity, Fit, Role } from "../api/types";
 import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
@@ -35,22 +35,6 @@ function fit(roleId: string, score: number): Fit {
     uncovered: [],
     model_id: "claude-opus-5",
     computed_at: "2026-09-20T10:00:00Z",
-  };
-}
-
-function candidate(
-  rank: number,
-  title: string,
-  roleId: string | null,
-): RoleCandidate {
-  return {
-    id: `c${rank}`,
-    rank,
-    title,
-    description: `${title} work.`,
-    dimension_keys: ["backend"],
-    role_id: roleId,
-    opening_count: roleId ? 4 : 1,
   };
 }
 
@@ -97,11 +81,6 @@ function serve() {
         source_kind: "publicApi",
         credited_to: "Himalayas",
       },
-    ]),
-    "/role-candidates": page([
-      candidate(0, "Backend Engineer", "r1"),
-      candidate(1, "Platform Engineer", "r2"),
-      candidate(2, "Payments Engineer", null),
     ]),
     "/role-map": {
       market_data_at: "2026-09-30T12:00:00+00:00",
@@ -214,7 +193,7 @@ describe("the role map's one Advisor target", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: /Backend Engineer · Northwind Pay: Staff Engineer, Ledger/,
+        name: "Staff Engineer, Ledger · Northwind Pay",
       }),
     );
     expect(shell.setFocus).toHaveBeenCalledWith({ role: "r1", opening: "p1" });
@@ -419,36 +398,41 @@ describe("ten roles, chosen by the system", () => {
   });
 });
 
-describe("roles from your strengths that the market lacks", () => {
+describe("what the role map leaves out", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("names only the recommended roles that did not make the map", async () => {
+  it("lists no recommended roles beside the map, and never asks for them", async () => {
     renderRoles(null);
 
-    const list = await screen.findByRole("list", {
-      name: "Recommended roles without openings",
-    });
-    expect(within(list).getByText("Payments Engineer")).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Advisor target" });
     expect(
-      within(list).queryByText("Backend Engineer"),
+      screen.queryByRole("list", {
+        name: "Recommended roles without openings",
+      }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Payments Engineer")).not.toBeInTheDocument();
+    const asked = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(([input]) => String(input));
+    expect(asked.some((url) => url.includes("/role-candidates"))).toBe(false);
   });
 
-  it("sends the user to Sources to widen where they want to work", async () => {
-    const user = userEvent.setup();
-    const shell = renderRoles(null);
+  it("names each opening by its title and company, never its role", async () => {
+    renderRoles({ role: "r1" });
 
-    await user.click(
-      await screen.findByRole("button", { name: "where you want to work" }),
-    );
-
-    expect(shell.navigate).toHaveBeenCalledWith("sources");
+    const row = await screen.findByRole("button", {
+      name: "Staff Engineer, Ledger · Northwind Pay",
+    });
+    expect(row).toHaveTextContent("Staff Engineer, Ledger · Northwind Pay");
+    expect(row).toHaveTextContent("Berlin");
+    expect(row).not.toHaveTextContent("Backend Engineer");
   });
 });
+
 describe("no roles of your own", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
