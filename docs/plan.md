@@ -945,9 +945,10 @@ component, so each one reviews and reverts on its own.
    `constants.py` and one file per concept. ADR 0010, which drew
    `entities.py`, is already superseded and stays as written.
 
-No ADR. This is a file-layout convention: it is easy to reverse and invisible
-outside `domain/`, which the guideline says doesn't get one. If a later change
-binds other repos to it, it belongs in the design guideline instead.
+No ADR. The rule is now the design guideline's ("Modules in the domain: one
+per concept" in `base/backend/architecture.md`), which also moves every
+repository interface into `repositories.py`, as this repo already does. This
+branch brings the code in line with it.
 
 Tests:
 * No behaviour changes, so no test changes beyond the guard. `make
