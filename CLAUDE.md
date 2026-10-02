@@ -474,3 +474,11 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   candidate's rank and title. `GET /role-candidates` answers unchanged from
   each candidate's newest placement; a build that found nothing in scope
   places nobody. Migration 0026 moved the outcomes off the candidates.
+- **A fit is scored only when what it reads has changed** (Phase 8). A
+  `RoleFit` and a `PostingRequirementFit` record `requirements_digest`
+  (`get_requirements_digest`: the requirements scored, in order, and the fit
+  prompt's version) beside `assessment_id`. `compute_fits` skips a role whose
+  newest fit `is_current`, and a rescore of a posting of the user's own
+  reuses its projection the same way, so a rebuild on an unchanged market and
+  unchanged strengths spends nothing on fits. Estimates stay ceilings.
+  Migration 0027 added the column; fits taken before it are scored once more.

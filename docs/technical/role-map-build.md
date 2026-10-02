@@ -321,7 +321,8 @@ When the build ends, 03 Roles reloads:
 | Situation | Spent on the user's key |
 |---|---|
 | No candidates (no analysis yet) | Nothing |
-| Fresh market, unchanged openings | Nothing for the build; the fits only |
+| Fresh market, unchanged openings, unchanged strengths | Nothing: the build keeps every role, and each fit read the same requirements and scores, so it is reused |
+| Fresh market, unchanged openings, a new analysis | The fits only |
 | Openings changed for *n* kept roles | 2 × *n* calls, plus the fits |
 | Stale searches | The same as above, after up to `MARKET_WAIT_SECONDS` of fetching |
 

@@ -91,6 +91,7 @@ from advisor.rolemap.domain import (
     fit_estimates,
     get_own_posting_key,
     get_posting_fit,
+    get_requirements_digest,
     keep_on_market,
     max_role_count,
     parse_own_posting,
@@ -98,7 +99,7 @@ from advisor.rolemap.domain import (
     reconcile,
     spearman,
 )
-from kernel.ai_gateway import AiGateway
+from kernel.ai_gateway import AiGateway, PromptTemplate
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.embeddings import embed
@@ -1044,7 +1045,7 @@ class RoleMapService:
         estimate = await self._gateway.estimate(
             owner_id,
             task="rolemap.fit",
-            template=load_template("fit_projection", "v1"),
+            template=_fit_template(),
             inputs=_worst_case_fit_inputs(),
             untrusted=frozenset({"requirements"}),
         )
@@ -1066,16 +1067,37 @@ class RoleMapService:
         if not roles:
             return []
 
+        assessment_id = strengths[0].assessment_id
+        latest = await self._latest_role_fits(owner_id)
+        reused = 0
         for role in roles:
             if not role.requirements:
                 continue
-            await self._project(owner_id, strengths, role)
+            digest = _digest(role.requirements)
+            current = latest.get(role.id)
+            # The same requirements against the same scores come out the
+            # same: a rebuild that changed neither spends nothing here.
+            if current is not None and current.is_current(
+                assessment_id=assessment_id, requirements_digest=digest
+            ):
+                reused += 1
+                continue
+            await self._project(owner_id, strengths, role, digest=digest)
+        log.info("rolemap.fits_reused", roles=len(roles), reused=reused)
 
         async with self._uow.for_owner(owner_id) as mine:
             mine.record(RoleFitsComputed(owner_id=owner_id, roles=len(roles)))
         fits = await self.fits(owner_id)
         await self._log_estimate_agreement(owner_id, fits)
         return fits
+
+    async def _latest_role_fits(self, owner_id: uuid.UUID) -> dict[uuid.UUID, RoleFit]:
+        async with self._uow.for_owner(owner_id) as mine:
+            snapshots = await mine.fits.get_list(RoleFitFilter())
+        latest: dict[uuid.UUID, RoleFit] = {}
+        for fit in snapshots:
+            latest.setdefault(fit.role_id, fit)
+        return latest
 
     async def fits(self, owner_id: uuid.UUID) -> list[FitView]:
         """The current fit per role: the bubble sizes.
@@ -1164,7 +1186,12 @@ class RoleMapService:
         return sorted(found, key=lambda s: s.dimension_key)
 
     async def _project(
-        self, owner_id: uuid.UUID, strengths: list[CandidateStrength], role: RoleView
+        self,
+        owner_id: uuid.UUID,
+        strengths: list[CandidateStrength],
+        role: RoleView,
+        *,
+        digest: str,
     ) -> None:
         """Map a role's requirements onto the user's dimensions, and store the
         fit."""
@@ -1174,7 +1201,7 @@ class RoleMapService:
         projection = await self._gateway.run(
             owner_id,
             task="rolemap.fit",
-            template=load_template("fit_projection", "v1"),
+            template=_fit_template(),
             inputs={
                 "dimensions": _strengths_block(strengths),
                 "role_name": role.name,
@@ -1219,6 +1246,7 @@ class RoleMapService:
                         for r in requirements
                     ),
                     requirement_map=requirement_map,
+                    requirements_digest=digest,
                     score=fit.score,
                     reasoning=projection.value.reasoning,
                     target_profile={t.dimension_id: t.target for t in targets},
@@ -1473,7 +1501,7 @@ class RoleMapService:
         return await self._gateway.estimate(
             owner_id,
             task="rolemap.fit",
-            template=load_template("fit_projection", "v1"),
+            template=_fit_template(),
             inputs=_worst_case_fit_inputs(),
             untrusted=frozenset({"requirements"}),
         )
@@ -1534,11 +1562,22 @@ class RoleMapService:
             RequirementView(r.statement, r.weight, r.expected_level)
             for r in sorted(read, key=lambda r: (-r.weight, r.statement))
         )
+        digest = _digest(requirements)
+        async with self._uow.for_owner(owner_id) as mine:
+            earlier = await mine.posting_requirement_fits.get_list(
+                PostingRequirementFitFilter(private_job_posting_id=posting.id), page_size=1
+            )
+        # A rescore against the same scores and requirements would come out
+        # the same: the posting's fit is worked out from the one there is.
+        if earlier and earlier[0].is_current(
+            assessment_id=strengths[0].assessment_id, requirements_digest=digest
+        ):
+            return earlier[0]
         known_keys = {s.dimension_key for s in strengths}
         projection = await self._gateway.run(
             owner_id,
             task="rolemap.fit",
-            template=load_template("fit_projection", "v1"),
+            template=_fit_template(),
             inputs={
                 "dimensions": _strengths_block(strengths),
                 "role_name": posting.title,
@@ -1564,6 +1603,7 @@ class RoleMapService:
                     reasoning=projection.value.reasoning,
                     model_id=projection.model_id,
                     template_version=projection.template_version,
+                    requirements_digest=digest,
                 )
             )
 
@@ -2073,4 +2113,17 @@ def _own_posting_view(
             and fit.assessment_id != latest_assessment
         ),
         scored_at=fit.created_at if fit is not None else None,
+    )
+
+
+def _fit_template() -> PromptTemplate:
+    """The fit projection prompt: every fit is scored with it, and its version
+    is part of what a fit read."""
+    return load_template("fit_projection", "v1")
+
+
+def _digest(requirements: Sequence[RequirementView]) -> str:
+    """What scoring these requirements reads, with today's fit prompt."""
+    return get_requirements_digest(
+        _requirement_dicts(requirements), template_version=_fit_template().version_id
     )

@@ -43,6 +43,7 @@ async def test_a_fit_round_trips_and_is_its_owners_alone(
                 template_version="v1",
                 requirements=({"statement": "APIs", "weight": 0.9, "expected_level": "expert"},),
                 requirement_map={"APIs": "api"},
+                requirements_digest="ab" * 32,
             )
         )
     assert fit.created_at is not None

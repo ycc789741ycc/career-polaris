@@ -42,6 +42,7 @@ from advisor.rolemap.domain.fit import (
     evaluate,
     get_own_posting_key,
     get_posting_fit,
+    get_requirements_digest,
 )
 from advisor.rolemap.domain.hiring_bar import BarBasis, HiringBar, blend
 from advisor.rolemap.domain.lineage import (
@@ -185,6 +186,7 @@ __all__ = [
     "fit_estimates",
     "get_own_posting_key",
     "get_posting_fit",
+    "get_requirements_digest",
     "keep_on_market",
     "max_role_count",
     "overlap",

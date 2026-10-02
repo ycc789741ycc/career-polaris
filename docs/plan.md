@@ -1266,6 +1266,13 @@ Open questions:
   never pruned today.
 
 ## Score a fit only when what it reads has changed
+**Done** (migration 0027). As planned: the digest covers the requirements in
+the order they are sent (weightiest first, then by statement) and the fit
+prompt's `version_id`. Fits taken before the column have no digest, so each is
+scored once more. The fits are compared through `RoleFit.is_current` and
+`PostingRequirementFit.is_current`, and `compute_fits` logs
+`rolemap.fits_reused`.
+
 A build already reuses a role whose openings are exactly the last build's:
 it refreshes the count and salary bands and spends nothing on naming or
 requirements (`_keep_role`). That check is keyed on the members, not on
