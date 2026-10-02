@@ -27,15 +27,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-# Below this, a candidate has no openings worth naming a role after.
-MIN_POSTINGS_FOR_A_ROLE = 3
-# The least cosine at which a posting counts as an opening for a candidate it
-# does not name by title. Set for all-MiniLM-L6-v2 over a candidate's title and
-# description against a posting's title and description.
-CANDIDATE_MATCH_THRESHOLD = 0.40
-# How much a dimension a candidate does not rest on counts in its estimate,
-# beside the ones the analysis said it rests on (ADR 0027).
-UNCITED_DIMENSION_WEIGHT = 0.25
+from advisor.rolemap.domain.constants import (
+    CANDIDATE_MATCH_THRESHOLD,
+    MIN_POSTINGS_FOR_A_ROLE,
+    UNCITED_DIMENSION_WEIGHT,
+)
 
 Vector = Sequence[float]
 

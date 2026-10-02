@@ -10,9 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-MIN_MATCHES = 1
-MAX_MATCHES = 50
-DEFAULT_MATCHES = 10
+from advisor.rolemap.domain.constants import DEFAULT_MATCHES, MAX_MATCHES, MIN_MATCHES
 
 
 @dataclass(frozen=True, slots=True)

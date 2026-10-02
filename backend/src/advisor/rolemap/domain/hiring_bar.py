@@ -14,9 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-# Below this many distinct reporters a company+title figure could be traced
-# back to one person, so the estimate is used instead.
-MIN_REPORTERS = 3
+from advisor.rolemap.domain.constants import MIN_REPORTERS
 
 # Reports reach full weight at this sample size.
 _FULL_WEIGHT_SAMPLE = 12

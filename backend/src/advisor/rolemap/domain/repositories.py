@@ -18,19 +18,12 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.rolemap.domain.entities import (
-    BuildRun,
-    BuildRunStatus,
-    CandidateStrength,
-    LineageEntry,
-    Role,
-    RoleCandidate,
-    RoleFit,
-    RoleMember,
-    RoleOrigin,
-    RoleRequirement,
-)
+from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus
+from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
 from advisor.rolemap.domain.events import RoleMapEvent
+from advisor.rolemap.domain.fit import RoleFit
+from advisor.rolemap.domain.lineage import LineageEntry
+from advisor.rolemap.domain.role import Role, RoleMember, RoleOrigin, RoleRequirement
 
 
 class Repository[Entity, Filter](Protocol):

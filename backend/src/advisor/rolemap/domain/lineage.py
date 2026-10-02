@@ -10,11 +10,12 @@ name is an AI judgement that can wobble while the underlying group does not.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
-# Below this overlap, two groups of postings are not the same role.
-SAME_ROLE_THRESHOLD = 0.5
+from advisor.rolemap.domain.constants import SAME_ROLE_THRESHOLD
 
 
 class RoleChange(StrEnum):
@@ -138,3 +139,16 @@ def reconcile(
         lineage=tuple(lineage),
         retired_role_ids=retired,
     )
+
+
+@dataclass(slots=True)
+class LineageEntry:
+    """A recorded change to a role — added, split, merged, retired — with the
+    roles it came from, so a goal can find a split role's successor."""
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    role_id: uuid.UUID
+    kind: RoleChange
+    from_role_ids: tuple[str, ...]
+    recorded_at: datetime | None = None
