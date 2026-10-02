@@ -4962,9 +4962,7 @@ export interface operations {
     role_map_state_api_v1_role_map_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5775,9 +5773,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
