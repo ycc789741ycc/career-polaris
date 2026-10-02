@@ -989,3 +989,101 @@ Open questions:
 * Whether a concept that outgrows one file becomes a subpackage
   (`domain/role/`). Not needed by anything today, the largest being
   `market/domain/places.py` at 333 lines.
+
+# Phase 8
+A role candidate becomes only what an analysis asks the market for: the
+query a build searches and matches with. What a build made of each
+candidate becomes a record of that build. No screen or response body
+changes. One branch for now; more items can join this phase later.
+
+## A role candidate is only a query
+Today `RoleCandidate` (`rolemap/domain/candidate.py`) does two jobs:
+
+| Job | Fields | Written by |
+|---|---|---|
+| **The query.** The title is searched on Himalayas in each searchable place (only the title leaves the platform). Title and description are embedded to match the postings in scope (`assign_postings`). The dimension keys say which strengths the local fit estimate reads. | `rank`, `title`, `description`, `dimension_keys`, `assessment_id` | the analysis, through `replace_candidates` |
+| **The last build's outcome.** The role the candidate became, how many openings it had, and the estimate that chose the k. | `role_id`, `opening_count`, `fit_estimate` | the build, through `_place_candidates` (`placed` / `unplaced`) |
+
+The second job does not belong to the candidate.
+* **The outcome is a build's, not the analysis's.** Every build overwrites
+  it, so nothing says what an earlier build made of the same candidate, and
+  `compute_fits`'s estimate-agreement log only ever sees the latest one.
+* **It is a second copy.** A placed role's openings are counted live
+  (`map_roles`, Phase 6), so the candidate's `opening_count` can disagree
+  with the bubble.
+* **An empty `role_id` hides why.** "The market has no openings for it"
+  and "it has openings but fell outside the top k" look the same.
+
+Its own branch, `refactor/<ticket>/candidate-as-query`, cut from mainline.
+
+1. **`RoleCandidate` keeps the query only:** `id`, `owner_id`,
+   `assessment_id`, `rank`, `title`, `description`, `dimension_keys`,
+   `created_at`. `role_id`, `opening_count`, `fit_estimate`, `is_placed`,
+   `placed` and `unplaced` go.
+2. **A build records a `CandidatePlacement` per candidate it read**, in
+   `rolemap/domain/build_run.py` beside `BuildRun`, which owns it. Table
+   `rolemap.candidate_placement`:
+   * `build_run_id` → `rolemap.build_run`, `ON DELETE CASCADE`.
+   * `candidate_id` → `rolemap.role_candidate`, `ON DELETE SET NULL`, with
+     the candidate's `rank` and `title` copied in, so the record still reads
+     after the next analysis replaces the candidates.
+   * `outcome`: `placed`, `outside_top_k` (it had openings, and the estimate
+     kept others) or `no_openings`.
+   * `role_id` (set only when `placed`) → `rolemap.role`, `ON DELETE SET
+     NULL`; `opening_count`; `fit_estimate`.
+   * Unique on `(build_run_id, candidate_id)`, owner-zone with row-level
+     security like every `rolemap` table.
+
+   Its repository has the usual six methods, filtered by build run.
+   `_place_candidates` creates the rows instead of updating candidates; a
+   candidate an analysis replaced during the build is still skipped.
+3. **The readers move to the placements of the latest finished build.**
+   * `RoleMapService.candidates` (`GET /role-candidates`) joins each current
+     candidate to its placement in the latest `ready` build that read it.
+     `RoleCandidateView` keeps its fields, so the response, `make
+     gen-client` and the SPA's "the market lacks these" list
+     (`Roles.tsx`) are unchanged. A candidate no build has read yet shows no
+     role and no openings, as today.
+   * `_log_estimate_agreement` pairs each placed placement's
+     `fit_estimate` with the fit of its `role_id`, for the build the fits
+     were scored after.
+4. **A migration moves what is there.** It creates the table, writes one
+   placement per current candidate against the owner's latest `ready` build
+   (`outcome` from `role_id` and `opening_count`: placed; else
+   `no_openings` when the count is 0, otherwise `outside_top_k`), then
+   drops the three columns. It lifts `FORCE ROW LEVEL SECURITY` while it
+   writes and restores it, guards with `IF EXISTS`, and skips an owner with
+   no finished build: their candidates read as not built yet.
+5. **An ADR** supersedes the parts of ADR 0024 and ADR 0027 that put the
+   outcome on the candidate, with the index updated. `docs/domain_model.md`,
+   `docs/architecture.md`, `docs/technical/role-map-build.md` and
+   `CLAUDE.md` say the candidate is a query and the placement a build's
+   record.
+
+Tests:
+* Unit (`rolemap`): a build writes `placed`, `outside_top_k` and
+  `no_openings` placements for the right candidates; the candidate itself
+  is not updated; a candidate replaced mid-build gets no placement;
+  `candidates` reads the latest `ready` build's placements and ignores a
+  failed or older one; the agreement log reads placements.
+* Integration: a build against the database writes placements under
+  row-level security and another owner reads none; `GET /role-candidates`
+  answers with the same body as before; the migration moves a placed, an
+  unplaced-with-openings and an unplaced-without-openings candidate, and
+  runs twice without harm.
+
+What gets harder:
+* "What role did this candidate become" is a join through the latest
+  finished build instead of a column.
+* One more table and repository in `rolemap`, and a row per candidate per
+  build (at most `ROLE_CANDIDATE_COUNT` each).
+* The migration has to guess the outcome of candidates placed before it,
+  from counts that may already be stale.
+
+Open questions:
+* Whether the SPA should say why a recommended role is missing ("no
+  openings in your locations" or "others fit better"), now that the
+  outcome is recorded. That would change the response, so it is a separate
+  change.
+* How long placements are kept. They go with their build run, which is
+  never pruned today.
