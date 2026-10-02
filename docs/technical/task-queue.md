@@ -17,7 +17,6 @@ flowchart TD
     API -->|"Direct submission"| Enqueue["wiring.queue.enqueue: task name and arguments"]
 
     Service -->|"Data change and event in the same transaction"| Outbox[("PostgreSQL: outbox.event")]
-    Crawler["Crawler: market changes"] -->|"Data change and event in the same transaction"| Outbox
 
     Outbox -->|"Poll pending events; 2-second loop interval"| Dispatcher["Worker: outbox dispatcher"]
     Dispatcher -->|"Map event to tasks"| Enqueue
@@ -74,8 +73,12 @@ claiming the same row simultaneously. It routes events to follow-up actions,
 which may enqueue tasks, and marks successfully handled events with
 `dispatched_at`. Some events intentionally trigger no tasks.
 
-For market events, the dispatcher identifies affected users. The crawler
-emits market facts without accessing user data.
+The crawler emits no events. It fetches only the sources a waiting role-map
+build asked for, and each build checks on its own sources as its owner, so
+nothing resolves market changes to users (ADR 0027). The strength analysis
+and the role-map build are described step by step in
+[strength-analysis.md](strength-analysis.md) and
+[role-map-build.md](role-map-build.md).
 
 ### Example: submitting gap answers
 
