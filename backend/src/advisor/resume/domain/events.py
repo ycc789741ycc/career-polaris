@@ -15,7 +15,8 @@ from advisor.resume.domain.content import VersionSource
 class ResumeTailored:
     owner_id: uuid.UUID
     resume_id: uuid.UUID
-    role_id: uuid.UUID
+    # None when the Target is a posting of the user's own.
+    role_id: uuid.UUID | None
 
 
 @dataclass(frozen=True, slots=True)

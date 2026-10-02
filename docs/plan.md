@@ -1023,6 +1023,25 @@ passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
 `README.md` and `docs/architecture.md` saying what is built.
 
 ## A posting of your own is a Target, not a role
+**Done** (ADR 0030, migration 0025). Where the build differs from the plan
+below:
+
+* Reading and scoring a posting is a job, recorded before it is queued as a
+  `PostingEvaluation` run (`rolemap.posting_evaluation`) that the Advisor
+  polls, as every AI job is (ADR 0006).
+* The posting's fit is kept as two records, as the plan's later revision
+  says: the AI's `PostingRequirementFit`, and the `PostingFit` worked out
+  from it locally (`get_posting_fit`), so a `PostingFit` is never an AI call.
+* The probing half of board discovery went with its job; recognising a board
+  URL stays, in `market/crawling/board_urls.py`.
+* Routes take the three Target ids through `api.dependencies.TargetQuery`
+  for query strings and `TargetFields` for bodies, and refuse anything that
+  is not one shape with a 422.
+* The migration has no test of its own, as none before it does. It was
+  applied to the dev database: 2 custom roles with a JD became postings of
+  their own, with their 14 requirements, fits and a finished run, and 1 plan,
+  1 résumé and 1 question set followed them.
+
 Today "Add a role of your own" (03 Roles) creates a `custom` `Role` from a
 title, an optional company and an optional pasted JD (ADR 0021).
 * It joins the role map, and every build matches it to postings by title

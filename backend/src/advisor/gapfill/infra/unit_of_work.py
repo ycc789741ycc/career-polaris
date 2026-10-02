@@ -52,9 +52,14 @@ class SqlAlchemyGapFillUnitOfWork(GapFillUnitOfWork):
                     EventName.GAP_ANSWERS_SUBMITTED,
                     {
                         "set_id": str(event.set_id),
-                        "role_id": str(event.role_id),
+                        "role_id": str(event.role_id) if event.role_id else None,
                         "job_posting_id": (
                             str(event.job_posting_id) if event.job_posting_id else None
+                        ),
+                        "private_job_posting_id": (
+                            str(event.private_job_posting_id)
+                            if event.private_job_posting_id
+                            else None
                         ),
                         "evidence_ids": list(event.evidence_ids),
                     },

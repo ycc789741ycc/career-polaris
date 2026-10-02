@@ -22,7 +22,6 @@ from advisor.rolemap import (
 from advisor.rolemap import service as rolemap_service
 from advisor.rolemap.domain import (
     BarBasis,
-    CustomRoleAdded,
     HiringBar,
     RoleChange,
     RoleFitsComputed,
@@ -313,25 +312,18 @@ async def test_a_build_with_nothing_due_runs_now_and_is_queued_once() -> None:
     assert len(market.asked) == 1
 
 
-async def test_a_build_asks_the_market_for_its_titles_places_and_companies() -> None:
+async def test_a_build_asks_the_market_for_its_titles_and_places() -> None:
     uow = FakeRoleMapUnitOfWork()
     market = FakeMarket(markets=["Taiwan", "Europe"])
     service = _service(uow, market)
     await service.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Data Engineer", "d"), _candidate("ML Engineer", "m")]
     )
-    await service.add_custom_role(
-        OWNER, title="Staff", company_name="Kestrel", private_posting_id=None
-    )
 
     await service.request_build(OWNER, wait=False)
 
     (asked,) = market.asked
-    assert asked == {
-        "titles": ["Data Engineer", "ML Engineer"],
-        "places": ["Taiwan", "Europe"],
-        "company_ids": [uuid.uuid5(uuid.NAMESPACE_DNS, "Kestrel")],
-    }
+    assert asked == {"titles": ["Data Engineer", "ML Engineer"], "places": ["Taiwan", "Europe"]}
 
 
 async def test_a_build_with_due_sources_waits_for_them_and_then_starts() -> None:
@@ -477,9 +469,6 @@ async def test_builds_are_per_user() -> None:
     assert theirs.should_queue and theirs.build.id != mine.build.id
 
 
-# --- custom roles (ADR 0021) --------------------------------------------------
-
-
 class _Reply:
     def __init__(self, value: Any) -> None:
         self.value = value
@@ -502,130 +491,243 @@ class ScriptedGateway:
         return _Reply(_DifficultyEstimate(difficulty=60, confidence=0.5, reasoning="A guess."))
 
 
-def _jd(title: str = "Staff Engineer") -> PostingView:
-    return PostingView(
-        id=uuid.uuid4(),
-        company_name="Northwind",
+# --- postings of the user's own (Phase 8) -----------------------------------
+
+
+class OwnPostingGateway:
+    """Reads a JD's requirements, then maps them: ``skill 0.9`` onto
+    ``backend``, wanted at ``target``, and ``skill 0.4`` onto nothing the user
+    has. Records each call's task. ``fails`` makes the named task fail."""
+
+    def __init__(self, target: int = 80, *, fails: str | None = None) -> None:
+        self.target = target
+        self.fails = fails
+        self.tasks: list[str] = []
+        self.shown: list[dict[str, str]] = []
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **_: Any):
+        from advisor.rolemap.service import _Projection
+        from kernel.errors import BudgetExceededError
+
+        self.tasks.append(task)
+        self.shown.append(inputs)
+        if task == self.fails:
+            raise BudgetExceededError("over the monthly budget")
+        if task == "rolemap.extract":
+            return _Reply(_extraction("Whatever the model calls it"))
+        return _Reply(
+            _Projection.model_validate(
+                {
+                    "mappings": [
+                        {"requirement_statement": "skill 0.9", "dimension_id": "backend"},
+                        {"requirement_statement": "skill 0.4", "dimension_id": "nowhere"},
+                    ],
+                    "target_scores": [{"dimension_id": "backend", "target": self.target}],
+                    "reasoning": "Close on services.",
+                }
+            )
+        )
+
+    async def estimate(self, owner_id: uuid.UUID, **_: Any) -> _Estimated:
+        return _Estimated()
+
+
+async def _with_strengths(rolemap: RoleMapService, *, backend: int = 60) -> uuid.UUID:
+    assessment_id = uuid.uuid4()
+    await rolemap.replace_candidates(
+        OWNER,
+        assessment_id,
+        [],
+        strengths=[StrengthInput("backend", "Backend", "Built services.", backend, 0.9)],
+    )
+    return assessment_id
+
+
+async def _add_own(
+    rolemap: RoleMapService, title: str = " Staff Engineer "
+) -> tuple[uuid.UUID, uuid.UUID]:
+    posting, run_id = await rolemap.add_own_posting(
+        OWNER,
         title=title,
-        location=None,
-        url=None,
-        description="Own the ledger. Lead incident response.",
-        visibility=Visibility.PRIVATE,
-        salary=None,
+        company_name=" Northwind ",
+        job_description="Own the ledger. Lead incident response.",
     )
+    return posting.private_job_posting_id, run_id
 
 
-async def test_adding_a_custom_role_announces_its_company() -> None:
+async def test_a_posting_of_your_own_is_stored_privately_and_waits_to_be_scored() -> None:
     uow = FakeRoleMapUnitOfWork()
-    rolemap = _service(uow)
+    market = FakeMarket()
+    rolemap = _service(uow, market, OwnPostingGateway())
+    await _with_strengths(rolemap)
 
-    role = await rolemap.add_custom_role(
-        OWNER, title=" Staff Engineer ", company_name=" Northwind ", private_posting_id=None
+    posting, _run_id = await rolemap.add_own_posting(
+        OWNER, title=" Staff Engineer ", company_name=" Northwind ", job_description=" Own it. "
     )
 
-    assert (role.name, role.company_name, role.is_custom) == ("Staff Engineer", "Northwind", True)
-    assert uow.store.events == [
-        CustomRoleAdded(owner_id=OWNER, role_id=role.id, company_name="Northwind")
-    ]
+    assert (posting.title, posting.company_name, posting.status) == (
+        "Staff Engineer",
+        "Northwind",
+        "running",
+    )
+    assert posting.fit is None
+    assert market.pasted[posting.private_job_posting_id].description == "Own it."
+    # Never on the map, and nothing built.
+    assert await rolemap.roles(OWNER) == [] and uow.store.builds == {}
 
 
-async def test_a_custom_role_needs_a_title() -> None:
+@pytest.mark.parametrize(("title", "description"), [("  ", "Own it."), ("Staff Engineer", "   ")])
+async def test_a_posting_of_your_own_needs_a_title_and_its_jd(title: str, description: str) -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), gateway=OwnPostingGateway())
+    await _with_strengths(rolemap)
+
     with pytest.raises(ValidationError):
-        await _service(FakeRoleMapUnitOfWork()).add_custom_role(
-            OWNER, title="  ", company_name=None, private_posting_id=None
+        await rolemap.add_own_posting(
+            OWNER, title=title, company_name=None, job_description=description
         )
 
 
-async def test_only_a_custom_role_can_be_removed_and_it_is_retired_not_deleted() -> None:
+async def test_a_posting_of_your_own_needs_an_analysis_first() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), gateway=OwnPostingGateway())
+
+    with pytest.raises(ValidationError):
+        await _add_own(rolemap)
+
+
+async def test_scoring_a_posting_reads_its_jd_then_works_its_fit_out_locally() -> None:
     uow = FakeRoleMapUnitOfWork()
-    rolemap = _service(uow)
-    custom = await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
+    gateway = OwnPostingGateway(target=80)
+    rolemap = _service(uow, FakeMarket(), gateway)
+    assessment_id = await _with_strengths(rolemap)
+    posting_id, run_id = await _add_own(rolemap)
+
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+
+    # Two calls, the JD read once and then projected.
+    assert gateway.tasks == ["rolemap.extract", "rolemap.fit"]
+    assert "Own the ledger" in gateway.shown[0]["postings"]
+    [source] = uow.store.posting_requirement_fits.values()
+    assert source.target_profile == {"backend": 80}
+    assert source.requirement_map == {"skill 0.9": "backend", "skill 0.4": None}
+    fit = await rolemap.own_posting_fit(OWNER, posting_id)
+    assert fit is not None and fit.basis == "own" and fit.assessment_id == assessment_id
+    assert [(g["dimension_key"], g["delta"]) for g in fit.gaps] == [("backend", -20)]
+    assert [u["statement"] for u in fit.uncovered] == ["skill 0.4"]
+    [listed] = await rolemap.own_postings(OWNER)
+    assert (listed.status, listed.fit, listed.is_stale) == ("ready", fit.score, False)
+
+
+async def test_a_posting_fit_is_never_an_ai_call() -> None:
+    """Worked out from the AI fit with a gateway that refuses every call."""
+
+    class NoCalls:
+        async def run(self, *args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("a posting fit made an AI call")
+
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, FakeMarket(), OwnPostingGateway(target=80))
+    await _with_strengths(rolemap)
+    _posting_id, run_id = await _add_own(rolemap)
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+    [source] = uow.store.posting_requirement_fits.values()
+    strengths = await rolemap._strengths(OWNER)
+
+    local = _service(uow, FakeMarket(), NoCalls())
+    await local._store_posting_fit(OWNER, strengths, source)
+
+    fits = sorted(uow.store.posting_fits.values(), key=lambda f: str(f.created_at))
+    assert len(fits) == 2 and fits[0].score == fits[1].score
+    assert all(f.source_fit_id == source.id for f in fits)
+
+
+async def test_a_failed_read_is_recorded_on_the_run_not_raised() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, FakeMarket(), OwnPostingGateway(fails="rolemap.fit"))
+    await _with_strengths(rolemap)
+    posting_id, run_id = await _add_own(rolemap)
+
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+
+    [listed] = await rolemap.own_postings(OWNER)
+    assert listed.status == "failed" and listed.error_code == "ai_budget_exceeded"
+    assert await rolemap.own_posting_fit(OWNER, posting_id) is None
+
+
+async def test_a_rescore_keeps_the_requirements_and_spends_one_call() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    gateway = OwnPostingGateway(target=80)
+    rolemap = _service(uow, FakeMarket(), gateway)
+    await _with_strengths(rolemap, backend=60)
+    posting_id, run_id = await _add_own(rolemap)
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+    # A new analysis: the fit was scored against earlier strengths.
+    await _with_strengths(rolemap, backend=80)
+    [stale] = await rolemap.own_postings(OWNER)
+    assert stale.is_stale
+    gateway.tasks.clear()
+
+    _posting, rescore_id = await rolemap.rescore_own_posting(OWNER, posting_id)
+    assert rescore_id is not None
+    await rolemap.evaluate_own_posting(OWNER, rescore_id)
+
+    assert gateway.tasks == ["rolemap.fit"]
+    fit = await rolemap.own_posting_fit(OWNER, posting_id)
+    assert fit is not None and [g["delta"] for g in fit.gaps] == [0]
+    [fresh] = await rolemap.own_postings(OWNER)
+    assert not fresh.is_stale
+
+
+async def test_a_rescore_asked_for_while_one_runs_joins_it() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), FakeMarket(), OwnPostingGateway())
+    await _with_strengths(rolemap)
+    posting_id, _run_id = await _add_own(rolemap)
+
+    posting, run_id = await rolemap.rescore_own_posting(OWNER, posting_id)
+
+    assert run_id is None and posting.status == "running"
+
+
+async def test_adding_a_posting_of_your_own_is_priced_at_two_calls() -> None:
+    rolemap = _service(FakeRoleMapUnitOfWork(), gateway=OwnPostingGateway())
+
+    priced = await rolemap.estimate_own_posting(
+        OWNER, title="Staff Engineer", company_name=None, job_description="Own it."
     )
-    recommended = uuid.uuid4()
-    await _store(rolemap, recommended, [_posting("Backend")], "Backend")
 
-    await rolemap.remove_custom_role(OWNER, custom.id)
-    await rolemap.remove_custom_role(OWNER, custom.id)
+    assert priced == {"cost_usd": "0.20", "model_id": "claude-opus-5", "rate_is_published": True}
 
-    assert [r.id for r in await rolemap.roles(OWNER)] == [recommended]
-    assert uow.store.roles[custom.id].retired_at is not None
+
+async def test_removing_a_posting_of_your_own_deletes_it_and_its_fit() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    market = FakeMarket()
+    rolemap = _service(uow, market, OwnPostingGateway())
+    await _with_strengths(rolemap)
+    posting_id, run_id = await _add_own(rolemap)
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+
+    await rolemap.remove_own_posting(OWNER, posting_id)
+
+    assert await rolemap.own_postings(OWNER) == []
+    assert posting_id not in market.pasted
+    assert not (
+        uow.store.evaluations
+        or uow.store.posting_requirements
+        or uow.store.posting_requirement_fits
+        or uow.store.posting_fits
+    )
     with pytest.raises(NotFoundError):
-        await rolemap.remove_custom_role(OWNER, recommended)
+        await rolemap.remove_own_posting(OWNER, posting_id)
 
 
-async def test_a_custom_role_takes_in_postings_by_title_words_at_its_company() -> None:
+async def test_another_users_posting_is_not_found() -> None:
     uow = FakeRoleMapUnitOfWork()
-    staff = _posting("Backend Engineer, Staff", company="Northwind Pay")
-    elsewhere = _posting("Staff Backend Engineer", company="Acme")
-    other = _posting("Staff Designer", company="Northwind Pay")
-    gateway = ScriptedGateway()
-    rolemap = _service(uow, FakeMarket([staff, elsewhere, other]), gateway)
-    role = await rolemap.add_custom_role(
-        OWNER, title="Staff Backend", company_name="Northwind", private_posting_id=None
-    )
+    rolemap = _service(uow, FakeMarket(), OwnPostingGateway())
+    await _with_strengths(rolemap)
+    posting_id, _run_id = await _add_own(rolemap)
 
-    [placed] = await rolemap.recluster(OWNER)
-
-    assert placed.id == role.id and placed.name == "Staff Backend"
-    assert placed.opening_count == 1 and placed.requirements
-    assert "Backend Engineer, Staff" in gateway.shown[0]
-    assert "Acme" not in gateway.shown[0]
-
-
-async def test_a_custom_roles_requirements_come_from_its_jd_when_it_has_one() -> None:
-    uow = FakeRoleMapUnitOfWork()
-    jd = _jd()
-    gateway = ScriptedGateway()
-    rolemap = _service(uow, FakeMarket([_posting("Staff Engineer")], pasted=[jd]), gateway)
-    await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=jd.id
-    )
-
-    [placed] = await rolemap.recluster(OWNER)
-
-    assert placed.opening_count == 1
-    assert all("Own the ledger" in shown for shown in gateway.shown)
-
-
-async def test_an_unchanged_custom_role_costs_nothing_on_the_next_build() -> None:
-    uow = FakeRoleMapUnitOfWork()
-    gateway = ScriptedGateway()
-    rolemap = _service(uow, FakeMarket([_posting("Staff Engineer")]), gateway)
-    await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
-    )
-    await rolemap.recluster(OWNER)
-    calls = len(gateway.shown)
-
-    await rolemap.recluster(OWNER)
-
-    assert len(gateway.shown) == calls == 2
-
-
-async def test_a_custom_role_with_nothing_to_read_stays_on_the_map_unscored() -> None:
-    uow = FakeRoleMapUnitOfWork()
-    gateway = ScriptedGateway()
-    rolemap = _service(uow, FakeMarket([_posting("Designer")]), gateway)
-    await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
-    )
-
-    [placed] = await rolemap.recluster(OWNER)
-
-    assert (placed.opening_count, placed.requirements) == (0, ())
-    assert gateway.shown == []
-
-
-async def test_reconciliation_never_retires_a_custom_role() -> None:
-    uow = FakeRoleMapUnitOfWork()
-    rolemap = _service(uow)
-    custom = await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
-    )
-    await _store(rolemap, custom.id, [_posting("Staff Engineer")], "Staff Engineer")
-
-    assert await rolemap._previous_members(OWNER) == {}
+    assert await rolemap.own_posting_fit(OTHER, posting_id) is None
+    with pytest.raises(NotFoundError):
+        await rolemap.own_posting(OTHER, posting_id)
 
 
 # --- recommended roles from the analysis's candidates (ADR 0024) ------------
@@ -1083,19 +1185,17 @@ async def test_a_fit_says_what_closing_each_gap_is_worth() -> None:
 
 
 async def test_fits_are_priced_per_role_the_map_will_hold() -> None:
-    """$0.10 a projection: the ten recommended roles a build may make, and the
-    user's own on top."""
+    """$0.10 a projection: the ten recommended roles a build may make, or the
+    ones on the map now."""
     uow = FakeRoleMapUnitOfWork()
     rolemap = _service(uow, gateway=ProjectingGateway())
-    await rolemap.add_custom_role(
-        OWNER, title="Staff Engineer", company_name=None, private_posting_id=None
-    )
+    await _store(rolemap, uuid.uuid4(), [_posting("Backend")], "Backend Engineer")
 
     priced = await rolemap.estimate_fits(OWNER, recommended=10)
-    adding = await rolemap.estimate_fits(OWNER, extra_roles=1)
+    now = await rolemap.estimate_fits(OWNER)
 
-    assert (priced["roles"], priced["cost_usd"]) == (11, "1.10")
-    assert (adding["roles"], adding["cost_usd"]) == (2, "0.20")
+    assert (priced["roles"], priced["cost_usd"]) == (10, "1.00")
+    assert (now["roles"], now["cost_usd"]) == (1, "0.10")
 
 
 async def test_no_roles_cost_no_fits() -> None:

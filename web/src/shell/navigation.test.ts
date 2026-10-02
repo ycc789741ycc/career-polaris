@@ -41,6 +41,16 @@ describe("screen navigation", () => {
     expect(placeFromHash("#/roles?jd=j1").focus).toBeNull();
   });
 
+  it("carries a posting of your own the Advisor is aimed at", () => {
+    const place = {
+      screen: "advisor" as const,
+      tab: "plan" as const,
+      focus: { posting: "j1" },
+    };
+    expect(hashFor(place)).toBe("#/advisor/plan?posting=j1");
+    expect(placeFromHash(hashFor(place))).toEqual(place);
+  });
+
   it("lands on the first screen for an empty or unknown hash", () => {
     expect(placeFromHash("").screen).toBe(DEFAULT_SCREEN);
     expect(placeFromHash("#/nowhere").screen).toBe(DEFAULT_SCREEN);

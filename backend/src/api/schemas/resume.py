@@ -25,7 +25,7 @@ from api.schemas.common import (
     RequestModel,
     Timestamp,
 )
-from api.schemas.target import TargetRefBody
+from api.schemas.target import TargetFields, TargetRefBody
 
 TemplateName = Literal["organic", "plain"]
 
@@ -36,9 +36,7 @@ class OptionsBody(RequestModel):
     trim: bool = False
 
 
-class ResumeRequest(RequestModel):
-    role_id: uuid.UUID
-    job_posting_id: uuid.UUID | None = None
+class ResumeRequest(TargetFields):
     template: Template = Template.ORGANIC
     options: OptionsBody = Field(default_factory=OptionsBody)
 

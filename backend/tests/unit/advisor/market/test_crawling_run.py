@@ -12,10 +12,10 @@ from typing import Any
 import pytest
 
 from advisor.market import CrawlSourceView, NormalizedPosting, SourceKind
-from advisor.market.crawling import discovery, run
+from advisor.market.crawling import run
 from advisor.market.crawling.politeness import HostGuard, RateLimiter, RobotsCache
 from kernel.errors import BlockedAddressError, RateLimitedError, UpstreamFailedError
-from kernel.fetch import GuardedClient, ssrf
+from kernel.fetch import ssrf
 
 NOW = datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
 
@@ -284,16 +284,3 @@ async def test_other_failures_are_still_failures() -> None:
             limiter=politeness.limiter,
             guard=politeness.guard,
         )
-
-
-async def test_discovery_treats_an_unreachable_board_as_no_board(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(ssrf, "resolve_addresses", _resolve)
-
-    async with GuardedClient(timeout_seconds=1, user_agent="test") as client:
-        found = await discovery.discover_board(
-            client, "Acme", url="https://gone.test/careers", user_agent="test"
-        )
-
-    assert found is None

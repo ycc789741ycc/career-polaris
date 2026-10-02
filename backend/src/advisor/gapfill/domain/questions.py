@@ -150,8 +150,9 @@ class QuestionSet:
 
     id: uuid.UUID
     owner_id: uuid.UUID
-    # The Target (ADR 0022): a role, and optionally one opening in it.
-    role_id: uuid.UUID
+    # The Target (ADR 0022): a role and optionally one opening in it, or a
+    # posting of the user's own (Phase 8).
+    role_id: uuid.UUID | None
     job_posting_id: uuid.UUID | None
     label: str
     status: QuestionSetStatus
@@ -163,23 +164,26 @@ class QuestionSet:
     error_message: str | None = None
     written_at: datetime | None = None
     submitted_at: datetime | None = None
+    private_job_posting_id: uuid.UUID | None = None
 
     @classmethod
     def requested(
         cls,
         *,
         owner_id: uuid.UUID,
-        role_id: uuid.UUID,
+        role_id: uuid.UUID | None,
         job_posting_id: uuid.UUID | None,
         label: str,
         gaps: tuple[AskedGap, ...],
         at: datetime,
+        private_job_posting_id: uuid.UUID | None = None,
     ) -> QuestionSet:
         return cls(
             id=uuid.uuid4(),
             owner_id=owner_id,
             role_id=role_id,
             job_posting_id=job_posting_id,
+            private_job_posting_id=private_job_posting_id,
             label=label[:400],
             status=QuestionSetStatus.WRITING,
             gaps=gaps,

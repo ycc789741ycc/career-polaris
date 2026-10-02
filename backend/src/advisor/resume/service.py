@@ -300,8 +300,9 @@ class ResumeService:
             resume = await mine.resumes.create(
                 TailoredResume.requested(
                     owner_id=owner_id,
-                    role_id=uuid.UUID(ref.role_id),
-                    job_posting_id=(uuid.UUID(ref.job_posting_id) if ref.job_posting_id else None),
+                    role_id=ref.role_uuid,
+                    job_posting_id=ref.opening_uuid,
+                    private_job_posting_id=ref.own_posting_uuid,
                     label=preview.label,
                     template=template,
                     options=options,
@@ -743,9 +744,7 @@ class ResumeService:
         )
         async with self._uow.for_owner(owner_id) as mine:
             mine.record(
-                ResumeTailored(
-                    owner_id=owner_id, resume_id=resume_id, role_id=uuid.UUID(ref.role_id)
-                )
+                ResumeTailored(owner_id=owner_id, resume_id=resume_id, role_id=ref.role_uuid)
             )
 
     async def _coverage(
@@ -887,9 +886,7 @@ def _content_of(model: _Resume) -> ResumeContent:
 
 
 def _ref_of(resume: TailoredResume) -> TargetRef:
-    return TargetRef(
-        str(resume.role_id), str(resume.job_posting_id) if resume.job_posting_id else None
-    )
+    return TargetRef.of(resume.role_id, resume.job_posting_id, resume.private_job_posting_id)
 
 
 def _write_inputs(

@@ -11,17 +11,15 @@ from pydantic import Field
 
 from advisor.gapfill import GapView, QuestionSetView, QuestionView, SubmittedView
 from api.schemas.common import ApiModel, JobError, RequestModel, Timestamp
-from api.schemas.target import TargetRefBody
+from api.schemas.target import TargetFields, TargetRefBody
 
 # One user's answers for one set: a handful per gap, a few gaps.
 MAX_ANSWERS = 24
 
 
-class QuestionSetRequest(RequestModel):
-    """A role, and optionally one opening in it (ADR 0022)."""
-
-    role_id: uuid.UUID
-    job_posting_id: uuid.UUID | None = None
+class QuestionSetRequest(TargetFields):
+    """A role and optionally one opening in it (ADR 0022), or a posting of the
+    user's own."""
 
 
 class Gap(ApiModel):

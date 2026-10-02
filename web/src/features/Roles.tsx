@@ -28,10 +28,9 @@ import {
   StatTile,
 } from "../components/ui";
 import { isBusy, useActivity } from "../shell/activity";
-import type { Focus } from "../shell/navigation";
+import { type Focus, roleFocus } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
-import { CustomRoleForm } from "./CustomRole";
 import { messageOf, useAsync } from "./useAsync";
 
 /**
@@ -42,7 +41,9 @@ import { messageOf, useAsync } from "./useAsync";
  * and the trip to the Advisor and back.
  */
 export function Roles() {
-  const { navigate, focus, setFocus } = useShell();
+  const { navigate, focus: anyFocus, setFocus } = useShell();
+  // A posting of your own is aimed at from the Advisor; the map selects roles.
+  const focus = roleFocus(anyFocus);
   const { activity, refresh: refreshActivity, settled } = useActivity();
   // What a finished build or analysis wrote shows without a reload.
   const roles = useAsync<Role[]>(
@@ -100,7 +101,6 @@ export function Roles() {
       openings: role.opening_count,
       fit: fit?.score ?? null,
       reasoning: fit?.reasoning ?? role.bar_reasoning,
-      isCustom: role.origin === "custom",
     };
   });
 
@@ -135,9 +135,7 @@ export function Roles() {
         }
       : {
           focus: { role: activeRole.id },
-          label: activeRole.company_name
-            ? `${activeRole.name} · ${activeRole.company_name}`
-            : activeRole.name,
+          label: activeRole.name,
           what: "role",
         }
     : null;
@@ -231,19 +229,9 @@ export function Roles() {
 
           {activeRole && (
             <div className="panel panel-column">
-              <Eyebrow>
-                {activeRole.origin === "custom"
-                  ? "Selected role · yours"
-                  : "Selected role"}
-              </Eyebrow>
+              <Eyebrow>Selected role</Eyebrow>
               <h3 style={{ fontSize: 27, margin: "8px 0 6px" }}>
                 {activeRole.name}
-                {activeRole.company_name && (
-                  <span className="muted" style={{ fontSize: 17 }}>
-                    {" "}
-                    · {activeRole.company_name}
-                  </span>
-                )}
               </h3>
               <AutoGrid col={110} gap={10} style={{ margin: "10px 0 16px" }}>
                 <StatTile
@@ -262,27 +250,8 @@ export function Roles() {
               <p style={{ fontSize: 14.5, lineHeight: 1.65 }}>
                 {activeFit?.reasoning ??
                   activeRole.bar_reasoning ??
-                  (activeRole.origin === "custom"
-                    ? "Not placed yet — it is read at the next build."
-                    : "Not scored yet — run an analysis, then re-score fit.")}
+                  "Not scored yet — run an analysis, then re-score fit."}
               </p>
-              {activeRole.origin === "custom" && (
-                <div style={{ marginBottom: 12 }}>
-                  <Button
-                    variant="ghost"
-                    busy={busy}
-                    onClick={() =>
-                      void act("Role removed from your map", async () => {
-                        await api.del(`/roles/custom/${activeRole.id}`);
-                        setFocus(null);
-                        await roles.reload();
-                      })
-                    }
-                  >
-                    Remove from my map
-                  </Button>
-                </div>
-              )}
 
               {activeFit && activeFit.gaps.length > 0 && (
                 <>
@@ -464,21 +433,14 @@ export function Roles() {
         onSources={() => navigate("sources")}
       />
 
-      <CustomRoleForm
-        onAdded={async (role) => {
-          await Promise.all([roles.reload(), refreshActivity()]);
-          setFocus({ role: role.id });
-        }}
-      />
-
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
           <h3>Keep your map current</h3>
           <p className="subcopy">
-            The map is built only when you ask: after an analysis, a rebuild, or
-            a role you add. Each build searches the market for your recommended
-            roles first, reusing what was fetched recently. Rebuild it now, or
-            re-score your fit against the roles already on it.
+            The map is built only when you ask: after an analysis, or a rebuild.
+            Each build searches the market for your recommended roles first,
+            reusing what was fetched recently. Rebuild it now, or re-score your
+            fit against the roles already on it.
           </p>
           {state.data?.market_data_at && (
             <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
@@ -589,8 +551,8 @@ function UnplacedCandidates({
       <h3>From your strengths, not on your market yet</h3>
       <p className="subcopy">
         Your analysis also points to these roles, but your locations have too
-        few openings for them right now. Add one as a role of your own below, or
-        widen{" "}
+        few openings for them right now. Found a posting for one elsewhere? Aim
+        the Advisor at it as a posting of your own. Or widen{" "}
         <button type="button" className="link-button" onClick={onSources}>
           where you want to work
         </button>

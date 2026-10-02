@@ -193,8 +193,9 @@ class GapFillService:
             created = await mine.sets.create(
                 QuestionSet.requested(
                     owner_id=owner_id,
-                    role_id=uuid.UUID(ref.role_id),
-                    job_posting_id=_opening_id(ref),
+                    role_id=ref.role_uuid,
+                    job_posting_id=ref.opening_uuid,
+                    private_job_posting_id=ref.own_posting_uuid,
                     label=snapshot.label,
                     gaps=gaps,
                     at=utcnow(),
@@ -280,6 +281,7 @@ class GapFillService:
                     set_id=set_id,
                     role_id=found.role_id,
                     job_posting_id=found.job_posting_id,
+                    private_job_posting_id=found.private_job_posting_id,
                     evidence_ids=tuple(str(e) for e in evidence.values()),
                 )
             )
@@ -293,9 +295,7 @@ class GapFillService:
     # -- internals ----------------------------------------------------------
 
     async def _write(self, owner_id: uuid.UUID, found: QuestionSet) -> None:
-        ref = TargetRef(
-            str(found.role_id), str(found.job_posting_id) if found.job_posting_id else None
-        )
+        ref = _ref_of(found)
         snapshot = await self._target.snapshot(owner_id, ref)
         result = await self._gateway.run(
             owner_id,
@@ -397,16 +397,18 @@ def _asked(snapshot: TargetSnapshot) -> tuple[AskedGap, ...]:
     )
 
 
-def _opening_id(ref: TargetRef) -> uuid.UUID | None:
-    return uuid.UUID(ref.job_posting_id) if ref.job_posting_id else None
+def _ref_of(found: QuestionSet) -> TargetRef:
+    return TargetRef.of(found.role_id, found.job_posting_id, found.private_job_posting_id)
 
 
 def _for_target(
     ref: TargetRef, *, statuses: tuple[QuestionSetStatus, ...] | None = None
 ) -> QuestionSetFilter:
-    opening = _opening_id(ref)
+    if ref.is_own_posting:
+        return QuestionSetFilter(private_job_posting_id=ref.own_posting_uuid, statuses=statuses)
+    opening = ref.opening_uuid
     return QuestionSetFilter(
-        role_id=uuid.UUID(ref.role_id),
+        role_id=ref.role_uuid,
         job_posting_id=opening,
         role_only=opening is None,
         statuses=statuses,
@@ -429,9 +431,7 @@ async def _view(mine: OwnerGapFill, found: QuestionSet) -> QuestionSetView:
     questions = await _questions(mine, found.id)
     return QuestionSetView(
         id=found.id,
-        target=TargetRef(
-            str(found.role_id), str(found.job_posting_id) if found.job_posting_id else None
-        ),
+        target=_ref_of(found),
         label=found.label,
         status=str(found.status),
         gaps=tuple(GapView(g.key, g.label, str(g.status), g.lift) for g in found.gaps),

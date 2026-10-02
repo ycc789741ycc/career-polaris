@@ -16,9 +16,10 @@ class GapAnswersSubmitted:
 
     owner_id: uuid.UUID
     set_id: uuid.UUID
-    role_id: uuid.UUID
+    role_id: uuid.UUID | None
     job_posting_id: uuid.UUID | None
     evidence_ids: tuple[str, ...]
+    private_job_posting_id: uuid.UUID | None = None
 
 
 GapFillEvent = GapAnswersSubmitted

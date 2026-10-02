@@ -9,7 +9,6 @@ import only what is listed here (import-linter contract
 ``market-public-surface``).
 """
 
-from advisor.market import jobs
 from advisor.market.crawling.run import CrawlPoliteness, crawl_due
 from advisor.market.factory import (
     create_crawl_ingest,
@@ -70,6 +69,5 @@ __all__ = [
     "create_crawl_politeness",
     "create_market_service",
     "in_market",
-    "jobs",
     "names_every_word",
 ]

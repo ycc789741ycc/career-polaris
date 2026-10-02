@@ -17,7 +17,16 @@ async def draft(deps: Any, *, owner_id: str, plan_id: str) -> None:
     log.info("gapplan.draft_finished", plan_id=plan_id)
 
 
-async def regenerate(deps: Any, *, owner_id: str, role_id: str, job_posting_id: str | None) -> None:
+async def regenerate(
+    deps: Any,
+    *,
+    owner_id: str,
+    role_id: str | None,
+    job_posting_id: str | None,
+    private_job_posting_id: str | None = None,
+) -> None:
     """Draft the Target's next plan version after answers were submitted."""
-    drafted = await deps.gapplan.regenerate(uuid.UUID(owner_id), TargetRef(role_id, job_posting_id))
+    drafted = await deps.gapplan.regenerate(
+        uuid.UUID(owner_id), TargetRef(role_id, job_posting_id, private_job_posting_id)
+    )
     log.info("gapplan.regenerate_finished", plan_id=str(drafted) if drafted else None)

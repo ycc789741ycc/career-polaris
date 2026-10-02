@@ -46,8 +46,10 @@ export type SalaryBand = Schemas["SalaryBand"];
 export type Role = Schemas["Role"];
 /** A role the latest analysis recommended, and the role it became (ADR 0024). */
 export type RoleCandidate = Schemas["RoleCandidate"];
-/** What adding a custom role costs, before "Add to Role Map" (ADR 0021). */
-export type CustomRoleEstimate = Schemas["CustomRoleEstimate"];
+/** A posting the user brings themselves, to aim the Advisor at (Phase 8). */
+export type OwnPosting = Schemas["OwnPosting"];
+/** What reading and scoring a posting of the user's own costs, first. */
+export type OwnPostingEstimate = Schemas["OwnPostingEstimate"];
 /** The most a role-map rebuild can cost, fits included: a ceiling at the
  * top k roles a build keeps, `max_roles` (ADR 0024, ADR 0029). */
 export type RoleMapEstimate = Schemas["RoleMapEstimate"];
@@ -92,6 +94,7 @@ export type ConnectionPage = Schemas["ConnectionPage"];
 export type EvidencePage = Schemas["EvidencePage"];
 export type FitPage = Schemas["FitPage"];
 export type MatchedPostingPage = Schemas["MatchedPostingPage"];
+export type OwnPostingPage = Schemas["OwnPostingPage"];
 export type PastedJobDescriptionPage = Schemas["PastedJobDescriptionPage"];
 export type PlanSummaryPage = Schemas["PlanSummaryPage"];
 export type ResumeFilePage = Schemas["ResumeFilePage"];

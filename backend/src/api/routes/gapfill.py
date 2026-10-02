@@ -4,13 +4,11 @@ submit that records the answers as evidence (ADR 0023)."""
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from advisor.gapfill import Answer
-from advisor.target import TargetRef
-from api.dependencies import CurrentUser, Deps
+from api.dependencies import CurrentUser, Deps, TargetQuery
 from api.schemas.common import TargetEstimate
 from api.schemas.gapfill import (
     AnswersRequest,
@@ -25,34 +23,22 @@ router = APIRouter(tags=["gapfill"])
 
 
 @router.get("/gap-question-sets/current")
-async def current_set(
-    role_id: Annotated[uuid.UUID, Query()],
-    user: CurrentUser,
-    deps: Deps,
-    job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> QuestionSet | None:
+async def current_set(target: TargetQuery, user: CurrentUser, deps: Deps) -> QuestionSet | None:
     """The Target's current questions; ``null`` before any were written."""
-    found = await deps.gapfill.current(user, _ref(role_id, job_posting_id))
+    found = await deps.gapfill.current(user, target)
     return QuestionSet.from_view(found) if found is not None else None
 
 
 @router.get("/gap-question-sets/cost-estimate")
-async def cost_estimate(
-    role_id: Annotated[uuid.UUID, Query()],
-    user: CurrentUser,
-    deps: Deps,
-    job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> TargetEstimate:
+async def cost_estimate(target: TargetQuery, user: CurrentUser, deps: Deps) -> TargetEstimate:
     """Writing the questions runs on the user's key, so it is priced first."""
-    return TargetEstimate.model_validate(
-        await deps.gapfill.estimate_cost(user, _ref(role_id, job_posting_id))
-    )
+    return TargetEstimate.model_validate(await deps.gapfill.estimate_cost(user, target))
 
 
 @router.post("/gap-question-sets", status_code=202)
 async def request_set(body: QuestionSetRequest, user: CurrentUser, deps: Deps) -> QuestionSet:
     """Records the set as writing and queues it; poll ``GET /gap-question-sets/{id}``."""
-    found = await deps.gapfill.request(user, _ref(body.role_id, body.job_posting_id))
+    found = await deps.gapfill.request(user, body.ref())
     await enqueue("gapfill.write", owner_id=str(user), set_id=str(found.id))
     return QuestionSet.from_view(found)
 
@@ -92,7 +78,3 @@ async def submit(
         [Answer(question_id=a.question_id, choice=a.choice, text=a.text) for a in body.answers],
     )
     return Submitted.from_view(done)
-
-
-def _ref(role_id: uuid.UUID, job_posting_id: uuid.UUID | None) -> TargetRef:
-    return TargetRef(str(role_id), str(job_posting_id) if job_posting_id else None)

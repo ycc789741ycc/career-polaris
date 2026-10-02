@@ -264,8 +264,9 @@ class GapPlanService:
             plan = await mine.plans.create(
                 GapPlan.requested(
                     owner_id=owner_id,
-                    role_id=uuid.UUID(ref.role_id),
-                    job_posting_id=_opening_id(ref),
+                    role_id=ref.role_uuid,
+                    job_posting_id=ref.opening_uuid,
+                    private_job_posting_id=ref.own_posting_uuid,
                     label=preview.label,
                     # Versions only grow, so the newest plan holds the highest.
                     version=(max(p.version for p in earlier) if earlier else 0) + 1,
@@ -551,7 +552,7 @@ class GapPlanService:
                 PlanDrafted(
                     owner_id=owner_id,
                     plan_id=plan_id,
-                    role_id=uuid.UUID(ref.role_id),
+                    role_id=ref.role_uuid,
                     version=plan.version,
                 )
             )
@@ -631,18 +632,14 @@ class GapPlanService:
 
 
 def _same_target(ref: TargetRef) -> GapPlanFilter:
-    opening = _opening_id(ref)
-    return GapPlanFilter(
-        role_id=uuid.UUID(ref.role_id), job_posting_id=opening, role_only=opening is None
-    )
-
-
-def _opening_id(ref: TargetRef) -> uuid.UUID | None:
-    return uuid.UUID(ref.job_posting_id) if ref.job_posting_id else None
+    if ref.is_own_posting:
+        return GapPlanFilter(private_job_posting_id=ref.own_posting_uuid)
+    opening = ref.opening_uuid
+    return GapPlanFilter(role_id=ref.role_uuid, job_posting_id=opening, role_only=opening is None)
 
 
 def _ref_of(plan: GapPlan) -> TargetRef:
-    return TargetRef(str(plan.role_id), str(plan.job_posting_id) if plan.job_posting_id else None)
+    return TargetRef.of(plan.role_id, plan.job_posting_id, plan.private_job_posting_id)
 
 
 async def _tasks_by_plan(mine: OwnerGapPlans) -> dict[uuid.UUID, list[Task]]:

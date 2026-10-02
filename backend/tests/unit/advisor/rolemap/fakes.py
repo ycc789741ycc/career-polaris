@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from advisor.market import PostingView, SourcesRequestView
+from advisor.market import PostingView, SourcesRequestView, Visibility
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
@@ -22,6 +22,18 @@ from advisor.rolemap.domain import (
     LineageEntryFilter,
     LineageEntryRepository,
     OwnerRoleMap,
+    PostingEvaluation,
+    PostingEvaluationFilter,
+    PostingEvaluationRepository,
+    PostingFit,
+    PostingFitFilter,
+    PostingFitRepository,
+    PostingRequirement,
+    PostingRequirementFilter,
+    PostingRequirementFit,
+    PostingRequirementFitFilter,
+    PostingRequirementFitRepository,
+    PostingRequirementRepository,
     Role,
     RoleCandidate,
     RoleCandidateFilter,
@@ -54,6 +66,10 @@ class Store:
     candidates: dict[uuid.UUID, RoleCandidate] = field(default_factory=dict)
     strengths: dict[uuid.UUID, CandidateStrength] = field(default_factory=dict)
     fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
+    evaluations: dict[uuid.UUID, PostingEvaluation] = field(default_factory=dict)
+    posting_requirements: dict[uuid.UUID, PostingRequirement] = field(default_factory=dict)
+    posting_requirement_fits: dict[uuid.UUID, PostingRequirementFit] = field(default_factory=dict)
+    posting_fits: dict[uuid.UUID, PostingFit] = field(default_factory=dict)
     events: list[RoleMapEvent] = field(default_factory=list)
 
 
@@ -62,9 +78,7 @@ class FakeRoles(FakeRepository[Role, RoleFilter], RoleRepository):
     noun = "role"
 
     def matches(self, entity: Role, filter: RoleFilter) -> bool:
-        return (
-            filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired
-        ) and (filter.origin is None or entity.origin is filter.origin)
+        return filter.is_retired is None or (entity.retired_at is not None) == filter.is_retired
 
 
 class FakeMembers(FakeRepository[RoleMember, RoleMemberFilter], RoleMemberRepository):
@@ -146,6 +160,60 @@ class FakeFits(FakeRepository[RoleFit, RoleFitFilter], RoleFitRepository):
         )
 
 
+class FakeEvaluations(
+    FakeRepository[PostingEvaluation, PostingEvaluationFilter], PostingEvaluationRepository
+):
+    created_field = "requested_at"
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "posting evaluation"
+
+    def matches(self, entity: PostingEvaluation, filter: PostingEvaluationFilter) -> bool:
+        return (
+            filter.private_job_posting_id is None
+            or entity.private_job_posting_id == filter.private_job_posting_id
+        )
+
+
+class FakePostingRequirements(
+    FakeRepository[PostingRequirement, PostingRequirementFilter], PostingRequirementRepository
+):
+    created_field = "id"
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "posting requirement"
+
+    def matches(self, entity: PostingRequirement, filter: PostingRequirementFilter) -> bool:
+        return (
+            filter.private_job_posting_id is None
+            or entity.private_job_posting_id == filter.private_job_posting_id
+        )
+
+
+class FakePostingRequirementFits(
+    FakeRepository[PostingRequirementFit, PostingRequirementFitFilter],
+    PostingRequirementFitRepository,
+):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "posting requirement fit"
+
+    def matches(self, entity: PostingRequirementFit, filter: PostingRequirementFitFilter) -> bool:
+        return (
+            filter.private_job_posting_id is None
+            or entity.private_job_posting_id == filter.private_job_posting_id
+        )
+
+
+class FakePostingFits(FakeRepository[PostingFit, PostingFitFilter], PostingFitRepository):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "posting fit"
+
+    def matches(self, entity: PostingFit, filter: PostingFitFilter) -> bool:
+        return filter.posting_keys is None or entity.posting_key in filter.posting_keys
+
+
 class FakeOwner(OwnerRoleMap):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.roles = FakeRoles(store.roles, owner_id=owner_id)
@@ -156,6 +224,14 @@ class FakeOwner(OwnerRoleMap):
         self.candidates = FakeCandidates(store.candidates, owner_id=owner_id)
         self.strengths = FakeStrengths(store.strengths, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)
+        self.evaluations = FakeEvaluations(store.evaluations, owner_id=owner_id)
+        self.posting_requirements = FakePostingRequirements(
+            store.posting_requirements, owner_id=owner_id
+        )
+        self.posting_requirement_fits = FakePostingRequirementFits(
+            store.posting_requirement_fits, owner_id=owner_id
+        )
+        self.posting_fits = FakePostingFits(store.posting_fits, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:
@@ -193,6 +269,9 @@ class FakeMarket:
         self.postings = postings or []
         self.chosen = markets or []
         self.pasted = {p.id: p for p in pasted or []}
+        # Who pasted what, as row-level security keeps it: unset for postings
+        # handed in up front, which every owner sees.
+        self.pasted_by: dict[uuid.UUID, uuid.UUID] = {}
         self.needed = (uuid.uuid4(), *due)
         self.due = due
         self.fetched: set[uuid.UUID] = set()
@@ -212,16 +291,45 @@ class FakeMarket:
     async def search_results(self, *, titles: Any, places: Any) -> dict[str, list[uuid.UUID]]:
         return {title: self.searched.get(title, []) for title in titles}
 
-    async def company_named(self, name: str) -> uuid.UUID:
-        return uuid.uuid5(uuid.NAMESPACE_DNS, name)
-
     async def has_searchable_place(self, owner_id: uuid.UUID) -> bool:
         return False
 
+    def _is_theirs(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> bool:
+        return self.pasted_by.get(posting_id, owner_id) == owner_id
+
     async def private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> PostingView:
-        if posting_id not in self.pasted:
+        if posting_id not in self.pasted or not self._is_theirs(owner_id, posting_id):
             raise NotFoundError("job description not found")
         return self.pasted[posting_id]
+
+    async def private_postings(self, owner_id: uuid.UUID) -> list[PostingView]:
+        return [p for p in reversed(self.pasted.values()) if self._is_theirs(owner_id, p.id)]
+
+    async def paste_job_description(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        company_name: str,
+        title: str,
+        location: str | None,
+        description: str,
+    ) -> PostingView:
+        pasted = PostingView(
+            id=uuid.uuid4(),
+            company_name=company_name,
+            title=title,
+            location=location,
+            url=None,
+            description=description,
+            visibility=Visibility.PRIVATE,
+            salary=None,
+        )
+        self.pasted[pasted.id] = pasted
+        self.pasted_by[pasted.id] = owner_id
+        return pasted
+
+    async def delete_private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> None:
+        self.pasted.pop(posting_id, None)
 
     async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
         return self.chosen

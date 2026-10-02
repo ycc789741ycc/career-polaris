@@ -396,14 +396,20 @@ class MarketService:
                 raise NotFoundError("job description not found", posting_id=str(posting_id))
             return _private_posting_view(posting)
 
+    async def delete_private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> None:
+        """Delete one pasted JD. Idempotent; another user's is simply not found."""
+        async with self._uow.for_owner(owner_id) as mine:
+            if await mine.private_postings.get(posting_id) is not None:
+                await mine.private_postings.delete(posting_id)
+
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         """Every shared posting this user's role map is built from: the open
         postings in their target locations.
 
         A user who has chosen no location gets the platform's baseline postings
         instead (domain decision 15), so a first role map has something to
-        group. Pasted JDs are not here: each belongs to the custom role it came
-        with (domain decision 25), and never to a cluster.
+        group. Pasted JDs are not here: each is a posting of the user's own,
+        aimed at from the Advisor (Phase 8), and never on the map.
         """
         scope = PostingScope(markets=tuple(await self.target_locations(owner_id)))
 
@@ -472,36 +478,20 @@ class MarketService:
                     retired += 1
         return len(sources), retired
 
-    async def register_board(self, company_id: uuid.UUID, *, kind: str, endpoint: str) -> None:
-        """Crawl a board that discovery found for a company, as a ``demand``
-        source with no owner, unless the endpoint is already known."""
-        async with self._uow.shared() as market:
-            if await market.sources.get_count(CrawlSourceFilter(endpoint=endpoint)) == 0:
-                await market.sources.create(
-                    CrawlSource.board(
-                        kind=kind,
-                        endpoint=endpoint,
-                        company_id=company_id,
-                        origin=SourceOrigin.DEMAND,
-                    )
-                )
-
     async def request_sources(
         self,
         *,
         titles: Sequence[str],
         places: Sequence[str],
-        company_ids: Sequence[uuid.UUID],
         at: datetime | None = None,
     ) -> SourcesRequestView:
         """The sources one build needs, each marked asked for, and due when it
         isn't fresh (ADR 0027).
 
         They are a search of each job title in each place a search covers (a
-        country, or "Remote"; a region adds none), the baseline boards, and the
-        boards of the companies named. A search that does not exist yet is made
-        as an ownerless ``demand`` source: only titles, places and company ids
-        reach here, never who asked.
+        country, or "Remote"; a region adds none), and the baseline boards. A
+        search that does not exist yet is made as an ownerless ``demand``
+        source: only titles and places reach here, never who asked.
         """
         from advisor.market.crawling.adapters import SEARCH_ADAPTERS
 
@@ -524,10 +514,6 @@ class MarketService:
             sources += await market.sources.get_list(
                 CrawlSourceFilter(status=SourceStatus.ACTIVE, origin=SourceOrigin.BASELINE)
             )
-            for company_id in sorted(set(company_ids)):
-                sources += await market.sources.get_list(
-                    CrawlSourceFilter(status=SourceStatus.ACTIVE, company_id=company_id)
-                )
             for source in {source.id: source for source in sources}.values():
                 needed.append(source.id)
                 if source.needed(now, self._windows):
@@ -581,23 +567,6 @@ class MarketService:
                         if result.job_posting_id not in by_title[title]:
                             by_title[title].append(result.job_posting_id)
         return by_title
-
-    async def company_named(self, name: str) -> uuid.UUID:
-        """The shared company with this name, recorded if it is new. A company
-        holds no user data, so naming one leaves no trace of who named it."""
-        if not name.strip():
-            raise ValidationError("a company name is required")
-        async with self._uow.shared() as market:
-            return (await _ensure_company(market, name.strip())).id
-
-    async def company_needing_source(self, company_id: uuid.UUID, fallback_name: str) -> str | None:
-        """The name to look for a board under, or None when the company already
-        has a crawl source."""
-        async with self._uow.shared() as market:
-            if await market.sources.get_count(CrawlSourceFilter(company_id=company_id)) > 0:
-                return None
-            company = await market.companies.get(company_id)
-            return company.name if company is not None else fallback_name
 
     async def salary_band(self, owner_id: uuid.UUID, posting_ids: list[uuid.UUID]) -> object:
         async with self._uow.shared() as market:

@@ -186,8 +186,8 @@ async def world(
 
 
 def _score_the_jd(stub: StubProvider) -> None:
-    """What a build answers for a custom role read from its JD — its
-    requirements, then its hiring bar — and then the fit projection."""
+    """What reading a posting of the user's own answers: its requirements,
+    then the fit projection."""
     stub.replies.append(
         json.dumps(
             {
@@ -200,7 +200,6 @@ def _score_the_jd(stub: StubProvider) -> None:
             }
         )
     )
-    stub.replies.append(json.dumps({"difficulty": 70, "confidence": 0.5, "reasoning": "A guess."}))
     stub.replies.append(
         json.dumps(
             {
@@ -219,29 +218,24 @@ def _score_the_jd(stub: StubProvider) -> None:
     )
 
 
-async def _custom_role(
+async def _own_posting(
     world: World,
     account: uuid.UUID,
     *,
     title: str = "Staff Platform Engineer",
     company: str = "Meridian Labs",
 ) -> TargetRef:
-    """A role of the user's own with a pasted JD, placed and scored by a build
-    the way the role map does it (ADR 0021), aimed at as a Target (ADR 0022)."""
-    posting = await world.market.paste_job_description(
+    """A posting of the user's own, read and scored when it is added, aimed at
+    as a Target (Phase 8)."""
+    posting, run_id = await world.rolemap.add_own_posting(
         account,
-        company_name=company,
         title=title,
-        location=None,
-        description="Set technical direction across three product teams...",
-    )
-    role = await world.rolemap.add_custom_role(
-        account, title=title, company_name=company, private_posting_id=posting.id
+        company_name=company,
+        job_description="Set technical direction across three product teams...",
     )
     _score_the_jd(world.stub)
-    await world.rolemap.recluster(account)
-    await world.rolemap.compute_fits(account)
-    return TargetRef(str(role.id))
+    await world.rolemap.evaluate_own_posting(account, run_id)
+    return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
 
 
 def _resume_reply(cited: str) -> str:
@@ -271,7 +265,7 @@ def _resume_reply(cited: str) -> str:
 
 
 async def _written(world: World, account: uuid.UUID) -> uuid.UUID:
-    ref = await _custom_role(world, account)
+    ref = await _own_posting(world, account)
     world.stub.replies.append(_resume_reply(CITED))
     requested = await world.resume.request(
         account,
@@ -310,7 +304,7 @@ async def test_a_resume_is_written_cited_with_coverage_decided_by_scores(
 async def test_a_resume_citing_evidence_the_user_lacks_is_recorded_as_failed(
     world: World, account: uuid.UUID
 ) -> None:
-    ref = await _custom_role(world, account, title="Engineer", company="Acme")
+    ref = await _own_posting(world, account, title="Engineer", company="Acme")
     world.stub.replies.append(_resume_reply("E9"))
     requested = await world.resume.request(
         account,

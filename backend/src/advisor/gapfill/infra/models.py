@@ -34,13 +34,17 @@ class QuestionSet(Base, OwnedMixin):
     __tablename__ = "question_set"
     __table_args__ = (
         CheckConstraint("status IN ('writing', 'ready', 'failed', 'superseded')", name="status"),
+        CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_question_set_owner_created", "owner_id", "created_at"),
         {"schema": "gapfill"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    role_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    # The Target (ADR 0022): a role and optionally one opening in it, or a
+    # posting of the user's own (Phase 8); exactly one of the two.
+    role_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    private_job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     # "{role} · {company}", kept so the set reads without the Target.
     label: Mapped[str] = mapped_column(String(400), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)

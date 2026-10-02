@@ -13,7 +13,8 @@ from dataclasses import dataclass
 class PlanDrafted:
     owner_id: uuid.UUID
     plan_id: uuid.UUID
-    role_id: uuid.UUID
+    # None when the Target is a posting of the user's own.
+    role_id: uuid.UUID | None
     version: int
 
 

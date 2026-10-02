@@ -98,7 +98,11 @@ def test_a_tailored_resume_carries_its_summary_and_its_content() -> None:
     body = TailoredResume.from_resume(_view()).model_dump(mode="json")
 
     assert body["id"] == str(RESUME_ID)
-    assert body["target"] == {"role_id": str(ROLE_ID), "job_posting_id": None}
+    assert body["target"] == {
+        "role_id": str(ROLE_ID),
+        "job_posting_id": None,
+        "private_job_posting_id": None,
+    }
     assert body["status"] == "ready" and body["error"] is None
     assert body["template"] == "plain"
     assert body["options"] == {"metrics": True, "reorder": False, "trim": True}

@@ -59,7 +59,7 @@ async def fetch_source(
 ) -> list[NormalizedPosting]:
     """Fetch and parse one source. ``guard`` (the crawler's) raises
     ``RateLimitedError`` for a host that is paused or spent, and pauses one
-    that refuses us; discovery probes without one."""
+    that refuses us."""
     adapter = SOURCES.get(source.kind)
     if adapter is None:
         raise UpstreamFailedError(f"no adapter for source kind {source.kind!r}")

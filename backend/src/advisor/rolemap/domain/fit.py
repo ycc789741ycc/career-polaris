@@ -12,9 +12,10 @@ important output here.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 # How much an uncovered requirement costs, relative to a dimension scored zero
@@ -171,3 +172,95 @@ class RoleFit:
     requirements: tuple[dict[str, Any], ...] = ()
     requirement_map: dict[str, str | None] = field(default_factory=dict)
     created_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class PostingRequirementFit:
+    """The AI's evaluation of a posting of the user's own (Phase 8): its JD's
+    requirements mapped onto the user's dimensions, with a target for each.
+
+    The same projection a ``RoleFit`` makes, over one pasted JD's requirements
+    instead of a role's. It is what a ``PostingFit`` is worked out from, so it
+    keeps everything that needs: the requirements, the mapping, the targets.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    private_job_posting_id: uuid.UUID
+    assessment_id: uuid.UUID
+    requirements: tuple[dict[str, Any], ...]
+    requirement_map: dict[str, str | None]
+    target_profile: dict[str, int]
+    reasoning: str
+    model_id: str
+    template_version: str
+    created_at: datetime | None = None
+
+
+class PostingFitBasis(StrEnum):
+    """Which AI fit a ``PostingFit`` was worked out from."""
+
+    # A posting of the user's own: its ``PostingRequirementFit``.
+    OWN = "own"
+
+
+@dataclass(slots=True)
+class PostingFit:
+    """The user's fit to one posting, worked out locally from an AI fit. It is
+    never an AI call (Phase 8).
+
+    ``posting_key`` names the posting as ``rolemap.role_member`` does:
+    ``private:<id>`` for a posting of the user's own. ``source_fit_id`` is the
+    AI fit it came from, and ``assessment_id`` the analysis whose scores it
+    was worked out against.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    posting_key: str
+    basis: PostingFitBasis
+    source_fit_id: uuid.UUID
+    assessment_id: uuid.UUID
+    score: int
+    requirements: tuple[dict[str, Any], ...]
+    requirement_map: dict[str, str | None]
+    target_profile: dict[str, int]
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    created_at: datetime | None = None
+
+
+def get_own_posting_key(private_job_posting_id: uuid.UUID) -> str:
+    """The key a posting of the user's own is stored under."""
+    return f"private:{private_job_posting_id}"
+
+
+def get_posting_fit(
+    *,
+    requirements: Sequence[Mapping[str, Any]],
+    requirement_map: Mapping[str, str | None],
+    target_profile: Mapping[str, int],
+    user_scores: Mapping[str, int],
+) -> FitResult:
+    """A posting's fit from an AI fit's mapping and targets: plain arithmetic.
+
+    A requirement mapped to none of the user's dimensions is uncovered, at its
+    weight; a target on a dimension the user does not have is dropped, as the
+    projection's are. The score, gaps and uncovered requirements are then
+    ``evaluate``'s.
+    """
+    targets = [
+        TargetScore(dimension_id=key, target=target)
+        for key, target in sorted(target_profile.items())
+        if key in user_scores
+    ]
+    seen: set[str] = set()
+    uncovered: list[UncoveredRequirement] = []
+    for requirement in requirements:
+        statement = str(requirement["statement"])
+        if statement in seen:
+            continue
+        seen.add(statement)
+        if requirement_map.get(statement) not in user_scores:
+            uncovered.append(UncoveredRequirement(statement, float(requirement["weight"])))
+    return evaluate(user_scores=dict(user_scores), targets=targets, uncovered=uncovered)

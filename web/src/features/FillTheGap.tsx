@@ -88,7 +88,12 @@ export function FillTheGap({
     };
     // Re-read when a new set is requested (its id changes to "writing").
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target.ref.role_id, target.ref.job_posting_id, set?.id]);
+  }, [
+    target.ref.role_id,
+    target.ref.job_posting_id,
+    target.ref.private_job_posting_id,
+    set?.id,
+  ]);
 
   // What submitting will cost, once there is something to submit.
   useEffect(() => {

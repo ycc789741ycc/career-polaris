@@ -8,8 +8,8 @@
  * screen, tab and role, without a router dependency.
  *
  * What the Advisor aims at is whatever the role map has selected — a role,
- * and optionally one opening in it (ADR 0022) — so that selection lives here
- * too, not in either screen.
+ * and optionally one opening in it (ADR 0022) — or a posting the user brought
+ * themselves (Phase 8), so that selection lives here too, not in any screen.
  */
 
 export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
@@ -18,9 +18,22 @@ export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
 export type AdvisorTab = "gaps" | "plan" | "resume";
 
 /** What the role map has selected: a role, and optionally one opening in it. */
-export interface Focus {
+export interface RoleFocus {
   role: string;
   opening?: string | undefined;
+}
+
+/** A posting the user brought themselves, picked in the Advisor (Phase 8). */
+export interface PostingFocus {
+  posting: string;
+}
+
+/** What the Advisor is aimed at: a role selection, or a posting of your own. */
+export type Focus = RoleFocus | PostingFocus;
+
+/** The role selection a focus names, if it names one. Pure. */
+export function roleFocus(focus: Focus | null): RoleFocus | null {
+  return focus && "role" in focus ? focus : null;
 }
 
 /** Everything the hash says. */
@@ -101,11 +114,14 @@ export function placeFromHash(hash: string): Place {
   const params = new URLSearchParams(query);
   const role = params.get("role");
   const opening = params.get("opening");
+  const posting = params.get("posting");
   const focus: Focus | null = role
     ? opening
       ? { role, opening }
       : { role }
-    : null;
+    : posting
+      ? { posting }
+      : null;
   return { screen, tab, focus };
 }
 
@@ -121,9 +137,11 @@ export function hashFor({
 }): string {
   const path = screen === "advisor" ? `${screen}/${tab}` : screen;
   const params = new URLSearchParams();
-  if (focus) {
+  if (focus && "role" in focus) {
     params.set("role", focus.role);
     if (focus.opening) params.set("opening", focus.opening);
+  } else if (focus) {
+    params.set("posting", focus.posting);
   }
   const query = focus ? `?${params}` : "";
   return `#/${path}${query}`;

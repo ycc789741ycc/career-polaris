@@ -21,9 +21,10 @@ from typing import Protocol
 from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus
 from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
 from advisor.rolemap.domain.events import RoleMapEvent
-from advisor.rolemap.domain.fit import RoleFit
+from advisor.rolemap.domain.fit import PostingFit, PostingRequirementFit, RoleFit
 from advisor.rolemap.domain.lineage import LineageEntry
-from advisor.rolemap.domain.role import Role, RoleMember, RoleOrigin, RoleRequirement
+from advisor.rolemap.domain.own_posting import PostingEvaluation, PostingRequirement
+from advisor.rolemap.domain.role import Role, RoleMember, RoleRequirement
 
 
 class Repository[Entity, Filter](Protocol):
@@ -47,7 +48,6 @@ class Repository[Entity, Filter](Protocol):
 @dataclass(frozen=True, slots=True)
 class RoleFilter:
     is_retired: bool | None = None
-    origin: RoleOrigin | None = None
 
 
 class RoleRepository(Repository[Role, RoleFilter], Protocol): ...
@@ -112,6 +112,44 @@ class RoleFitFilter:
 class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class PostingEvaluationFilter:
+    private_job_posting_id: uuid.UUID | None = None
+
+
+class PostingEvaluationRepository(
+    Repository[PostingEvaluation, PostingEvaluationFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class PostingRequirementFilter:
+    private_job_posting_id: uuid.UUID | None = None
+
+
+class PostingRequirementRepository(
+    Repository[PostingRequirement, PostingRequirementFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class PostingRequirementFitFilter:
+    private_job_posting_id: uuid.UUID | None = None
+
+
+class PostingRequirementFitRepository(
+    Repository[PostingRequirementFit, PostingRequirementFitFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class PostingFitFilter:
+    posting_keys: tuple[str, ...] | None = None
+
+
+class PostingFitRepository(Repository[PostingFit, PostingFitFilter], Protocol): ...
+
+
 class OwnerRoleMap(Protocol):
     roles: RoleRepository
     members: RoleMemberRepository
@@ -121,6 +159,10 @@ class OwnerRoleMap(Protocol):
     candidates: RoleCandidateRepository
     strengths: CandidateStrengthRepository
     fits: RoleFitRepository
+    evaluations: PostingEvaluationRepository
+    posting_requirements: PostingRequirementRepository
+    posting_requirement_fits: PostingRequirementFitRepository
+    posting_fits: PostingFitRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 

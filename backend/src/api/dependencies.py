@@ -9,7 +9,8 @@ from typing import Annotated
 from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from kernel.errors import UnauthenticatedError
+from advisor.target import TargetError, TargetRef
+from kernel.errors import UnauthenticatedError, ValidationError
 from kernel.logging import trace_id_var
 from kernel.paging import check_page
 from wiring.container import Container, container
@@ -87,3 +88,19 @@ def page_query(
 
 
 Paging = Annotated[PageQuery, Depends(page_query)]
+
+
+async def target_query(
+    role_id: Annotated[uuid.UUID | None, Query()] = None,
+    job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
+    private_job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> TargetRef:
+    """A Target named in the query string: a role and optionally one opening in
+    it, or a posting of the user's own. Anything else is a 422."""
+    try:
+        return TargetRef.of(role_id, job_posting_id, private_job_posting_id)
+    except TargetError as exc:
+        raise ValidationError(str(exc)) from exc
+
+
+TargetQuery = Annotated[TargetRef, Depends(target_query)]

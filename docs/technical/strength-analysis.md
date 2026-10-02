@@ -55,7 +55,7 @@ once:
 |---|---|---|
 | `analysis_cost_usd` | `ai_gateway.estimate` on `skill_assessment` v3 | The real prompt: the user's evidence and timeline |
 | `role_map_cost_usd` | `rolemap.estimate_cost` | Two calls per role, up to `max_roles`. When the user has a searchable place (a country or "Remote"), this is the full k (`ROLE_MAP_TOP_K`), because the search that runs first could find anything. |
-| `fits_cost_usd` | `rolemap.estimate_fits` | One `fit_projection` call for each recommended and custom role, priced at its worst-case prompt |
+| `fits_cost_usd` | `rolemap.estimate_fits` | One `fit_projection` call for each recommended role, priced at its worst-case prompt |
 
 With no evidence, the estimate is refused with `ValidationError`, which tells
 the user to connect a source or upload a résumé first.

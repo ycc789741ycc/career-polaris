@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from advisor.rolemap.domain import TargetScore, UncoveredRequirement, evaluate
+from advisor.rolemap.domain import TargetScore, UncoveredRequirement, evaluate, get_posting_fit
 
 
 def test_meeting_every_target_is_a_perfect_fit() -> None:
@@ -86,3 +86,49 @@ def test_a_role_with_nothing_to_compare_is_not_a_fit_of_one_hundred() -> None:
 def test_a_target_outside_the_scale_is_rejected() -> None:
     with pytest.raises(ValueError, match="between 0 and 100"):
         TargetScore("a", 120)
+
+
+# -- a posting's fit, worked out from an AI fit (Phase 8) ----------------------
+
+
+def test_a_posting_fit_is_the_ai_fits_mapping_and_targets_evaluated() -> None:
+    requirements = [
+        {"statement": "Leads design", "weight": 0.9, "expected_level": "expert"},
+        {"statement": "Kubernetes", "weight": 0.5, "expected_level": "advanced"},
+    ]
+    found = get_posting_fit(
+        requirements=requirements,
+        requirement_map={"Leads design": "leadership", "Kubernetes": None},
+        target_profile={"leadership": 90},
+        user_scores={"leadership": 70},
+    )
+    expected = evaluate(
+        user_scores={"leadership": 70},
+        targets=[TargetScore("leadership", 90)],
+        uncovered=[UncoveredRequirement("Kubernetes", 0.5)],
+    )
+    assert found == expected
+
+
+def test_a_posting_fit_drops_what_the_user_does_not_have() -> None:
+    """A target, or a mapping, on a dimension the user lacks is the model
+    drifting: the target goes, and the requirement is uncovered."""
+    found = get_posting_fit(
+        requirements=[{"statement": "Leads design", "weight": 0.9, "expected_level": "expert"}],
+        requirement_map={"Leads design": "invented"},
+        target_profile={"invented": 90, "leadership": 60},
+        user_scores={"leadership": 70},
+    )
+    assert [g.dimension_id for g in found.gaps] == ["leadership"]
+    assert [u.statement for u in found.uncovered] == ["Leads design"]
+
+
+def test_a_requirement_listed_twice_counts_once() -> None:
+    twice = {"statement": "Kubernetes", "weight": 0.5, "expected_level": "advanced"}
+    found = get_posting_fit(
+        requirements=[twice, twice],
+        requirement_map={},
+        target_profile={},
+        user_scores={"leadership": 70},
+    )
+    assert len(found.uncovered) == 1

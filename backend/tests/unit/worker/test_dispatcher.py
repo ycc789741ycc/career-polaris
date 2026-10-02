@@ -55,24 +55,32 @@ async def test_new_evidence_spends_nothing(source: str, queued: list[dict[str, A
 # --- Fill the gap (ADR 0023) -----------------------------------------------
 
 
-@pytest.mark.parametrize("opening", [None, "p1"])
+@pytest.mark.parametrize(
+    ("role", "opening", "own"), [("r1", None, None), ("r1", "p1", None), (None, None, "o1")]
+)
 async def test_submitted_answers_regenerate_the_targets_plan_and_resume(
-    opening: str | None, queued: list[dict[str, Any]]
+    role: str | None, opening: str | None, own: str | None, queued: list[dict[str, Any]]
 ) -> None:
     event = OutboxEvent(
         name=str(EventName.GAP_ANSWERS_SUBMITTED),
         owner_id=OWNER,
         payload={
             "set_id": str(uuid.uuid4()),
-            "role_id": "r1",
+            "role_id": role,
             "job_posting_id": opening,
+            "private_job_posting_id": own,
             "evidence_ids": ["e1"],
         },
     )
 
     await dispatcher._handle(_container(), event)
 
-    target = {"owner_id": str(OWNER), "role_id": "r1", "job_posting_id": opening}
+    target = {
+        "owner_id": str(OWNER),
+        "role_id": role,
+        "job_posting_id": opening,
+        "private_job_posting_id": own,
+    }
     assert queued == [
         {"name": "gapplan.regenerate", **target},
         {"name": "resume.regenerate", **target},
@@ -161,53 +169,6 @@ async def test_new_target_locations_build_nothing_and_search_nothing(
     )
 
     assert activity.requests == [] and queued == []
-
-
-class FakeMarket:
-    def __init__(self, locations: list[str] | None = None) -> None:
-        self.named: list[str] = []
-        self.company_id = uuid.uuid4()
-        self.locations = locations or []
-
-    async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
-        return self.locations
-
-    async def company_named(self, name: str) -> uuid.UUID:
-        self.named.append(name)
-        return self.company_id
-
-
-def _custom_role_added(company_name: str | None) -> OutboxEvent:
-    return OutboxEvent(
-        name=str(EventName.CUSTOM_ROLE_ADDED),
-        owner_id=OWNER,
-        payload={"role_id": str(uuid.uuid4()), "company_name": company_name},
-    )
-
-
-async def test_a_custom_roles_company_goes_to_board_discovery_without_its_owner(
-    queued: list[dict[str, Any]],
-) -> None:
-    market = FakeMarket()
-
-    await dispatcher._handle(_container(market=market), _custom_role_added("Northwind"))
-
-    assert market.named == ["Northwind"]
-    assert queued == [
-        {
-            "name": "market.discover_board",
-            "company_id": str(market.company_id),
-            "company_name": "Northwind",
-        }
-    ]
-
-
-async def test_a_custom_role_with_no_company_seeds_nothing(queued: list[dict[str, Any]]) -> None:
-    market = FakeMarket()
-
-    await dispatcher._handle(_container(market=market), _custom_role_added(None))
-
-    assert market.named == [] and queued == []
 
 
 # --- Fits, once per build (ADR 0024) ---------------------------------------

@@ -24,17 +24,18 @@ new record that supersedes the old one.
 | [0016](0016-count-github-work-by-commit-not-pull-request.md) | Count GitHub work by commit, not by pull request | Accepted |
 | [0017](0017-group-jira-work-by-epic-not-project.md) | Group Jira work by epic, not by project | Accepted |
 | [0018](0018-gate-journey-stages-on-recorded-run-status.md) | Gate the journey's stages on the status each stage records while it runs | Accepted, amended by 0027 and 0028 |
-| [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted |
+| [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted, amended by 0030 |
 | [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted, amended by 0024, 0027 and 0029 |
-| [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Accepted |
-| [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted |
+| [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Superseded by 0030 |
+| [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted, amended by 0030 |
 | [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
 | [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md) | Recommend roles from the strength assessment, keep the ten the market has, and score fits once per build | Accepted, amended by 0027, 0028 and 0029 |
 | [0025](0025-search-himalayas-for-the-candidate-roles.md) | Search Himalayas for the analysis's candidate roles, as ownerless demand sources | Accepted, amended by 0026 and 0027 |
 | [0026](0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md) | Choose target locations from a list of countries, regions and Remote | Accepted |
-| [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) | Fetch the market only when a build needs it, and build the role map only when asked | Accepted |
+| [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) | Fetch the market only when a build needs it, and build the role map only when asked | Accepted, amended by 0030 |
 | [0028](0028-score-the-fit-in-the-role-map.md) | Score the fit in the role map, against the scores the analysis hands over | Accepted |
 | [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md) | Set the candidate count and the top k as settings, and spend only on the k | Accepted |
+| [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) | Aim the Advisor at a posting of your own instead of adding a custom role | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

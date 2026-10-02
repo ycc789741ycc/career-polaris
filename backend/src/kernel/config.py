@@ -163,7 +163,7 @@ class Settings(BaseSettings):
     # capped at the twenty an analysis recommended before this was a setting.
     role_candidate_count: int = Field(default=10, ge=1, le=20, alias="ROLE_CANDIDATE_COUNT")
     # How many recommended roles a build keeps, names, analyses and scores:
-    # three calls each on the user's key. Custom roles are on top.
+    # three calls each on the user's key, and the whole map.
     role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
 
     # --- Background work ----------------------------------------------------

@@ -68,8 +68,8 @@ async def test_two_builds_asking_at_once_share_one_new_search(
     market = create_market_service(database, windows=WINDOWS)
 
     first, second = await asyncio.gather(
-        market.request_sources(titles=[title], places=["Taiwan"], company_ids=[]),
-        market.request_sources(titles=[title], places=["Taiwan"], company_ids=[]),
+        market.request_sources(titles=[title], places=["Taiwan"]),
+        market.request_sources(titles=[title], places=["Taiwan"]),
     )
 
     async with database.shared() as session:
@@ -87,7 +87,7 @@ async def test_the_crawler_sees_what_is_due_and_a_fetch_within_the_window_is_reu
 ) -> None:
     market = create_market_service(database, windows=WINDOWS)
     ingest = create_crawl_ingest(crawler_database)
-    asked = await market.request_sources(titles=[title], places=["Taiwan"], company_ids=[])
+    asked = await market.request_sources(titles=[title], places=["Taiwan"])
     baseline = set(await _baseline(database))
     search_id = next(i for i in asked.due if i not in baseline)
 
@@ -114,7 +114,7 @@ async def test_the_crawler_sees_what_is_due_and_a_fetch_within_the_window_is_reu
 
     # A re-analysis with the same title an hour later: nothing to wait for.
     again = await market.request_sources(
-        titles=[title], places=["Taiwan"], company_ids=[], at=utcnow() + timedelta(hours=1)
+        titles=[title], places=["Taiwan"], at=utcnow() + timedelta(hours=1)
     )
     assert search_id in again.needed and search_id not in again.due
 

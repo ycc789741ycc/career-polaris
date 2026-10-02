@@ -3,9 +3,9 @@
 A role-map build turns the analysis's candidate roles into the role map on
 03 Roles. It keeps the top k the market has that read most like the user's
 strengths (k is `ROLE_MAP_TOP_K`, 10 by default, ADR 0029), analyses each
-one's requirements and hiring bar on the user's key, and places the user's
-custom roles beside them. Fits are then scored once per build, for those k and
-the custom roles only.
+one's requirements and hiring bar on the user's key. Fits are then scored once
+per build, for those k only. A posting the user brings themselves is never on
+the map, and no build reads or scores it (ADR 0030).
 
 The market is fetched only when a build needs it (ADR 0027). So a build first
 asks the market for the sources it reads, waits while stale ones are fetched,
@@ -17,7 +17,6 @@ then runs on what is stored.
 flowchart TD
     Analysis["AnalysisFinished<br>(dispatcher)"] --> Request
     Rebuild["POST /roles/recluster<br>(Rebuild on 03 Roles)"] --> Request
-    Custom["POST /roles/custom"] --> Request
 
     Request["activity.request_role_map<br>rolemap.request_build"] --> Open{"A build already open?"}
     Open -->|"yes"| Join["Join it; queue nothing"]
@@ -46,7 +45,6 @@ flowchart TD
 |---|---|---|
 | A finished analysis | The dispatcher routes `AnalysisFinished` to `activity.build_after_analysis`, then `wiring.queue.queue_build` | The analysis's estimate, which includes the build and fits (ADR 0020) |
 | Rebuild on 03 Roles | `POST /roles/recluster`, then `_request_build`, then `activity.request_role_map`, then `queue_build` | `GET /roles/cost-estimate` |
-| Adding a custom role | `POST /roles/custom` stores it and its JD, then records a build the same way | `POST /roles/custom/cost-estimate` |
 
 Nothing else builds. A change of target locations emits
 `TargetLocationsChanged`, which queues nothing, because a build spends the
@@ -66,7 +64,7 @@ There is no scheduled rebuild.
 - **Calls per role:** two, `role_extraction` and `difficulty_estimate`, each
   priced on the costliest prompt the postings could fill.
 - **Fits:** `rolemap.estimate_fits` adds one `fit_projection` per
-  recommended and custom role.
+  recommended role.
 
 ## 2. Record the build (`rolemap.request_build`)
 
@@ -97,7 +95,6 @@ Only job titles, places and company ids cross into `market`, never who asked:
 |---|---|
 | The current candidates' titles | One `himalayas` search source per title for each place a search covers: a country or "Remote". A region or city adds none. Missing ones are created ownerless with `create_if_absent` (`ON CONFLICT DO NOTHING`). |
 | The user's target locations | The places above, also recorded on the build as `locations` |
-| The companies named on custom roles, as company ids | Those companies' active board sources |
 | — | Every active baseline board |
 
 **Freshness:** every source is marked as asked for (`last_requested_at`). A
@@ -175,7 +172,7 @@ build that is no longer `running` is skipped.
 ### 6.1 Recommended roles (`_build_recommended`)
 
 Skipped when there are no candidates, meaning no analysis has succeeded yet;
-then only custom roles are placed. Every step below is local and free until
+then nothing is placed. Every step below is local and free until
 step 6:
 
 1. **Scope.** The open postings in the user's places, with their vectors.
@@ -214,7 +211,7 @@ step 6:
    - **Otherwise:** `_analyse` makes two gateway calls on the user's key:
      `rolemap.extract` (`role_extraction` v1: name, coherence, up to 20
      weighted requirements) and `rolemap.difficulty` (`difficulty_estimate`
-     v1: the hiring bar, as an estimate; see 6.3). Posting text is untrusted input. Up
+     v1: the hiring bar, as an estimate; see 6.2). Posting text is untrusted input. Up
      to 12 postings go into the prompt, each description truncated at 4000
      characters.
 
@@ -222,25 +219,14 @@ step 6:
      salary band per selected market, and records `RoleRequirementsChanged`.
 7. **Lineage.** Split, merged and retired roles are recorded. Every role
    that no longer comes from a kept candidate is retired, including one merged
-   into another, whose postings now belong to the role it merged into (custom
-   roles never are). A role an earlier build already retired gets no new
+   into another, whose postings now belong to the role it merged into. A role an earlier build already retired gets no new
    entry. `RoleSplitOrMerged` and `RolesReclustered` are recorded.
 8. **Place the candidates.** Each candidate records its role (or none, when
    the market lacks it), its opening count and its `fit_estimate`.
    `GET /role-candidates` shows them. If an analysis replaced the candidates
    during this build, the ones this build read are skipped.
 
-### 6.2 Custom roles (`_build_custom`)
-
-Each live custom role (ADR 0021) matches the postings in scope by title words,
-narrowed to its company when it names one:
-
-- **The same matches as last build:** kept for free.
-- **Otherwise:** analysed by the same two calls, reading its private JD when
-  it has one, and its matches otherwise.
-- **Neither a JD nor any matches:** stays on the map, unscored.
-
-### 6.3 The hiring bar (`blend`)
+### 6.2 The hiring bar (`blend`)
 
 The bar is the bubble chart's X axis: how hard the interview is, from 0 to
 100. `_analyse` computes it for each role it analyses, so a role kept for free
@@ -279,7 +265,7 @@ is *cₑ*, and its basis is `estimated`. The SPA draws those bubbles with a
 dashed outline and labels the bar "(estimated)". A role that has never been
 analysed keeps the column defaults, 50 and `estimated`.
 
-### 6.4 Close the build
+### 6.3 Close the build
 
 The build is marked `ready` with `market_data_at`: the time the stalest
 needed source was last fetched (`market.oldest_fetch`). `RoleMapBuildFinished`
@@ -317,7 +303,7 @@ running bar and the Rebuild button:
 | `running` | "Building your role map on <model>" | "Building…" |
 
 When the build ends, 03 Roles reloads:
-- `GET /roles` (with the k recommended roles at most, plus custom roles). Each
+- `GET /roles` (with the k recommended roles at most). Each
   role's `opening_count` is counted live (`map_roles`): openings that expired,
   dropped off a search's list or left the user's locations since the build are
   not counted, so a bubble says what Top matched can list for its role;
@@ -332,7 +318,7 @@ When the build ends, 03 Roles reloads:
 
 | Situation | Spent on the user's key |
 |---|---|
-| No candidates (no analysis yet) | Only custom roles that changed |
+| No candidates (no analysis yet) | Nothing |
 | Fresh market, unchanged openings | Nothing for the build; the fits only |
 | Openings changed for *n* kept roles | 2 × *n* calls, plus the fits |
 | Stale searches | The same as above, after up to `MARKET_WAIT_SECONDS` of fetching |
@@ -356,7 +342,7 @@ When the build ends, 03 Roles reloads:
 - [Task queue data flow](task-queue.md)
 - [ADR 0018: recorded run status](../decisions/0018-gate-journey-stages-on-recorded-run-status.md)
 - [ADR 0020: ten roles, built after every analysis](../decisions/0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md)
-- [ADR 0021: custom roles](../decisions/0021-let-users-add-custom-roles-beside-the-ten.md)
+- [ADR 0030: a posting of your own is a Target, not a role](../decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)
 - [ADR 0024: roles from the assessment](../decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)
 - [ADR 0025: search Himalayas for candidate roles](../decisions/0025-search-himalayas-for-the-candidate-roles.md)
 - [ADR 0026: target locations from a list](../decisions/0026-choose-target-locations-from-a-list-of-countries-regions-and-remote.md)

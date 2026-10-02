@@ -1,6 +1,7 @@
 """The role map at the HTTP edge: its estimate with the fits it is scored with
-(ADR 0024), the candidates it comes from, and a rebuild queued once, or left
-waiting for an analysis (ADR 0018).
+(ADR 0024), the candidates it comes from, a rebuild queued once, or left
+waiting for an analysis (ADR 0018), and the postings the user brings
+themselves (Phase 8).
 
 Runs the real router and error handlers in-process against a stand-in service —
 no network, no infra.
@@ -17,7 +18,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from advisor.rolemap import BuildRequestView, BuildRunView, FitView, RoleCandidateView, RoleView
+from advisor.rolemap import (
+    BuildRequestView,
+    BuildRunView,
+    FitView,
+    OwnPostingView,
+    RoleCandidateView,
+    RoleView,
+)
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import rolemap as rolemap_api
@@ -32,6 +40,7 @@ class FakeRoleMap:
         # How many recommended roles each fits estimate was asked to price.
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
+        self.rescore_run: uuid.UUID | None = RUN_ID
 
     async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
         self.priced.append(kw)
@@ -69,26 +78,25 @@ class FakeRoleMap:
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
 
-    async def estimate_custom_role(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
-        return {"matches": 3, "cost_usd": "0.08", "model_id": "claude-opus-5"}
+    async def estimate_own_posting(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
+        return {"cost_usd": "0.18", "model_id": "claude-opus-5", "rate_is_published": True}
 
-    async def add_custom_role(self, owner_id: uuid.UUID, **kw: Any) -> RoleView:
+    async def add_own_posting(
+        self, owner_id: uuid.UUID, **kw: Any
+    ) -> tuple[OwnPostingView, uuid.UUID]:
         self.added.append(kw)
-        return RoleView(
-            id=ROLE_ID,
-            name=kw["title"],
-            hiring_bar=50,
-            bar_basis="estimated",
-            bar_confidence=0.0,
-            bar_reasoning=None,
-            opening_count=0,
-            salary_bands={},
-            requirements=(),
-            is_coherent=True,
-            origin="custom",
-            company_name=kw["company_name"],
-            private_posting_id=kw["private_posting_id"],
-        )
+        return _own(kw["title"], status="running"), RUN_ID
+
+    async def rescore_own_posting(
+        self, owner_id: uuid.UUID, posting_id: uuid.UUID
+    ) -> tuple[OwnPostingView, uuid.UUID | None]:
+        return _own("Staff Engineer", status="running"), self.rescore_run
+
+    async def own_postings(self, owner_id: uuid.UUID) -> list[OwnPostingView]:
+        return [_own("Staff Engineer", status="ready", fit=64)]
+
+    async def remove_own_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> None:
+        self.removed.append(posting_id)
 
     async def map_roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The roles as drawn: counted live, two openings left of the five the
@@ -97,9 +105,6 @@ class FakeRoleMap:
 
     async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         return [_role(opening_count=5)]
-
-    async def remove_custom_role(self, owner_id: uuid.UUID, role_id: uuid.UUID) -> None:
-        self.removed.append(role_id)
 
     async def candidates(self, owner_id: uuid.UUID) -> list[RoleCandidateView]:
         return [
@@ -120,6 +125,21 @@ class FakeRoleMap:
 
 ROLE_ID = uuid.uuid4()
 JD_ID = uuid.uuid4()
+RUN_ID = uuid.uuid4()
+
+
+def _own(title: str, *, status: str, fit: int | None = None) -> OwnPostingView:
+    return OwnPostingView(
+        private_job_posting_id=JD_ID,
+        title=title,
+        company_name="Northwind",
+        status=status,
+        error_code=None,
+        error_message=None,
+        fit=fit,
+        is_stale=False,
+        scored_at=None,
+    )
 
 
 def _role(*, opening_count: int) -> RoleView:
@@ -134,23 +154,15 @@ def _role(*, opening_count: int) -> RoleView:
         salary_bands={},
         requirements=(),
         is_coherent=True,
-        origin="recommended",
-        company_name=None,
-        private_posting_id=None,
     )
 
 
 class FakeMarket:
     def __init__(self) -> None:
-        self.pasted: list[dict[str, Any]] = []
         self.locations = ["Remote", "Taiwan"]
 
     async def target_locations(self, owner_id: uuid.UUID) -> list[str]:
         return self.locations
-
-    async def paste_job_description(self, owner_id: uuid.UUID, **kw: Any) -> Any:
-        self.pasted.append(kw)
-        return SimpleNamespace(id=JD_ID)
 
 
 class FakeActivity:
@@ -293,26 +305,31 @@ def test_a_rebuild_during_an_analysis_waits_and_is_not_queued(
     assert queued == []
 
 
-# --- custom roles (ADR 0021) ----------------------------------------------------
+# --- postings of the user's own (Phase 8) -------------------------------------
 
 
-def test_adding_a_custom_role_prices_it_first(client: TestClient) -> None:
-    response = client.post("/roles/custom/cost-estimate", json={"title": "Staff Engineer"})
+def test_a_posting_of_your_own_is_priced_first(client: TestClient) -> None:
+    response = client.post(
+        "/own-postings/cost-estimate",
+        json={"title": "Staff Engineer", "job_description": "Own the ledger."},
+    )
 
     assert response.status_code == 200
-    assert response.json()["matches"] == 3
-    # The build that places it scores every role's fit, this one's too.
-    assert (response.json()["cost_usd"], response.json()["fits_cost_usd"]) == ("0.38", "0.30")
+    assert response.json() == {
+        "cost_usd": "0.18",
+        "model_id": "claude-opus-5",
+        "rate_is_published": True,
+    }
 
 
-def test_a_custom_roles_jd_is_stored_privately_and_the_build_queued(
+def test_a_posting_of_your_own_is_queued_to_be_scored_and_builds_nothing(
     client: TestClient,
     rolemap: FakeRoleMap,
-    market: FakeMarket,
+    activity: FakeActivity,
     queued: list[dict[str, Any]],
 ) -> None:
     response = client.post(
-        "/roles/custom",
+        "/own-postings",
         json={
             "title": "Staff Engineer",
             "company_name": "Northwind",
@@ -320,35 +337,57 @@ def test_a_custom_roles_jd_is_stored_privately_and_the_build_queued(
         },
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 202
     body = response.json()
-    assert (body["origin"], body["company_name"]) == ("custom", "Northwind")
-    assert body["private_posting_id"] == str(JD_ID)
-    assert [p["description"] for p in market.pasted] == ["Own the ledger."]
-    assert rolemap.added[0]["private_posting_id"] == JD_ID
-    assert [c["name"] for c in queued] == ["rolemap.recluster"]
+    assert (body["private_job_posting_id"], body["status"]) == (str(JD_ID), "running")
+    assert rolemap.added == [
+        {
+            "title": "Staff Engineer",
+            "company_name": "Northwind",
+            "job_description": "Own the ledger.",
+        }
+    ]
+    assert [c["name"] for c in queued] == ["rolemap.evaluate_own_posting"]
+    assert queued[0]["evaluation_id"] == str(RUN_ID)
+    assert activity.requests == 0
 
 
-def test_a_custom_role_without_a_jd_stores_none(
-    client: TestClient, rolemap: FakeRoleMap, market: FakeMarket
+@pytest.mark.parametrize(
+    "body", [{"title": "", "job_description": "JD"}, {"title": "Staff Engineer"}]
+)
+def test_a_posting_of_your_own_needs_a_title_and_a_jd(
+    client: TestClient, rolemap: FakeRoleMap, body: dict[str, str]
 ) -> None:
-    response = client.post("/roles/custom", json={"title": "Staff Engineer"})
-
-    assert response.status_code == 201
-    assert market.pasted == [] and rolemap.added[0]["private_posting_id"] is None
+    assert client.post("/own-postings", json=body).status_code == 422
+    assert rolemap.added == []
 
 
-def test_a_custom_role_needs_a_title_before_anything_is_stored(
-    client: TestClient, market: FakeMarket
+def test_the_postings_of_your_own_are_listed_with_their_fit(client: TestClient) -> None:
+    body = client.get("/own-postings").json()
+
+    assert body["total"] == 1
+    assert (body["items"][0]["status"], body["items"][0]["fit"]) == ("ready", 64)
+
+
+@pytest.mark.parametrize("run", [RUN_ID, None])
+def test_a_rescore_is_queued_unless_one_is_already_running(
+    client: TestClient, rolemap: FakeRoleMap, queued: list[dict[str, Any]], run: uuid.UUID | None
 ) -> None:
-    response = client.post("/roles/custom", json={"title": "", "job_description": "JD"})
+    rolemap.rescore_run = run
 
-    assert response.status_code == 422 and market.pasted == []
+    response = client.post(f"/own-postings/{JD_ID}/rescore")
+
+    assert response.status_code == 202
+    assert [c["name"] for c in queued] == (["rolemap.evaluate_own_posting"] if run else [])
 
 
-def test_a_custom_role_is_removed(client: TestClient, rolemap: FakeRoleMap) -> None:
-    assert client.delete(f"/roles/custom/{ROLE_ID}").status_code == 204
-    assert rolemap.removed == [ROLE_ID]
+def test_a_posting_of_your_own_is_removed(client: TestClient, rolemap: FakeRoleMap) -> None:
+    assert client.delete(f"/own-postings/{JD_ID}").status_code == 204
+    assert rolemap.removed == [JD_ID]
+
+
+def test_there_are_no_custom_roles_to_add(client: TestClient) -> None:
+    assert client.post("/roles/custom", json={"title": "Staff"}).status_code in (404, 405)
 
 
 def test_a_rebuild_waiting_for_the_market_schedules_its_check_and_says_so(

@@ -16,8 +16,7 @@ from fastapi import APIRouter, Query
 from sse_starlette.sse import EventSourceResponse
 
 from advisor.resume import Options
-from advisor.target import TargetRef
-from api.dependencies import CurrentUser, Deps, Paging
+from api.dependencies import CurrentUser, Deps, Paging, TargetQuery
 from api.schemas.common import TargetEstimate
 from api.schemas.resume import (
     ExportRequest,
@@ -38,16 +37,9 @@ router = APIRouter(tags=["resume"])
 
 
 @router.get("/tailored-resumes/cost-estimate")
-async def cost_estimate(
-    role_id: Annotated[uuid.UUID, Query()],
-    user: CurrentUser,
-    deps: Deps,
-    job_posting_id: Annotated[uuid.UUID | None, Query()] = None,
-) -> TargetEstimate:
+async def cost_estimate(target: TargetQuery, user: CurrentUser, deps: Deps) -> TargetEstimate:
     """Writing runs on the user's key, so it is priced first."""
-    return TargetEstimate.model_validate(
-        await deps.resume.estimate_cost(user, _ref(role_id, job_posting_id))
-    )
+    return TargetEstimate.model_validate(await deps.resume.estimate_cost(user, target))
 
 
 @router.post("/tailored-resumes", status_code=202)
@@ -55,7 +47,7 @@ async def write_resume(body: ResumeRequest, user: CurrentUser, deps: Deps) -> Re
     """Records the résumé as drafting and queues it; poll ``GET /tailored-resumes/{id}``."""
     resume = await deps.resume.request(
         user,
-        _ref(body.role_id, body.job_posting_id),
+        body.ref(),
         template=body.template,
         options=Options(**body.options.model_dump()),
     )
@@ -139,7 +131,3 @@ async def request_export(
 @router.get("/resume-exports/{export_id}")
 async def get_export(export_id: uuid.UUID, user: CurrentUser, deps: Deps) -> ResumeExport:
     return ResumeExport.from_view(await deps.resume.get_export(user, export_id))
-
-
-def _ref(role_id: uuid.UUID, job_posting_id: uuid.UUID | None) -> TargetRef:
-    return TargetRef(str(role_id), str(job_posting_id) if job_posting_id else None)
