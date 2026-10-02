@@ -697,6 +697,15 @@ async def test_a_small_k_names_analyses_and_scores_only_k_roles(
     assert len(fits) == 3
     # Two calls to name and read each kept role, one to score each fit.
     assert len(stub_provider.calls) == 3 * 3
+    # Scored again with nothing changed: the same fits, and no call (Phase 8).
+    assert await rolemap.compute_fits(account) == fits
+    assert len(stub_provider.calls) == 3 * 3
+    async with database.for_user(account) as session:
+        stored = await session.execute(
+            text("SELECT count(*) FROM rolemap.role_fit WHERE owner_id = :owner"),
+            {"owner": account},
+        )
+        assert stored.scalar_one() == 3
     candidates = await rolemap.candidates(account)
     assert sum(1 for c in candidates if c.role_id is not None) == 3
     assert [c.opening_count for c in candidates if c.role_id is None] == [3, 3]

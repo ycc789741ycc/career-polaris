@@ -5,7 +5,13 @@ from __future__ import annotations
 
 import pytest
 
-from advisor.rolemap.domain import TargetScore, UncoveredRequirement, evaluate, get_posting_fit
+from advisor.rolemap.domain import (
+    TargetScore,
+    UncoveredRequirement,
+    evaluate,
+    get_posting_fit,
+    get_requirements_digest,
+)
 
 
 def test_meeting_every_target_is_a_perfect_fit() -> None:
@@ -132,3 +138,39 @@ def test_a_requirement_listed_twice_counts_once() -> None:
         user_scores={"leadership": 70},
     )
     assert len(found.uncovered) == 1
+
+
+# -- what a fit read (Phase 8) -------------------------------------------------
+
+_READ = [
+    {"statement": "Leads design", "weight": 0.9, "expected_level": "expert"},
+    {"statement": "Kubernetes", "weight": 0.5, "expected_level": "advanced"},
+]
+
+
+def test_the_same_requirements_and_prompt_read_the_same() -> None:
+    copied = [dict(r) for r in _READ]
+    assert get_requirements_digest(_READ, template_version="fit@v1") == get_requirements_digest(
+        copied, template_version="fit@v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        [{**_READ[0], "weight": 0.8}, _READ[1]],
+        [{**_READ[0], "expected_level": "senior"}, _READ[1]],
+        [_READ[0]],
+        [_READ[1], _READ[0]],
+    ],
+)
+def test_any_change_to_what_is_read_changes_the_digest(changed: list[dict[str, object]]) -> None:
+    assert get_requirements_digest(changed, template_version="fit@v1") != get_requirements_digest(
+        _READ, template_version="fit@v1"
+    )
+
+
+def test_a_new_fit_prompt_changes_every_digest() -> None:
+    assert get_requirements_digest(_READ, template_version="fit@v2") != get_requirements_digest(
+        _READ, template_version="fit@v1"
+    )

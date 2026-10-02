@@ -11,6 +11,8 @@ important output here.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -171,7 +173,20 @@ class RoleFit:
     template_version: str
     requirements: tuple[dict[str, Any], ...] = ()
     requirement_map: dict[str, str | None] = field(default_factory=dict)
+    # What it read (``get_requirements_digest``): with ``assessment_id``, what
+    # decides whether scoring the role again would change anything. None for
+    # fits taken before it was recorded, which are always scored again.
+    requirements_digest: str | None = None
     created_at: datetime | None = None
+
+    def is_current(self, *, assessment_id: uuid.UUID, requirements_digest: str) -> bool:
+        """Whether this fit read the same requirements and the same analysis's
+        scores: scoring the role again would come out the same."""
+        return (
+            self.assessment_id == assessment_id
+            and self.requirements_digest is not None
+            and self.requirements_digest == requirements_digest
+        )
 
 
 @dataclass(slots=True)
@@ -194,7 +209,18 @@ class PostingRequirementFit:
     reasoning: str
     model_id: str
     template_version: str
+    # What it read, as on a ``RoleFit``.
+    requirements_digest: str | None = None
     created_at: datetime | None = None
+
+    def is_current(self, *, assessment_id: uuid.UUID, requirements_digest: str) -> bool:
+        """Whether rescoring would read the same requirements and the same
+        analysis's scores, and so come out the same."""
+        return (
+            self.assessment_id == assessment_id
+            and self.requirements_digest is not None
+            and self.requirements_digest == requirements_digest
+        )
 
 
 class PostingFitBasis(StrEnum):
@@ -264,3 +290,27 @@ def get_posting_fit(
         if requirement_map.get(statement) not in user_scores:
             uncovered.append(UncoveredRequirement(statement, float(requirement["weight"])))
     return evaluate(user_scores=dict(user_scores), targets=targets, uncovered=uncovered)
+
+
+def get_requirements_digest(
+    requirements: Sequence[Mapping[str, Any]], *, template_version: str
+) -> str:
+    """What an AI fit reads, as a hash: its requirements (statement, weight and
+    expected level, in the order they are sent) and the fit prompt's version.
+
+    Two fits with the same digest, taken against the same analysis's scores,
+    come out the same, so the second need not be asked for. A new prompt
+    version changes every digest, so it scores everything once.
+    """
+    payload = json.dumps(
+        {
+            "template": template_version,
+            "requirements": [
+                [str(r["statement"]), float(r["weight"]), str(r["expected_level"])]
+                for r in requirements
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

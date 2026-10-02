@@ -1232,12 +1232,91 @@ async def test_the_current_fit_is_the_newest_per_role() -> None:
     rolemap, uow, role_id = await _scored_map(ProjectingGateway(target=90))
     await rolemap.compute_fits(OWNER)
     rolemap._gateway = ProjectingGateway(target=60)  # type: ignore[assignment]
+    # A new analysis, so the role is scored again rather than reused.
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [],
+        strengths=[StrengthInput("backend", "Backend", "Built services.", 60, 0.9)],
+    )
     await rolemap.compute_fits(OWNER)
 
     [fit] = await rolemap.fits(OWNER)
 
     assert len(uow.store.fits) == 2
     assert (fit.role_id, fit.target_profile) == (role_id, {"backend": 60})
+
+
+async def test_an_unchanged_role_against_unchanged_scores_is_not_scored_again() -> None:
+    gateway = ProjectingGateway(target=80)
+    rolemap, uow, _role_id = await _scored_map(gateway)
+    [first] = await rolemap.compute_fits(OWNER)
+
+    [again] = await rolemap.compute_fits(OWNER)
+
+    assert len(gateway.shown) == 1 and len(uow.store.fits) == 1
+    assert again == first
+
+
+async def test_a_role_whose_requirements_changed_is_scored_again_alone() -> None:
+    gateway = ProjectingGateway(target=80)
+    rolemap, _uow, role_id = await _scored_map(gateway)
+    other = uuid.uuid4()
+    await _store(rolemap, other, [_posting("Platform")], "Platform Engineer")
+    await rolemap.compute_fits(OWNER)
+    calls = len(gateway.shown)
+
+    # A rebuild read new requirements for one role only.
+    await rolemap._store_role(
+        OWNER,
+        role_id=role_id,
+        keys={"k"},
+        postings=[_posting("Backend")],
+        extraction=_extraction("Backend Engineer", weights=(0.4, 0.95)),
+        bar=_BAR,
+        bar_reasoning="because",
+        model_id="model",
+        template_version="v1",
+    )
+    await rolemap.compute_fits(OWNER)
+
+    assert len(gateway.shown) == calls + 1
+    assert "Backend Engineer" in gateway.shown[-1]["role_name"]
+
+
+async def test_a_new_analysis_scores_every_role_again() -> None:
+    gateway = ProjectingGateway(target=80)
+    rolemap, _uow, _role_id = await _scored_map(gateway)
+    await rolemap.compute_fits(OWNER)
+
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [],
+        strengths=[StrengthInput("backend", "Backend", "Built more services.", 75, 0.9)],
+    )
+    await rolemap.compute_fits(OWNER)
+
+    assert len(gateway.shown) == 2
+
+
+async def test_rescoring_a_posting_against_unchanged_scores_makes_no_call() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    gateway = OwnPostingGateway(target=80)
+    rolemap = _service(uow, FakeMarket(), gateway)
+    await _with_strengths(rolemap)
+    posting_id, run_id = await _add_own(rolemap)
+    await rolemap.evaluate_own_posting(OWNER, run_id)
+    gateway.tasks.clear()
+
+    _posting, rescore_id = await rolemap.rescore_own_posting(OWNER, posting_id)
+    assert rescore_id is not None
+    await rolemap.evaluate_own_posting(OWNER, rescore_id)
+
+    assert gateway.tasks == []
+    assert len(uow.store.posting_requirement_fits) == 1
+    [listed] = await rolemap.own_postings(OWNER)
+    assert listed.status == "ready" and listed.fit is not None
 
 
 async def test_a_fit_says_what_closing_each_gap_is_worth() -> None:

@@ -246,6 +246,7 @@ def fit(row: models.RoleFit) -> RoleFit:
         template_version=row.template_version,
         requirements=tuple(row.requirements or []),
         requirement_map=dict(row.requirement_map or {}),
+        requirements_digest=row.requirements_digest,
         created_at=row.created_at,
     )
 
@@ -266,6 +267,7 @@ def apply_fit(row: models.RoleFit, entity: RoleFit) -> None:
     row.uncovered = list(entity.uncovered)
     row.requirements = list(entity.requirements)
     row.requirement_map = dict(entity.requirement_map)
+    row.requirements_digest = entity.requirements_digest
     row.model_id = entity.model_id
     row.template_version = entity.template_version
 
@@ -336,6 +338,7 @@ def posting_requirement_fit(row: models.PostingRequirementFit) -> PostingRequire
         reasoning=row.reasoning,
         model_id=row.model_id,
         template_version=row.template_version,
+        requirements_digest=row.requirements_digest,
         created_at=row.created_at,
     )
 
@@ -357,6 +360,7 @@ def apply_posting_requirement_fit(
     row.reasoning = entity.reasoning
     row.model_id = entity.model_id
     row.template_version = entity.template_version
+    row.requirements_digest = entity.requirements_digest
 
 
 def posting_fit(row: models.PostingFit) -> PostingFit:

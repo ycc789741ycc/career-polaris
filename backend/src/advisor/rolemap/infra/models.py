@@ -269,6 +269,9 @@ class RoleFit(Base, OwnedMixin):
     requirement_map: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # A hash of what it read: the requirements and the fit prompt's version.
+    # With assessment_id, whether scoring again would change anything.
+    requirements_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     template_version: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -346,6 +349,8 @@ class PostingRequirementFit(Base, OwnedMixin):
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    # A hash of what it read, as on role_fit.
+    requirements_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
