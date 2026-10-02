@@ -7,8 +7,6 @@ import type {
   MatchedPosting,
   MatchedPostingPage,
   Role,
-  RoleCandidate,
-  RoleCandidatePage,
   RoleMapEstimate,
   RoleMapState,
   RolePage,
@@ -57,10 +55,6 @@ export function Roles() {
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [settled.analysis],
-  );
-  const candidates = useAsync<RoleCandidate[]>(
-    () => api.items<RoleCandidatePage>("/role-candidates"),
-    [settled.roleMap, settled.analysis],
   );
   const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
   // How current the map is: it is built only when asked for (ADR 0027).
@@ -369,7 +363,7 @@ export function Roles() {
                 role="button"
                 tabIndex={0}
                 aria-pressed={pickedOpening?.posting_id === match.posting_id}
-                aria-label={`${match.role_name} · ${match.company_name}: ${match.title}`}
+                aria-label={`${match.title} · ${match.company_name}`}
                 onClick={() =>
                   setFocus({ role: match.role_id, opening: match.posting_id })
                 }
@@ -411,7 +405,14 @@ export function Roles() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {match.role_name} · {match.company_name}
+                    {match.url ? (
+                      <a href={match.url} rel="noreferrer" target="_blank">
+                        {match.title}
+                      </a>
+                    ) : (
+                      match.title
+                    )}{" "}
+                    · {match.company_name}
                   </div>
                   <div
                     className="subcopy"
@@ -422,17 +423,14 @@ export function Roles() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {match.salary
-                      ? `${match.salary.currency} ${Math.round(match.salary.min / 1000)}k–${Math.round(match.salary.max / 1000)}k · `
-                      : ""}
-                    {match.url ? (
-                      <a href={match.url} rel="noreferrer" target="_blank">
-                        {match.title}
-                      </a>
-                    ) : (
-                      match.title
-                    )}
-                    {match.location ? ` · ${match.location}` : ""}
+                    {[
+                      match.salary
+                        ? `${match.salary.currency} ${Math.round(match.salary.min / 1000)}k–${Math.round(match.salary.max / 1000)}k`
+                        : null,
+                      match.location,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                     <Credit to={match.credited_to} url={match.url} />
                   </div>
                 </div>
@@ -441,11 +439,6 @@ export function Roles() {
           </div>
         </div>
       )}
-
-      <UnplacedCandidates
-        candidates={candidates.data ?? []}
-        onSources={() => navigate("sources")}
-      />
 
       <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
         <div className="panel">
@@ -544,43 +537,6 @@ function bandShort(band: SalaryBand): string {
 
 function bandLabel(band: SalaryBand): string {
   return `${band.currency} ${bandShort(band)}${band.is_confident ? "" : " (thin sample)"}`;
-}
-
-/**
- * The roles the analysis recommended that are not on the map: the user's
- * target locations have too few openings for them (ADR 0024). Naming them says
- * why the map is short, and what to do about it.
- */
-function UnplacedCandidates({
-  candidates,
-  onSources,
-}: {
-  candidates: RoleCandidate[];
-  onSources: () => void;
-}) {
-  const unplaced = candidates.filter((c) => c.role_id === null);
-  if (unplaced.length === 0) return null;
-  return (
-    <div className="panel" style={{ marginTop: 20 }}>
-      <h3>From your strengths, not on your market yet</h3>
-      <p className="subcopy">
-        Your analysis also points to these roles, but your locations have too
-        few openings for them right now. Found a posting for one elsewhere? Aim
-        the Advisor at it as a posting of your own. Or widen{" "}
-        <button type="button" className="link-button" onClick={onSources}>
-          where you want to work
-        </button>
-        .
-      </p>
-      <ul aria-label="Recommended roles without openings">
-        {unplaced.map((candidate) => (
-          <li key={candidate.id}>
-            <strong>{candidate.title}</strong> — {candidate.description}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
 }
 
 /**
