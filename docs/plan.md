@@ -998,9 +998,11 @@ out of it.
 * A **RoleFit** is the evaluation: the user's strengths against a role, and
   it references the role.
 * A **role candidate** is the query a build searches and matches with.
+* A **PostingFit** is the evaluation of one posting: an opening in a role,
+  or one the user brought themselves.
 
 A posting the user brings themselves is aimed at from the Advisor, not added
-to the map. Three branches, in this order, each cut from an epic,
+to the map. Four branches, in this order, each cut from an epic,
 `epic/<ticket>/phase-8`, cut from mainline:
 
 1. "A posting of your own is a Target, not a role": custom roles leave the
@@ -1009,6 +1011,9 @@ to the map. Three branches, in this order, each cut from an epic,
    becomes a record of that build.
 3. "Score a fit only when what it reads has changed": a rebuild on an
    unchanged market and unchanged strengths spends nothing.
+4. "A fit for every opening": each opening in a role gets its own fit,
+   worked out locally from its role's, and Top matched openings lists the
+   selected role's openings by it.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -1054,7 +1059,9 @@ Its own branch, `refactor/<ticket>/own-posting-target`.
      the posting: what its JD asks for, read once when it is added.
    * `PostingFit` (table `rolemap.posting_fit`) evaluates the user against
      it, with the same score, gaps, uncovered requirements and closing lifts
-     as a `RoleFit`, referencing `private_job_posting_id`.
+     as a `RoleFit`. It references the posting by `posting_key`
+     (`private:<id>`), as `rolemap.role_member` does, so the fourth branch
+     stores openings' fits in the same table.
    * Neither is listed, counted or drawn by the role map, and no build reads
      or scores them.
    * After a new analysis, the Advisor says the posting's fit was scored
@@ -1253,3 +1260,110 @@ What gets harder:
 * A change to the fit rules outside the prompt (the weights, the lift
   formula) does not re-score anything by itself. It needs a one-off rescore,
   or a bump of the template version.
+
+## A fit for every opening
+Today an opening has no fit of its own. Every row of "Top matched openings"
+carries its role's `RoleFit` score (`fit_basis: "role"`), so all of a
+role's openings score the same. The list is drawn across every role
+(`/matched-postings?page_size=10`, `Roles.tsx`): ranked by role fit, one per
+company. Picking a bubble does not change it.
+
+Two openings in one role can ask for quite different things, though: one
+stresses what the user is strong in, another their gap. The user should see
+that difference, and see it for the role they are looking at.
+
+Scoring each opening the way a role is scored would cost one AI call per
+opening instead of one per role. Similarity alone, like `fit_estimates`,
+is free but cannot give a fit. It says a topic is present, not the level
+expected, so there are no targets and no gaps. Something the user lacks has
+nothing to be similar to, so there are no uncovered requirements. Without
+those there are no closing lifts, and the gap plan ranks by lifts. It also
+rewards company blurbs and benefits that happen to sound like the user.
+
+So the AI reads once per role, as now, and each opening's fit is worked out
+locally from it.
+
+Its own branch, `feature/<ticket>/fit-per-opening`, after the third.
+
+1. **The AI reads once per role, unchanged.** It reads a role's
+   requirements from a sample of its openings, then maps them onto the
+   user's dimensions, with a target for each. That is the `RoleFit`, k calls
+   per build, reused under the third branch's rule.
+2. **Each opening's fit is worked out locally, at no cost.** In the worker,
+   after `compute_fits`:
+   * Each of the role's requirement statements is embedded once, with the
+     embedding model postings already use.
+   * Each statement is compared with each opening's stored embedding
+     (`market.posting_embedding`). The similarity is centred on that
+     requirement's mean over the role's openings, as `fit_estimates` centres
+     dimensions. A requirement every opening asks for therefore weighs the
+     same everywhere, and one an opening stresses weighs more there.
+   * The requirement weights are scaled by that relevance. A requirement an
+     opening barely mentions falls below a floor and drops out for it. The
+     scale and the floor are named values in `rolemap/domain/constants.py`.
+   * `evaluate` (`rolemap/domain/fit.py`) runs again with the opening's
+     weights and the role fit's mapping and targets. The result is the
+     opening's own score, gaps, uncovered requirements and closing lifts.
+   * A new rule in `rolemap/domain/fit.py`, `fit_for_opening`, does the
+     reweighting. It is pure and has no I/O.
+3. **It is stored as a `PostingFit` with `basis = role`**, beside the
+   `basis = own` fits of postings the user brought (first branch). It is
+   keyed on the opening's `posting_key` and references the `RoleFit` it was
+   worked out from. Every build re-derives its openings' fits, since this is
+   free, including for roles whose `RoleFit` was reused.
+4. **Top matched openings follows the selected role.**
+   * `GET /matched-postings?role_id=` ranks the role's openings by their
+     own fit. Each row carries the opening's score and `fit_basis:
+     "posting"`, so `make gen-client` changes.
+   * `one_per_company=true` keeps the best opening from each company. Top
+     matched openings asks for it. The bubble's count and the Advisor's
+     opening picker don't, and still see every opening.
+   * The list across every role goes. The SPA loads the selected role's
+     list, the best fit's until the user picks a bubble, and reloads it on
+     every pick.
+5. **Aiming the Advisor at an opening plans against the opening's fit.** A
+   Target of a role and an opening takes that opening's `PostingFit`: its
+   reweighted requirements, gaps and lifts. A Target of a role alone keeps
+   the `RoleFit`. Resolving either still spends nothing.
+6. **An ADR** records the per-opening fit: what it is derived from, what it
+   cannot see, and why it is not an AI call per opening. It supersedes the
+   part of ADR 0022 that says an opening's fit is its role's. The index is
+   updated.
+
+Tests:
+* Unit, `fit_for_opening`:
+  * an opening that stresses a requirement the user is strong in scores
+    above one that stresses their gap;
+  * a requirement every opening asks for moves no opening's score;
+  * a requirement under the floor drops out of that opening's gaps and
+    uncovered list;
+  * with every opening alike, each scores its role's fit.
+* Unit, service:
+  * openings' fits are derived after a build, including when the role fit
+    was reused;
+  * `matched_postings(role_id=)` ranks by the opening's fit, and with
+    `one_per_company` keeps one per company;
+  * a Target with an opening reads the opening's fit.
+* Integration:
+  * a build stores one `PostingFit` per opening under row-level security;
+  * `GET /matched-postings?role_id=` answers with each opening's own score.
+* SPA: picking a bubble reloads Top matched openings for that role.
+
+What gets harder:
+* An opening's fit can only see what its role's requirements name. A
+  requirement only that opening asks for is invisible to it. The exact fit
+  for one opening would need an AI call over its description.
+* One embedding per opening blurs a long description, so the reweighting is
+  coarse. It ranks openings within a role; it is not a verdict on one.
+* A row per opening per build in `rolemap.posting_fit`.
+* The worker embeds every requirement statement on each build. That is
+  local CPU time, on the queue a build already uses.
+* The Advisor's plan for an opening can differ from its plan for the role,
+  and both show.
+
+Open questions:
+* Whether aiming the Advisor at an opening should offer an exact fit, one
+  AI call over that opening's description, priced and confirmed like a
+  posting of your own.
+* Whether openings should be embedded in chunks rather than whole, so a
+  requirement mentioned once in a long description still counts.
