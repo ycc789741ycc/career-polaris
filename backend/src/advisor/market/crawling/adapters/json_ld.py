@@ -79,6 +79,7 @@ class JsonLdAdapter(BoardAdapter):
                         salary_spec.get("minValue"),
                         salary_spec.get("maxValue") or salary_spec.get("value"),
                         (job.get("baseSalary") or {}).get("currency"),
+                        period=salary_spec.get("unitText"),
                     )
                     or salary_in_text(description),
                 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from advisor.market.domain import SalaryRange, salary_in_text
+from advisor.market.domain import SalaryRange, salary_in_text, yearly_range
 
 
 @pytest.mark.parametrize(
@@ -59,3 +59,18 @@ def test_a_later_yearly_range_is_found_past_an_hourly_one() -> None:
 )
 def test_text_without_a_yearly_range_yields_nothing(text: str) -> None:
     assert salary_in_text(text) is None
+
+
+@pytest.mark.parametrize("period", [None, "", "per-year-salary", "1 YEAR", "YEAR", "annual"])
+def test_a_range_stated_yearly_or_with_no_period_is_a_years_pay(period: str | None) -> None:
+    assert yearly_range(80_000, 95_000, "EUR", period=period) == SalaryRange(80_000, 95_000, "EUR")
+
+
+@pytest.mark.parametrize("period", ["per-hour-wage", "1 HOUR", "MONTH", "monthly", "WEEK"])
+def test_a_range_stated_for_any_other_period_is_dropped_not_converted(period: str) -> None:
+    assert yearly_range(80_000, 95_000, "EUR", period=period) is None
+
+
+@pytest.mark.parametrize(("low", "high"), [(45, 60), (9_000, 12_000), (90_000, 200_000_000)])
+def test_an_amount_no_years_pay_could_be_is_dropped(low: int, high: int) -> None:
+    assert yearly_range(low, high, "USD") is None

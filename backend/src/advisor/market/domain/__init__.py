@@ -9,7 +9,7 @@ from advisor.market.domain.constants import (
     REMOTE,
 )
 from advisor.market.domain.events import MarketEvent, TargetLocationsChanged
-from advisor.market.domain.pay_text import salary_in_text
+from advisor.market.domain.pay_text import salary_in_text, yearly_range
 from advisor.market.domain.places import (
     COUNTRIES,
     REGIONS,
@@ -166,4 +166,5 @@ __all__ = [
     "search_scope",
     "target_location_option",
     "target_location_options",
+    "yearly_range",
 ]

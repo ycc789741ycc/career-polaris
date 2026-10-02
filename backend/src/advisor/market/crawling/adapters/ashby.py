@@ -51,7 +51,10 @@ class AshbyAdapter(BoardAdapter):
                     source_kind=self.source_kind,
                     posted_on=parse_date(job.get("publishedAt")),
                     salary=salary_from(
-                        pay.get("minValue"), pay.get("maxValue"), pay.get("currencyCode")
+                        pay.get("minValue"),
+                        pay.get("maxValue"),
+                        pay.get("currencyCode"),
+                        period=pay.get("interval"),
                     )
                     or salary_in_text(description),
                 )

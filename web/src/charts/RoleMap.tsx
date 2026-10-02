@@ -7,6 +7,8 @@ export interface RoleBubble {
   hiringBar: number;
   barBasis: string;
   salaryMid: number | null;
+  /** The ISO code of the band's currency; null exactly when salaryMid is. */
+  salaryCurrency: string | null;
   salaryLabel: string | null;
   openings: number;
   fit: number | null;
@@ -147,7 +149,7 @@ export function RoleMap({ roles, selectedId, onSelect }: Props) {
             fontSize="12"
             fill="var(--text-secondary)"
           >
-            Salary, midpoint of the band
+            {salaryAxisTitle(plotted.map((role) => role.salaryCurrency))}
           </text>
 
           {plotted
@@ -335,6 +337,18 @@ function ariaFor(role: RoleBubble): string {
     `${role.barBasis === "estimated" ? " estimated" : ""}` +
     `${role.salaryLabel ? `, ${role.salaryLabel}` : ""}`
   );
+}
+
+/**
+ * Names the currency the Y axis is in. Each band is in the currency its
+ * postings published, so roles can differ; the axis then says so rather than
+ * implying one. Pure.
+ */
+export function salaryAxisTitle(currencies: (string | null)[]): string {
+  const [only, ...rest] = [...new Set(currencies)];
+  return only && rest.length === 0
+    ? `Annual salary in ${only}, midpoint of the band`
+    : "Annual salary, midpoint of each band, in its own currency";
 }
 
 function compactMoney(value: number): string {

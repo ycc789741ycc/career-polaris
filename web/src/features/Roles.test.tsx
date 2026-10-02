@@ -41,7 +41,18 @@ function fit(roleId: string, score: number): Fit {
 function serve() {
   const routes: Record<string, unknown> = {
     "/roles": page([
-      role("r1", "Backend Engineer"),
+      role("r1", "Backend Engineer", {
+        salary_bands: {
+          Berlin: {
+            low: 70_000,
+            mid: 80_000,
+            high: 90_000,
+            currency: "EUR",
+            sample_size: 12,
+            is_confident: true,
+          },
+        },
+      }),
       role("r2", "Platform Engineer"),
     ]),
     "/fits": page([fit("r1", 60), fit("r2", 84)]),
@@ -59,7 +70,7 @@ function serve() {
         company_name: "Northwind Pay",
         location: "Berlin",
         url: null,
-        salary: null,
+        salary: { min: 165_000, max: 190_000, currency: "EUR" },
         fit: 62,
         fit_basis: "posting",
         source_kind: "atsBoard",
@@ -211,6 +222,23 @@ describe("the role map's one Advisor target", () => {
     expect(
       screen.queryByText(/Platform Engineer, Clusters/),
     ).not.toBeInTheDocument();
+  });
+
+  it("names the currency and the year on every salary", async () => {
+    renderRoles({ role: "r1" });
+
+    expect(
+      await screen.findByText(/EUR 165k–190k a year · Berlin/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Annual pay").parentElement).toHaveTextContent(
+      "EUR 70k–90k",
+    );
+    expect(
+      screen.getByText("Annual salary in EUR, midpoint of the band"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table")).getByText("EUR 70k–90k a year"),
+    ).toBeInTheDocument();
   });
 
   it("follows the picked role: another bubble, another list", async () => {

@@ -46,6 +46,7 @@ class LeverAdapter(BoardAdapter):
                         salary_range.get("min"),
                         salary_range.get("max"),
                         salary_range.get("currency"),
+                        period=salary_range.get("interval"),
                     )
                     or salary_in_text(description),
                 )
