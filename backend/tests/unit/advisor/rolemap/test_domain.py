@@ -115,6 +115,25 @@ def test_two_roles_collapsing_into_one_is_recorded_as_a_merge() -> None:
     assert merged[0].from_role_ids == ("fs",)
 
 
+def test_a_role_merged_into_another_leaves_the_map() -> None:
+    """Its postings now belong to the role it merged into: left live, it would
+    be a second bubble over the same openings, and be scored again every build."""
+    previous = {"srbe": {"a", "b", "c"}, "fs": {"d"}}
+    result = reconcile(previous=previous, clusters=[{"a", "b", "c", "d"}], new_id=ids())
+    assert result.retired_role_ids == frozenset({"fs"})
+    # Recorded once, as the merge it was, not as a retirement too.
+    assert [e.kind for e in result.lineage] == [RoleChange.MERGED]
+
+
+def test_a_previous_role_kept_by_a_cluster_is_never_retired() -> None:
+    """A role retired by an earlier build and matched again is revived, not
+    retired: the build that keeps it clears its retirement."""
+    previous = {"back": {"a", "b", "c"}, "other": {"x"}}
+    result = reconcile(previous=previous, clusters=[{"a", "b", "c"}], new_id=ids())
+    assert "back" not in result.retired_role_ids
+    assert result.retired_role_ids == frozenset({"other"})
+
+
 def test_a_role_whose_postings_all_vanished_is_retired_not_silently_dropped() -> None:
     previous = {"srbe": {"a", "b"}, "gone": {"z"}}
     result = reconcile(previous=previous, clusters=[{"a", "b"}], new_id=ids())

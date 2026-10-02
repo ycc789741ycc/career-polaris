@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
@@ -387,6 +387,19 @@ class RoleMapService:
         return [
             (role, [in_scope[key] for key in keys_by_role.get(role.id, []) if key in in_scope])
             for role in roles
+        ]
+
+    async def map_roles(self, owner_id: uuid.UUID) -> list[RoleView]:
+        """The live roles as the role map draws them: each with the openings it
+        has now, not the count stored when it was built.
+
+        A posting that has expired, dropped off its search's list, or left the
+        user's locations since the build is not counted, so a bubble says what
+        "Top matched openings" can list for its role.
+        """
+        return [
+            replace(role, opening_count=len(postings))
+            for role, postings in await self.role_postings(owner_id)
         ]
 
     # -- candidates (ADR 0024) -----------------------------------------------
@@ -1013,11 +1026,14 @@ class RoleMapService:
         the openings a Target in that role can name (ADR 0022).
 
         Ranked by the role's current fit; no AI runs here. A custom role's
-        private JD is not an opening: only shared postings are listed.
+        private JD is not an opening: only shared postings are listed. An
+        opening inside two roles (a custom role's title can match a
+        recommended role's posting) is listed under each, as each role's
+        bubble counts it.
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
 
-        by_posting: dict[str, tuple[RoleView, PostingView]] = {}
+        by_row: dict[tuple[str, str], tuple[RoleView, PostingView]] = {}
         candidates: list[MatchCandidate] = []
         for role, postings in await self.role_postings(owner_id):
             if role_id is not None and role.id != role_id:
@@ -1025,7 +1041,7 @@ class RoleMapService:
             for posting in postings:
                 if posting.visibility is not Visibility.SHARED:
                     continue
-                by_posting[str(posting.id)] = (role, posting)
+                by_row[(str(role.id), str(posting.id))] = (role, posting)
                 candidates.append(
                     MatchCandidate(
                         posting_id=str(posting.id),
@@ -1044,7 +1060,7 @@ class RoleMapService:
 
         matched: list[MatchedPostingView] = []
         for candidate in ranked:
-            role, posting = by_posting[candidate.posting_id]
+            role, posting = by_row[(candidate.role_id, candidate.posting_id)]
             matched.append(
                 MatchedPostingView(
                     posting_id=posting.id,
@@ -1451,8 +1467,22 @@ class RoleMapService:
         return bands
 
     async def _record_lineage(self, owner_id: uuid.UUID, reconciliation: Reconciliation) -> None:
+        """Retire the roles no candidate kept, merged ones included, and record
+        what became of them. A role retired by an earlier build is left alone:
+        retiring it again would add another lineage entry every build."""
         async with self._uow.for_owner(owner_id) as mine:
+            already_retired: set[str] = set()
+            for retired in reconciliation.retired_role_ids:
+                role = await mine.roles.get(uuid.UUID(retired))
+                if role is None or role.retired_at is not None:
+                    already_retired.add(retired)
+                    continue
+                role.retire(utcnow())
+                await mine.roles.update(role)
+
             for entry in reconciliation.lineage:
+                if entry.kind is RoleChange.RETIRED and entry.role_id in already_retired:
+                    continue
                 await mine.lineage.create(
                     LineageEntry(
                         id=uuid.uuid4(),
@@ -1462,11 +1492,6 @@ class RoleMapService:
                         from_role_ids=tuple(entry.from_role_ids),
                     )
                 )
-            for retired in reconciliation.retired_role_ids:
-                role = await mine.roles.get(uuid.UUID(retired))
-                if role is not None:
-                    role.retire(utcnow())
-                    await mine.roles.update(role)
 
             split_or_merged = tuple(
                 e for e in reconciliation.lineage if e.kind in (RoleChange.SPLIT, RoleChange.MERGED)

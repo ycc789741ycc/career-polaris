@@ -190,6 +190,91 @@ async def test_lineage_retires_what_is_gone_and_announces_splits() -> None:
     assert all(isinstance(e, RoleLineage) for e in splits)
 
 
+async def test_a_role_merged_into_another_is_retired_and_recorded_once() -> None:
+    """Left live, a merged-away role kept its old postings: a second bubble
+    over the same openings, ranked in Top matched and scored every build."""
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow, gateway=ProjectingGateway())
+    kept, absorbed = uuid.uuid4(), uuid.uuid4()
+    await _store(rolemap, kept, [_posting("Backend")], "Backend")
+    await _store(rolemap, absorbed, [_posting("Platform")], "Platform")
+    lineage_before = len(uow.store.lineage)
+
+    await rolemap._record_lineage(
+        OWNER,
+        reconcile(
+            previous={str(kept): {"a", "b", "c"}, str(absorbed): {"d"}},
+            clusters=[{"a", "b", "c", "d"}],
+            new_id=lambda: str(uuid.uuid4()),
+        ),
+    )
+
+    assert [r.id for r in await rolemap.roles(OWNER)] == [kept]
+    recorded = list(uow.store.lineage.values())[lineage_before:]
+    assert [e.kind for e in recorded] == [RoleChange.MERGED]
+    # And its fit is no longer scored: only live roles are projected.
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [], strengths=[StrengthInput("backend", "B", "r", 60, 0.9)]
+    )
+    assert [f.role_id for f in await rolemap.compute_fits(OWNER)] == [kept]
+
+
+async def test_a_role_retired_by_an_earlier_build_is_not_retired_again() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(uow)
+    kept, gone = uuid.uuid4(), uuid.uuid4()
+    await _store(rolemap, kept, [_posting("Backend")], "Backend")
+    await _store(rolemap, gone, [_posting("Data")], "Data")
+
+    def again() -> Any:
+        return reconcile(
+            previous={str(kept): {"a", "b"}, str(gone): {"x"}},
+            clusters=[{"a", "b"}],
+            new_id=lambda: str(uuid.uuid4()),
+        )
+
+    await rolemap._record_lineage(OWNER, again())
+    retired_at = uow.store.roles[gone].retired_at
+    lineage = len(uow.store.lineage)
+
+    await rolemap._record_lineage(OWNER, again())
+
+    assert uow.store.roles[gone].retired_at == retired_at
+    assert len(uow.store.lineage) == lineage
+
+
+async def test_the_map_counts_the_openings_a_role_has_now() -> None:
+    """A bubble says what Top matched can list for its role: a posting gone
+    from the user's scope since the build is not counted."""
+    postings = [_posting(f"Backend {i}") for i in range(3)]
+    market = FakeMarket(postings)
+    rolemap = _service(FakeRoleMapUnitOfWork(), market)
+    role_id = uuid.uuid4()
+    await _store(rolemap, role_id, postings, "Backend Engineer")
+
+    market.postings = postings[:2]
+
+    [drawn] = await rolemap.map_roles(OWNER)
+    [stored] = await rolemap.roles(OWNER)
+    assert (drawn.opening_count, stored.opening_count) == (2, 3)
+    listed = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+    assert len(listed) == drawn.opening_count
+
+
+async def test_an_opening_in_two_roles_is_listed_under_each() -> None:
+    shared = _posting("Staff Backend Engineer")
+    rolemap = _service(FakeRoleMapUnitOfWork(), FakeMarket([shared]))
+    first, second = uuid.uuid4(), uuid.uuid4()
+    await _store(rolemap, first, [shared], "Backend Engineer")
+    await _store(rolemap, second, [shared], "Staff Engineer")
+
+    listed = await rolemap.matched_postings(OWNER, limit=None)
+
+    assert sorted((str(m.role_id), m.posting_id) for m in listed) == sorted(
+        [(str(first), shared.id), (str(second), shared.id)]
+    )
+
+
 # --- builds (ADR 0006, ADR 0018) -------------------------------------------
 
 

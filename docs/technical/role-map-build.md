@@ -220,9 +220,11 @@ step 6:
 
      `_store_role` replaces the role's members and requirements, stores one
      salary band per selected market, and records `RoleRequirementsChanged`.
-7. **Lineage.** Split, merged and retired roles are recorded. Roles that no
-   longer come from a kept candidate are retired (custom roles never are),
-   with `RoleSplitOrMerged` and `RolesReclustered` recorded.
+7. **Lineage.** Split, merged and retired roles are recorded. Every role
+   that no longer comes from a kept candidate is retired, including one merged
+   into another, whose postings now belong to the role it merged into (custom
+   roles never are). A role an earlier build already retired gets no new
+   entry. `RoleSplitOrMerged` and `RolesReclustered` are recorded.
 8. **Place the candidates.** Each candidate records its role (or none, when
    the market lacks it), its opening count and its `fit_estimate`.
    `GET /role-candidates` shows them. If an analysis replaced the candidates
@@ -276,7 +278,10 @@ running bar and the Rebuild button:
 | `running` | "Building your role map on <model>" | "Building…" |
 
 When the build ends, 03 Roles reloads:
-- `GET /roles` (with the k recommended roles at most, plus custom roles);
+- `GET /roles` (with the k recommended roles at most, plus custom roles). Each
+  role's `opening_count` is counted live (`map_roles`): openings that expired,
+  dropped off a search's list or left the user's locations since the build are
+  not counted, so a bubble says what Top matched can list for its role;
 - `GET /fits`;
 - `GET /role-candidates`;
 - `GET /role-map`, which gives `market_data_at` ("Market data as of …"),

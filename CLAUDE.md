@@ -426,3 +426,9 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   factories; the selection rules take them as `limit` and `ceiling`.
   `RECOMMENDED_ROLE_COUNT` and `CANDIDATE_ROLE_COUNT` are gone, and the SPA
   says `max_roles`, never "ten".
+- **The map and Top matched agree.** Reconciliation retires a role merged into
+  another as well as one that went, and never retires one twice; migration
+  0024 retired the merged-away roles earlier builds had left live. `GET /roles`
+  answers from `rolemap.map_roles`, which counts each role's openings live
+  against the current scope, as `matched_postings` lists them; an opening in
+  two roles is listed under each.

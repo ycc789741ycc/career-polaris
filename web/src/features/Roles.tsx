@@ -381,7 +381,7 @@ export function Roles() {
           <div className="stack" style={{ gap: 8, marginTop: 12 }}>
             {(matched.data ?? []).map((match, index) => (
               <div
-                key={match.posting_id}
+                key={`${match.role_id}:${match.posting_id}`}
                 className="row opening-row"
                 role="button"
                 tabIndex={0}

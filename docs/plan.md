@@ -785,6 +785,15 @@ Tests:
   carries existing fits over; `/fits` and `/matched-postings` answer as
   before.
 
+#### Found while building it: merged-away roles stayed on the map
+`bugfix/<ticket>/stale-merged-roles`, **done**. Reconciliation recorded a merge
+but never retired the roles it absorbed, so they stayed live with their old
+postings: extra bubbles, ranked in Top matched under old fits, and scored by
+every build's fits. A dev account had 23 live recommended roles against a k of
+10. Absorbed roles are now retired (once), migration 0024 retired the ones
+already left behind, and the map counts each role's openings live, so a bubble
+and "Top matched openings" always name the same roles and openings.
+
 #### `feature/<ticket>/role-map-top-k`: the two counts become settings
 **Done** ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)). Where the
 build differs from the plan below:
