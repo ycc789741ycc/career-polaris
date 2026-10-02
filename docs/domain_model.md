@@ -512,7 +512,7 @@ The current model and decisions govern implementation.
 | `Strengths.dc.html` — 02 Strengths | Radar, "Least certain first" list with per-dimension confidence, thin-evidence note pointing to Sources, cited facts, Profile confidence next to Re-analyse | SkillAssessment, SkillDimension, confidence per dimension, profile confidence; no role fit |
 | `Roles.dc.html` — 03 Role map | "The 10 best-fit roles on the market, plus the ones you add", "Built after your strength analysis", postings counted in the target locations | RoleSelection (decisions 23, 24), TargetLocation scope |
 | | Bubble chart; dashed = estimated bar | Role, RoleFit, EstimatedDifficulty |
-| | Selected role: fit, band, openings, where you clear it or don't, "No evidence at all for these", what the role asks for | RoleFit, SkillGap, UncoveredRequirement, RoleRequirement |
+| | Selected role: fit, band, openings, how you fit each dimension (you against what the role asks), "No evidence at all for these", what the role asks for | RoleFit, SkillGap, UncoveredRequirement, RoleRequirement |
 | | Top matched openings (rank, fit, title · company, band, posting, location) | JobPosting inside a Role, per-posting fit |
 | | "Add a role of your own" moved to the Advisor as "Aim at a posting of your own" (decision 34) | Posting of your own, PostingFit |
 | | Sticky "Advisor target" bar, "Target this role" | The only way a Target is chosen (decision 26) |
