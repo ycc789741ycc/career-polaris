@@ -17,15 +17,12 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.profile.domain.entities import (
-    CareerPosition,
-    ProfileVersion,
-    ResumeFile,
-    ResumeStatus,
-    SourceConnection,
-)
+from advisor.profile.domain.connection import SourceConnection
 from advisor.profile.domain.events import ProfileEvent
 from advisor.profile.domain.evidence import Evidence, EvidenceSource
+from advisor.profile.domain.profile_version import ProfileVersion
+from advisor.profile.domain.resume_file import ResumeFile, ResumeStatus
+from advisor.profile.domain.timeline import CareerPosition
 
 
 class Repository[Entity, Filter](Protocol):

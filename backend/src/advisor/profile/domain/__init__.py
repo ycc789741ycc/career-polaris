@@ -1,11 +1,4 @@
-from advisor.profile.domain.entities import (
-    CareerPosition,
-    ConnectionStatus,
-    ProfileVersion,
-    ResumeFile,
-    ResumeStatus,
-    SourceConnection,
-)
+from advisor.profile.domain.connection import ConnectionStatus, SourceConnection
 from advisor.profile.domain.events import ProfileEvent, ProfileUpdated, SourceSynced
 from advisor.profile.domain.evidence import (
     CitationError,
@@ -15,6 +8,7 @@ from advisor.profile.domain.evidence import (
     EvidenceSource,
     assert_citations_exist,
 )
+from advisor.profile.domain.profile_version import ProfileVersion
 from advisor.profile.domain.repositories import (
     CareerPositionFilter,
     CareerPositionRepository,
@@ -30,7 +24,8 @@ from advisor.profile.domain.repositories import (
     SourceConnectionFilter,
     SourceConnectionRepository,
 )
-from advisor.profile.domain.timeline import Position, total_experience_months
+from advisor.profile.domain.resume_file import ResumeFile, ResumeStatus
+from advisor.profile.domain.timeline import CareerPosition, Position, total_experience_months
 
 __all__ = [
     "CareerPosition",
