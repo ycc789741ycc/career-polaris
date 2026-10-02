@@ -868,3 +868,108 @@ Open questions:
 * Whether ten candidates leave narrow markets thin. Watch
   `candidates_on_market` in the `rolemap.selected` log before lowering the
   default further, or raising it back.
+
+# Phase 7
+Housekeeping that changes no behaviour: no endpoint, table, migration or
+screen changes. One branch for now; more items can join this phase later.
+
+## Split each domain by concept
+Today a component's `domain/` is split two ways at once. `entities.py` holds
+every class a repository loads and saves, whatever concept it belongs to. The
+other files are each named after one concept and hold its rules: `fit.py`,
+`selection.py`, `password.py`. So a concept's state and its rules live apart:
+`RoleFit` sits in `entities.py`, while what makes a fit sits in `fit.py`. The
+largest `entities.py` files (`rolemap`, `market`, `identity`) mix four to
+seven unrelated aggregates in 230 to 380 lines. A file name says what kind of
+code it holds, not which concept, so finding `BuildRun` means knowing the
+convention first. `profile/domain/evidence.py` already breaks the convention,
+keeping `Evidence` beside the citation rules, and it is the clearest file in
+its domain.
+
+Its own branch, `refactor/<ticket>/domain-by-concept`, cut from mainline once
+the Phase 6 epic has landed. Every Phase 6 branch touches these files, so
+starting earlier means resolving the same moves twice. One commit per
+component, so each one reviews and reverts on its own.
+
+1. **A concept file holds the concept's entities, value objects, enums,
+   errors and rules together.** It is named for the concept in the domain's
+   own words (`role.py`, `build_run.py`), never for a kind of code (`models.py`,
+   `entities.py`, `rules.py`, `types.py`). `entities.py` goes away in every
+   component.
+2. **Exactly three files stay split by kind.**
+   * `repositories.py`: the repository and unit-of-work Protocols (ADR 0011).
+   * `events.py`: the domain events.
+   * `constants.py`: the domain's public named values.
+3. **What counts as a constant.** Every public module-level
+   `SCREAMING_SNAKE_CASE` value with a literal value moves to `constants.py`.
+   That covers limits, thresholds, counts, durations and fixed codes, such as
+   `MAX_ROLE_TITLE`, `SAME_ROLE_THRESHOLD`, `LOCKOUT_WINDOW` and `STALE`.
+   * `constants.py` is a leaf. It imports only the standard library and
+     nothing from its own component, so any concept file can import it
+     without a cycle.
+   * That rules out three kinds of value, which stay beside the code that
+     owns them:
+     * private `_`-prefixed values, such as compiled patterns and lookup
+       indexes;
+     * catalogues built from a concept's own types (`COUNTRIES`, `REGIONS`,
+       `SUGGESTED_MODELS`);
+     * values computed by a domain function (`WORLDWIDE_WORDS`).
+   * A component with no such value has no `constants.py`.
+4. **`domain/__init__.py` keeps exporting the same names**, so nothing
+   outside `domain/` changes: not `service.py`, `jobs.py`, `infra/`, routes
+   or tests. Inside `domain/`, `repositories.py` and the concept files import
+   from the new modules.
+5. **Where each entity goes:**
+
+   | Component | Moves |
+   |---|---|
+   | `rolemap` | `Role`, `RoleOrigin`, `CustomRoleError`, `RoleMember`, `RoleRequirement` → `role.py`; `RoleCandidate`, `CandidateStrength` → `candidate.py`; `BuildRun`, `BuildRunStatus` → `build_run.py`; `RoleFit` → `fit.py`; `LineageEntry` → `identity.py`, renamed `lineage.py` (it reconciles roles and records their lineage, and `identity` is also a component's name) |
+   | `market` | `Company`, `CrawlSource`, `SourceStatus`, `FreshWindows`, plus `SourceKind`, `SourceOrigin` from `posting.py` → `source.py`; `JobPosting`, `PostingEmbedding`, `PostingScope` → `posting.py`; `SearchResult` → `search.py`; `PrivateJobPosting` → `private_posting.py`; `MarketPreference`, `TargetLocationError`, `chosen_target_locations` → `target_locations.py` |
+   | `identity` | `Account` → `account.py`; `PasswordCredential` → `password.py`; `FederatedIdentity` → `federated.py`; `RefreshToken` → `tokens.py`; `ProviderCredential` → `credential.py`; `AiUsageBudget`, `AiUsageEntry` → `budget.py` |
+   | `profile` | `SourceConnection`, `ConnectionStatus` → `connection.py`; `ResumeFile`, `ResumeStatus` → `resume_file.py`; `CareerPosition` → `timeline.py`; `ProfileVersion` → `profile_version.py` |
+   | `assessment` | `SkillDimension`, `DimensionChange` → `dimensions.py`; `SkillAssessment`, `AssessedScore` → `skill_assessment.py`; `AnalysisRun`, `AnalysisRunStatus` → `analysis_run.py` |
+   | `gapfill` | `QuestionSet`, `QuestionSetStatus`, `GapQuestion` → `questions.py` |
+   | `gapplan` | `GapPlan`, `Milestone`, `Task` → `plan.py` |
+   | `resume` | `TailoredResume`, `ResumeStatus`, `ResumeVersion` → `tailored_resume.py`; `Revision` → `revision.py`; `Export`, `ExportStatus` → `export.py` |
+   | `target`, `activity` | Nothing to split. `activity` gains a `constants.py` for `STALE`. |
+
+   Only entities and constants move. A rule moves too only where this table
+   names it. Anything else that might read better elsewhere, such as
+   `settle_revision` beside `Revision`, is a separate change.
+6. **A guard keeps it that way.** A unit test walks every
+   `advisor/*/domain/` package. It fails on any module named `entities.py`,
+   `models.py`, `rules.py` or `types.py`, and on any `constants.py` that
+   imports something other than the standard library.
+7. **The docs say the new shape.** `CLAUDE.md`'s "Shape of the code" and
+   `docs/architecture.md`'s module tree list `repositories.py`, `events.py`,
+   `constants.py` and one file per concept. ADR 0010, which drew
+   `entities.py`, is already superseded and stays as written.
+
+No ADR. The rule is now the design guideline's ("Modules in the domain: one
+per concept" in `base/backend/architecture.md`), which also moves every
+repository interface into `repositories.py`, as this repo already does. This
+branch brings the code in line with it.
+
+Tests:
+* No behaviour changes, so no test changes beyond the guard. `make
+  test-unit`, `make test-integration`, `lint`, `typecheck` and the
+  import-linter contracts pass unchanged. A test that needed editing would
+  mean a name stopped being exported from `domain/__init__.py`.
+* Unit: the layout guard, which is shown to fail on a stray `entities.py`
+  before it lands.
+
+What gets harder:
+* No single file lists everything a component stores. `domain/__init__.py`
+  and `repositories.py` are the listing now.
+* Concept files import each other more (`role.py` reads `hiring_bar` and
+  `lineage`), so an import cycle is easier to write. `constants.py` being a
+  leaf, and `from __future__ import annotations`, keep that rare.
+* A limit sits in `constants.py`, away from the rule that enforces it, so
+  reading a rule means opening two files.
+* `git blame` on the moved lines points at the move. Use
+  `git log --follow` or blame with `-C`.
+
+Open questions:
+* Whether a concept that outgrows one file becomes a subpackage
+  (`domain/role/`). Not needed by anything today, the largest being
+  `market/domain/places.py` at 333 lines.
