@@ -1331,7 +1331,14 @@ Its own branch, `feature/<ticket>/fit-per-opening`, after the third.
    `basis = own` fits of postings the user brought (first branch). It is
    keyed on the opening's `posting_key` and references the `RoleFit` it was
    worked out from. Every build re-derives its openings' fits, since this is
-   free, including for roles whose `RoleFit` was reused.
+   free, including for roles whose `RoleFit` was reused. A stored
+   `PostingFit` is a cache of a pure computation: never edited, worked out
+   again at every build, and the table could be emptied and rebuilt from
+   the AI fits and the embeddings without an AI call. It is stored because
+   Top matched openings is a list: it sorts and pages by score in SQL, and
+   its inputs change only when a build runs. An opening that left the
+   market since the build drops out when the list is read, against the live
+   scope.
 4. **A `PostingFit` is never an AI call.** That holds for both bases. The
    code that works them out takes no AI gateway, and a unit test runs it
    with a gateway that fails on any call. The AI evaluates a set of
