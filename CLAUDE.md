@@ -495,3 +495,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   for the selected role's with `one_per_company=true`, and reloads on every
   pick. A Target with an opening plans against `rolemap.opening_fit`
   (`RequirementBasis.OPENING`), or the role's fit before one exists.
+- **A role's name is one job title.** `role_extraction` v2 tells the model to
+  leave out where or how a role is worked, gender tags and company or team
+  names, and to name one job rather than a group. `parse_role_name` takes a
+  trailing work-arrangement or gender tag off every name a build stores, as a
+  backstop; migration 0029 applied it to the names already stored.

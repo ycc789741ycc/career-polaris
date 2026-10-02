@@ -7,12 +7,36 @@ these to and from the database.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from advisor.rolemap.domain.hiring_bar import HiringBar
+
+# Where or how a job is worked, and gender tags: never part of a role's name.
+_WORK_TAG = (
+    r"(?:fully\s+|100%\s+)?remote|hybrid|on[\s-]?site|in[\s-]office|worldwide|anywhere"
+    r"|wfh|work\s+from\s+home|[mfwdx](?:\s*/\s*[mfwdx]){1,3}|all\s+genders"
+)
+# A trailing "(Remote)", "[m/f/x]", "(Remote, US)", " - Remote" or ", Hybrid".
+_TRAILING_TAG = re.compile(
+    rf"\s*(?:[(\[]\s*(?:{_WORK_TAG})(?:\s*[,/&|]\s*[^)\]]*)?\s*[)\]]"
+    rf"|\s[-\u2013\u2014|:]\s*(?:{_WORK_TAG})|,\s*(?:{_WORK_TAG}))\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_role_name(name: str) -> str:
+    """A role's name as the map shows it, from the name a model gave it: one
+    job title, with any trailing work-arrangement or gender tag taken off
+    ("Senior Data Scientist (Remote)" is "Senior Data Scientist"). A name that
+    is nothing but a tag is kept as it came."""
+    cleaned = name.strip()
+    while (stripped := _TRAILING_TAG.sub("", cleaned).strip()) != cleaned and stripped:
+        cleaned = stripped
+    return cleaned
 
 
 @dataclass(slots=True)
@@ -60,7 +84,7 @@ class Role:
         model_id: str,
         template_version: str,
     ) -> None:
-        self.name = name
+        self.name = parse_role_name(name)
         self.is_coherent = is_coherent
         self.opening_count = opening_count
         self.hiring_bar = bar.value

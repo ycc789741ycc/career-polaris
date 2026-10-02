@@ -13,7 +13,8 @@ TEMPLATES = [
     # configured number of them (ADR 0029).
     ("skill_assessment", "v3"),
     ("follow_up_questions", "v1"),
-    ("role_extraction", "v1"),
+    # v2 keeps where and how a role is worked out of its name (Phase 8).
+    ("role_extraction", "v2"),
     ("difficulty_estimate", "v1"),
     ("fit_projection", "v1"),
     # Phase 2

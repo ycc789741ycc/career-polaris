@@ -581,7 +581,7 @@ class RoleMapService:
         if max_roles == 0:
             return {"max_roles": 0, "cost_usd": "0", "model_id": None}
 
-        template = load_template("role_extraction", "v1")
+        template = load_template("role_extraction", "v2")
         sample = _postings_block(sorted(postings, key=_prompt_length, reverse=True))
         estimate = await self._gateway.estimate(
             owner_id,
@@ -1002,7 +1002,7 @@ class RoleMapService:
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
-            template=load_template("role_extraction", "v1"),
+            template=load_template("role_extraction", "v2"),
             inputs={"postings": block},
             output_schema=_RoleExtraction,
             untrusted=frozenset({"postings"}),
@@ -1440,7 +1440,7 @@ class RoleMapService:
         extract = await self._gateway.estimate(
             owner_id,
             task="rolemap.extract",
-            template=load_template("role_extraction", "v1"),
+            template=load_template("role_extraction", "v2"),
             inputs={"postings": _jd_block(name, company, description)},
             untrusted=frozenset({"postings"}),
         )
@@ -1658,7 +1658,7 @@ class RoleMapService:
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
-            template=load_template("role_extraction", "v1"),
+            template=load_template("role_extraction", "v2"),
             inputs={
                 "postings": _jd_block(posting.title, posting.company_name, posting.description)
             },
