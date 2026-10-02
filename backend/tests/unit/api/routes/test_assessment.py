@@ -98,6 +98,7 @@ def test_an_analysis_is_recorded_running_and_queued_with_its_run(
         "started_at": "2026-09-28T09:00:00+00:00",
         "finished_at": None,
         "error": None,
+        "waiting_for": None,
     }
     assert [(c["name"], c["run_id"]) for c in queued] == [("assessment.run", str(RUN_ID))]
 

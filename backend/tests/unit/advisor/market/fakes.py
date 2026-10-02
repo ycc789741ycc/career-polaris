@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from advisor.market.domain import (
@@ -21,7 +22,6 @@ from advisor.market.domain import (
     CrawlSource,
     CrawlSourceFilter,
     CrawlSourceRepository,
-    FanoutMarket,
     JobPosting,
     JobPostingFilter,
     JobPostingRepository,
@@ -39,10 +39,12 @@ from advisor.market.domain import (
     PrivateJobPosting,
     PrivateJobPostingFilter,
     PrivateJobPostingRepository,
+    SearchResult,
+    SearchResultFilter,
+    SearchResultRepository,
     SharedMarket,
     SourceOrigin,
     in_market,
-    names_every_word,
 )
 from tests.unit.kernel.db.fake_repository import FakeRepository
 
@@ -55,6 +57,7 @@ class Store:
     embeddings: dict[uuid.UUID, PostingEmbedding] = field(default_factory=dict)
     markets: dict[uuid.UUID, MarketPreference] = field(default_factory=dict)
     private_postings: dict[uuid.UUID, PrivateJobPosting] = field(default_factory=dict)
+    search_results: dict[uuid.UUID, SearchResult] = field(default_factory=dict)
     events: list[MarketEvent] = field(default_factory=list)
 
 
@@ -85,10 +88,9 @@ class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter], CrawlSourceRep
             and _set(entity.company_id, filter.company_id)
             and _set(entity.kind, filter.kind)
             and _set(entity.endpoint, filter.endpoint)
-            and (
-                filter.is_unfetched is None
-                or (entity.last_fetched_at is None) == filter.is_unfetched
-            )
+            and (filter.ids is None or entity.id in filter.ids)
+            and (filter.is_due is None or entity.is_due == filter.is_due)
+            and (filter.is_search is None or entity.is_search == filter.is_search)
             and (
                 filter.requested_before is None
                 or (
@@ -97,6 +99,14 @@ class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter], CrawlSourceRep
                 )
             )
         )
+
+    async def create_if_absent(self, source: CrawlSource) -> bool:
+        if any(
+            s.kind == source.kind and s.endpoint == source.endpoint for s in self._rows.values()
+        ):
+            return False
+        await self.create(source)
+        return True
 
 
 class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepository):
@@ -138,9 +148,55 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
         return [
             p
             for p in opened
-            if any(in_market(p.location, market) for market in scope.markets)
-            or (scope.includes_baseline and p.crawl_source_id in baseline)
+            if self._is_held(p)
+            and (
+                any(in_market(p.location, market) for market in scope.markets)
+                or (scope.includes_baseline and p.crawl_source_id in baseline)
+            )
         ]
+
+    def _is_held(self, posting: JobPosting) -> bool:
+        source = self._store.sources.get(posting.crawl_source_id or uuid.uuid4())
+        if source is None or not source.is_search:
+            return True
+        return any(r.job_posting_id == posting.id for r in self._store.search_results.values())
+
+    async def thin_unheld(self, *, unseen_since: datetime, at: datetime) -> int:
+        thinned = 0
+        for posting in self._store.postings.values():
+            held = posting.status is PostingStatus.OPEN and self._is_held(posting)
+            if posting.thinned_at is None and posting.last_seen_at < unseen_since and not held:
+                posting.description = ""
+                posting.thinned_at = at
+                self._store.embeddings.pop(posting.id, None)
+                thinned += 1
+        return thinned
+
+
+class FakeSearchResults(FakeRepository[SearchResult, SearchResultFilter], SearchResultRepository):
+    created_field = "fetched_at"
+    updated_field = None
+    noun = "search result"
+
+    def matches(self, entity: SearchResult, filter: SearchResultFilter) -> bool:
+        return (
+            filter.crawl_source_ids is None or entity.crawl_source_id in filter.crawl_source_ids
+        ) and (filter.job_posting_ids is None or entity.job_posting_id in filter.job_posting_ids)
+
+    async def replace(
+        self, crawl_source_id: uuid.UUID, posting_ids: list[uuid.UUID], *, at: datetime
+    ) -> None:
+        for key in [k for k, r in self._rows.items() if r.crawl_source_id == crawl_source_id]:
+            del self._rows[key]
+        for rank, posting_id in enumerate(dict.fromkeys(posting_ids)):
+            result = SearchResult(
+                id=uuid.uuid4(),
+                crawl_source_id=crawl_source_id,
+                job_posting_id=posting_id,
+                rank=rank,
+                fetched_at=at,
+            )
+            self._rows[result.id] = result
 
 
 class FakeEmbeddings(
@@ -169,10 +225,7 @@ class FakeMarkets(
     noun = "market preference"
 
     def matches(self, entity: MarketPreference, filter: MarketPreferenceFilter) -> bool:
-        return _set(entity.market, filter.market) and (
-            filter.names_any_of is None
-            or any(names_every_word(entity.market, name) for name in filter.names_any_of)
-        )
+        return _set(entity.market, filter.market)
 
 
 class FakePrivatePostings(
@@ -204,6 +257,7 @@ class FakeShared(_Scope, SharedMarket):
         self.sources = FakeSources(store.sources)
         self.postings = FakePostings(store)
         self.embeddings = FakeEmbeddings(store.embeddings)
+        self.search_results = FakeSearchResults(store.search_results)
 
 
 class FakeOwner(_Scope, OwnerMarket):
@@ -211,11 +265,6 @@ class FakeOwner(_Scope, OwnerMarket):
         super().__init__()
         self.markets = FakeMarkets(store.markets, owner_id=owner_id)
         self.private_postings = FakePrivatePostings(store.private_postings, owner_id=owner_id)
-
-
-class FakeFanout(FanoutMarket):
-    def __init__(self, store: Store) -> None:
-        self.markets = FakeMarkets(store.markets)
 
 
 class FakeMarketUnitOfWork(MarketUnitOfWork):
@@ -233,7 +282,3 @@ class FakeMarketUnitOfWork(MarketUnitOfWork):
         scope = FakeShared(self.store)
         yield scope
         self.store.events.extend(scope.pending)
-
-    @asynccontextmanager
-    async def fanout(self) -> AsyncIterator[FakeFanout]:
-        yield FakeFanout(self.store)

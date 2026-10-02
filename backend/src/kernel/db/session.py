@@ -64,19 +64,6 @@ class Database:
             yield session
 
     @asynccontextmanager
-    async def fanout(self) -> AsyncIterator[AsyncSession]:
-        """A transaction allowed to read *which* users watch a company or market.
-
-        This is the only cross-user read in the system. It exists because the
-        crawler must not know who its work is for, so the worker resolves that
-        afterwards. The policy behind this setting covers two columns on two
-        tables and nothing else.
-        """
-        async with self._sessionmaker() as session, session.begin():
-            await session.execute(text("SELECT set_config('app.fanout', 'on', true)"))
-            yield session
-
-    @asynccontextmanager
     async def shared(self) -> AsyncIterator[AsyncSession]:
         """A transaction over shared-zone data only (market, outbox).
 

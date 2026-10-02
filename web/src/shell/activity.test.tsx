@@ -81,6 +81,15 @@ describe("what is running", () => {
     ]);
   });
 
+  it("says a build is searching the market rather than waiting", () => {
+    expect(
+      describeWork(
+        { ...IDLE, role_map: { ...run("waiting"), waiting_for: "market" } },
+        "m",
+      ),
+    ).toEqual(["Searching the market for your recommended roles"]);
+  });
+
   it("says nothing once work has finished or failed", () => {
     expect(
       describeWork(

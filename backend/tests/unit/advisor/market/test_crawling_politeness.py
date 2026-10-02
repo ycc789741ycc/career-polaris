@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -14,8 +15,16 @@ from advisor.market.crawling.discovery import (
     candidate_slugs,
     discover_board,
 )
-from advisor.market.crawling.politeness import RateLimiter, RobotsCache, origin_of, robots_url_for
-from kernel.errors import UpstreamFailedError
+from advisor.market.crawling.politeness import (
+    FIRST_BACKOFF_SECONDS,
+    MAX_BACKOFF_SECONDS,
+    HostGuard,
+    RateLimiter,
+    RobotsCache,
+    origin_of,
+    robots_url_for,
+)
+from kernel.errors import RateLimitedError, UpstreamFailedError
 
 
 def test_no_robots_file_means_nothing_is_disallowed() -> None:
@@ -40,11 +49,81 @@ def test_a_rule_aimed_at_our_agent_is_honoured() -> None:
     assert not robots.allows("https://acme.test/jobs")
 
 
-def test_a_host_is_only_looked_up_once_per_run() -> None:
-    robots = RobotsCache("TestBot/1.0")
+def test_a_hosts_robots_txt_is_trusted_until_it_is_a_day_old() -> None:
+    """The crawler looks for due sources every few seconds (ADR 0027): robots.txt
+    is read again daily, not on every look."""
+    now = [0.0]
+    robots = RobotsCache("TestBot/1.0", ttl_seconds=86_400, clock=lambda: now[0])
     assert not robots.knows("https://acme.test")
     robots.remember("https://acme.test", None)
+
+    now[0] = 86_399
     assert robots.knows("https://acme.test")
+    now[0] = 86_400
+    assert not robots.knows("https://acme.test")
+
+
+# --- what we owe each host (ADR 0027) ---------------------------------------
+
+NOW = datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
+HOST = "https://himalayas.app/jobs/api/search?q=data"
+
+
+def _guard(now: list[datetime], *, max_per_day: int = 100) -> HostGuard:
+    return HostGuard(max_per_day=max_per_day, clock=lambda: now[0])
+
+
+def test_a_refusal_pauses_the_host_for_as_long_as_it_asks() -> None:
+    now = [NOW]
+    guard = _guard(now)
+
+    until = guard.refused(HOST, "120")
+
+    assert until == NOW + timedelta(seconds=120)
+    with pytest.raises(RateLimitedError):
+        guard.check(HOST)
+    guard.check("https://boards.test/acme")  # another host is not held back
+    now[0] = NOW + timedelta(seconds=121)
+    guard.check(HOST)
+
+
+def test_a_retry_after_date_is_honoured() -> None:
+    guard = _guard([NOW])
+
+    until = guard.refused(HOST, "Fri, 02 Oct 2026 09:30:00 GMT")
+
+    assert until == NOW + timedelta(minutes=30)
+
+
+def test_refusals_in_a_row_back_off_longer_up_to_a_cap() -> None:
+    now = [NOW]
+    guard = _guard(now)
+    waits = []
+    for _ in range(7):
+        waits.append((guard.refused(HOST, None) - now[0]).total_seconds())
+
+    assert waits[:3] == [
+        FIRST_BACKOFF_SECONDS,
+        FIRST_BACKOFF_SECONDS * 2,
+        FIRST_BACKOFF_SECONDS * 4,
+    ]
+    assert waits[-1] == MAX_BACKOFF_SECONDS
+
+    guard.answered(HOST)
+    assert (guard.refused(HOST, "nonsense") - now[0]).total_seconds() == FIRST_BACKOFF_SECONDS
+
+
+def test_a_host_is_asked_at_most_its_daily_ceiling() -> None:
+    now = [NOW]
+    guard = _guard(now, max_per_day=2)
+    for _ in range(2):
+        guard.check(HOST)
+        guard.count(HOST)
+
+    with pytest.raises(RateLimitedError):
+        guard.check(HOST)
+    now[0] = NOW + timedelta(days=1)
+    guard.check(HOST)
 
 
 @pytest.mark.parametrize(

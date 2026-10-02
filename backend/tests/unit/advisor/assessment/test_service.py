@@ -445,11 +445,17 @@ async def test_adding_a_role_prices_its_fit_beside_the_ones_already_on_the_map()
 class _RecordingRoleMap:
     def __init__(self) -> None:
         self.handed: list[tuple[uuid.UUID, list[Any]]] = []
+        self.strengths: list[Any] = []
 
     async def replace_candidates(
-        self, owner_id: uuid.UUID, assessment_id: uuid.UUID, candidates: list[Any]
+        self,
+        owner_id: uuid.UUID,
+        assessment_id: uuid.UUID,
+        candidates: list[Any],
+        strengths: list[Any] = (),  # type: ignore[assignment]
     ) -> list[Any]:
         self.handed.append((assessment_id, list(candidates)))
+        self.strengths = list(strengths)
         return []
 
 
@@ -506,6 +512,12 @@ async def test_an_analysis_hands_the_roles_it_recommends_to_the_role_map() -> No
         ("Backend Engineer", ("backend", "data")),
         ("Data Engineer", ("data",)),
     ]
+    # With what the local fit estimate weighs them by: score times confidence,
+    # and no evidence (ADR 0027).
+    assert {(s.dimension_key, s.read) for s in rolemap.strengths} >= {
+        ("backend", "Shown by the evidence.")
+    }
+    assert [s.weight for s in rolemap.strengths] == pytest.approx([0.6 * 0.8] * 5)
 
 
 async def test_a_role_resting_on_a_dimension_the_reply_lacks_rejects_the_whole_reply() -> None:

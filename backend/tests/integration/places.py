@@ -1,5 +1,5 @@
-"""Target locations for integration tests that must not see anyone else's
-postings.
+"""Market setup for integration tests: target locations that keep a test's
+postings to itself, and the fresh windows a market service is built with.
 
 The development database is shared, so a test that chose "Taiwan" would build
 from every Taiwan posting the crawler has stored. These tests store a made-up
@@ -12,9 +12,11 @@ postings to itself.
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import text
 
+from advisor.market import FreshWindows
 from kernel.db import Database
 
 
@@ -36,3 +38,7 @@ async def store_target_locations(
                 ),
                 {"id": uuid.uuid4(), "owner": owner_id, "market": place},
             )
+
+
+# How long a fetch is reused (ADR 0027), as the defaults in .env.example.
+WINDOWS = FreshWindows(search=timedelta(hours=72), board=timedelta(hours=24))

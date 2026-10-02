@@ -24,9 +24,10 @@ const GROUPS: { kind: TargetLocationOption["kind"]; label: string }[] = [
  *
  * They are stated about the user, so they sit in 01 Sources, but what they
  * decide is market scope: which postings the role map is built from and which
- * salary bands it shows. Each change saves the whole set, and a role map the
- * user already has is rebuilt on the new scope. A country or "Remote" is also
- * searched for the roles an analysis recommends; a region is not.
+ * salary bands it shows. Each change saves the whole set; the role map then
+ * says the locations changed, and is rebuilt on them when the user asks
+ * (ADR 0027). A country or "Remote" is also searched for the roles an analysis
+ * recommends; a region is not.
  */
 export function TargetLocations() {
   const saved = useAsync<string[]>(

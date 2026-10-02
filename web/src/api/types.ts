@@ -98,6 +98,7 @@ export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
 export type RoleCandidatePage = Schemas["RoleCandidatePage"];
 export type RolePage = Schemas["RolePage"];
+export type RoleMapState = Schemas["RoleMapState"];
 export type StringPage = Schemas["StringPage"];
 export type TargetLocationOption = Schemas["TargetLocationOption"];
 export type TargetLocationOptionPage = Schemas["TargetLocationOptionPage"];

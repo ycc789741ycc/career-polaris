@@ -22,7 +22,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
-from tests.integration.places import store_target_locations
+from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -312,7 +312,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
     )
 
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     rolemap = create_rolemap_service(
         database,
         market=market,
@@ -374,7 +374,7 @@ async def test_the_role_map_estimate_runs_no_local_ml(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     place = await crawled(
         [
             (f"Company {i}", "Backend engineer", "Python, Postgres and queues. " * (i + 1))
@@ -432,7 +432,7 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     place = await crawled(
         [
             (f"Company {group}-{copy}", f"Role group-{group}", "What the job involves.")
@@ -520,7 +520,7 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         account, question_id="q1", question="Anything?", answer="Yes, plenty."
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     rolemap = create_rolemap_service(
         database,
         market=market,
@@ -590,7 +590,7 @@ async def test_the_ceiling_is_ten_roles_however_large_the_market(
     await identity.set_credential(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     place = await crawled(
         [(f"Company {i}", "Backend engineer", "Python, Postgres and queues.") for i in range(60)]
     )

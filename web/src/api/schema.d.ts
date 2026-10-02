@@ -808,6 +808,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/role-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Role Map State
+         * @description How current the map is: the market it was built from, and whether the
+         *     target locations changed since (ADR 0027).
+         */
+        get: operations["role_map_state_api_v1_role_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -2295,6 +2316,20 @@ export interface components {
             /** Rate Is Published */
             rate_is_published?: boolean | null;
         };
+        /**
+         * RoleMapState
+         * @description How current the map on screen is (ADR 0027). It is built only when the
+         *     user asks, so it says how old its market is, and whether the target
+         *     locations changed since. Both are null before the first map.
+         */
+        RoleMapState: {
+            /** Built For Locations */
+            built_for_locations: string[] | null;
+            /** Locations Changed */
+            locations_changed: boolean;
+            /** Market Data At */
+            market_data_at: string | null;
+        };
         /** RolePage */
         RolePage: {
             /** Items */
@@ -2317,9 +2352,10 @@ export interface components {
         };
         /**
          * RunStatus
-         * @description The newest analysis or role-map build. ``waiting`` is a build asked for
-         *     during an analysis; it starts when the analysis finishes. A run that stopped
-         *     responding reads as ``failed`` with the code ``stale``.
+         * @description The newest analysis or role-map build. A ``waiting`` build says what it
+         *     waits for: an analysis that is running, or the market sources it reads,
+         *     being fetched (ADR 0027). A run that stopped responding reads as
+         *     ``failed`` with the code ``stale``.
          */
         RunStatus: {
             error: components["schemas"]["JobError"] | null;
@@ -2332,6 +2368,8 @@ export interface components {
              * @enum {string}
              */
             status: "waiting" | "running" | "ready" | "failed";
+            /** Waiting For */
+            waiting_for?: ("analysis" | "market") | null;
         };
         /** Salary */
         Salary: {
@@ -4972,6 +5010,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoleCandidatePage"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    role_map_state_api_v1_role_map_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleMapState"];
                 };
             };
             /** @description The request could not be read. */

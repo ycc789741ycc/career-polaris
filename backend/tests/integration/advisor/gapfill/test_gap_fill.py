@@ -31,7 +31,7 @@ from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import NotFoundError
 from kernel.storage import ObjectStore
-from tests.integration.places import store_target_locations
+from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -94,7 +94,7 @@ async def world(
         account, question_id="seed", question="Who led the migration?", answer="I did"
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     # A place of its own keeps the platform baseline out of this user's scope.
     await store_target_locations(database, account, [f"Fill market {uuid.uuid4().hex[:8]}"])
     rolemap = create_rolemap_service(

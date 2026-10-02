@@ -22,7 +22,7 @@ from advisor.market import (
 )
 from advisor.market.infra.models import CrawlSource
 from kernel.db import Database
-from tests.integration.places import store_target_locations
+from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -122,29 +122,10 @@ async def test_a_posting_missing_from_a_crawl_is_expired_not_deleted(
         }
 
 
-async def test_a_crawl_emits_a_market_event_with_no_user_in_it(
-    database: Database, crawler_database: Database, source
-) -> None:
-    """The crawler must not be able to say who its work was for."""
-    ingest = create_crawl_ingest(crawler_database)
-    await ingest.record_crawl(source, [posting("Senior Backend Engineer")])
-
-    async with database.shared() as session:
-        rows = await session.execute(
-            text(
-                "SELECT owner_id, payload FROM outbox.event "
-                "WHERE name = 'PostingsChanged' ORDER BY occurred_at DESC LIMIT 1"
-            )
-        )
-        owner_id, payload = rows.one()
-    assert owner_id is None
-    assert "owner" not in payload and "user" not in payload
-
-
 async def test_a_pasted_jd_never_reaches_the_shared_tables(
     database: Database, account: uuid.UUID
 ) -> None:
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     pasted = await market.paste_job_description(
         account,
         company_name="Uncrawlable Ltd",
@@ -164,7 +145,7 @@ async def test_a_pasted_jd_never_reaches_the_shared_tables(
 async def test_another_users_pasted_jd_is_not_in_my_scope(
     database: Database, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     await market.paste_job_description(
         other_account,
         company_name="Theirs",
@@ -200,7 +181,7 @@ async def test_a_named_company_reaches_board_discovery_without_its_owner(
     from advisor.market import jobs
     from advisor.market.crawling.discovery import DiscoveredBoard
 
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     company = await _company(crawler_database, f"Northwind {uuid.uuid4().hex[:8]}")
 
     probed: list[str] = []
@@ -246,7 +227,7 @@ async def test_seeding_the_baseline_is_idempotent_and_retires_what_was_dropped(
         f"Baseline Test {uuid.uuid4().hex[:8]}",
         f"https://boards-api.greenhouse.io/v1/boards/{uuid.uuid4().hex}/jobs?content=true",
     )
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
 
     async def rows_for(endpoint: str) -> list[tuple[str, str]]:
         async with database.shared() as session:
@@ -295,7 +276,7 @@ async def test_a_user_with_no_market_sees_baseline_postings_and_one_with_a_marke
         await create_crawl_ingest(crawler_database).record_crawl(
             source_id, [posting("Baseline Engineer", company=company, location="Lisbon")]
         )
-        market = create_market_service(database)
+        market = create_market_service(database, windows=WINDOWS)
         await store_target_locations(database, other_account, [f"Elsewhere {uuid.uuid4().hex[:8]}"])
 
         mine = await market.postings_in_scope(account)
@@ -326,7 +307,7 @@ async def test_discovery_leaves_a_baseline_company_alone(
     from advisor.market import BASELINE_SOURCES, jobs
 
     baseline = BASELINE_SOURCES[0]
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     await market.seed_baseline()
     async with database.shared() as session:
         found = await session.execute(

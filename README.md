@@ -34,7 +34,7 @@ key**.
 |---|---|
 | **Profile & evidence** | Connect GitHub and Jira, upload a résumé, and choose up to three places you want to work. Sources are parsed into evidence, with no AI involved, and your answers from Fill the gap join them as "Your answers". |
 | **Strength report** | A radar chart of 5–10 skill dimensions derived from *your* profile, not a fixed taxonomy, listed least certain first, with a profile confidence that says how well your evidence backs the scores overall. |
-| **Role map** | A bubble chart of the roles your strengths point to, found in the real market. The x axis is the hiring bar, the y axis is salary and the bubble size is fit. Each analysis recommends roles from your strengths, and the map shows the first ten with openings in your target locations, naming the ones without ([ADR 0024](docs/decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)), plus roles you add yourself by title, with an optional company and a private JD ([ADR 0021](docs/decisions/0021-let-users-add-custom-roles-beside-the-ten.md)), and is rebuilt after every analysis, confirmed with the analysis's cost ([ADR 0020](docs/decisions/0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md)). |
+| **Role map** | A bubble chart of the roles your strengths point to, found in the real market. The x axis is the hiring bar, the y axis is salary and the bubble size is fit. Each analysis recommends roles from your strengths, and the map shows the first ten with openings in your target locations, naming the ones without ([ADR 0024](docs/decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)), plus roles you add yourself by title, with an optional company and a private JD ([ADR 0021](docs/decisions/0021-let-users-add-custom-roles-beside-the-ten.md)), and is built after every analysis, confirmed with the analysis's cost ([ADR 0020](docs/decisions/0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md)), or when you rebuild it. Each build searches the market for your recommended roles first and keeps the ten that read most like your strengths; the map says how old its market data is ([ADR 0027](docs/decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)). |
 | **Fill the gap** | The Advisor's first step: a few questions for each gap between your evidence and your target role, each saying why it is asked and what closing the gap is worth. Submit them together; your answers become evidence and your gap plan and résumé are written again ([ADR 0023](docs/decisions/0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md)). |
 | **Gap plan** | Aim at one **Target** from the role map — a role, and optionally one opening in it ([ADR 0022](docs/decisions/0022-make-a-target-a-role-and-an-optional-opening.md)) — and get gaps ranked by the fit points each is worth, broken into milestones, tasks and projects. Plans are versioned per Target, and finished work carries forward. |
 | **Résumé** | A résumé written for the Target from cited evidence, with requirement coverage, in-place editing saved as versions, a streamed revision chat whose proposals apply only when you accept them, and PDF export. |
@@ -49,8 +49,8 @@ reset, and linking or unlinking Google from Settings. See [`docs/plan.md`](docs/
 Design choices that are deliberate:
 
 - **The crawler holds no secrets** and has no grant on any user schema. It
-  emits events about companies and markets, and the worker fans those out to
-  users.
+  fetches only what a role-map build is waiting for, and nothing it learns is
+  ever resolved to users ([ADR 0027](docs/decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)).
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
   `market_user`, which the crawler's database role cannot reach.
 - **Row-level security on every owner-zone table**, keyed on a per-transaction

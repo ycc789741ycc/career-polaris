@@ -83,7 +83,11 @@ export function describe(activity: Activity | null, model: string): string[] {
   if (activity.role_map?.status === "running") {
     lines.push(`Building your role map on ${model}`);
   } else if (activity.role_map?.status === "waiting") {
-    lines.push("Role map waiting for the analysis to finish");
+    lines.push(
+      activity.role_map.waiting_for === "market"
+        ? "Searching the market for your recommended roles"
+        : "Role map waiting for the analysis to finish",
+    );
   }
   return lines;
 }

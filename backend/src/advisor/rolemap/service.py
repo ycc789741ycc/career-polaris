@@ -14,7 +14,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,8 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunStatus,
+    CandidateStrength,
+    CandidateStrengthFilter,
     CustomRoleAdded,
     CustomRoleError,
     HiringBar,
@@ -37,7 +40,6 @@ from advisor.rolemap.domain import (
     Role,
     RoleCandidate,
     RoleCandidateFilter,
-    RoleCandidatesReplaced,
     RoleChange,
     RoleFilter,
     RoleMapBuildFinished,
@@ -52,6 +54,8 @@ from advisor.rolemap.domain import (
     RolesReclustered,
     assign_postings,
     blend,
+    choose_by_estimate,
+    fit_estimates,
     keep_on_market,
     max_role_count,
     reconcile,
@@ -67,10 +71,12 @@ __all__ = [
     "BuildRequestView",
     "BuildRunView",
     "CandidateInput",
+    "MarketWait",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
     "RoleView",
+    "StrengthInput",
 ]
 
 log = get_logger(__name__)
@@ -118,6 +124,18 @@ class CandidateInput:
 
 
 @dataclass(frozen=True, slots=True)
+class StrengthInput:
+    """One of the user's dimensions as the analysis that recommended the
+    candidates scored it, handed over with them for the local fit estimate
+    (ADR 0027). ``weight`` is score times confidence, from 0 to 1."""
+
+    dimension_key: str
+    name: str
+    read: str
+    weight: float
+
+
+@dataclass(frozen=True, slots=True)
 class RoleCandidateView:
     """A recommended candidate and what the last build made of it: the role it
     became, or none when the user's target locations lack openings for it."""
@@ -129,6 +147,8 @@ class RoleCandidateView:
     dimension_keys: tuple[str, ...]
     role_id: uuid.UUID | None
     opening_count: int
+    # The local estimate that chose the ten (ADR 0027); never a fit.
+    fit_estimate: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +195,14 @@ class BuildRunView:
     finished_at: datetime | None
     error_code: str | None
     error_message: str | None
+    # Waiting for market sources to be fetched, rather than for an analysis.
+    is_waiting_for_market: bool = False
+    awaited_since: datetime | None = None
+    # The target locations it was built for, the sources it read, and how old
+    # the oldest of them was.
+    locations: tuple[str, ...] = ()
+    needed_source_ids: tuple[uuid.UUID, ...] = ()
+    market_data_at: datetime | None = None
 
     @property
     def is_open(self) -> bool:
@@ -184,10 +212,24 @@ class BuildRunView:
 @dataclass(frozen=True, slots=True)
 class BuildRequestView:
     """What asking for a build did. ``should_queue`` is true only when this
-    request started a build, so the caller queues it exactly once."""
+    request started a build, so the caller queues it exactly once;
+    ``should_await_market`` only when it began waiting for market sources, so
+    the caller schedules exactly one check on them (ADR 0027)."""
 
     build: BuildRunView
     should_queue: bool
+    should_await_market: bool = False
+
+
+class MarketWait(StrEnum):
+    """What a check on a build waiting for the market found."""
+
+    # Its sources are fetched, or its deadline passed: it started; queue it.
+    START = "start"
+    # Still waiting: check again later.
+    WAIT = "wait"
+    # Nothing to do: it is not waiting for the market any more.
+    DONE = "done"
 
 
 class RoleMapService:
@@ -251,12 +293,13 @@ class RoleMapService:
         owner_id: uuid.UUID,
         assessment_id: uuid.UUID,
         candidates: Sequence[CandidateInput],
+        strengths: Sequence[StrengthInput] = (),
     ) -> list[RoleCandidateView]:
         """The roles an analysis recommended, replacing the last analysis's.
 
         Called by ``assessment`` once its scores are stored; the next build
-        looks for these among the crawled postings, and the announcement sends
-        their titles to be searched for. At most ``CANDIDATE_ROLE_COUNT``, in
+        asks the market to search for their titles (ADR 0027) and looks for
+        them among what it finds. At most ``CANDIDATE_ROLE_COUNT``, in
         the analysis's order.
         """
         if len(candidates) > CANDIDATE_ROLE_COUNT:
@@ -267,6 +310,20 @@ class RoleMapService:
         async with self._uow.for_owner(owner_id) as mine:
             for previous in await mine.candidates.get_list(RoleCandidateFilter()):
                 await mine.candidates.delete(previous.id)
+            for old in await mine.strengths.get_list(CandidateStrengthFilter()):
+                await mine.strengths.delete(old.id)
+            for strength in {s.dimension_key: s for s in strengths}.values():
+                await mine.strengths.create(
+                    CandidateStrength(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        assessment_id=assessment_id,
+                        dimension_key=strength.dimension_key,
+                        name=strength.name,
+                        read=strength.read,
+                        weight=min(max(strength.weight, 0.0), 1.0),
+                    )
+                )
             stored = [
                 await mine.candidates.create(
                     RoleCandidate(
@@ -281,11 +338,6 @@ class RoleMapService:
                 )
                 for rank, candidate in enumerate(candidates)
             ]
-            if stored:
-                # The market is searched for them, by title alone (ADR 0025).
-                mine.record(
-                    RoleCandidatesReplaced(owner_id=owner_id, titles=tuple(c.title for c in stored))
-                )
         log.info("rolemap.candidates_replaced", candidates=len(stored))
         return [_candidate_view(c) for c in stored]
 
@@ -305,10 +357,14 @@ class RoleMapService:
         A ceiling, not a prediction: the api runs no embeddings, so it prices
         the most roles these postings could make, with each posting an opening
         for one role at most, capped at the ten recommended roles, each sent
-        with the costliest prompt they could fill.
+        with the costliest prompt they could fill. Where a search will run
+        before the build (ADR 0027), what is stored now says nothing about
+        what it will find, so the ceiling is the full ten.
         """
         postings = await self._market.postings_in_scope(owner_id)
         max_roles = max_role_count(len(postings))
+        if await self._market.has_searchable_place(owner_id):
+            max_roles = RECOMMENDED_ROLE_COUNT
         if max_roles == 0:
             return {"max_roles": 0, "cost_usd": "0", "model_id": None}
 
@@ -333,14 +389,15 @@ class RoleMapService:
     # -- builds (ADR 0006, ADR 0018) -----------------------------------------
 
     async def request_build(self, owner_id: uuid.UUID, *, wait: bool) -> BuildRequestView:
-        """Record a build, running now or waiting for an analysis.
+        """Record a build, waiting for an analysis or for the market.
 
-        One build is open at a time: asking again while one is running returns
-        it, which is what turns a crawl's stream of ``PostingsChanged`` into a
-        single rebuild. A waiting build is started when ``wait`` is false.
-        Whether to wait is ``advisor.activity``'s rule, not this component's.
+        One build is open at a time: asking again while one is open returns
+        it. A build that need not wait for an analysis asks the market for
+        what it reads first (ADR 0027): it starts at once when everything is
+        fresh, and otherwise waits for the sources being fetched. Whether to
+        wait for an analysis is ``advisor.activity``'s rule, not this
+        component's.
         """
-        now = utcnow()
         async with self._uow.for_owner(owner_id) as mine:
             open_builds = await mine.builds.get_list(
                 BuildRunFilter(statuses=(BuildRunStatus.WAITING, BuildRunStatus.RUNNING)),
@@ -348,29 +405,108 @@ class RoleMapService:
             )
             if open_builds:
                 current = open_builds[0]
-                if current.is_waiting and not wait:
-                    current.start(now)
-                    await mine.builds.update(current)
-                    return BuildRequestView(_build_view(current), should_queue=True)
-                return BuildRequestView(_build_view(current), should_queue=False)
-            created = await mine.builds.create(
-                BuildRun.requested(owner_id=owner_id, at=now, wait=wait)
-            )
-        log.info("rolemap.build_requested", build_id=str(created.id), waiting=wait)
-        return BuildRequestView(_build_view(created), should_queue=not wait)
+                asks_market = current.is_waiting and not current.awaited_since and not wait
+                if not asks_market:
+                    return BuildRequestView(_build_view(current), should_queue=False)
+                build_id = current.id
+            else:
+                created = await mine.builds.create(
+                    BuildRun.requested(owner_id=owner_id, at=utcnow(), wait=True)
+                )
+                build_id = created.id
+                log.info("rolemap.build_requested", build_id=str(created.id), waiting=wait)
+                if wait:
+                    return BuildRequestView(_build_view(created), should_queue=False)
+        return await self._ask_market(owner_id, build_id)
 
-    async def start_waiting(self, owner_id: uuid.UUID) -> BuildRunView | None:
-        """Start the build that was waiting, if any; the caller queues it."""
+    async def release_waiting(self, owner_id: uuid.UUID) -> BuildRequestView | None:
+        """The analysis a build waited for ended without a result: the build
+        goes on, asking the market for what it reads first."""
         async with self._uow.for_owner(owner_id) as mine:
             waiting = await mine.builds.get_list(
                 BuildRunFilter(statuses=(BuildRunStatus.WAITING,)), page_size=1
             )
-            if not waiting:
-                return None
-            waiting[0].start(utcnow())
-            started = await mine.builds.update(waiting[0])
-        log.info("rolemap.build_started", build_id=str(started.id))
-        return _build_view(started)
+        if not waiting or waiting[0].awaited_since is not None:
+            return None
+        return await self._ask_market(owner_id, waiting[0].id)
+
+    async def _ask_market(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> BuildRequestView:
+        """Ask the market for every source this build reads: the candidates'
+        searches in the user's places, the baseline boards, and the custom
+        roles' companies' boards. Only titles, places and company ids cross."""
+        titles = [candidate.title for candidate in await self._candidates(owner_id)]
+        places = await self._market.target_locations(owner_id)
+        async with self._uow.for_owner(owner_id) as mine:
+            custom = await mine.roles.get_list(
+                RoleFilter(is_retired=False, origin=RoleOrigin.CUSTOM)
+            )
+        company_ids = [
+            await self._market.company_named(role.company_name)
+            for role in custom
+            if role.company_name
+        ]
+        request = await self._market.request_sources(
+            titles=titles, places=places, company_ids=company_ids
+        )
+        now = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            build = await mine.builds.get(build_id)
+            if build is None or not build.is_waiting:
+                raise NotFoundError("waiting role map build not found", build_id=str(build_id))
+            build.wait_for_market(
+                needed=request.needed, due=request.due, locations=tuple(places), at=now
+            )
+            if not request.due:
+                build.start(now)
+            stored = await mine.builds.update(build)
+        log.info(
+            "rolemap.build_asked_market",
+            build_id=str(build_id),
+            needed=len(request.needed),
+            due=len(request.due),
+        )
+        return BuildRequestView(
+            _build_view(stored),
+            should_queue=not request.due,
+            should_await_market=bool(request.due),
+        )
+
+    async def check_market(
+        self, owner_id: uuid.UUID, build_id: uuid.UUID, *, deadline: timedelta
+    ) -> MarketWait:
+        """Start a build waiting for the market once every source it waits for
+        has been fetched, or once ``deadline`` has passed since it asked; then
+        it builds on what is stored (ADR 0027)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            build = await mine.builds.get(build_id)
+        if build is None or not build.is_waiting_for_market or build.awaited_since is None:
+            return MarketWait.DONE
+        pending = await self._market.pending_sources(build.awaited_source_ids)
+        now = utcnow()
+        if pending and now - build.awaited_since < deadline:
+            return MarketWait.WAIT
+        async with self._uow.for_owner(owner_id) as mine:
+            current = await mine.builds.get(build_id)
+            if current is None or not current.is_waiting_for_market:
+                return MarketWait.DONE
+            current.start(now)
+            await mine.builds.update(current)
+        log.info(
+            "rolemap.build_released_by_market",
+            build_id=str(build_id),
+            still_due=len(pending),
+            at_deadline=bool(pending),
+        )
+        return MarketWait.START
+
+    async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
+        """The newest build that finished with a map: what the map on screen
+        was built for, and how old its market was."""
+        async with self._uow.for_owner(owner_id) as mine:
+            ready = await mine.builds.get_list(
+                BuildRunFilter(statuses=(BuildRunStatus.READY,)), page_size=1
+            )
+        return _build_view(ready[0]) if ready else None
 
     async def latest_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         async with self._uow.for_owner(owner_id) as mine:
@@ -406,10 +542,11 @@ class RoleMapService:
             )
             raise
 
+        market_data_at = await self._market.oldest_fetch(requested.needed_source_ids)
         async with self._uow.for_owner(owner_id) as mine:
             done = await mine.builds.get(build_id)
             if done is not None and done.is_running:
-                done.ready(utcnow())
+                done.ready(utcnow(), market_data_at=market_data_at)
                 await mine.builds.update(done)
                 # Its fits are scored once, now, whatever it changed (ADR 0024).
                 mine.record(
@@ -457,10 +594,13 @@ class RoleMapService:
     async def _build_recommended(
         self, owner_id: uuid.UUID, candidates: list[RoleCandidate]
     ) -> None:
-        """The first ten candidates the market has, analysed on the user's key.
+        """Ten of the candidates the market has, analysed on the user's key.
 
-        Candidates the market lacks are left unplaced, and roles that no longer
-        come from a kept candidate are retired by reconciliation.
+        Each candidate's openings start with what its own search found; the
+        ten kept are those that read most like the user's strengths, by a
+        local estimate that spends nothing (ADR 0027). Candidates the market
+        lacks are left unplaced, and roles that no longer come from a kept
+        candidate are retired by reconciliation.
         """
         scope = await self._scope_vectors(owner_id)
         if not scope:
@@ -474,6 +614,7 @@ class RoleMapService:
             model_name=self._embedding_model,
         )
         postings = [posting for _key, posting, _vector in scope]
+        searched_by = await self._searched_by(owner_id, candidates, postings)
         assigned = assign_postings(
             vectors,
             [vector for _key, _posting, vector in scope],
@@ -485,13 +626,16 @@ class RoleMapService:
                 )
                 for posting in postings
             ],
+            searched_by=searched_by,
         )
         members: list[list[int]] = [[] for _ in candidates]
         for posting_index, candidate_index in enumerate(assigned):
             if candidate_index is not None:
                 members[candidate_index].append(posting_index)
         counts = {c.id: len(members[i]) for i, c in enumerate(candidates)}
-        keep = keep_on_market([len(m) for m in members], limit=RECOMMENDED_ROLE_COUNT)
+        eligible = keep_on_market([len(m) for m in members], limit=len(candidates))
+        estimates = await self._estimates(owner_id, candidates, members, eligible, scope)
+        keep = choose_by_estimate(estimates, eligible, limit=RECOMMENDED_ROLE_COUNT)
         groups = [
             _Group(
                 candidate=candidates[index],
@@ -504,8 +648,10 @@ class RoleMapService:
             "rolemap.selected",
             owner_id=str(owner_id),
             candidates=len(candidates),
+            candidates_on_market=len(eligible),
             candidates_kept=len(groups),
             postings_in_scope=len(scope),
+            postings_searched=sum(1 for found in searched_by if found),
         )
 
         previous = await self._previous_members(owner_id)
@@ -534,7 +680,63 @@ class RoleMapService:
             )
 
         await self._record_lineage(owner_id, reconciliation)
-        await self._place_candidates(owner_id, candidates, placed=placed, counts=counts)
+        await self._place_candidates(
+            owner_id,
+            candidates,
+            placed=placed,
+            counts=counts,
+            estimates={candidates[i].id: estimates[i] for i in eligible},
+        )
+
+    async def _searched_by(
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingView]
+    ) -> list[frozenset[int]]:
+        """For each posting in scope, the candidates whose own search found
+        it: the market searched each candidate's title in the user's places."""
+        found = await self._market.search_results(
+            titles=[c.title for c in candidates],
+            places=await self._market.target_locations(owner_id),
+        )
+        by_posting: dict[uuid.UUID, set[int]] = {}
+        for index, candidate in enumerate(candidates):
+            for posting_id in found.get(candidate.title, []):
+                by_posting.setdefault(posting_id, set()).add(index)
+        return [frozenset(by_posting.get(posting.id, ())) for posting in postings]
+
+    async def _estimates(
+        self,
+        owner_id: uuid.UUID,
+        candidates: list[RoleCandidate],
+        members: list[list[int]],
+        eligible: list[int],
+        scope: list[tuple[str, PostingView, list[float]]],
+    ) -> list[float]:
+        """The local fit estimate of each eligible candidate; 0 for the rest.
+        Only the user's dimension names and reads are embedded, here."""
+        async with self._uow.for_owner(owner_id) as mine:
+            strengths = await mine.strengths.get_list(CandidateStrengthFilter())
+        estimates = [0.0] * len(candidates)
+        if not eligible or not strengths:
+            return estimates
+        strengths = sorted(strengths, key=lambda s: s.dimension_key)
+        dimension_vectors = embed(
+            [f"{s.name}. {s.read}" for s in strengths], model_name=self._embedding_model
+        )
+        position = {s.dimension_key: d for d, s in enumerate(strengths)}
+        found = fit_estimates(
+            dimension_vectors,
+            [s.weight for s in strengths],
+            [[scope[j][2] for j in members[index]] for index in eligible],
+            [
+                frozenset(
+                    position[key] for key in candidates[index].dimension_keys if key in position
+                )
+                for index in eligible
+            ],
+        )
+        for index, estimate in zip(eligible, found, strict=True):
+            estimates[index] = estimate
+        return estimates
 
     async def _place_candidates(
         self,
@@ -543,6 +745,7 @@ class RoleMapService:
         *,
         placed: dict[uuid.UUID, uuid.UUID],
         counts: dict[uuid.UUID, int],
+        estimates: dict[uuid.UUID, float] | None = None,
     ) -> None:
         """Record what the build made of each candidate: its role, or none.
 
@@ -556,10 +759,15 @@ class RoleMapService:
                 if candidate is None:
                     continue
                 role_id = placed.get(candidate.id)
+                estimate = (estimates or {}).get(candidate.id)
                 if role_id is None:
-                    candidate.unplaced(opening_count=counts.get(candidate.id, 0))
+                    candidate.unplaced(
+                        opening_count=counts.get(candidate.id, 0), fit_estimate=estimate
+                    )
                 else:
-                    candidate.placed(role_id=role_id, opening_count=counts[candidate.id])
+                    candidate.placed(
+                        role_id=role_id, opening_count=counts[candidate.id], fit_estimate=estimate
+                    )
                 await mine.candidates.update(candidate)
 
     async def _analyse(
@@ -993,6 +1201,7 @@ def _candidate_view(candidate: RoleCandidate) -> RoleCandidateView:
         dimension_keys=candidate.dimension_keys,
         role_id=candidate.role_id,
         opening_count=candidate.opening_count,
+        fit_estimate=candidate.fit_estimate,
     )
 
 
@@ -1031,4 +1240,9 @@ def _build_view(build: BuildRun) -> BuildRunView:
         finished_at=build.finished_at,
         error_code=build.error_code,
         error_message=build.error_message,
+        is_waiting_for_market=build.is_waiting_for_market,
+        awaited_since=build.awaited_since,
+        locations=build.locations,
+        needed_source_ids=build.needed_source_ids,
+        market_data_at=build.market_data_at,
     )

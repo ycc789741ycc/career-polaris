@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from advisor.rolemap.domain import (
     CustomRoleAdded,
     OwnerRoleMap,
-    RoleCandidatesReplaced,
     RoleMapBuildFinished,
     RoleMapEvent,
     RoleMapUnitOfWork,
@@ -27,6 +26,7 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.infra.repositories import (
     SqlAlchemyBuildRunRepository,
+    SqlAlchemyCandidateStrengthRepository,
     SqlAlchemyLineageEntryRepository,
     SqlAlchemyRoleCandidateRepository,
     SqlAlchemyRoleMemberRepository,
@@ -45,6 +45,7 @@ class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
         self.lineage = SqlAlchemyLineageEntryRepository(session, owner_id=owner_id)
         self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
         self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
+        self.strengths = SqlAlchemyCandidateStrengthRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:
@@ -92,12 +93,6 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
                         for c in event.changes
                     ]
                 },
-                event.owner_id,
-            )
-        case RoleCandidatesReplaced():
-            return (
-                EventName.ROLE_CANDIDATES_REPLACED,
-                {"titles": list(event.titles)},
                 event.owner_id,
             )
         case RoleMapBuildFinished():
