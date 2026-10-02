@@ -77,7 +77,7 @@ backend/src/
     identity/  profile/  market/  rolemap/  assessment/  target/  gapfill/  gapplan/  resume/  activity/
       __init__.py           # the ONLY importable surface: service interface, views, job functions
       service.py           # use cases: data only through domain/repositories.py (ADR 0011)
-      domain/              # entities, rules, events and repository interfaces; pure Python, no I/O
+      domain/              # one module per concept + repositories.py, events.py, constants.py; pure Python, no I/O
       infra/               # ORM models, mappers, SqlAlchemy* repositories + unit of work, adapters
       factory.py           # create_<c>_service(database, ...): the only place infra is wired in
       jobs.py              # use cases the worker runs
