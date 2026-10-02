@@ -17,8 +17,8 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.gapplan.domain.entities import GapPlan, Milestone, Task
 from advisor.gapplan.domain.events import GapPlanEvent
+from advisor.gapplan.domain.plan import GapPlan, Milestone, Task
 
 
 class Repository[Entity, Filter](Protocol):

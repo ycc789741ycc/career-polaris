@@ -12,26 +12,22 @@ one plan counts in every plan where a matching task closes the same gap.
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
-MIN_MILESTONES = 2
-MAX_MILESTONES = 5
-MIN_TASKS_PER_MILESTONE = 2
-MAX_TASKS_PER_MILESTONE = 5
-MAX_PROJECTS = 4
-
-# The prototype's "The four things between you and …": enough to act on, few
-# enough that the first one is obviously first.
-SHOWN_GAPS = 4
-
-# Two tasks are the same piece of work when they close a common gap and share
-# this much of their wording. Regenerating rewords tasks; it should not make
-# finished work look unfinished.
-TASK_MATCH_THRESHOLD = 0.6
-
-MAX_STEPPING_STONES = 3
+from advisor.gapplan.domain.constants import (
+    MAX_MILESTONES,
+    MAX_PROJECTS,
+    MAX_STEPPING_STONES,
+    MAX_TASKS_PER_MILESTONE,
+    MIN_MILESTONES,
+    MIN_TASKS_PER_MILESTONE,
+    TASK_MATCH_THRESHOLD,
+)
 
 
 class PlanStatus(StrEnum):
@@ -198,3 +194,103 @@ def stepping_stones(
     better = [r for r in roles if r.role_id != target_role_id and r.fit > target_fit]
     better.sort(key=lambda r: (-r.fit, -r.openings, r.name))
     return tuple(better[:MAX_STEPPING_STONES])
+
+
+@dataclass(slots=True)
+class GapPlan:
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    # The Target (ADR 0022): one of the user's roles, and optionally one
+    # opening in it. Plain ids: the target component owns what they mean.
+    role_id: uuid.UUID
+    job_posting_id: uuid.UUID | None
+    target_label: str
+    version: int
+    status: PlanStatus
+    created_at: datetime
+    error_code: str | None = None
+    error_message: str | None = None
+    snapshot: dict[str, Any] | None = None
+    gaps: tuple[dict[str, Any], ...] = ()
+    projects: tuple[dict[str, Any], ...] = ()
+    stepping_stones: tuple[dict[str, Any], ...] = ()
+    model_id: str | None = None
+    template_version: str | None = None
+    drafted_at: datetime | None = None
+
+    @classmethod
+    def requested(
+        cls,
+        *,
+        owner_id: uuid.UUID,
+        role_id: uuid.UUID,
+        job_posting_id: uuid.UUID | None,
+        label: str,
+        version: int,
+        at: datetime,
+    ) -> GapPlan:
+        return cls(
+            id=uuid.uuid4(),
+            owner_id=owner_id,
+            role_id=role_id,
+            job_posting_id=job_posting_id,
+            target_label=label[:400],
+            version=version,
+            status=PlanStatus.DRAFTING,
+            created_at=at,
+        )
+
+    def drafted(
+        self,
+        *,
+        snapshot: dict[str, Any],
+        label: str,
+        gaps: tuple[dict[str, Any], ...],
+        projects: tuple[dict[str, Any], ...],
+        stepping_stones: tuple[dict[str, Any], ...],
+        model_id: str,
+        template_version: str,
+        at: datetime,
+    ) -> None:
+        self.snapshot = snapshot
+        self.target_label = label[:400]
+        self.gaps = gaps
+        self.projects = projects
+        self.stepping_stones = stepping_stones
+        self.model_id = model_id
+        self.template_version = template_version
+        self.status = PlanStatus.READY
+        self.drafted_at = at
+
+    def failed(self, *, code: str, message: str) -> None:
+        self.status = PlanStatus.FAILED
+        self.error_code = code
+        self.error_message = message
+
+
+@dataclass(slots=True)
+class Milestone:
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    plan_id: uuid.UUID
+    position: int
+    title: str
+    time_window: str
+    outcome: str
+
+
+@dataclass(slots=True)
+class Task:
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    plan_id: uuid.UUID
+    milestone_id: uuid.UUID
+    position: int
+    text: str
+    due: str
+    closes: tuple[str, ...]
+    done_at: datetime | None = None
+
+    def mark(self, done: bool, *, at: datetime) -> None:
+        """Ticking an already-done task keeps when it was first done."""
+        self.done_at = (self.done_at or at) if done else None
