@@ -195,7 +195,7 @@ component imports from `domain/__init__.py`, so a class can move between
 concept modules without changing any import outside `domain/`.
 `tests/unit/advisor/test_domain_layout.py` keeps it that way.
 
-Twenty-two `import-linter` contracts in `backend/.importlinter` enforce those
+Twenty-three `import-linter` contracts in `backend/.importlinter` enforce those
 boundaries, and they run in CI. If one breaks, the design is wrong, not the
 contract.
 
@@ -225,8 +225,8 @@ contract.
   role map", each with a cost they confirmed. Neither the market
   nor a change of locations builds one, because a build spends their key.
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
-  `market_user.private_job_posting`, which the crawler role physically cannot
-  reach.
+  `target.private_job_posting`, in a schema the crawler role has no grant on,
+  so it physically cannot reach them.
 - **Row-level security on every owner-zone table**, keyed on a per-transaction
   `app.user_id`. Forgetting a `WHERE owner_id` returns nothing, not someone
   else's rows.
@@ -260,7 +260,7 @@ In: the gap plan — plan a route to a Target (a role, and optionally one openin
 in it; ADR 0022), with gaps ranked by the fit points each is worth, milestones,
 tasks and projects drafted on the user's key, versions per Target with finished
 work carried forward, and plan history. `target` resolves what a plan aims at
-and has no tables (ADR 0005). Drafting is a job whose row the page polls
+(ADR 0005); since ADR 0033 it also keeps the postings of the user's own. Drafting is a job whose row the page polls
 (ADR 0006).
 
 And the Resume Advisor: a résumé written for a Target from cited evidence, over
@@ -451,13 +451,13 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
     `resume.resume` and `gapfill.question_set` keep exactly one, by check
     constraint. Routes take the three ids in bodies and query strings
     (`api.dependencies.TargetQuery`); the hash says `?posting=`.
-  - **Its evaluation, in `rolemap`.** `POST /own-postings` (priced by
-    `/own-postings/cost-estimate`) stores the JD privately and records a
-    `PostingEvaluation` run, which `rolemap.evaluate_own_posting` works
-    through and the Advisor polls. The run reads `PostingRequirement`s
+  - **Its evaluation, in `target` since ADR 0033.** `POST /own-postings`
+    (priced by `/own-postings/cost-estimate`) stores the JD privately and
+    records a `PostingEvaluation` run, which `target.evaluate_own_posting`
+    works through and the Advisor polls. The run reads `PostingRequirement`s
     (`rolemap.extract`) and the AI's `PostingRequirementFit` (`rolemap.fit`),
-    then works out the `PostingFit` (`basis = own`) locally with
-    `get_posting_fit`: a `PostingFit` is never an AI call. No build reads or
+    then works out the fit (`OwnPostingFit`) locally with
+    `get_posting_fit_result`: a posting's fit is never an AI call. No build reads or
     scores it; after a new analysis it is `is_stale`, and
     `/own-postings/{id}/rescore` re-runs the projection only when asked.
   - **What went.** `Role.origin`, `company_name` and `private_posting_id`,
@@ -489,7 +489,7 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   reweights the role's requirements by it (`OPENING_EMPHASIS`, a floor and a
   ceiling, in `constants.py`) and evaluates them with weighted gaps
   (`SkillGap.weight`, which `closing_lifts` honours). `compute_fits` stores
-  them as `PostingFit`s with `basis = role` and the opening's `role_id`,
+  them as `PostingFit`s with the opening's `role_id`,
   replaced per role by each build as a cache. `GET /matched-postings` ranks a
   role's openings by them (`fit_basis: "posting"`); Top matched openings asks
   for the selected role's with `one_per_company=true`, and reloads on every
@@ -505,3 +505,25 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   `GET /role-candidates`. Each Top matched opening reads "title · company",
   with pay, location and any credit beneath; the role it is in is the one
   selected, so no row names it.
+
+## Phase 9 scope
+
+A posting of the user's own belongs to Target (ADR 0033), one branch per step
+under `epic/no-ticket/own-posting-target`:
+
+- **Target owns it end to end.** The `target` schema holds
+  `private_job_posting` (the JD, moved from `market_user`, ids kept),
+  `posting_evaluation`, `posting_requirement`, `posting_requirement_fit` and
+  `own_posting_fit`; the crawler has no grant on it. `target` has the full
+  component layout (`domain/`, `infra/`, `factory.py`, `jobs.py`), the
+  `/own-postings` routes live in `api/routes/target.py`, and the job is
+  `target.evaluate_own_posting`.
+- **The fit rules stay in `rolemap`, lent as a stateless kit.**
+  `RoleMapService.strengths`, `extract_requirements`, `project_requirements`,
+  `estimate_requirements` and `estimate_projection`, and the pure
+  `get_projection_digest` and `get_posting_fit_result`, store nothing.
+  `rolemap.posting_fit` holds openings' fits only: no `basis`, `role_id`
+  NOT NULL.
+- **`market` has no pasted JDs.** `PrivateJobPosting`, the paste methods and
+  `GET /job-descriptions` are gone. Migration 0030 moved the data; 0015, 0025
+  and 0028 are guarded so a fresh database still builds.

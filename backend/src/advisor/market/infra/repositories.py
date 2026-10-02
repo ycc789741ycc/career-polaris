@@ -36,9 +36,6 @@ from advisor.market.domain import (
     PostingEmbeddingRepository,
     PostingScope,
     PostingStatus,
-    PrivateJobPosting,
-    PrivateJobPostingFilter,
-    PrivateJobPostingRepository,
     SearchResult,
     SearchResultFilter,
     SearchResultRepository,
@@ -397,36 +394,3 @@ class SqlAlchemyMarketPreferenceRepository(
         if filter.market is not None:
             found.append(preference.market == filter.market)
         return found
-
-
-class SqlAlchemyPrivateJobPostingRepository(
-    SqlAlchemyRepository[PrivateJobPosting, models.PrivateJobPosting, PrivateJobPostingFilter],
-    PrivateJobPostingRepository,
-):
-    model = models.PrivateJobPosting
-    id_column = models.PrivateJobPosting.id
-    created_column = models.PrivateJobPosting.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.PrivateJobPosting.owner_id
-    )
-    noun = "job description"
-
-    def to_entity(self, row: models.PrivateJobPosting) -> PrivateJobPosting:
-        return mappers.private_posting(row)
-
-    def to_row(self, entity: PrivateJobPosting) -> models.PrivateJobPosting:
-        return mappers.private_posting_row(entity)
-
-    def apply(self, row: models.PrivateJobPosting, entity: PrivateJobPosting) -> None:
-        mappers.apply_private_posting(row, entity)
-
-    def id_of(self, entity: PrivateJobPosting) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: PrivateJobPostingFilter) -> list[ColumnElement[bool]]:
-        vector = models.PrivateJobPosting.vector
-        if filter.has_vector is True:
-            return [vector.is_not(None)]
-        if filter.has_vector is False:
-            return [vector.is_(None)]
-        return []

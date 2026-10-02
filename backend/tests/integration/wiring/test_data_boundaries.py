@@ -97,7 +97,8 @@ async def test_every_owner_zone_table_actually_has_the_policy(database: Database
         "profile.evidence",
         "profile.source_connection",
         "identity.provider_credential",
-        "market_user.private_job_posting",
+        "target.private_job_posting",
+        "target.own_posting_fit",
         "assessment.skill_assessment",
         "rolemap.role",
         "rolemap.role_candidate",
@@ -111,13 +112,28 @@ async def test_every_owner_zone_table_actually_has_the_policy(database: Database
 async def test_the_crawler_role_cannot_touch_user_data(crawler_engine, table: str) -> None:
     """The crawler parses hostile HTML. It must not be able to reach a user row.
 
-    market_user.private_job_posting is the one that matters most: pasted JDs
-    are private by storage location, so the crawler cannot see them even by
-    mistake.
+    target.private_job_posting is the one that matters most: pasted JDs are
+    private by storage location, so the crawler cannot see them even by
+    mistake (ADR 0033).
     """
     async with crawler_engine.connect() as connection:
         with pytest.raises(Exception, match=r"permission denied|does not exist"):
             await connection.execute(text(f"SELECT count(*) FROM {table}"))
+
+
+async def test_the_crawler_role_has_no_way_into_the_target_schema(
+    database: Database, crawler_engine
+) -> None:
+    """Where pasted JDs live: the schema exists, and the crawler may not use
+    it, so its tables are refused rather than merely missing."""
+    async with database.shared() as session:
+        exists = await session.execute(text("SELECT to_regclass('target.private_job_posting')"))
+        assert exists.scalar_one() is not None
+    async with crawler_engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT has_schema_privilege('crawler_rw', 'target', 'USAGE')")
+        )
+        assert result.scalar_one() is False
 
 
 async def test_the_crawler_role_can_do_its_own_job(crawler_engine) -> None:

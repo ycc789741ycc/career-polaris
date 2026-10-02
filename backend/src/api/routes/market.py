@@ -1,4 +1,4 @@
-"""Market HTTP surface: target locations and pasted JDs."""
+"""Market HTTP surface: target locations and the market they take in."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.common import StringPage
 from api.schemas.market import (
     MarketScope,
-    PastedJobDescription,
-    PastedJobDescriptionPage,
     TargetLocationOption,
     TargetLocationOptionPage,
     TargetLocationsRequest,
@@ -49,14 +47,6 @@ async def set_target_locations(
 @router.get("/market-scope")
 async def market_scope(user: CurrentUser, deps: Deps) -> MarketScope:
     return MarketScope.from_view(await deps.market.scope(user))
-
-
-@router.get("/job-descriptions")
-async def list_pasted(user: CurrentUser, deps: Deps, paging: Paging) -> PastedJobDescriptionPage:
-    """The user's pasted JDs, newest first. Each is a posting of the user's
-    own, which is where one is added (``POST /own-postings``)."""
-    found = paginate(await deps.market.private_postings(user), paging.page, paging.page_size)
-    return PastedJobDescriptionPage.of(found, PastedJobDescription.from_view)
 
 
 __all__ = ["router"]

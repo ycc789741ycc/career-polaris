@@ -41,8 +41,6 @@ from advisor.market.domain import (
     PostingEmbeddingFilter,
     PostingScope,
     PostingStatus,
-    PrivateJobPosting,
-    PrivateJobPostingFilter,
     SalaryBand,
     SalaryRange,
     SearchResultFilter,
@@ -290,7 +288,7 @@ class CrawlIngest:
 
 
 class MarketService:
-    """Target locations and pasted JDs, and the sources a build needs."""
+    """Target locations, the postings in scope, and the sources a build needs."""
 
     def __init__(self, uow: MarketUnitOfWork, *, windows: FreshWindows) -> None:
         self._uow = uow
@@ -345,65 +343,6 @@ class MarketService:
         postings = await self.postings_in_scope(owner_id)
         return MarketScopeView(target_locations=locations, open_posting_count=len(postings))
 
-    async def paste_job_description(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        company_name: str,
-        title: str,
-        location: str | None,
-        description: str,
-        url: str | None = None,
-    ) -> PostingView:
-        """Store a JD the user pasted. Private to them, always."""
-        if not description.strip():
-            raise ValidationError("a job description is required")
-        if not title.strip():
-            raise ValidationError("a job title is required")
-
-        key = canonical_key(company=company_name, title=title, location=location)
-
-        # A private copy may link to a matching crawled posting so the user gets
-        # weekly updates. Nothing flows back the other way.
-        async with self._uow.shared() as market:
-            match = _first(
-                await market.postings.get_list(JobPostingFilter(canonical_key=key), page_size=1)
-            )
-
-        async with self._uow.for_owner(owner_id) as mine:
-            created = await mine.private_postings.create(
-                PrivateJobPosting.pasted(
-                    owner_id=owner_id,
-                    company_name=company_name,
-                    title=title,
-                    location=location,
-                    description=description,
-                    url=url,
-                    shared_posting_id=match.id if match is not None else None,
-                )
-            )
-        return _private_posting_view(created)
-
-    async def private_postings(self, owner_id: uuid.UUID) -> list[PostingView]:
-        """Newest first. One user's pasted JDs: a small set, read whole."""
-        async with self._uow.for_owner(owner_id) as mine:
-            pasted = await mine.private_postings.get_list(PrivateJobPostingFilter())
-        return [_private_posting_view(p) for p in pasted]
-
-    async def private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> PostingView:
-        """One pasted JD. Another user's is simply not found: it is behind RLS."""
-        async with self._uow.for_owner(owner_id) as mine:
-            posting = await mine.private_postings.get(posting_id)
-            if posting is None:
-                raise NotFoundError("job description not found", posting_id=str(posting_id))
-            return _private_posting_view(posting)
-
-    async def delete_private_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> None:
-        """Delete one pasted JD. Idempotent; another user's is simply not found."""
-        async with self._uow.for_owner(owner_id) as mine:
-            if await mine.private_postings.get(posting_id) is not None:
-                await mine.private_postings.delete(posting_id)
-
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         """Every shared posting this user's role map is built from: the open
         postings in their target locations.
@@ -411,7 +350,7 @@ class MarketService:
         A user who has chosen no location gets the platform's baseline postings
         instead (domain decision 15), so a first role map has something to
         group. Pasted JDs are not here: each is a posting of the user's own,
-        aimed at from the Advisor (Phase 8), and never on the map.
+        kept by Target (ADR 0033), and never on the map.
         """
         scope = PostingScope(markets=tuple(await self.target_locations(owner_id)))
 
@@ -667,17 +606,4 @@ def _shared_posting_view(posting: JobPosting, company_name: str) -> PostingView:
         company_id=posting.company_id,
         source_kind=posting.source_kind,
         credited_to=credited_source(posting.url),
-    )
-
-
-def _private_posting_view(posting: PrivateJobPosting) -> PostingView:
-    return PostingView(
-        id=posting.id,
-        company_name=posting.company_name,
-        title=posting.title,
-        location=posting.location,
-        url=posting.url,
-        description=posting.description,
-        visibility=Visibility.PRIVATE,
-        salary=None,
     )

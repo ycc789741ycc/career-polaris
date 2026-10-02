@@ -1,7 +1,6 @@
 """The role map at the HTTP edge: its estimate with the fits it is scored with
-(ADR 0024), the candidates it comes from, a rebuild queued once, or left
-waiting for an analysis (ADR 0018), and the postings the user brings
-themselves (Phase 8).
+(ADR 0024), the candidates it comes from, and a rebuild queued once, or left
+waiting for an analysis (ADR 0018).
 
 Runs the real router and error handlers in-process against a stand-in service —
 no network, no infra.
@@ -22,7 +21,6 @@ from advisor.rolemap import (
     BuildRequestView,
     BuildRunView,
     FitView,
-    OwnPostingView,
     RoleCandidateView,
     RoleView,
 )
@@ -34,14 +32,11 @@ from wiring import queue
 
 class FakeRoleMap:
     def __init__(self) -> None:
-        self.added: list[dict[str, Any]] = []
-        self.removed: list[uuid.UUID] = []
         self.finished: BuildRunView | None = None
         # How many recommended roles each fits estimate was asked to price.
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
         self.one_per_company: list[bool | None] = []
-        self.rescore_run: uuid.UUID | None = RUN_ID
 
     async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
         self.priced.append(kw)
@@ -85,26 +80,6 @@ class FakeRoleMap:
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
 
-    async def estimate_own_posting(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
-        return {"cost_usd": "0.18", "model_id": "claude-opus-5", "rate_is_published": True}
-
-    async def add_own_posting(
-        self, owner_id: uuid.UUID, **kw: Any
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        self.added.append(kw)
-        return _own(kw["title"], status="running"), RUN_ID
-
-    async def rescore_own_posting(
-        self, owner_id: uuid.UUID, posting_id: uuid.UUID
-    ) -> tuple[OwnPostingView, uuid.UUID | None]:
-        return _own("Staff Engineer", status="running"), self.rescore_run
-
-    async def own_postings(self, owner_id: uuid.UUID) -> list[OwnPostingView]:
-        return [_own("Staff Engineer", status="ready", fit=64)]
-
-    async def remove_own_posting(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> None:
-        self.removed.append(posting_id)
-
     async def map_roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The roles as drawn: counted live, two openings left of the five the
         build stored."""
@@ -131,22 +106,6 @@ class FakeRoleMap:
 
 
 ROLE_ID = uuid.uuid4()
-JD_ID = uuid.uuid4()
-RUN_ID = uuid.uuid4()
-
-
-def _own(title: str, *, status: str, fit: int | None = None) -> OwnPostingView:
-    return OwnPostingView(
-        private_job_posting_id=JD_ID,
-        title=title,
-        company_name="Northwind",
-        status=status,
-        error_code=None,
-        error_message=None,
-        fit=fit,
-        is_stale=False,
-        scored_at=None,
-    )
 
 
 def _role(*, opening_count: int) -> RoleView:
@@ -312,85 +271,9 @@ def test_a_rebuild_during_an_analysis_waits_and_is_not_queued(
     assert queued == []
 
 
-# --- postings of the user's own (Phase 8) -------------------------------------
-
-
-def test_a_posting_of_your_own_is_priced_first(client: TestClient) -> None:
-    response = client.post(
-        "/own-postings/cost-estimate",
-        json={"title": "Staff Engineer", "job_description": "Own the ledger."},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "cost_usd": "0.18",
-        "model_id": "claude-opus-5",
-        "rate_is_published": True,
-    }
-
-
-def test_a_posting_of_your_own_is_queued_to_be_scored_and_builds_nothing(
-    client: TestClient,
-    rolemap: FakeRoleMap,
-    activity: FakeActivity,
-    queued: list[dict[str, Any]],
-) -> None:
-    response = client.post(
-        "/own-postings",
-        json={
-            "title": "Staff Engineer",
-            "company_name": "Northwind",
-            "job_description": "Own the ledger.",
-        },
-    )
-
-    assert response.status_code == 202
-    body = response.json()
-    assert (body["private_job_posting_id"], body["status"]) == (str(JD_ID), "running")
-    assert rolemap.added == [
-        {
-            "title": "Staff Engineer",
-            "company_name": "Northwind",
-            "job_description": "Own the ledger.",
-        }
-    ]
-    assert [c["name"] for c in queued] == ["rolemap.evaluate_own_posting"]
-    assert queued[0]["evaluation_id"] == str(RUN_ID)
-    assert activity.requests == 0
-
-
-@pytest.mark.parametrize(
-    "body", [{"title": "", "job_description": "JD"}, {"title": "Staff Engineer"}]
-)
-def test_a_posting_of_your_own_needs_a_title_and_a_jd(
-    client: TestClient, rolemap: FakeRoleMap, body: dict[str, str]
-) -> None:
-    assert client.post("/own-postings", json=body).status_code == 422
-    assert rolemap.added == []
-
-
-def test_the_postings_of_your_own_are_listed_with_their_fit(client: TestClient) -> None:
-    body = client.get("/own-postings").json()
-
-    assert body["total"] == 1
-    assert (body["items"][0]["status"], body["items"][0]["fit"]) == ("ready", 64)
-
-
-@pytest.mark.parametrize("run", [RUN_ID, None])
-def test_a_rescore_is_queued_unless_one_is_already_running(
-    client: TestClient, rolemap: FakeRoleMap, queued: list[dict[str, Any]], run: uuid.UUID | None
-) -> None:
-    rolemap.rescore_run = run
-
-    response = client.post(f"/own-postings/{JD_ID}/rescore")
-
-    assert response.status_code == 202
-    assert [c["name"] for c in queued] == (["rolemap.evaluate_own_posting"] if run else [])
-
-
-def test_a_posting_of_your_own_is_removed(client: TestClient, rolemap: FakeRoleMap) -> None:
-    assert client.delete(f"/own-postings/{JD_ID}").status_code == 204
-    assert rolemap.removed == [JD_ID]
+def test_postings_of_your_own_are_not_the_role_maps(client: TestClient) -> None:
+    """They are Target's (ADR 0033)."""
+    assert client.get("/own-postings").status_code == 404
 
 
 def test_there_are_no_custom_roles_to_add(client: TestClient) -> None:

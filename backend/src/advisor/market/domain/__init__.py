@@ -33,7 +33,6 @@ from advisor.market.domain.posting import (
     canonical_key,
     expired_keys,
 )
-from advisor.market.domain.private_posting import PrivateJobPosting
 from advisor.market.domain.repositories import (
     CompanyFilter,
     CompanyRepository,
@@ -47,8 +46,6 @@ from advisor.market.domain.repositories import (
     OwnerMarket,
     PostingEmbeddingFilter,
     PostingEmbeddingRepository,
-    PrivateJobPostingFilter,
-    PrivateJobPostingRepository,
     Repository,
     SearchResultFilter,
     SearchResultRepository,
@@ -126,9 +123,6 @@ __all__ = [
     "PostingEmbeddingRepository",
     "PostingScope",
     "PostingStatus",
-    "PrivateJobPosting",
-    "PrivateJobPostingFilter",
-    "PrivateJobPostingRepository",
     "Region",
     "Repository",
     "SalaryBand",

@@ -32,7 +32,7 @@ from advisor.resume import (
     create_resume_service,
 )
 from advisor.rolemap import RoleMapService, create_rolemap_service
-from advisor.target import TargetRef, TargetService
+from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
@@ -82,6 +82,7 @@ class World:
     market: MarketService
     rolemap: RoleMapService
     assessment: AssessmentService
+    target: TargetService
     resume: ResumeService
     store: ObjectStore
     evidence_id: str
@@ -139,7 +140,7 @@ async def world(
         confidence_threshold=settings.assessment_confidence_threshold,
         candidate_count=settings.role_candidate_count,
     )
-    target = TargetService(assessment=assessment, rolemap=rolemap)
+    target = create_target_service(database, assessment=assessment, rolemap=rolemap)
     resume = create_resume_service(
         database,
         target=target,
@@ -179,6 +180,7 @@ async def world(
         market=market,
         rolemap=rolemap,
         assessment=assessment,
+        target=target,
         resume=resume,
         store=store,
         evidence_id=str(evidence.id),
@@ -227,14 +229,14 @@ async def _own_posting(
 ) -> TargetRef:
     """A posting of the user's own, read and scored when it is added, aimed at
     as a Target (Phase 8)."""
-    posting, run_id = await world.rolemap.add_own_posting(
+    posting, run_id = await world.target.add_own_posting(
         account,
         title=title,
         company_name=company,
         job_description="Set technical direction across three product teams...",
     )
     _score_the_jd(world.stub)
-    await world.rolemap.evaluate_own_posting(account, run_id)
+    await world.target.evaluate_own_posting(account, run_id)
     return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))
 
 

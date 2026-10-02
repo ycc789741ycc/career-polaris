@@ -77,8 +77,8 @@ class RoleMember(Base, OwnedMixin):
     role_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("rolemap.role.id", ondelete="CASCADE"), nullable=False
     )
-    # The shared posting id, or "private:<id>" for a pasted JD. Kept as text so
-    # reconciliation compares the same keys the domain works with.
+    # The shared posting id. Kept as text so reconciliation compares the same
+    # keys the domain works with.
     posting_key: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
@@ -279,107 +279,25 @@ class RoleFit(Base, OwnedMixin):
     )
 
 
-class PostingEvaluation(Base, OwnedMixin):
-    """One run reading and scoring a posting of the user's own (Phase 8),
-    recorded before it is queued so the Advisor can poll it (ADR 0006)."""
-
-    __tablename__ = "posting_evaluation"
-    __table_args__ = (
-        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
-        Index(
-            "ix_posting_evaluation_owner_posting",
-            "owner_id",
-            "private_job_posting_id",
-            "requested_at",
-        ),
-        {"schema": "rolemap"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    # The pasted JD, in market_user.private_job_posting. No foreign key: the
-    # schemas belong to different components.
-    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
-    # False for a rescore, which keeps the requirements already read.
-    reads_requirements: Mapped[bool] = mapped_column(nullable=False)
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    requested_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class PostingRequirement(Base, OwnedMixin):
-    """Free text read out of a posting of the user's own. It has no dimension."""
-
-    __tablename__ = "posting_requirement"
-    __table_args__ = ({"schema": "rolemap"},)
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
-    statement: Mapped[str] = mapped_column(Text, nullable=False)
-    weight: Mapped[float] = mapped_column(Float, nullable=False)
-    expected_level: Mapped[str] = mapped_column(String(32), nullable=False)
-
-
-class PostingRequirementFit(Base, OwnedMixin):
-    """The AI's evaluation of a posting of the user's own: its requirements
-    mapped onto the user's dimensions, with targets. Every one taken is kept;
-    the newest per posting is the current one."""
-
-    __tablename__ = "posting_requirement_fit"
-    __table_args__ = (
-        Index(
-            "ix_posting_requirement_fit_owner_posting",
-            "owner_id",
-            "private_job_posting_id",
-            "created_at",
-        ),
-        {"schema": "rolemap"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    private_job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    # [{statement, weight, expected_level}], as scored.
-    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
-    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
-    # A hash of what it read, as on role_fit.
-    requirements_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-
 class PostingFit(Base, OwnedMixin):
-    """The user's fit to one posting, worked out locally from an AI fit; never
-    an AI call. For a posting of the user's own every one is kept, the newest
-    current; an opening's are replaced by each build, as a cache."""
+    """The user's fit to one opening in one of their roles, worked out locally
+    from the role's fit; never an AI call. Replaced by each build, as a cache.
+    A posting of the user's own has its fit in ``target`` (ADR 0033)."""
 
     __tablename__ = "posting_fit"
     __table_args__ = (
-        CheckConstraint("basis IN ('own', 'role')", name="basis"),
-        CheckConstraint("(basis = 'role') = (role_id IS NOT NULL)", name="role"),
         Index("ix_posting_fit_owner_role", "owner_id", "role_id"),
         Index("ix_posting_fit_owner_key", "owner_id", "posting_key", "created_at"),
         {"schema": "rolemap"},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    # "private:<id>" for a posting of the user's own, as role_member keys it.
+    # The shared posting's id, as role_member keys it.
     posting_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    basis: Mapped[str] = mapped_column(String(8), nullable=False)
-    # The AI fit it was worked out from: a posting_requirement_fit for `own`,
-    # the role's role_fit for `role`.
+    # The role's role_fit it was worked out from.
     source_fit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    # An opening's role; none for a posting of the user's own.
-    role_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("rolemap.role.id", ondelete="CASCADE"), nullable=True
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rolemap.role.id", ondelete="CASCADE"), nullable=False
     )
     assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)

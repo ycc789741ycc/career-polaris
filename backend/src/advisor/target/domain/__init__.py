@@ -1,3 +1,31 @@
+from advisor.target.domain.constants import MAX_COMPANY_NAME, MAX_JOB_DESCRIPTION, MAX_TITLE
+from advisor.target.domain.own_posting import (
+    OwnPostingError,
+    PostingEvaluation,
+    PostingEvaluationStatus,
+    PrivateJobPosting,
+    parse_own_posting,
+)
+from advisor.target.domain.posting_fit import (
+    OwnPostingFit,
+    PostingRequirement,
+    PostingRequirementFit,
+)
+from advisor.target.domain.repositories import (
+    OwnerTarget,
+    OwnPostingFitFilter,
+    OwnPostingFitRepository,
+    PostingEvaluationFilter,
+    PostingEvaluationRepository,
+    PostingRequirementFilter,
+    PostingRequirementFitFilter,
+    PostingRequirementFitRepository,
+    PostingRequirementRepository,
+    PrivateJobPostingFilter,
+    PrivateJobPostingRepository,
+    Repository,
+    TargetUnitOfWork,
+)
 from advisor.target.domain.snapshot import (
     DimensionGap,
     Requirement,
@@ -11,13 +39,37 @@ from advisor.target.domain.snapshot import (
 )
 
 __all__ = [
+    "MAX_COMPANY_NAME",
+    "MAX_JOB_DESCRIPTION",
+    "MAX_TITLE",
     "DimensionGap",
+    "OwnPostingError",
+    "OwnPostingFit",
+    "OwnPostingFitFilter",
+    "OwnPostingFitRepository",
+    "OwnerTarget",
+    "PostingEvaluation",
+    "PostingEvaluationFilter",
+    "PostingEvaluationRepository",
+    "PostingEvaluationStatus",
+    "PostingRequirement",
+    "PostingRequirementFilter",
+    "PostingRequirementFit",
+    "PostingRequirementFitFilter",
+    "PostingRequirementFitRepository",
+    "PostingRequirementRepository",
+    "PrivateJobPosting",
+    "PrivateJobPostingFilter",
+    "PrivateJobPostingRepository",
+    "Repository",
     "Requirement",
     "RequirementBasis",
     "TargetError",
     "TargetRef",
     "TargetSnapshot",
+    "TargetUnitOfWork",
     "UncoveredGap",
     "gap_key_for_dimension",
     "gap_key_for_uncovered",
+    "parse_own_posting",
 ]

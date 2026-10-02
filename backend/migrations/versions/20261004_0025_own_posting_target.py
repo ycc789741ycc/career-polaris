@@ -24,7 +24,9 @@ so it is lifted on the tables read and written here, and restored after.
 
 Written to be idempotent, since the baseline migration builds tables from the
 live ORM metadata: on a fresh database the new tables and columns already
-exist, and ``rolemap.role`` never had the custom-role columns.
+exist, and ``rolemap.role`` never had the custom-role columns. Since ADR 0033
+a fresh database has no ``market_user.private_job_posting`` either, and so no
+custom role to move.
 
 Downgrading drops the new tables and columns and gives ``rolemap.role`` its
 columns back, every role ``recommended``. It cannot turn postings back into
@@ -35,6 +37,7 @@ none to give it.
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import text
 
 revision: str = "0025_own_posting_target"
 down_revision: str | None = "0024_retire_merged_roles"
@@ -68,13 +71,18 @@ def upgrade() -> None:
         op.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS private_job_posting_id uuid")
         op.execute(f"ALTER TABLE {table} ALTER COLUMN role_id DROP NOT NULL")
 
-    tables = (*_NEW, *(table for table, _ in _AIMED), *_READ)
+    tables = tuple(
+        table
+        for table in (*_NEW, *(table for table, _ in _AIMED), *_READ)
+        if op.get_bind().execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar()
+    )
     _lift_force(tables)
     op.execute(
         "DO $$ BEGIN "  # noqa: S608
         "IF EXISTS (SELECT 1 FROM information_schema.columns"
         "  WHERE table_schema = 'rolemap' AND table_name = 'role'"
-        "  AND column_name = 'private_posting_id') THEN "
+        "  AND column_name = 'private_posting_id')"
+        " AND to_regclass('market_user.private_job_posting') IS NOT NULL THEN "
         f"{_MOVE_CUSTOM_ROLES}"
         "END IF; "
         "END $$"

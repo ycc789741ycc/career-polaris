@@ -12,12 +12,15 @@ Nothing is written here: the next build works every opening's fit out, at no
 cost, and until then an opening ranks by its role's fit, as before.
 
 Idempotent, since the baseline migration builds tables from the live ORM
-metadata. Downgrading deletes the openings' fits and drops the column.
+metadata: since ADR 0033 a fresh database's ``posting_fit`` has no ``basis``,
+so there is no check to add. Downgrading deletes the openings' fits and drops
+the column.
 """
 
 from __future__ import annotations
 
 from alembic import op
+from sqlalchemy import text
 
 revision: str = "0028_opening_fits"
 down_revision: str | None = "0027_fit_requirements_digest"
@@ -35,6 +38,18 @@ def upgrade() -> None:
     op.execute(
         f"CREATE INDEX IF NOT EXISTS ix_posting_fit_owner_role ON {_TABLE} (owner_id, role_id)"
     )
+    has_basis = (
+        op.get_bind()
+        .execute(
+            text(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema = 'rolemap'"
+                " AND table_name = 'posting_fit' AND column_name = 'basis'"
+            )
+        )
+        .scalar()
+    )
+    if not has_basis:
+        return
     op.execute(f"ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS ck_posting_fit_basis")
     op.execute(
         f"ALTER TABLE {_TABLE} ADD CONSTRAINT ck_posting_fit_basis CHECK (basis IN ('own', 'role'))"

@@ -8,18 +8,12 @@ from __future__ import annotations
 
 # --- role --------------------------------------------------------------------
 
-# A role's title, as an analysis recommends it and a build names it; also a
-# posting of the user's own's title.
+# A role's title, as an analysis recommends it and a build names it.
 MAX_ROLE_TITLE = 255
 
 # The most requirements one role is read out with. A fit is projected over them,
 # so it also bounds what scoring a role's fit can cost.
 MAX_ROLE_REQUIREMENTS = 20
-
-
-# --- own_posting -------------------------------------------------------------
-
-MAX_COMPANY_NAME = 255
 
 
 # --- candidate ---------------------------------------------------------------

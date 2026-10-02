@@ -26,18 +26,9 @@ from advisor.rolemap.domain import (
     LineageEntry,
     LineageEntryFilter,
     LineageEntryRepository,
-    PostingEvaluation,
-    PostingEvaluationFilter,
-    PostingEvaluationRepository,
     PostingFit,
     PostingFitFilter,
     PostingFitRepository,
-    PostingRequirement,
-    PostingRequirementFilter,
-    PostingRequirementFit,
-    PostingRequirementFitFilter,
-    PostingRequirementFitRepository,
-    PostingRequirementRepository,
     Role,
     RoleCandidate,
     RoleCandidateFilter,
@@ -284,100 +275,6 @@ class SqlAlchemyRoleFitRepository(
         if filter.assessment_id is not None:
             found.append(fit.assessment_id == filter.assessment_id)
         return found
-
-
-class SqlAlchemyPostingEvaluationRepository(
-    SqlAlchemyRepository[PostingEvaluation, models.PostingEvaluation, PostingEvaluationFilter],
-    PostingEvaluationRepository,
-):
-    model = models.PostingEvaluation
-    id_column = models.PostingEvaluation.id
-    created_column = models.PostingEvaluation.requested_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.PostingEvaluation.owner_id
-    )
-    noun = "posting evaluation"
-
-    def to_entity(self, row: models.PostingEvaluation) -> PostingEvaluation:
-        return mappers.evaluation(row)
-
-    def to_row(self, entity: PostingEvaluation) -> models.PostingEvaluation:
-        return mappers.evaluation_row(entity)
-
-    def apply(self, row: models.PostingEvaluation, entity: PostingEvaluation) -> None:
-        mappers.apply_evaluation(row, entity)
-
-    def id_of(self, entity: PostingEvaluation) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: PostingEvaluationFilter) -> list[ColumnElement[bool]]:
-        if filter.private_job_posting_id is None:
-            return []
-        return [models.PostingEvaluation.private_job_posting_id == filter.private_job_posting_id]
-
-
-class SqlAlchemyPostingRequirementRepository(
-    SqlAlchemyRepository[PostingRequirement, models.PostingRequirement, PostingRequirementFilter],
-    PostingRequirementRepository,
-):
-    model = models.PostingRequirement
-    id_column = models.PostingRequirement.id
-    created_column = models.PostingRequirement.id
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.PostingRequirement.owner_id
-    )
-    noun = "posting requirement"
-
-    def to_entity(self, row: models.PostingRequirement) -> PostingRequirement:
-        return mappers.posting_requirement(row)
-
-    def to_row(self, entity: PostingRequirement) -> models.PostingRequirement:
-        return mappers.posting_requirement_row(entity)
-
-    def apply(self, row: models.PostingRequirement, entity: PostingRequirement) -> None:
-        mappers.apply_posting_requirement(row, entity)
-
-    def id_of(self, entity: PostingRequirement) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: PostingRequirementFilter) -> list[ColumnElement[bool]]:
-        if filter.private_job_posting_id is None:
-            return []
-        return [models.PostingRequirement.private_job_posting_id == filter.private_job_posting_id]
-
-
-class SqlAlchemyPostingRequirementFitRepository(
-    SqlAlchemyRepository[
-        PostingRequirementFit, models.PostingRequirementFit, PostingRequirementFitFilter
-    ],
-    PostingRequirementFitRepository,
-):
-    model = models.PostingRequirementFit
-    id_column = models.PostingRequirementFit.id
-    created_column = models.PostingRequirementFit.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
-        models.PostingRequirementFit.owner_id
-    )
-    noun = "posting requirement fit"
-
-    def to_entity(self, row: models.PostingRequirementFit) -> PostingRequirementFit:
-        return mappers.posting_requirement_fit(row)
-
-    def to_row(self, entity: PostingRequirementFit) -> models.PostingRequirementFit:
-        return mappers.posting_requirement_fit_row(entity)
-
-    def apply(self, row: models.PostingRequirementFit, entity: PostingRequirementFit) -> None:
-        mappers.apply_posting_requirement_fit(row, entity)
-
-    def id_of(self, entity: PostingRequirementFit) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: PostingRequirementFitFilter) -> list[ColumnElement[bool]]:
-        if filter.private_job_posting_id is None:
-            return []
-        return [
-            models.PostingRequirementFit.private_job_posting_id == filter.private_job_posting_id
-        ]
 
 
 class SqlAlchemyPostingFitRepository(

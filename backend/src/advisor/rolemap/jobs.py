@@ -1,5 +1,5 @@
-"""Worker handlers for the role map: builds, fits and postings of the user's
-own run on the ``ai`` queue, checks on the market on ``sync``."""
+"""Worker handlers for the role map: builds and fits run on the ``ai`` queue,
+checks on the market on ``sync``."""
 
 from __future__ import annotations
 
@@ -32,10 +32,3 @@ async def compute_fits(deps: Any, *, owner_id: str) -> None:
     """Score the fits of the build that just closed (ADR 0028)."""
     fits = await deps.rolemap.compute_fits(uuid.UUID(owner_id))
     log.info("rolemap.fits_computed", fits=len(fits))
-
-
-async def evaluate_own_posting(deps: Any, *, owner_id: str, evaluation_id: str) -> None:
-    """Read and score a posting of the user's own (Phase 8). A failure the
-    run can explain is recorded on it, not raised."""
-    await deps.rolemap.evaluate_own_posting(uuid.UUID(owner_id), uuid.UUID(evaluation_id))
-    log.info("rolemap.own_posting_evaluated", evaluation_id=evaluation_id)

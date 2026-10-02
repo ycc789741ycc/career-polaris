@@ -9,7 +9,6 @@ from advisor.market.domain import (
     MarketPreference,
     PostingEmbedding,
     PostingStatus,
-    PrivateJobPosting,
     SalaryRange,
     SearchResult,
     SourceOrigin,
@@ -165,40 +164,6 @@ def apply_search_result(row: models.SearchResult, entity: SearchResult) -> None:
 
 
 # --- owner zone ------------------------------------------------------------
-
-
-def private_posting(row: models.PrivateJobPosting) -> PrivateJobPosting:
-    return PrivateJobPosting(
-        id=row.id,
-        owner_id=row.owner_id,
-        canonical_key=row.canonical_key,
-        company_name=row.company_name,
-        title=row.title,
-        location=row.location,
-        description=row.description,
-        url=row.url,
-        shared_posting_id=row.shared_posting_id,
-        vector=list(row.vector) if row.vector is not None else None,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
-
-
-def private_posting_row(entity: PrivateJobPosting) -> models.PrivateJobPosting:
-    row = models.PrivateJobPosting(id=entity.id, owner_id=entity.owner_id)
-    apply_private_posting(row, entity)
-    return row
-
-
-def apply_private_posting(row: models.PrivateJobPosting, entity: PrivateJobPosting) -> None:
-    row.canonical_key = entity.canonical_key
-    row.company_name = entity.company_name
-    row.title = entity.title
-    row.location = entity.location
-    row.description = entity.description
-    row.url = entity.url
-    row.shared_posting_id = entity.shared_posting_id
-    row.vector = entity.vector
 
 
 def market_preference(row: models.MarketPreference) -> MarketPreference:

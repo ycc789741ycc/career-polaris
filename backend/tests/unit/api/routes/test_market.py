@@ -1,4 +1,4 @@
-"""Market at the HTTP edge: target locations and pasted JDs on the wire.
+"""Market at the HTTP edge: target locations and the market they take in.
 
 Runs the real router and error handlers in-process against a stand-in service —
 no network, no infra.
@@ -8,23 +8,15 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from advisor.market import (
-    MarketScopeView,
-    PostingView,
-    TargetLocationOptionView,
-    Visibility,
-)
+from advisor.market import MarketScopeView, TargetLocationOptionView
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import market as market_api
-
-POSTING_ID = uuid.uuid4()
 
 
 class FakeMarket:
@@ -45,18 +37,6 @@ class FakeMarket:
             TargetLocationOptionView(name="Taiwan", kind="country"),
         ]
 
-    async def paste_job_description(self, owner_id: uuid.UUID, **kw: Any) -> PostingView:
-        return PostingView(
-            id=POSTING_ID,
-            company_name=kw["company_name"],
-            title=kw["title"],
-            location=kw["location"],
-            url=kw["url"],
-            description=kw["description"],
-            visibility=Visibility.PRIVATE,
-            salary=None,
-        )
-
 
 @pytest.fixture
 def market() -> FakeMarket:
@@ -73,10 +53,11 @@ def client(market: FakeMarket) -> TestClient:
     return TestClient(app)
 
 
-def test_a_jd_is_added_with_a_custom_role_not_on_its_own(client: TestClient) -> None:
-    response = client.post("/job-descriptions", json={"title": "Staff", "description": "JD"})
-
-    assert response.status_code == 405
+def test_the_market_keeps_no_pasted_jds(client: TestClient) -> None:
+    """A pasted JD is a posting of the user's own, which Target keeps
+    (ADR 0033)."""
+    assert client.get("/job-descriptions").status_code == 404
+    assert client.post("/job-descriptions", json={"title": "Staff"}).status_code == 404
 
 
 def test_target_locations_are_saved_as_a_whole_set(client: TestClient) -> None:

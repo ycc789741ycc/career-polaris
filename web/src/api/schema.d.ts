@@ -614,27 +614,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/job-descriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Pasted
-         * @description The user's pasted JDs, newest first. Each is a posting of the user's
-         *     own, which is where one is added (``POST /own-postings``).
-         */
-        get: operations["list_pasted_api_v1_job_descriptions_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/market-scope": {
         parameters: {
             query?: never;
@@ -754,8 +733,8 @@ export interface paths {
         post?: never;
         /**
          * Remove Own Posting
-         * @description Delete it, its JD with it. Plans and résumés aimed at it keep their
-         *     snapshots.
+         * @description Delete it, its JD and everything made of it. Plans and résumés aimed at
+         *     it keep their snapshots.
          */
         delete: operations["remove_own_posting_api_v1_own_postings__private_job_posting_id__delete"];
         options?: never;
@@ -1804,36 +1783,6 @@ export interface components {
             job_description: string;
             /** Title */
             title: string;
-        };
-        /**
-         * PastedJobDescription
-         * @description A pasted JD. It is private to its owner and never enters shared data.
-         */
-        PastedJobDescription: {
-            /** Company Name */
-            company_name: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Location */
-            location: string | null;
-            /** Title */
-            title: string;
-            /** Visibility */
-            visibility: string;
-        };
-        /** PastedJobDescriptionPage */
-        PastedJobDescriptionPage: {
-            /** Items */
-            items: components["schemas"]["PastedJobDescription"][];
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number | null;
-            /** Total */
-            total: number;
         };
         /**
          * PendingWork
@@ -4465,58 +4414,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SubmitEstimate"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    list_pasted_api_v1_job_descriptions_get: {
-        parameters: {
-            query?: {
-                /** @description 1-based. */
-                page?: number;
-                /** @description Omit it for the whole list, on page 1. */
-                page_size?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PastedJobDescriptionPage"];
                 };
             };
             /** @description The request could not be read. */
