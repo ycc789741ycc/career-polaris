@@ -11,16 +11,18 @@ guideline's data-access rule):
 * ``update`` and ``delete`` raise a not-found error when the entity is missing.
 
 A filter field left ``None`` does not filter; set fields combine with AND. A
-new question is a new filter field, not a new method. The two extra methods on
-``JobPostingRepository`` are the operations six methods cannot express: a bulk
-expiry and an OR query.
+new question is a new filter field, not a new method. Each extra method below
+says which operation the six cannot express: a bulk update, an OR query, an
+insert that may already exist, or replacing a whole list.
 
 The unit of work hands out repositories per *zone*, mirroring where the data
 lives (docs/architecture.md section 3):
 
 * ``for_owner`` — one user's owner-zone data, and nothing else of anyone's.
 * ``shared`` — the shared zone: companies, sources, crawled postings.
-* ``fanout`` — the one cross-user read: whose target locations take in a market.
+
+There is no cross-user read: since ADR 0027 nothing in the market is resolved
+to the users it concerns.
 
 Each scope is one transaction. Events recorded in it are committed with it.
 """
@@ -41,6 +43,7 @@ from advisor.market.domain.entities import (
     PostingEmbedding,
     PostingScope,
     PrivateJobPosting,
+    SearchResult,
     SourceStatus,
 )
 from advisor.market.domain.events import MarketEvent
@@ -84,13 +87,24 @@ class CrawlSourceFilter:
     company_id: uuid.UUID | None = None
     kind: str | None = None
     endpoint: str | None = None
-    # True: only sources no crawl has fetched yet.
-    is_unfetched: bool | None = None
-    # Searches whose candidates last asked for them before this moment.
+    ids: tuple[uuid.UUID, ...] | None = None
+    # True: only sources a build is waiting for.
+    is_due: bool | None = None
+    # True: only searches of a job API; False: only company boards.
+    is_search: bool | None = None
+    # Sources no build has needed since this moment.
     requested_before: datetime | None = None
 
 
-class CrawlSourceRepository(Repository[CrawlSource, CrawlSourceFilter], Protocol): ...
+class CrawlSourceRepository(Repository[CrawlSource, CrawlSourceFilter], Protocol):
+    async def create_if_absent(self, source: CrawlSource) -> bool:
+        """Store ``source`` unless one with its kind and endpoint exists.
+        Returns whether it was stored.
+
+        Extra method: two builds may ask for the same new search at once, and
+        an insert that may already exist must not fail its transaction.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,10 +129,38 @@ class JobPostingRepository(Repository[JobPosting, JobPostingFilter], Protocol):
         ...
 
     async def get_open_in_scope(self, scope: PostingScope) -> list[JobPosting]:
-        """Open postings in a user's scope, newest first.
+        """Open postings in a user's scope, newest first. A posting a search
+        found counts only while it is on a current result list.
 
         Extra method: the scope is an OR (one of several target locations,
         or a baseline source), which a filter's AND cannot express.
+        """
+        ...
+
+    async def thin_unheld(self, *, unseen_since: datetime, at: datetime) -> int:
+        """Drop the description and embedding of every posting nothing holds
+        (not open on a board, on no current result list) and nobody has seen
+        since ``unseen_since``. Returns how many.
+
+        Extra method: a bulk update across every source, decided by a join.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResultFilter:
+    crawl_source_ids: tuple[uuid.UUID, ...] | None = None
+    job_posting_ids: tuple[uuid.UUID, ...] | None = None
+
+
+class SearchResultRepository(Repository[SearchResult, SearchResultFilter], Protocol):
+    async def replace(
+        self, crawl_source_id: uuid.UUID, posting_ids: list[uuid.UUID], *, at: datetime
+    ) -> None:
+        """Make ``posting_ids``, in order, the search's whole result list.
+
+        Extra method: a list replaced at once, which one delete and one create
+        per row would leave half-written to a concurrent read.
         """
         ...
 
@@ -138,6 +180,7 @@ class SharedMarket(Protocol):
     sources: CrawlSourceRepository
     postings: JobPostingRepository
     embeddings: PostingEmbeddingRepository
+    search_results: SearchResultRepository
 
     def record(self, event: MarketEvent) -> None: ...
 
@@ -148,8 +191,6 @@ class SharedMarket(Protocol):
 @dataclass(frozen=True, slots=True)
 class MarketPreferenceFilter:
     market: str | None = None
-    # Target locations that contain every word of at least one of these names.
-    names_any_of: tuple[str, ...] | None = None
 
 
 class MarketPreferenceRepository(
@@ -175,19 +216,6 @@ class OwnerMarket(Protocol):
     def record(self, event: MarketEvent) -> None: ...
 
 
-# --- fan-out ---------------------------------------------------------------
-
-
-class FanoutMarket(Protocol):
-    """Target locations across every user, read-only.
-
-    The database's fan-out policy allows SELECT here and nothing else, so a
-    write through these repositories fails at the database.
-    """
-
-    markets: MarketPreferenceRepository
-
-
 # --- unit of work ----------------------------------------------------------
 
 
@@ -195,5 +223,3 @@ class MarketUnitOfWork(Protocol):
     def for_owner(self, owner_id: uuid.UUID) -> AbstractAsyncContextManager[OwnerMarket]: ...
 
     def shared(self) -> AbstractAsyncContextManager[SharedMarket]: ...
-
-    def fanout(self) -> AbstractAsyncContextManager[FanoutMarket]: ...

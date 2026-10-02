@@ -8,14 +8,18 @@ import pytest
 
 from advisor.market.domain import (
     ACCENT_FOLDS,
+    COUNTRIES,
     MAX_CANONICAL_KEY,
     MAX_LOCATION,
     MAX_TARGET_LOCATIONS,
+    REGIONS,
     NormalizedPosting,
+    PlaceKind,
     SalaryRange,
     SearchScope,
     SourceKind,
     TargetLocationError,
+    TargetLocationOption,
     band_from,
     canonical_key,
     chosen_target_locations,
@@ -28,9 +32,13 @@ from advisor.market.domain import (
     names_every_word,
     normalize,
     normalize_title,
+    place_names,
+    regions_of,
     remote_location,
     scope_names,
     search_scope,
+    target_location_option,
+    target_location_options,
 )
 
 
@@ -234,8 +242,20 @@ def test_the_database_folds_accents_exactly_as_normalize_does() -> None:
     assert all(normalize(a) == p for a, p in zip(accented, plain, strict=True))
 
 
-def test_target_locations_are_trimmed_and_each_named_once() -> None:
-    assert chosen_target_locations([" Berlin ", "Remote EU", "BERLIN"]) == ("Berlin", "Remote EU")
+def test_target_locations_are_stored_under_their_names_on_the_list_each_once() -> None:
+    assert chosen_target_locations([" germany ", "remote", "GERMANY", "Asia-Pacific"]) == (
+        "Germany",
+        "Remote",
+        "Asia-Pacific",
+    )
+
+
+@pytest.mark.parametrize("place", ["Berlin", "Remote EU", "Taipei", "Atlantis", "UK"])
+def test_a_place_not_on_the_list_is_refused(place: str) -> None:
+    """Only names on the list are taken: a city, an alias or a free-text
+    region is refused rather than silently matching nothing (ADR 0026)."""
+    with pytest.raises(TargetLocationError):
+        chosen_target_locations(["Germany", place])
 
 
 def test_no_target_location_is_a_valid_choice() -> None:
@@ -245,12 +265,12 @@ def test_no_target_location_is_a_valid_choice() -> None:
 def test_at_most_three_target_locations_are_chosen() -> None:
     assert MAX_TARGET_LOCATIONS == 3
     with pytest.raises(TargetLocationError):
-        chosen_target_locations(["Berlin", "Lisbon", "Paris", "Remote EU"])
+        chosen_target_locations(["Germany", "Portugal", "France", "Remote"])
 
 
 def test_a_blank_target_location_is_refused() -> None:
     with pytest.raises(TargetLocationError):
-        chosen_target_locations(["Berlin", "  "])
+        chosen_target_locations(["Germany", "  "])
 
 
 def test_a_role_title_takes_in_a_posting_naming_each_of_its_words_in_any_order() -> None:
@@ -286,16 +306,19 @@ def test_a_country_or_remote_is_a_place_a_search_can_be_scoped_to(
     assert scope.is_worldwide == (code is None)
 
 
-@pytest.mark.parametrize("location", ["Taipei", "Taipei, Taiwan", "Remote EU", "Berlin", "", "—"])
+@pytest.mark.parametrize(
+    "location", ["Taipei", "Taipei, Taiwan", "Remote EU", "Europe", "Asia-Pacific", "Berlin", ""]
+)
 def test_a_city_or_a_region_adds_no_search(location: str) -> None:
     """A posting stored for the search would not contain those words, so it
     would never be in that user's scope."""
     assert search_scope(location) is None
 
 
-def test_every_name_for_a_country_leads_to_the_users_who_chose_it() -> None:
-    assert scope_names("United Kingdom") == ("United Kingdom", "UK")
-    assert scope_names("Taiwan") == ("Taiwan",)
+def test_a_change_to_a_country_reaches_the_users_of_its_regions_too() -> None:
+    assert scope_names("United Kingdom") == ("United Kingdom", "Europe")
+    assert scope_names("Taiwan") == ("Taiwan", "Asia-Pacific")
+    assert scope_names("Mexico") == ("Mexico", "Latin America", "North America")
     assert scope_names("Remote") == ("Remote",)
     # A market that is not a search's place is only ever its own name.
     assert scope_names("Berlin") == ("Berlin",)
@@ -306,7 +329,9 @@ def test_a_remote_posting_names_the_countries_it_is_open_to() -> None:
     assert remote_location([]) == "Remote, Worldwide"
 
 
-@pytest.mark.parametrize("market", ["Taiwan", "Remote Taiwan", "Singapore", "Remote"])
+@pytest.mark.parametrize(
+    "market", ["Taiwan", "Remote Taiwan", "Singapore", "Remote", "Europe", "Asia-Pacific"]
+)
 def test_remote_work_open_to_anyone_is_in_every_place_a_search_covers(market: str) -> None:
     assert in_market("Remote, Worldwide", market)
 
@@ -350,3 +375,82 @@ def test_an_opening_found_through_a_job_site_is_credited_to_it(
     url: str | None, credit: str | None
 ) -> None:
     assert credited_source(url) == credit
+
+
+# -- the list of places (ADR 0026) ---------------------------------------------
+
+
+def test_the_list_is_remote_then_regions_then_countries_each_a_to_z() -> None:
+    options = target_location_options()
+    kinds = [option.kind for option in options]
+
+    assert options[0] == TargetLocationOption("Remote", PlaceKind.REMOTE)
+    assert kinds == sorted(kinds, key=[PlaceKind.REMOTE, PlaceKind.REGION, PlaceKind.COUNTRY].index)
+    for kind in (PlaceKind.REGION, PlaceKind.COUNTRY):
+        names = [option.name for option in options if option.kind is kind]
+        assert names == sorted(names)
+    assert len({option.name for option in options}) == len(options)
+
+
+def test_every_country_is_listed_once_under_one_name() -> None:
+    countries = [o.name for o in target_location_options() if o.kind is PlaceKind.COUNTRY]
+    assert len(countries) == len(COUNTRIES) == len({c.code for c in COUNTRIES})
+    assert "United Kingdom" in countries and "UK" not in countries
+
+
+def test_every_country_is_in_at_least_one_region() -> None:
+    in_a_region = {code for region in REGIONS for code in region.country_codes}
+    assert {country.code for country in COUNTRIES} <= in_a_region
+    assert regions_of("Taiwan") == ("Asia-Pacific",)
+
+
+def test_a_place_on_the_list_is_found_whatever_its_case() -> None:
+    assert target_location_option("united kingdom") == TargetLocationOption(
+        "United Kingdom", PlaceKind.COUNTRY
+    )
+    assert target_location_option("Taipei") is None
+
+
+@pytest.mark.parametrize(
+    ("location", "market"),
+    [
+        ("Taipei", "Taiwan"),
+        ("Hsinchu, TW", "Taiwan"),
+        ("London, England", "United Kingdom"),
+        ("Remote - UK", "United Kingdom"),
+        ("Berlin, Germany", "Europe"),
+        ("Lisbon", "Europe"),
+        ("Remote, EMEA", "Europe"),
+        ("Singapore", "Asia-Pacific"),
+        ("Taipei", "Asia-Pacific"),
+        ("Austin, TX, US", "North America"),
+        ("Remote, Worldwide", "Latin America"),
+    ],
+)
+def test_a_country_takes_in_its_cities_and_a_region_its_countries(
+    location: str, market: str
+) -> None:
+    assert in_market(location, market)
+
+
+@pytest.mark.parametrize(
+    ("location", "market"),
+    [
+        ("Tokyo", "Taiwan"),
+        ("Taipei", "Europe"),
+        ("Berlin, Germany", "Asia-Pacific"),
+        ("Remote, Argentina", "Europe"),
+    ],
+)
+def test_a_place_does_not_take_in_another_places_cities(location: str, market: str) -> None:
+    assert not in_market(location, market)
+
+
+def test_a_region_names_itself_its_countries_and_their_cities() -> None:
+    names = place_names("Asia-Pacific")
+
+    assert names[:3] == ("Asia-Pacific", "APAC", "Asia Pacific")
+    assert {"Taiwan", "Taipei", "Singapore", "Japan", "Tokyo"} <= set(names)
+    assert len(names) == len(set(names))
+    assert place_names("Taiwan")[:1] == ("Taiwan",) and "Kaohsiung" in place_names("Taiwan")
+    assert place_names("Remote") == ("Remote",)

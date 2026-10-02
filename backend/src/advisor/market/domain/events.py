@@ -19,15 +19,4 @@ class TargetLocationsChanged:
     locations: tuple[str, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class PostingsChanged:
-    """About a company or a market, never a user: the crawler must not work
-    out who is affected. The worker's dispatcher fans that out."""
-
-    company_id: uuid.UUID | None
-    market: str | None
-    seen: int
-    expired: int
-
-
-MarketEvent = TargetLocationsChanged | PostingsChanged
+MarketEvent = TargetLocationsChanged

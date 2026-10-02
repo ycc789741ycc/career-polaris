@@ -32,7 +32,6 @@ function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
 function fit(roleId: string, score: number): Fit {
   return {
     role_id: roleId,
-    private_posting_id: null,
     score,
     reasoning: "",
     gaps: [],
@@ -113,6 +112,11 @@ function serve() {
       candidate(1, "Platform Engineer", "r2"),
       candidate(2, "Payments Engineer", null),
     ]),
+    "/role-map": {
+      market_data_at: "2026-09-30T12:00:00+00:00",
+      built_for_locations: ["Berlin"],
+      locations_changed: true,
+    },
     "/roles/cost-estimate": {
       max_roles: 8,
       fits_cost_usd: "0.10",
@@ -291,6 +295,32 @@ describe("the role map while an analysis runs", () => {
     expect(
       await screen.findByRole("button", { name: "Waiting for analysis…" }),
     ).toBeDisabled();
+  });
+
+  it("says when a build is searching the market for its roles", async () => {
+    renderRoles(null, {
+      syncing: [],
+      parsing: [],
+      analysis: null,
+      role_map: { status: "waiting", waiting_for: "market", ...running },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Searching the market…" }),
+    ).toBeDisabled();
+  });
+
+  it("says how old the market is and that the locations moved since", async () => {
+    renderRoles(null);
+
+    expect(
+      await screen.findByText(
+        `Market data as of ${new Date("2026-09-30T12:00:00+00:00").toLocaleDateString()}.`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Your locations changed since this map was built/),
+    ).toBeInTheDocument();
   });
 });
 

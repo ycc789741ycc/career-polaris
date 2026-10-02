@@ -70,11 +70,14 @@ class CrawlSource(Base, TimestampMixin):
     origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="demand")
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Set on a search of a public job API (ADR 0025): when a user's candidates
-    # last asked for it. One nobody asks for any more is retired.
+    # When a build last needed it (ADR 0027). A search no build has needed in a
+    # while is retired.
     last_requested_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set while a build waits for this source to be fetched; the crawler fetches
+    # only due sources (ADR 0027).
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class JobPosting(Base, TimestampMixin):
@@ -117,6 +120,29 @@ class JobPosting(Base, TimestampMixin):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # Set when nothing held it any more and its description was dropped.
+    thinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SearchResult(Base):
+    """One posting on a search's current result list (ADR 0027). A fetch of
+    the search replaces all of its rows."""
+
+    __tablename__ = "search_result"
+    __table_args__ = (
+        UniqueConstraint("crawl_source_id", "job_posting_id", name="uq_search_result_source_id"),
+        {"schema": "market"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    crawl_source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("market.crawl_source.id", ondelete="CASCADE"), nullable=False
+    )
+    job_posting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("market.job_posting.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PostingEmbedding(Base):
@@ -139,7 +165,7 @@ class PostingEmbedding(Base):
 
 
 class MarketPreference(Base, OwnedMixin, TimestampMixin):
-    """A location or remote region the user chose. There is no fixed list."""
+    """A place the user chose, by its name on the list (ADR 0026)."""
 
     __tablename__ = "market_preference"
     __table_args__ = (

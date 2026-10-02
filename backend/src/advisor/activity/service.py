@@ -8,6 +8,9 @@ reads them together and holds the rules between the stages (ADR 0018):
   would silently miss the evidence they are about to write.
 * A role-map build asked for during an analysis waits, and starts when that
   analysis finishes.
+* A build then waits for the market sources it reads to be fetched, and
+  starts when they are or at its deadline (ADR 0027). That wait belongs to
+  ``rolemap``, which asks ``market`` itself.
 
 It sits above every component it reads, because ``rolemap`` sits below
 ``assessment`` and so cannot ask whether an analysis is running. It has no
@@ -46,13 +49,17 @@ class PendingView:
 
 @dataclass(frozen=True, slots=True)
 class RunStatusView:
-    """The newest analysis or role-map build, as the page shows it."""
+    """The newest analysis or role-map build, as the page shows it.
+
+    ``waiting_for`` says why a waiting build waits: "analysis" or "market".
+    """
 
     status: str
     started_at: datetime
     finished_at: datetime | None
     error_code: str | None
     error_message: str | None
+    waiting_for: str | None = None
 
     @property
     def is_busy(self) -> bool:
@@ -122,7 +129,8 @@ class ActivityService:
         """Record a role-map build, waiting if an analysis is running.
 
         The caller queues the build only when ``should_queue`` is set, so a
-        build already under way is never queued twice.
+        build already under way is never queued twice, and schedules a check
+        on the market only when ``should_await_market`` is set.
         """
         now = utcnow()
         current = await self._rolemap.latest_build(owner_id)
@@ -138,29 +146,20 @@ class ActivityService:
         )
         return requested
 
-    async def rebuild_role_map(self, owner_id: uuid.UUID) -> BuildRequestView | None:
-        """The user's market scope changed: rebuild a role map they already
-        have, as ``request_role_map`` does. A user with no role map yet gets
-        none from this: the first build follows an analysis whose cost they
-        confirmed (domain decision 24)."""
-        if await self._rolemap.latest_build(owner_id) is None:
-            return None
-        return await self.request_role_map(owner_id)
-
     async def build_after_analysis(
         self, owner_id: uuid.UUID, *, succeeded: bool
-    ) -> BuildRunView | None:
-        """An analysis finished: the build to queue now, if any.
+    ) -> BuildRequestView | None:
+        """An analysis finished: what became of the build that follows it.
 
         A successful analysis always builds the role map (domain decision 24):
-        it starts a build that waited for it, or records a new one, or joins
-        one already running, in which case there is nothing to queue. A failed
-        analysis only releases a build that waited for it (ADR 0018).
+        it releases a build that waited for it, or records a new one, or joins
+        one already open. Either way the build first asks the market for what
+        it reads (ADR 0027). A failed analysis only releases a build that
+        waited for it (ADR 0018).
         """
         if not succeeded:
-            return await self._rolemap.start_waiting(owner_id)
-        requested = await self.request_role_map(owner_id)
-        return requested.build if requested.should_queue else None
+            return await self._rolemap.release_waiting(owner_id)
+        return await self.request_role_map(owner_id)
 
     async def _analysis_running(self, owner_id: uuid.UUID, now: datetime) -> bool:
         """Whether an analysis is running. One past the limit is closed as lost,
@@ -193,11 +192,22 @@ class ActivityService:
         started = build.started_at or build.requested_at
         if build.is_open and self._build_is_lost(build, now):
             return RunStatusView("failed", started, None, STALE, _LOST_BUILD)
+        waiting_for = None
+        if build.status == "waiting":
+            waiting_for = "market" if build.is_waiting_for_market else "analysis"
         return RunStatusView(
-            build.status, started, build.finished_at, build.error_code, build.error_message
+            build.status,
+            started,
+            build.finished_at,
+            build.error_code,
+            build.error_message,
+            waiting_for=waiting_for,
         )
 
     def _build_is_lost(self, build: BuildRunView, now: datetime) -> bool:
-        """Past the limit since it started, or since it was asked for if it is
-        still waiting: an analysis it waits on is itself lost by then."""
-        return self._staleness.is_stale(build.started_at or build.requested_at, now=now)
+        """Past the limit since it started; or, still waiting, since it asked
+        the market, or since it was asked for while it waits on an analysis,
+        which is itself lost by then."""
+        return self._staleness.is_stale(
+            build.started_at or build.awaited_since or build.requested_at, now=now
+        )

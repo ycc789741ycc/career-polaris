@@ -21,13 +21,11 @@ from advisor.assessment.domain import (
     AssessmentUnitOfWork,
     DimensionsChanged,
     OwnerAssessment,
-    RoleFitsComputed,
 )
 from advisor.assessment.infra.repositories import (
     SqlAlchemyAnalysisRunRepository,
     SqlAlchemyAssessedScoreRepository,
     SqlAlchemyDimensionChangeRepository,
-    SqlAlchemyRoleFitRepository,
     SqlAlchemySkillAssessmentRepository,
     SqlAlchemySkillDimensionRepository,
 )
@@ -42,7 +40,6 @@ class SqlAlchemyOwnerAssessment(OwnerAssessment):
         self.scores = SqlAlchemyAssessedScoreRepository(session, owner_id=owner_id)
         self.changes = SqlAlchemyDimensionChangeRepository(session, owner_id=owner_id)
         self.runs = SqlAlchemyAnalysisRunRepository(session, owner_id=owner_id)
-        self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
         self.pending: list[AssessmentEvent] = []
 
     def record(self, event: AssessmentEvent) -> None:
@@ -95,7 +92,5 @@ def _outbox_entry(event: AssessmentEvent) -> tuple[EventName, dict[str, Any], uu
                 {"added_or_renamed": event.added_or_renamed, "retired": event.retired},
                 event.owner_id,
             )
-        case RoleFitsComputed():
-            return EventName.ROLE_FITS_COMPUTED, {"roles": event.roles}, event.owner_id
         case _:
             assert_never(event)

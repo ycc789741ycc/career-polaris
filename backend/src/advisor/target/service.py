@@ -15,9 +15,9 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from advisor.assessment import AssessmentService, FitView
+from advisor.assessment import AssessmentService
 from advisor.market import PostingView
-from advisor.rolemap import RoleMapService, RoleView
+from advisor.rolemap import FitView, RoleMapService, RoleView
 from advisor.target.domain import (
     DimensionGap,
     Requirement,
@@ -65,7 +65,7 @@ class TargetService:
         """
         role = await self._role(owner_id, ref)
         opening = await self._opening(owner_id, role, ref)
-        fit = next((f for f in await self._assessment.fits(owner_id) if f.role_id == role.id), None)
+        fit = next((f for f in await self._rolemap.fits(owner_id) if f.role_id == role.id), None)
         if fit is None:
             raise TargetUnusableError(
                 f"{role.name} has not been scored against your profile yet; "

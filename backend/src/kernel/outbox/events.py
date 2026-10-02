@@ -23,12 +23,10 @@ class EventName(StrEnum):
     # Market / crawler
     TARGET_LOCATIONS_CHANGED = "TargetLocationsChanged"
     CRAWL_COMPLETED = "CrawlCompleted"
-    POSTINGS_CHANGED = "PostingsChanged"
     POSTINGS_EXPIRED = "PostingsExpired"
     # Role map
     ROLES_RECLUSTERED = "RolesReclustered"
     ROLE_MAP_BUILD_FINISHED = "RoleMapBuildFinished"
-    ROLE_CANDIDATES_REPLACED = "RoleCandidatesReplaced"
     CUSTOM_ROLE_ADDED = "CustomRoleAdded"
     GAP_ANSWERS_SUBMITTED = "GapAnswersSubmitted"
     ROLE_REQUIREMENTS_CHANGED = "RoleRequirementsChanged"

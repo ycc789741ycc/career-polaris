@@ -31,6 +31,7 @@ from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import NotFoundError
 from kernel.storage import ObjectStore
+from tests.integration.places import WINDOWS, store_target_locations
 
 pytestmark = pytest.mark.integration
 
@@ -104,22 +105,24 @@ async def world(
         answer="I led it across two teams",
     )
     gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
-    market = create_market_service(database)
+    market = create_market_service(database, windows=WINDOWS)
     # A market of its own keeps the platform baseline out of this user's scope.
-    await market.set_target_locations(account, [f"Plan market {uuid.uuid4().hex[:8]}"])
+    await store_target_locations(database, account, [f"Plan market {uuid.uuid4().hex[:8]}"])
     rolemap = create_rolemap_service(
         database,
         market=market,
         gateway=gateway,
         embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
     )
     assessment = create_assessment_service(
         database,
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
+        candidate_count=settings.role_candidate_count,
     )
     target = TargetService(assessment=assessment, rolemap=rolemap)
     gapplan = create_gapplan_service(
@@ -221,7 +224,7 @@ async def _custom_role(
     )
     _score_the_jd(world.stub)
     await world.rolemap.recluster(account)
-    await world.assessment.compute_fits(account)
+    await world.rolemap.compute_fits(account)
     return TargetRef(str(role.id))
 
 

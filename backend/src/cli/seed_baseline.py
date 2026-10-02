@@ -1,15 +1,16 @@
 """Loads the platform's baseline crawl list (domain decision 15).
 
 Runs as the last step of ``make migrate``, after the schema is at head, so the
-crawler's first run after an install already has sources to crawl. Idempotent:
+first role-map build after an install already has boards to ask for. Idempotent:
 running it again changes nothing, and an entry removed from the list is retired.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
-from advisor.market import create_market_service
+from advisor.market import FreshWindows, create_market_service
 from kernel.config import get_settings
 from kernel.db import Database
 from kernel.logging import get_logger
@@ -21,7 +22,13 @@ async def main() -> None:
     settings = get_settings()
     database = Database(settings)
     try:
-        market = create_market_service(database)
+        market = create_market_service(
+            database,
+            windows=FreshWindows(
+                search=timedelta(hours=settings.market_search_fresh_hours),
+                board=timedelta(hours=settings.market_board_fresh_hours),
+            ),
+        )
         active, retired = await market.seed_baseline()
     finally:
         await database.dispose()

@@ -10,6 +10,7 @@ import type {
   RoleCandidate,
   RoleCandidatePage,
   RoleMapEstimate,
+  RoleMapState,
   RolePage,
   SalaryBand,
   MarketScope,
@@ -61,6 +62,11 @@ export function Roles() {
     [settled.roleMap, settled.analysis],
   );
   const scope = useAsync<MarketScope>(() => api.get("/market-scope"), []);
+  // How current the map is: it is built only when asked for (ADR 0027).
+  const state = useAsync<RoleMapState>(
+    () => api.get("/role-map"),
+    [settled.roleMap],
+  );
   const matched = useAsync<MatchedPosting[]>(
     () => api.items<MatchedPostingPage>("/matched-postings?page_size=10"),
     [settled.roleMap, settled.analysis],
@@ -368,14 +374,14 @@ export function Roles() {
         <div className="panel" style={{ marginTop: 20 }}>
           <h3>Top matched openings</h3>
           <p className="subcopy">
-            Open postings inside your roles, ranked by how well you fit the
-            role. Pick one to aim the Advisor at that opening; its own
-            requirements do not change its rank yet.
+            Open postings inside your roles, the best one from each company,
+            ranked by how well you fit the role. Pick one to aim the Advisor at
+            that opening; its own requirements do not change its rank yet.
           </p>
           <div className="stack" style={{ gap: 8, marginTop: 12 }}>
             {(matched.data ?? []).map((match, index) => (
               <div
-                key={match.posting_id}
+                key={`${match.role_id}:${match.posting_id}`}
                 className="row opening-row"
                 role="button"
                 tabIndex={0}
@@ -469,14 +475,29 @@ export function Roles() {
         <div className="panel">
           <h3>Keep your map current</h3>
           <p className="subcopy">
-            The map is rebuilt after every analysis, and when the market in your
-            locations changes. Rebuild it now, or re-score your fit against the
-            roles already on it.
+            The map is built only when you ask: after an analysis, a rebuild, or
+            a role you add. Each build searches the market for your recommended
+            roles first, reusing what was fetched recently. Rebuild it now, or
+            re-score your fit against the roles already on it.
           </p>
+          {state.data?.market_data_at && (
+            <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
+              Market data as of{" "}
+              {new Date(state.data.market_data_at).toLocaleDateString()}.
+            </p>
+          )}
+          {state.data?.locations_changed && (
+            <p className="chip chip-warn" style={{ margin: "10px 0 0" }}>
+              Your locations changed since this map was built. Rebuild to search
+              the new places.
+            </p>
+          )}
           <div className="row" style={{ marginTop: 14 }}>
             <Button busy={busy} disabled={building} onClick={askForEstimate}>
               {activity?.role_map?.status === "waiting"
-                ? "Waiting for analysis…"
+                ? activity.role_map.waiting_for === "market"
+                  ? "Searching the market…"
+                  : "Waiting for analysis…"
                 : building
                   ? "Building…"
                   : "Rebuild role map"}

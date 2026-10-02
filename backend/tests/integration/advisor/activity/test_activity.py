@@ -17,6 +17,7 @@ from advisor.profile.infra.unit_of_work import SqlAlchemyProfileUnitOfWork
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from kernel.db import Database
 from kernel.errors import SourcesProcessingError
+from tests.unit.advisor.rolemap.fakes import FakeMarket
 
 pytestmark = pytest.mark.integration
 
@@ -32,19 +33,24 @@ class _Services:
             http_timeout_seconds=1,
             user_agent="test",
         )
+        # The market as the role map sees it, with nothing due: these tests are
+        # about the stages' rules, and the shared database's crawl sources must
+        # not decide whether a build waits (ADR 0027).
         self.rolemap: RoleMapService = create_rolemap_service(
             database,
-            market=None,  # type: ignore[arg-type]
+            market=FakeMarket(),  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
+            top_k=10,
+            candidate_count=10,
         )
         self.assessment: AssessmentService = create_assessment_service(
             database,
             profile=self.profile,
             rolemap=self.rolemap,
-            market=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.6,
+            candidate_count=10,
         )
         self.activity = ActivityService(
             profile=self.profile,
@@ -112,7 +118,7 @@ async def test_a_role_map_waits_for_the_analysis_and_starts_when_it_finishes(
     await services.assessment.fail_run(account, run.id, code="ai_budget_exceeded", message="spent")
     released = await services.activity.build_after_analysis(account, succeeded=False)
 
-    assert released is not None and released.id == requested.build.id
+    assert released is not None and released.build.id == requested.build.id
     status = await services.activity.status(account)
     assert status.role_map is not None and status.role_map.status == "running"
     assert status.analysis is not None and status.analysis.error_code == "ai_budget_exceeded"

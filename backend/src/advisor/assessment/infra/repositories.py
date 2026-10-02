@@ -23,9 +23,6 @@ from advisor.assessment.domain import (
     DimensionChange,
     DimensionChangeFilter,
     DimensionChangeRepository,
-    RoleFit,
-    RoleFitFilter,
-    RoleFitRepository,
     SkillAssessment,
     SkillAssessmentFilter,
     SkillAssessmentRepository,
@@ -177,37 +174,3 @@ class SqlAlchemyAnalysisRunRepository(
         if filter.status is None:
             return []
         return [models.AnalysisRun.status == str(filter.status)]
-
-
-class SqlAlchemyRoleFitRepository(
-    SqlAlchemyRepository[RoleFit, models.RoleFit, RoleFitFilter],
-    RoleFitRepository,
-):
-    model = models.RoleFit
-    id_column = models.RoleFit.id
-    created_column = models.RoleFit.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.RoleFit.owner_id
-    noun = "fit"
-
-    def to_entity(self, row: models.RoleFit) -> RoleFit:
-        return mappers.fit(row)
-
-    def to_row(self, entity: RoleFit) -> models.RoleFit:
-        return mappers.fit_row(entity)
-
-    def apply(self, row: models.RoleFit, entity: RoleFit) -> None:
-        mappers.apply_fit(row, entity)
-
-    def id_of(self, entity: RoleFit) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: RoleFitFilter) -> list[ColumnElement[bool]]:
-        fit = models.RoleFit
-        found: list[ColumnElement[bool]] = []
-        if filter.role_id is not None:
-            found.append(fit.role_id == filter.role_id)
-        if filter.private_posting_id is not None:
-            found.append(fit.private_posting_id == filter.private_posting_id)
-        if filter.assessment_id is not None:
-            found.append(fit.assessment_id == filter.assessment_id)
-        return found

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from advisor.assessment.domain import MAX_MATCHES, MatchCandidate, rank_matches
+from advisor.rolemap.domain import MAX_MATCHES, MatchCandidate, rank_matches
 
 
 def candidate(
@@ -60,3 +60,42 @@ def test_without_a_limit_every_opening_is_ranked() -> None:
 def test_a_limit_outside_the_bound_is_refused(limit: int) -> None:
     with pytest.raises(ValueError, match="between"):
         rank_matches([], limit=limit)
+
+
+# -- one per company: "Top matched" across all roles --------------------------
+
+
+def test_one_per_company_keeps_each_companys_best_opening() -> None:
+    ranked = rank_matches(
+        [
+            candidate("g2i-low", fit=60, company="G2i"),
+            candidate("g2i-high", fit=95, company="G2i"),
+            candidate("acme", fit=80, company="Acme"),
+        ],
+        one_per_company=True,
+    )
+    assert [c.posting_id for c in ranked] == ["g2i-high", "acme"]
+
+
+def test_one_per_company_fills_the_limit_from_other_companies() -> None:
+    many = [candidate(f"g2i-{i}", fit=95, company="G2i") for i in range(5)]
+    others = [candidate(f"other-{i}", fit=50, company=f"Company {i}") for i in range(3)]
+
+    ranked = rank_matches([*many, *others], limit=3, one_per_company=True)
+
+    assert [c.company_name for c in ranked] == ["G2i", "Company 0", "Company 1"]
+
+
+def test_a_company_is_the_same_whatever_its_case_or_spacing() -> None:
+    ranked = rank_matches(
+        [candidate("a", fit=90, company="G2i"), candidate("b", fit=80, company=" g2i ")],
+        one_per_company=True,
+    )
+    assert [c.posting_id for c in ranked] == ["a"]
+
+
+def test_without_the_rule_a_company_may_repeat() -> None:
+    ranked = rank_matches(
+        [candidate("a", fit=90, company="G2i"), candidate("b", fit=80, company="G2i")]
+    )
+    assert [c.posting_id for c in ranked] == ["a", "b"]

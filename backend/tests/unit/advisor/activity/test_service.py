@@ -15,7 +15,7 @@ from advisor.rolemap import RoleMapService
 from kernel.clock import utcnow
 from kernel.errors import AnalysisRunningError, SourcesProcessingError
 from tests.unit.advisor.assessment.fakes import FakeAssessmentUnitOfWork
-from tests.unit.advisor.rolemap.fakes import FakeRoleMapUnitOfWork
+from tests.unit.advisor.rolemap.fakes import FakeMarket, FakeRoleMapUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 STALE_AFTER = 900
@@ -39,15 +39,18 @@ class World:
             self.assessments,
             profile=None,  # type: ignore[arg-type]
             rolemap=None,  # type: ignore[arg-type]
-            market=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.5,
+            candidate_count=10,
         )
+        self.market = FakeMarket()
         self.rolemap = RoleMapService(
             self.rolemaps,
-            market=None,  # type: ignore[arg-type]
+            market=self.market,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             embedding_model="test-model",
+            top_k=10,
+            candidate_count=10,
         )
         self.activity = ActivityService(
             profile=self.profile,  # type: ignore[arg-type]
@@ -166,8 +169,8 @@ async def test_a_role_map_waits_for_a_running_analysis_and_is_released_after(
     await world.assessment.fail_run(OWNER, run.id, code="ai_budget_exceeded", message="spent")
     released = await world.activity.build_after_analysis(OWNER, succeeded=False)
 
-    assert released is not None and released.id == requested.build.id
-    assert released.status == "running"
+    assert released is not None and released.build.id == requested.build.id
+    assert released.should_queue and released.build.status == "running"
 
 
 async def test_a_role_map_does_not_wait_for_a_lost_analysis(world: World) -> None:
@@ -201,7 +204,7 @@ async def test_a_successful_analysis_builds_the_role_map_unasked(world: World) -
 
     build = await world.activity.build_after_analysis(OWNER, succeeded=True)
 
-    assert build is not None and build.status == "running"
+    assert build is not None and build.should_queue and build.build.status == "running"
 
 
 async def test_a_failed_analysis_builds_nothing_that_did_not_wait(world: World) -> None:
@@ -221,29 +224,54 @@ async def test_a_successful_analysis_starts_the_build_that_waited_rather_than_an
 
     build = await world.activity.build_after_analysis(OWNER, succeeded=True)
 
-    assert build is not None and build.id == waiting.build.id
-    assert build.status == "running"
+    assert build is not None and build.build.id == waiting.build.id
+    assert build.should_queue and build.build.status == "running"
 
 
 async def test_a_successful_analysis_joins_a_build_already_running(world: World) -> None:
     await world.activity.request_role_map(OWNER)
 
-    assert await world.activity.build_after_analysis(OWNER, succeeded=True) is None
+    joined = await world.activity.build_after_analysis(OWNER, succeeded=True)
+
+    assert joined is not None and not joined.should_queue and not joined.should_await_market
 
 
-# --- a new market scope ----------------------------------------------------
+# --- the market a build reads (ADR 0027) ----------------------------------
 
 
-async def test_a_new_scope_builds_nothing_for_a_user_with_no_role_map(world: World) -> None:
-    assert await world.activity.rebuild_role_map(OWNER) is None
-    assert await world.rolemap.latest_build(OWNER) is None
+async def test_a_build_waiting_for_the_market_says_so(world: World) -> None:
+    world.market.due = (uuid.uuid4(),)
+
+    requested = await world.activity.request_role_map(OWNER)
+
+    assert requested.should_await_market and not requested.should_queue
+    status = await world.activity.status(OWNER)
+    assert status.role_map is not None
+    assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")
 
 
-async def test_a_new_scope_rebuilds_a_role_map_the_user_already_has(world: World) -> None:
-    first = await world.activity.request_role_map(OWNER)
-    await world.rolemap.fail_build(OWNER, first.build.id, code="internal", message="gone")
+async def test_a_build_waiting_for_an_analysis_says_so(world: World) -> None:
+    await world.activity.request_analysis(OWNER)
+    await world.activity.request_role_map(OWNER)
 
-    rebuild = await world.activity.rebuild_role_map(OWNER)
+    status = await world.activity.status(OWNER)
 
-    assert rebuild is not None and rebuild.should_queue
-    assert rebuild.build.id != first.build.id
+    assert status.role_map is not None and status.role_map.waiting_for == "analysis"
+
+
+async def test_a_build_long_queued_behind_an_analysis_is_judged_from_when_it_asked_the_market(
+    world: World,
+) -> None:
+    """Asked for before a long analysis, then waiting for the market: its clock
+    starts when it asked the market, not when it was first asked for."""
+    world.market.due = (uuid.uuid4(),)
+    run = await world.activity.request_analysis(OWNER)
+    await world.activity.request_role_map(OWNER)
+    for build in world.rolemaps.store.builds.values():
+        build.requested_at -= timedelta(seconds=STALE_AFTER + 1)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+    await world.activity.build_after_analysis(OWNER, succeeded=True)
+
+    status = await world.activity.status(OWNER)
+
+    assert status.role_map is not None and status.role_map.status == "waiting"

@@ -1,15 +1,11 @@
 """The outbox dispatcher.
 
-Turns committed domain events into queued jobs. This is also where a market
-event becomes user work: the crawler emits ``PostingsChanged`` about a company
-or a market and knows nothing about users, so the fan-out happens here, where
-user data is legitimately readable (docs/architecture.md section 2).
+Turns committed domain events into queued jobs. Every event it handles is about
+one user. The market moves nobody's role map on its own any more (ADR 0027):
+a build is started by something the user did, and fetches what it needs.
 """
 
 from __future__ import annotations
-
-import uuid
-from typing import Any
 
 from sqlalchemy import select
 
@@ -17,7 +13,7 @@ from kernel.db.base import utcnow
 from kernel.logging import get_logger
 from kernel.outbox import EventName, OutboxEvent
 from wiring.container import Container
-from wiring.queue import enqueue
+from wiring.queue import enqueue, queue_build
 
 log = get_logger(__name__)
 
@@ -76,19 +72,20 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # (ADR 0024). A successful analysis always builds the map (ADR 0020),
         # so its new scores reach the fits here too; AssessmentCompleted,
         # DimensionsChanged and RoleRequirementsChanged queue nothing.
-        await enqueue("assessment.compute_fits", owner_id=str(owner_id))
+        await enqueue("rolemap.compute_fits", owner_id=str(owner_id))
         return
 
     if name == EventName.ANALYSIS_FINISHED and owner_id:
         # Recorded as the run closed, so it no longer counts as running. A
         # successful analysis always builds the role map, its cost confirmed
-        # with the analysis's (ADR 0020); a failed one still starts a build
-        # that waited for it (ADR 0018).
-        build = await deps.activity.build_after_analysis(
+        # with the analysis's (ADR 0020); a failed one still releases a build
+        # that waited for it (ADR 0018). Either build first waits for the
+        # market sources it reads (ADR 0027).
+        requested = await deps.activity.build_after_analysis(
             owner_id, succeeded=event.payload.get("status") == "ready"
         )
-        if build is not None:
-            await enqueue("rolemap.recluster", owner_id=str(owner_id), build_id=str(build.id))
+        if requested is not None:
+            await queue_build(owner_id, requested)
         return
 
     if name == EventName.GAP_ANSWERS_SUBMITTED and owner_id:
@@ -116,53 +113,7 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
             )
         return
 
-    if name == EventName.ROLE_CANDIDATES_REPLACED and owner_id:
-        # An analysis recommended roles: the market is searched for them in the
-        # places this user wants to work (ADR 0025).
-        await _request_searches(
-            titles=event.payload.get("titles") or [],
-            locations=await deps.market.target_locations(owner_id),
-        )
+    if name == EventName.TARGET_LOCATIONS_CHANGED:
+        # Builds nothing: a build spends the user's key, so it waits until
+        # they ask. The role map says its locations changed (ADR 0027).
         return
-
-    if name == EventName.TARGET_LOCATIONS_CHANGED and owner_id:
-        # A new scope: a role map the user already has is rebuilt on it, with
-        # ADR 0018's gating, and the roles their last analysis recommended are
-        # searched for in the new places (ADR 0025).
-        rebuild = await deps.activity.rebuild_role_map(owner_id)
-        if rebuild is not None and rebuild.should_queue:
-            await enqueue(
-                "rolemap.recluster", owner_id=str(owner_id), build_id=str(rebuild.build.id)
-            )
-        await _request_searches(
-            titles=[candidate.title for candidate in await deps.rolemap.candidates(owner_id)],
-            locations=event.payload.get("locations") or [],
-        )
-        return
-
-    if name == EventName.POSTINGS_CHANGED:
-        for affected in await _users_affected_by(deps, event.payload):
-            # Joins a build already under way, or waits for a running analysis.
-            requested = await deps.activity.request_role_map(affected)
-            if requested.should_queue:
-                await enqueue(
-                    "rolemap.recluster", owner_id=str(affected), build_id=str(requested.build.id)
-                )
-        return
-
-
-async def _request_searches(*, titles: list[str], locations: list[str]) -> None:
-    """Queue the searches for some job titles in some places. Only the titles
-    and the places cross over: the job, and the crawl sources it leaves, carry
-    nothing about whose analysis or locations they came from (ADR 0025)."""
-    if titles and locations:
-        await enqueue("market.request_searches", titles=list(titles), locations=list(locations))
-
-
-async def _users_affected_by(deps: Container, payload: dict[str, Any]) -> list[uuid.UUID]:
-    """Resolve a market change to the users whose target locations take it in.
-
-    The crawler cannot do this — it has no grant on any user schema — which is
-    the whole reason the fan-out lives in the worker.
-    """
-    return await deps.market.owners_affected_by(market=payload.get("market"))

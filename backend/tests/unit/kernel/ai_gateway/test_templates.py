@@ -9,8 +9,9 @@ from kernel.errors import ValidationError
 
 # Each template at the version the code loads.
 TEMPLATES = [
-    # Candidate roles joined the reply in v2 (ADR 0024).
-    ("skill_assessment", "v2"),
+    # Candidate roles joined the reply in v2 (ADR 0024); v3 asks for the
+    # configured number of them (ADR 0029).
+    ("skill_assessment", "v3"),
     ("follow_up_questions", "v1"),
     ("role_extraction", "v1"),
     ("difficulty_estimate", "v1"),

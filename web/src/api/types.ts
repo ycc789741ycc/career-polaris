@@ -48,8 +48,8 @@ export type Role = Schemas["Role"];
 export type RoleCandidate = Schemas["RoleCandidate"];
 /** What adding a custom role costs, before "Add to Role Map" (ADR 0021). */
 export type CustomRoleEstimate = Schemas["CustomRoleEstimate"];
-/** The most a role-map rebuild can cost, fits included: a ceiling at ten
- * roles (ADR 0020, ADR 0024). */
+/** The most a role-map rebuild can cost, fits included: a ceiling at the
+ * top k roles a build keeps, `max_roles` (ADR 0024, ADR 0029). */
 export type RoleMapEstimate = Schemas["RoleMapEstimate"];
 
 // Market
@@ -98,4 +98,7 @@ export type ResumeFilePage = Schemas["ResumeFilePage"];
 export type ResumeSummaryPage = Schemas["ResumeSummaryPage"];
 export type RoleCandidatePage = Schemas["RoleCandidatePage"];
 export type RolePage = Schemas["RolePage"];
+export type RoleMapState = Schemas["RoleMapState"];
 export type StringPage = Schemas["StringPage"];
+export type TargetLocationOption = Schemas["TargetLocationOption"];
+export type TargetLocationOptionPage = Schemas["TargetLocationOptionPage"];

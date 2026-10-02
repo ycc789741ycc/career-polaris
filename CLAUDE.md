@@ -192,7 +192,7 @@ contract.
 
 - **The journey only runs forward.** Sources → Strengths → Role map → Advisor
   (01–04): a step reads the ones before it, never the ones after. The role map
-  rebuilds and rescores as the market moves, so the strength report shows no
+  is rebuilt and rescored when the user asks, so the strength report shows no
   fit, role or bar from it — comparing against a role is the role map's job.
   Likewise Sources lists the collected facts, filterable by source — "Your
   answers" among them — and nothing the analysis made of them, and asks
@@ -203,13 +203,16 @@ contract.
   (ADR 0006). An analysis is refused while a source still syncs or parses, and
   a role-map build asked for during an analysis waits and starts when it ends.
   Those rules live in `advisor/activity`, not in `rolemap`, which sits below
-  `assessment` (ADR 0018). The shell polls `GET /activity` while anything runs,
+  `assessment` (ADR 0018). A build then waits for the market sources it reads
+  to be fetched, and says which it waits for (`waiting_for`, ADR 0027). The shell polls `GET /activity` while anything runs,
   for the running bar. Work still busy after `JOB_STALE_AFTER_SECONDS` counts
   as lost.
-- **The crawler holds no secrets and has no grant on any user schema.** It emits
-  events about companies and markets; the worker's dispatcher resolves those to
-  users. That fan-out is the only cross-user read, and it has its own narrow
-  SELECT-only policy.
+- **The crawler holds no secrets and has no grant on any user schema.** It
+  fetches only the sources a build marked due, and announces nothing: no market
+  change is ever resolved to users, and nothing reads across users (ADR 0027).
+- **A role map is built only when the user asks.** An analysis, "Rebuild role
+  map" or a custom role, each with a cost they confirmed. Neither the market
+  nor a change of locations builds one, because a build spends their key.
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
   `market_user.private_job_posting`, which the crawler role physically cannot
   reach.
@@ -288,8 +291,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
 - **Target locations.** 01 Sources asks "Where you want to work": one to three
   places, a `market` domain rule (`chosen_target_locations`) checked again by
   the request schema. `PUT /target-locations` saves the whole set; a change
-  emits `TargetLocationsChanged`, which rebuilds a role map the user already
-  has, and never builds a first one. The role map has no market pills or band
+  emits `TargetLocationsChanged`, which since ADR 0027 builds nothing: the
+  role map says the locations changed. The role map has no market pills or band
   toggle, and says how many open postings the locations take in
   (`GET /market-scope`). The table keeps its old name,
   `market_user.market_preference`. A location that is a country or "Remote"
@@ -299,13 +302,13 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `subscription` Target kind are gone. Board discovery stays as an ownerless
   `market.discover_board(company_id, company_name)`, for the companies custom
   roles will name; it leaves a company that already has a source alone.
-- **Ten roles, built after every analysis** (ADR 0020). `RECOMMENDED_ROLE_COUNT`
-  is a `rolemap` domain constant; there is no setting. `AnalysisFinished`
+- **Ten roles, built after every analysis** (ADR 0020). Since ADR 0029 the
+  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). `AnalysisFinished`
   goes to `activity.build_after_analysis`: a successful analysis always builds
   the map, a failed one only releases a build that waited. Analyze's estimate
   (`AnalysisEstimate`) includes the build's, so it is confirmed once.
 - **Roles come from the strengths** (ADR 0024). The analysis recommends up to
-  20 candidate roles; `assessment` hands them to `rolemap.replace_candidates`,
+  `ROLE_CANDIDATE_COUNT` candidate roles (20 until ADR 0029, 10 now); `assessment` hands them to `rolemap.replace_candidates`,
   and `rolemap.role_candidate` holds the latest set. A build matches them to
   the postings in scope locally (embeddings, plus title words) and keeps the
   first ten with openings; nothing clusters any more. With no candidates, a
@@ -313,16 +316,13 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
   to a build includes them (`fits_cost_usd`). `GET /role-candidates` lets the
   role map name the recommended roles the market lacks.
-- **Candidate roles are searched for** (ADR 0025). `RoleCandidatesReplaced`
-  and `TargetLocationsChanged` queue `market.request_searches(titles,
-  locations)`, which leaves one ownerless `himalayas` crawl source per job
-  title and place: a country, or "Remote" (`market.domain.search_scope`; a
-  city adds none). Only the title leaves the platform. The crawler reads the
-  first page of each search, looks for unfetched sources every two minutes
-  (`crawl_new`), announces a changed place once per crawl, and retires
-  searches not asked for in eight weeks. Remote work open worldwide is in
-  scope for every searchable location. An opening found there carries
-  `credited_to` and is shown "via Himalayas" with its link.
+- **Candidate roles are searched for** (ADR 0025). There is one ownerless
+  `himalayas` crawl source per job title and place: a country, or "Remote"
+  (`market.domain.search_scope`; a region adds none, ADR 0026). Only the title
+  leaves the platform, and only the first page of each search is read. Remote
+  work open worldwide is in scope for every listed location. An opening found
+  there carries `credited_to` and is shown "via Himalayas" with its link.
+  Since ADR 0027 a build asks for these searches itself (Phase 6).
 - **Custom roles** (ADR 0021). `rolemap.role.origin` is `recommended` or
   `custom`; a custom role has an optional company and private JD, is never
   retired by reconciliation, and is removed by the user (retired, not deleted).
@@ -352,3 +352,83 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   dimensions' confidence); Strengths shows it next to Re-analyse and lists
   dimensions least certain first. The sidebar has no meter. Résumés come in the
   prototype's two templates, `organic` and `plain`.
+
+## Phase 6 scope
+
+Building the role map only on demand (`docs/plan.md`), one branch per step:
+
+- **Target locations from a list** (ADR 0026). A target location is one of
+  `market.domain.places`: "Remote", a region (Asia-Pacific, Europe, Latin
+  America, Middle East & Africa, North America) or a country, served by
+  `GET /target-location-options` and picked in 01 Sources from a filterable
+  list. `chosen_target_locations` stores each under its name on the list and
+  refuses anything else. A country takes in its aliases and main cities
+  (`place_names`), in `in_market` and the scope SQL; a region
+  takes in its member countries and is never searched. Migration 0021 moved
+  stored free text onto the list and deleted what named no place. Integration
+  tests that need a market of their own store a made-up place directly
+  (`tests/integration/places.py`).
+- **The market on demand** (ADR 0027).
+  - **What a build asks for.** A build asks
+    `market.request_sources(titles, places, company_ids)` for every source it
+    reads:
+    - the candidates' searches in each searchable place;
+    - the baseline boards;
+    - its custom roles' companies' boards.
+
+    Each is stamped as asked for. One whose last fetch is older than
+    `MARKET_SEARCH_FRESH_HOURS` / `MARKET_BOARD_FRESH_HOURS` is marked due.
+    A new search is inserted `ON CONFLICT DO NOTHING`.
+  - **When it starts.** Nothing due: the build starts at once. Otherwise it
+    waits; `rolemap.await_market` (queue `sync`, as the build's owner) checks
+    every `CRAWL_DUE_POLL_SECONDS` and starts it when its sources are fetched,
+    or after `MARKET_WAIT_SECONDS`. `wiring.queue.queue_build` turns any build
+    request into the right job.
+  - **The crawler.** It fetches only due sources, embeds, then clears
+    `due_at`. It pauses a host after a 429 or 403 (honouring `Retry-After`),
+    caps requests per host per day, and caches robots.txt for a day. Once a
+    day it retires searches no build needed in `MARKET_SOURCE_IDLE_DAYS`, and
+    thins postings nothing holds after `POSTING_THIN_AFTER_DAYS`:
+    description and embedding dropped, row kept.
+  - **Search results.** A search's fetch replaces its list in
+    `market.search_result`. A searched posting is in scope only while it is on
+    one. A board still expires what it stops listing.
+  - **Choosing the ten.** A searched posting belongs to the candidate whose
+    search found it, if relevant; otherwise it is dropped. The ten are picked
+    by a free local fit estimate (`rolemap.domain.fit_estimates`) over the
+    dimensions `assessment` hands over with the candidates
+    (`rolemap.candidate_strength`). It is stored as `fit_estimate`, never
+    shown as a fit; `compute_fits` logs its Spearman agreement with the fits.
+  - **What's gone.** `PostingsChanged`, `RoleCandidatesReplaced`, the fan-out
+    and its `fanout_read` policy, the weekly crawl and
+    `market.request_searches`.
+  - **What the user sees.** `GET /role-map` says how old the map's market is
+    and whether the locations changed; the running bar and the Rebuild button
+    say "Searching the market…".
+- **The fit is the role map's** (ADR 0028). `RoleFit` (table
+  `rolemap.role_fit`), its gaps, uncovered requirements and closing lifts,
+  `compute_fits`, `estimate_fits` and the "Top matched" ranking live in
+  `rolemap`; `assessment` keeps only the strength report. A fit is scored
+  against the dimension scores `assessment` hands over with the candidates:
+  `StrengthInput` and `rolemap.candidate_strength` carry `score` and
+  `confidence`, and `weight` is their product. `RoleMapBuildFinished` queues
+  `rolemap.compute_fits`. `/fits`, `/fits/compute` and `/matched-postings`
+  keep their paths on the role map's router; a fit's body has no
+  `private_posting_id`. Migration 0023 moved the fits and backfilled the
+  scores.
+- **The counts are settings** (ADR 0029). `ROLE_CANDIDATE_COUNT` (default 10,
+  1–20) is how many roles an analysis recommends, every one searched for; the
+  `skill_assessment` v3 prompt names it and the reply's schema enforces it.
+  `ROLE_MAP_TOP_K` (default 10, at most the candidate count) is how many a
+  build keeps by the local estimate, and only those k are named, analysed and
+  fit-scored; custom roles are on top. They reach `RoleMapService(top_k,
+  candidate_count)` and `AssessmentService(candidate_count)` through the
+  factories; the selection rules take them as `limit` and `ceiling`.
+  `RECOMMENDED_ROLE_COUNT` and `CANDIDATE_ROLE_COUNT` are gone, and the SPA
+  says `max_roles`, never "ten".
+- **The map and Top matched agree.** Reconciliation retires a role merged into
+  another as well as one that went, and never retires one twice; migration
+  0024 retired the merged-away roles earlier builds had left live. `GET /roles`
+  answers from `rolemap.map_roles`, which counts each role's openings live
+  against the current scope, as `matched_postings` lists them; an opening in
+  two roles is listed under each.

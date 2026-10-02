@@ -21,16 +21,20 @@ MAX_COMPANY_NAME = 255
 # The most requirements one role is read out with. A fit is projected over them,
 # so it also bounds what scoring a role's fit can cost.
 MAX_ROLE_REQUIREMENTS = 20
+# The most dimensions an analysis hands over with its candidates. A fit is
+# projected over them, so with the requirements they bound what scoring one
+# role can cost, priced before any dimension exists.
+MAX_STRENGTHS = 10
 
 
 class RoleOrigin(StrEnum):
     """Where a role came from (domain decision 25).
 
-    ``recommended`` is one of the ten candidates from the latest analysis that
+    ``recommended`` is one of the top k candidates from the latest analysis that
     the market has openings for (ADR 0024), retired by reconciliation when it
     falls out. ``custom`` is one the user added by
     title; it is never retired by reconciliation, does not count toward the
-    ten, and stays until the user removes it.
+    k, and stays until the user removes it.
     """
 
     RECOMMENDED = "recommended"
@@ -162,19 +166,50 @@ class RoleCandidate:
     dimension_keys: tuple[str, ...]
     role_id: uuid.UUID | None = None
     opening_count: int = 0
+    # How well its openings read like the user's strengths, by the local
+    # estimate that chose the k (ADR 0027); never shown as a fit.
+    fit_estimate: float | None = None
     created_at: datetime | None = None
 
     @property
     def is_placed(self) -> bool:
         return self.role_id is not None
 
-    def placed(self, *, role_id: uuid.UUID, opening_count: int) -> None:
+    def placed(
+        self, *, role_id: uuid.UUID, opening_count: int, fit_estimate: float | None = None
+    ) -> None:
         self.role_id = role_id
         self.opening_count = opening_count
+        self.fit_estimate = fit_estimate
 
-    def unplaced(self, *, opening_count: int = 0) -> None:
+    def unplaced(self, *, opening_count: int = 0, fit_estimate: float | None = None) -> None:
         self.role_id = None
         self.opening_count = opening_count
+        self.fit_estimate = fit_estimate
+
+
+@dataclass(slots=True)
+class CandidateStrength:
+    """One of the user's dimensions as the analysis that recommended the
+    candidates scored it: what the local fit estimate reads (ADR 0027).
+
+    A copy, handed over with the candidates and replaced with them, so the
+    role map never reads ``assessment``, which sits above it (ADR 0018).
+    ``weight`` is score times confidence, from 0 to 1. The fit is scored
+    against the same copy, so the role map never asks ``assessment`` for it.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    dimension_key: str
+    name: str
+    read: str
+    weight: float
+    # The score and confidence ``weight`` came from, which the fit is scored
+    # against (ADR 0028).
+    score: int
+    confidence: float
 
 
 @dataclass(slots=True)
@@ -217,7 +252,9 @@ class BuildRunStatus(StrEnum):
     starts and the page polls it (ADR 0006, ADR 0018).
 
     ``waiting`` means it was asked for while an analysis was running, and starts
-    when that analysis finishes.
+    when that analysis finishes; or that it waits for the market sources it
+    needs to be fetched, and starts when they are or at its deadline (ADR
+    0027).
     """
 
     WAITING = "waiting"
@@ -238,6 +275,16 @@ class BuildRun:
     finished_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
+    # The market sources it reads, and those of them it waits to be fetched.
+    # Ids of ownerless shared rows; never the other way round (ADR 0027).
+    needed_source_ids: tuple[uuid.UUID, ...] = ()
+    awaited_source_ids: tuple[uuid.UUID, ...] = ()
+    # The target locations it was built for, and how old the oldest fetch it
+    # read was: what the role map says it is "as of".
+    locations: tuple[str, ...] = ()
+    # When it asked the market; its deadline runs from here.
+    awaited_since: datetime | None = None
+    market_data_at: datetime | None = None
 
     @classmethod
     def requested(cls, *, owner_id: uuid.UUID, at: datetime, wait: bool) -> BuildRun:
@@ -254,6 +301,26 @@ class BuildRun:
         return self.status is BuildRunStatus.WAITING
 
     @property
+    def is_waiting_for_market(self) -> bool:
+        return self.is_waiting and bool(self.awaited_source_ids)
+
+    def wait_for_market(
+        self,
+        *,
+        needed: tuple[uuid.UUID, ...],
+        due: tuple[uuid.UUID, ...],
+        locations: tuple[str, ...],
+        at: datetime,
+    ) -> None:
+        """It has asked the market for what it reads: it waits for the due
+        sources, or for nothing."""
+        self.status = BuildRunStatus.WAITING
+        self.needed_source_ids = needed
+        self.awaited_source_ids = due
+        self.locations = locations
+        self.awaited_since = at
+
+    @property
     def is_running(self) -> bool:
         return self.status is BuildRunStatus.RUNNING
 
@@ -268,12 +335,38 @@ class BuildRun:
         self.status = BuildRunStatus.RUNNING
         self.started_at = at
 
-    def ready(self, at: datetime) -> None:
+    def ready(self, at: datetime, *, market_data_at: datetime | None = None) -> None:
         self.status = BuildRunStatus.READY
         self.finished_at = at
+        self.market_data_at = market_data_at
 
     def failed(self, *, code: str, message: str, at: datetime) -> None:
         self.status = BuildRunStatus.FAILED
         self.error_code = code
         self.error_message = message
         self.finished_at = at
+
+
+@dataclass(slots=True)
+class RoleFit:
+    """Fit between this user and one of their roles (ADR 0028).
+
+    Fit lives on the User x Role pair, never on the role: a snapshot taken
+    against the scores of one analysis (``assessment_id``), kept with what it
+    was projected from so it can be re-read without the role.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    role_id: uuid.UUID
+    score: int
+    reasoning: str
+    target_profile: dict[str, int]
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    model_id: str
+    template_version: str
+    requirements: tuple[dict[str, Any], ...] = ()
+    requirement_map: dict[str, str | None] = field(default_factory=dict)
+    created_at: datetime | None = None

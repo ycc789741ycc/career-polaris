@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, SecretStr, field_validator
+from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -135,11 +135,36 @@ class Settings(BaseSettings):
     embedding_model_name: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL_NAME"
     )
+    # The market is fetched only when a build needs it (ADR 0027).
+    # How often the crawler looks for sources a build is waiting for.
+    crawl_due_poll_seconds: int = Field(default=15, ge=1, alias="CRAWL_DUE_POLL_SECONDS")
+    # A ceiling no amount of demand breaks: requests to one host in one day.
+    crawl_max_requests_per_host_per_day: int = Field(
+        default=500, ge=1, alias="CRAWL_MAX_REQUESTS_PER_HOST_PER_DAY"
+    )
+    # How long a fetch is reused by any build before it is fetched again.
+    market_search_fresh_hours: int = Field(default=72, ge=1, alias="MARKET_SEARCH_FRESH_HOURS")
+    market_board_fresh_hours: int = Field(default=24, ge=1, alias="MARKET_BOARD_FRESH_HOURS")
+    # How long a build waits for its sources before it starts on what is stored.
+    market_wait_seconds: int = Field(default=300, ge=1, alias="MARKET_WAIT_SECONDS")
+    # A search no build has needed in this long is retired.
+    market_source_idle_days: int = Field(default=90, ge=1, alias="MARKET_SOURCE_IDLE_DAYS")
+    # A posting nothing holds loses its description and embedding after this.
+    posting_thin_after_days: int = Field(default=180, ge=1, alias="POSTING_THIN_AFTER_DAYS")
 
     # --- Assessment ---------------------------------------------------------
     assessment_confidence_threshold: float = Field(
         default=0.6, alias="ASSESSMENT_CONFIDENCE_THRESHOLD"
     )
+
+    # --- Role map (ADR 0029) -------------------------------------------------
+    # How many roles an analysis recommends, every one searched for in each
+    # searchable place: one public-API request per role and place, so it is
+    # capped at the twenty an analysis recommended before this was a setting.
+    role_candidate_count: int = Field(default=10, ge=1, le=20, alias="ROLE_CANDIDATE_COUNT")
+    # How many recommended roles a build keeps, names, analyses and scores:
+    # three calls each on the user's key. Custom roles are on top.
+    role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
 
     # --- Background work ----------------------------------------------------
     # How long a sync, parse, analysis or role-map build may show as running
@@ -162,6 +187,22 @@ class Settings(BaseSettings):
         if not 0.0 <= value <= 1.0:
             raise ValueError("ASSESSMENT_CONFIDENCE_THRESHOLD must be between 0 and 1")
         return value
+
+    @model_validator(mode="after")
+    def _top_k_within_the_candidates(self) -> Settings:
+        # A build keeps k of the candidates; more than were recommended would
+        # price roles no build can make.
+        if self.role_map_top_k > self.role_candidate_count:
+            raise ValueError("ROLE_MAP_TOP_K must not exceed ROLE_CANDIDATE_COUNT")
+        return self
+
+    @model_validator(mode="after")
+    def _wait_shorter_than_staleness(self) -> Settings:
+        # A build waiting on the market past the staleness limit would be
+        # reported lost before its deadline started it (ADR 0018, ADR 0027).
+        if self.market_wait_seconds >= self.job_stale_after_seconds:
+            raise ValueError("MARKET_WAIT_SECONDS must be shorter than JOB_STALE_AFTER_SECONDS")
+        return self
 
     def require_auth_secret(self) -> str:
         """The key this application signs and verifies session tokens with."""

@@ -1,35 +1,60 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import type { StringPage } from "../api/types";
-import { Button, ErrorNote, Loading } from "../components/ui";
+import type {
+  StringPage,
+  TargetLocationOption,
+  TargetLocationOptionPage,
+} from "../api/types";
+import { ErrorNote, Loading } from "../components/ui";
 import { messageOf, useAsync } from "./useAsync";
 
 // The cap the market enforces (domain decision 21). The api is the authority;
-// this only keeps the input from offering a fourth it would refuse.
+// this only keeps the list from offering a fourth it would refuse.
 export const MAX_TARGET_LOCATIONS = 3;
 
+const GROUPS: { kind: TargetLocationOption["kind"]; label: string }[] = [
+  { kind: "remote", label: "Remote" },
+  { kind: "region", label: "Regions" },
+  { kind: "country", label: "Countries" },
+];
+
 /**
- * "Where you want to work": the user's one to three target locations.
+ * "Where you want to work": the user's one to three target locations, picked
+ * from the places the platform knows how to match (ADR 0026).
  *
  * They are stated about the user, so they sit in 01 Sources, but what they
- * decide is market scope: which postings the role map groups and which salary
- * bands it shows. Each change saves the whole set, and a role map the user
- * already has is rebuilt on the new scope.
+ * decide is market scope: which postings the role map is built from and which
+ * salary bands it shows. Each change saves the whole set; the role map then
+ * says the locations changed, and is rebuilt on them when the user asks
+ * (ADR 0027). A country or "Remote" is also searched for the roles an analysis
+ * recommends; a region is not.
  */
 export function TargetLocations() {
   const saved = useAsync<string[]>(
     () => api.items<StringPage>("/target-locations"),
     [],
   );
+  const options = useAsync<TargetLocationOption[]>(
+    () => api.items<TargetLocationOptionPage>("/target-location-options"),
+    [],
+  );
   // What the last save answered with; it is the saved set from then on.
   const [answered, setAnswered] = useState<string[] | null>(null);
-  const [draft, setDraft] = useState("");
+  const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const chosen = answered ?? saved.data ?? [];
   const isFull = chosen.length >= MAX_TARGET_LOCATIONS;
   const left = MAX_TARGET_LOCATIONS - chosen.length;
+  const kindOf = new Map(
+    (options.data ?? []).map((option) => [option.name, option.kind]),
+  );
+  const hasRegion = chosen.some((name) => kindOf.get(name) === "region");
+  const wanted = filter.trim().toLowerCase();
+  const shown = (options.data ?? []).filter((option) =>
+    option.name.toLowerCase().includes(wanted),
+  );
 
   async function save(locations: string[]) {
     setBusy(true);
@@ -45,10 +70,9 @@ export function TargetLocations() {
     }
   }
 
-  async function add() {
-    const value = draft.trim();
-    if (!value || isFull) return;
-    if (await save([...chosen, value])) setDraft("");
+  async function add(name: string) {
+    if (isFull || chosen.includes(name)) return;
+    if (await save([...chosen, name])) setFilter("");
   }
 
   return (
@@ -62,10 +86,10 @@ export function TargetLocations() {
         </span>
       </div>
       <p className="subcopy">
-        Pick up to {MAX_TARGET_LOCATIONS} locations. The role map only searches
+        Pick up to {MAX_TARGET_LOCATIONS} places. The role map only uses
         postings in these places, and salary bands are shown for them.
       </p>
-      {saved.loading ? (
+      {saved.loading || options.loading ? (
         <Loading what="your locations" />
       ) : (
         <>
@@ -74,6 +98,9 @@ export function TargetLocations() {
               {chosen.map((location) => (
                 <span key={location} className="chip location-chip">
                   {location}
+                  {kindOf.get(location) === "region" && (
+                    <span className="location-chip-kind">region</span>
+                  )}
                   <button
                     type="button"
                     className="location-chip-remove"
@@ -89,31 +116,52 @@ export function TargetLocations() {
               ))}
             </div>
           )}
-          <form
-            className="row"
-            style={{ flexWrap: "nowrap", marginTop: 10 }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void add();
-            }}
-          >
-            <input
-              className="input"
-              aria-label="Add a location"
-              value={draft}
-              placeholder="City, country or Remote region…"
-              disabled={isFull}
-              onChange={(event) => setDraft(event.target.value)}
-            />
-            <Button
-              type="submit"
-              variant="secondary"
-              busy={busy}
-              disabled={isFull || !draft.trim()}
-            >
-              Add
-            </Button>
-          </form>
+          <input
+            className="input"
+            aria-label="Find a place"
+            value={filter}
+            placeholder="Type to filter: a country, a region or Remote…"
+            disabled={isFull}
+            onChange={(event) => setFilter(event.target.value)}
+            style={{ marginTop: 10 }}
+          />
+          {!isFull && (
+            <div className="location-options">
+              {GROUPS.map(({ kind, label }) => {
+                const inGroup = shown.filter((option) => option.kind === kind);
+                if (inGroup.length === 0) return null;
+                return (
+                  <div key={kind} role="group" aria-label={label}>
+                    <div className="location-options-heading">{label}</div>
+                    {inGroup.map((option) => {
+                      const isChosen = chosen.includes(option.name);
+                      return (
+                        <button
+                          key={option.name}
+                          type="button"
+                          className="location-option"
+                          disabled={busy || isChosen}
+                          aria-label={
+                            isChosen
+                              ? `${option.name}, already chosen`
+                              : `Add ${option.name}`
+                          }
+                          onClick={() => void add(option.name)}
+                        >
+                          {option.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {shown.length === 0 && (
+                <p className="muted" style={{ margin: 8 }}>
+                  No place matches “{filter.trim()}”.
+                </p>
+              )}
+            </div>
+          )}
           <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
             {isFull
               ? `At ${MAX_TARGET_LOCATIONS}, remove one to add another.`
@@ -121,9 +169,15 @@ export function TargetLocations() {
                 ? "None chosen yet: the role map uses the platform's baseline postings."
                 : `${left} ${left === 1 ? "slot" : "slots"} left. At ${MAX_TARGET_LOCATIONS}, remove one to add another.`}
           </p>
+          {hasRegion && (
+            <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
+              Regions use the postings we already have. Pick a country for a
+              fresh search of your recommended roles.
+            </p>
+          )}
         </>
       )}
-      <ErrorNote error={error} />
+      <ErrorNote error={error ?? options.error} />
     </section>
   );
 }

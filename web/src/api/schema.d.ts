@@ -662,9 +662,10 @@ export interface paths {
         /**
          * Matched Postings
          * @description The openings inside the user's roles, best first, for the role map's "Top
-         *     matched" list: ask for ``page_size=10`` for the top ten. ``role_id`` keeps
-         *     one role's, the openings the Advisor can aim at in it. Ranked by the role's
-         *     fit; no AI runs to produce it.
+         *     matched" list: ask for ``page_size=10`` for the top ten. Across all roles
+         *     it holds one opening per company, the best-ranked one. ``role_id`` keeps
+         *     one role's, every opening the Advisor can aim at in it. Ranked by the
+         *     role's fit; no AI runs to produce it.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;
@@ -808,6 +809,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/role-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Role Map State
+         * @description How current the map is: the market it was built from, and whether the
+         *     target locations changed since (ADR 0027).
+         */
+        get: operations["role_map_state_api_v1_role_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roles": {
         parameters: {
             query?: never;
@@ -817,7 +839,8 @@ export interface paths {
         };
         /**
          * List Roles
-         * @description The analysed roles: the ten recommended ones at most (ADR 0020).
+         * @description The analysed roles: the top k recommended ones at most (ADR 0029), and
+         *     the user's own.
          */
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
@@ -860,7 +883,7 @@ export interface paths {
         put?: never;
         /**
          * Add Custom Role
-         * @description Place a role the user named beside the ten (ADR 0021). Its JD, if any,
+         * @description Place a role the user named beside the top k (ADR 0021). Its JD, if any,
          *     is stored privately; the build that analyses it is recorded here, so the
          *     page sees it at once, and waits for a running analysis (ADR 0018).
          */
@@ -1087,6 +1110,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/target-location-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Target Location Options
+         * @description The places a user may pick: "Remote", the regions, then the countries,
+         *     each group A to Z (ADR 0026).
+         */
+        get: operations["list_target_location_options_api_v1_target_location_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/target-locations": {
         parameters: {
             query?: never;
@@ -1101,8 +1145,9 @@ export interface paths {
         get: operations["list_target_locations_api_v1_target_locations_get"];
         /**
          * Set Target Locations
-         * @description Replace the whole set. A change rebuilds a role map the user already
-         *     has, on the new scope; the worker does that from the event it records.
+         * @description Replace the whole set, each a place from ``/target-location-options``.
+         *     A change rebuilds a role map the user already has, on the new scope; the
+         *     worker does that from the event it records.
          */
         put: operations["set_target_locations_api_v1_target_locations_put"];
         post?: never;
@@ -1487,12 +1532,13 @@ export interface components {
             gaps: components["schemas"]["FitGap"][];
             /** Model Id */
             model_id: string;
-            /** Private Posting Id */
-            private_posting_id: string | null;
             /** Reasoning */
             reasoning: string;
-            /** Role Id */
-            role_id: string | null;
+            /**
+             * Role Id
+             * Format: uuid
+             */
+            role_id: string;
             /** Score */
             score: number;
             /** Uncovered */
@@ -2183,7 +2229,8 @@ export interface components {
         };
         /**
          * Role
-         * @description One bubble. Its size, the fit, is the assessment's (``GET /fits``).
+         * @description One bubble. Its size is its fit (``GET /fits``), kept apart because it
+         *     belongs to the User x Role pair.
          */
         Role: {
             /** Bar Basis */
@@ -2273,6 +2320,20 @@ export interface components {
             /** Rate Is Published */
             rate_is_published?: boolean | null;
         };
+        /**
+         * RoleMapState
+         * @description How current the map on screen is (ADR 0027). It is built only when the
+         *     user asks, so it says how old its market is, and whether the target
+         *     locations changed since. Both are null before the first map.
+         */
+        RoleMapState: {
+            /** Built For Locations */
+            built_for_locations: string[] | null;
+            /** Locations Changed */
+            locations_changed: boolean;
+            /** Market Data At */
+            market_data_at: string | null;
+        };
         /** RolePage */
         RolePage: {
             /** Items */
@@ -2295,9 +2356,10 @@ export interface components {
         };
         /**
          * RunStatus
-         * @description The newest analysis or role-map build. ``waiting`` is a build asked for
-         *     during an analysis; it starts when the analysis finishes. A run that stopped
-         *     responding reads as ``failed`` with the code ``stale``.
+         * @description The newest analysis or role-map build. A ``waiting`` build says what it
+         *     waits for: an analysis that is running, or the market sources it reads,
+         *     being fetched (ADR 0027). A run that stopped responding reads as
+         *     ``failed`` with the code ``stale``.
          */
         RunStatus: {
             error: components["schemas"]["JobError"] | null;
@@ -2310,6 +2372,8 @@ export interface components {
              * @enum {string}
              */
             status: "waiting" | "running" | "ready" | "failed";
+            /** Waiting For */
+            waiting_for?: ("analysis" | "market") | null;
         };
         /** Salary */
         Salary: {
@@ -2481,9 +2545,35 @@ export interface components {
             rate_is_published: boolean;
         };
         /**
+         * TargetLocationOption
+         * @description One place on the list: ``kind`` is "remote", "region" or "country". A
+         *     region is matched by its member countries and never searched (ADR 0026).
+         */
+        TargetLocationOption: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "remote" | "region" | "country";
+            /** Name */
+            name: string;
+        };
+        /** TargetLocationOptionPage */
+        TargetLocationOptionPage: {
+            /** Items */
+            items: components["schemas"]["TargetLocationOption"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
+        /**
          * TargetLocationsRequest
          * @description The user's whole set of target locations (domain decision 21). The
-         *     market domain checks the cap again; this rejects an oversized body early.
+         *     market domain checks again that each is on the list and the cap holds
+         *     (ADR 0026); this rejects an oversized body early.
          */
         TargetLocationsRequest: {
             /** Locations */
@@ -2558,9 +2648,7 @@ export interface operations {
     activity_api_v1_activity_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2607,9 +2695,7 @@ export interface operations {
     read_budget_api_v1_ai_budget_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2656,9 +2742,7 @@ export interface operations {
     set_budget_api_v1_ai_budget_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2709,9 +2793,7 @@ export interface operations {
     read_credential_api_v1_ai_credential_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2758,9 +2840,7 @@ export interface operations {
     set_credential_api_v1_ai_credential_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2811,9 +2891,7 @@ export interface operations {
     delete_credential_api_v1_ai_credential_delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2912,9 +2990,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2961,9 +3037,7 @@ export interface operations {
     run_assessment_api_v1_assessments_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3010,9 +3084,7 @@ export interface operations {
     cost_estimate_api_v1_assessments_cost_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3059,9 +3131,7 @@ export interface operations {
     latest_api_v1_assessments_latest_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3349,9 +3419,7 @@ export interface operations {
     sign_out_everywhere_api_v1_auth_sign_out_everywhere_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3401,9 +3469,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3450,9 +3516,7 @@ export interface operations {
     disconnect_api_v1_connections__kind__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3499,9 +3563,7 @@ export interface operations {
     start_authorization_api_v1_connections__kind__authorize_url_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3550,9 +3612,7 @@ export interface operations {
     complete_authorization_api_v1_connections__kind__callback_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3605,9 +3665,7 @@ export interface operations {
     sync_now_api_v1_connections__kind__sync_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 kind: string;
             };
@@ -3661,9 +3719,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3715,9 +3771,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3764,9 +3818,7 @@ export interface operations {
     compute_fits_api_v1_fits_compute_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3813,9 +3865,7 @@ export interface operations {
     set_task_done_api_v1_gap_plan_tasks__task_id__put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 task_id: string;
             };
@@ -3871,9 +3921,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3920,9 +3968,7 @@ export interface operations {
     request_plan_api_v1_gap_plans_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3976,9 +4022,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4025,9 +4069,7 @@ export interface operations {
     get_plan_api_v1_gap_plans__plan_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 plan_id: string;
             };
@@ -4076,9 +4118,7 @@ export interface operations {
     request_set_api_v1_gap_question_sets_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4132,9 +4172,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4184,9 +4222,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4233,9 +4269,7 @@ export interface operations {
     get_set_api_v1_gap_question_sets__set_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4284,9 +4318,7 @@ export interface operations {
     submit_api_v1_gap_question_sets__set_id__answers_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4339,9 +4371,7 @@ export interface operations {
     submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 set_id: string;
             };
@@ -4395,9 +4425,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4444,9 +4472,7 @@ export interface operations {
     market_scope_api_v1_market_scope_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4499,9 +4525,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4548,9 +4572,7 @@ export interface operations {
     me_api_v1_me_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4597,9 +4619,7 @@ export interface operations {
     read_profile_api_v1_profile_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4646,9 +4666,7 @@ export interface operations {
     get_export_api_v1_resume_exports__export_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 export_id: string;
             };
@@ -4702,9 +4720,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4751,9 +4767,7 @@ export interface operations {
     upload_resume_api_v1_resumes_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4804,9 +4818,7 @@ export interface operations {
     delete_resume_api_v1_resumes__resume_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -4853,9 +4865,7 @@ export interface operations {
     resume_url_api_v1_resumes__resume_id__download_url_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -4909,9 +4919,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4955,6 +4963,53 @@ export interface operations {
             };
         };
     };
+    role_map_state_api_v1_role_map_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleMapState"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_roles_api_v1_roles_get: {
         parameters: {
             query?: {
@@ -4963,9 +5018,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5012,9 +5065,7 @@ export interface operations {
     cost_estimate_api_v1_roles_cost_estimate_get: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5061,9 +5112,7 @@ export interface operations {
     add_custom_role_api_v1_roles_custom_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5114,9 +5163,7 @@ export interface operations {
     custom_role_estimate_api_v1_roles_custom_cost_estimate_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5167,9 +5214,7 @@ export interface operations {
     remove_custom_role_api_v1_roles_custom__role_id__delete: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 role_id: string;
             };
@@ -5216,9 +5261,7 @@ export interface operations {
     recluster_api_v1_roles_recluster_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5270,9 +5313,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5319,9 +5360,7 @@ export interface operations {
     write_resume_api_v1_tailored_resumes_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5375,9 +5414,7 @@ export interface operations {
                 role_id: string;
                 job_posting_id?: string | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5426,9 +5463,7 @@ export interface operations {
             query?: {
                 version?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5477,9 +5512,7 @@ export interface operations {
     request_export_api_v1_tailored_resumes__resume_id__exports_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5532,9 +5565,7 @@ export interface operations {
     revise_api_v1_tailored_resumes__resume_id__revisions_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5587,9 +5618,7 @@ export interface operations {
     apply_revision_api_v1_tailored_resumes__resume_id__revisions__revision_id__apply_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
                 revision_id: string;
@@ -5639,9 +5668,7 @@ export interface operations {
     update_settings_api_v1_tailored_resumes__resume_id__settings_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5692,9 +5719,7 @@ export interface operations {
     save_version_api_v1_tailored_resumes__resume_id__versions_post: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path: {
                 resume_id: string;
             };
@@ -5744,6 +5769,58 @@ export interface operations {
             };
         };
     };
+    list_target_location_options_api_v1_target_location_options_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetLocationOptionPage"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_target_locations_api_v1_target_locations_get: {
         parameters: {
             query?: {
@@ -5752,9 +5829,7 @@ export interface operations {
                 /** @description Omit it for the whole list, on page 1. */
                 page_size?: number | null;
             };
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5801,9 +5876,7 @@ export interface operations {
     set_target_locations_api_v1_target_locations_put: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };

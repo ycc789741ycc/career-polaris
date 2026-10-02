@@ -51,18 +51,16 @@ class RoleMapBuildFinished:
 
 
 @dataclass(frozen=True, slots=True)
-class RoleCandidatesReplaced:
-    """An analysis recommended a new set of roles. Their titles go to the
-    market to be searched for, with nothing about the user attached
-    (ADR 0025)."""
+class RoleFitsComputed:
+    """The fits of a build were scored, one per role with requirements."""
 
     owner_id: uuid.UUID
-    titles: tuple[str, ...]
+    roles: int
 
 
 RoleMapEvent = (
     CustomRoleAdded
-    | RoleCandidatesReplaced
+    | RoleFitsComputed
     | RoleMapBuildFinished
     | RoleRequirementsChanged
     | RoleSplitOrMerged

@@ -8,9 +8,11 @@ filter's set fields into conditions.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, insert, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -37,9 +39,14 @@ from advisor.market.domain import (
     PrivateJobPosting,
     PrivateJobPostingFilter,
     PrivateJobPostingRepository,
+    SearchResult,
+    SearchResultFilter,
+    SearchResultRepository,
     SourceOrigin,
     market_words,
+    place_names,
     search_scope,
+    target_location_option,
 )
 from advisor.market.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
@@ -111,12 +118,32 @@ class SqlAlchemyCrawlSourceRepository(
             found.append(source.kind == filter.kind)
         if filter.endpoint is not None:
             found.append(source.endpoint == filter.endpoint)
-        if filter.is_unfetched is not None:
-            unfetched = source.last_fetched_at.is_(None)
-            found.append(unfetched if filter.is_unfetched else ~unfetched)
+        if filter.ids is not None:
+            found.append(source.id.in_(filter.ids))
+        if filter.is_due is not None:
+            due = source.due_at.is_not(None)
+            found.append(due if filter.is_due else ~due)
+        if filter.is_search is not None:
+            # A search is filed under its place; a company's board has none.
+            search = source.market.is_not(None)
+            found.append(search if filter.is_search else ~search)
         if filter.requested_before is not None:
             found.append(source.last_requested_at < filter.requested_before)
         return found
+
+    async def create_if_absent(self, source: CrawlSource) -> bool:
+        row = mappers.crawl_source_row(source)
+        values = {
+            column.key: getattr(row, column.key)
+            for column in models.CrawlSource.__table__.columns
+            if getattr(row, column.key, None) is not None
+        }
+        result = await self._session.execute(
+            pg_insert(models.CrawlSource)
+            .values(**values)
+            .on_conflict_do_nothing(constraint="uq_crawl_source_kind")
+        )
+        return bool(getattr(result, "rowcount", 0))
 
 
 class SqlAlchemyJobPostingRepository(
@@ -179,11 +206,17 @@ class SqlAlchemyJobPostingRepository(
         posting = models.JobPosting
         either: list[ColumnElement[bool]] = []
         for market in scope.markets:
-            if words := market_words(market):
-                either.append(_names_every_word(posting.location, words))
-        if any(search_scope(market) is not None for market in scope.markets):
-            # Remote work open to anyone is in every place a search can be
-            # scoped to, though its location names none of them (ADR 0025).
+            # A country takes in its cities, and a region its member countries
+            # (ADR 0026): ``in_market`` in SQL.
+            for name in place_names(market):
+                if words := market_words(name):
+                    either.append(_names_every_word(posting.location, words))
+        if any(
+            target_location_option(market) is not None or search_scope(market) is not None
+            for market in scope.markets
+        ):
+            # Remote work open to anyone is in every listed place, though its
+            # location names none of them (ADR 0025).
             either.append(_names_every_word(posting.location, WORLDWIDE_WORDS))
         if scope.includes_baseline:
             either.append(
@@ -197,10 +230,44 @@ class SqlAlchemyJobPostingRepository(
             return []  # locations with no words in them, and nothing else chosen
         rows = await self._session.execute(
             select(posting)
-            .where(posting.status == str(PostingStatus.OPEN), or_(*either))
+            .where(posting.status == str(PostingStatus.OPEN), or_(*either), _is_held(posting))
             .order_by(posting.created_at.desc(), posting.id.desc())
         )
         return [mappers.job_posting(row) for row in rows.scalars()]
+
+    async def thin_unheld(self, *, unseen_since: datetime, at: datetime) -> int:
+        posting = models.JobPosting
+        unheld = and_(
+            posting.thinned_at.is_(None),
+            posting.last_seen_at < unseen_since,
+            ~and_(posting.status == str(PostingStatus.OPEN), _is_held(posting)),
+        )
+        thinned = await self._session.execute(
+            update(posting)
+            .where(unheld)
+            .values(description="", thinned_at=at)
+            .returning(posting.id)
+        )
+        ids = [row[0] for row in thinned.all()]
+        if ids:
+            await self._session.execute(
+                delete(models.PostingEmbedding).where(
+                    models.PostingEmbedding.job_posting_id.in_(ids)
+                )
+            )
+        return len(ids)
+
+
+def _is_held(posting: type[models.JobPosting]) -> ColumnElement[bool]:
+    """A posting a board found is held while it is open; one a search found
+    only while it is on a current result list (ADR 0027)."""
+    searches = select(models.CrawlSource.id).where(models.CrawlSource.market.is_not(None))
+    listed = exists().where(models.SearchResult.job_posting_id == posting.id)
+    return or_(
+        posting.crawl_source_id.is_(None),
+        posting.crawl_source_id.not_in(searches),
+        listed,
+    )
 
 
 def _names_every_word(
@@ -245,6 +312,58 @@ class SqlAlchemyPostingEmbeddingRepository(
         return found
 
 
+class SqlAlchemySearchResultRepository(
+    SqlAlchemyRepository[SearchResult, models.SearchResult, SearchResultFilter],
+    SearchResultRepository,
+):
+    model = models.SearchResult
+    id_column = models.SearchResult.id
+    created_column = models.SearchResult.fetched_at
+    noun = "search result"
+
+    def to_entity(self, row: models.SearchResult) -> SearchResult:
+        return mappers.search_result(row)
+
+    def to_row(self, entity: SearchResult) -> models.SearchResult:
+        return mappers.search_result_row(entity)
+
+    def apply(self, row: models.SearchResult, entity: SearchResult) -> None:
+        mappers.apply_search_result(row, entity)
+
+    def id_of(self, entity: SearchResult) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: SearchResultFilter) -> list[ColumnElement[bool]]:
+        result = models.SearchResult
+        found: list[ColumnElement[bool]] = []
+        if filter.crawl_source_ids is not None:
+            found.append(result.crawl_source_id.in_(filter.crawl_source_ids))
+        if filter.job_posting_ids is not None:
+            found.append(result.job_posting_id.in_(filter.job_posting_ids))
+        return found
+
+    async def replace(
+        self, crawl_source_id: uuid.UUID, posting_ids: list[uuid.UUID], *, at: datetime
+    ) -> None:
+        result = models.SearchResult
+        await self._session.execute(delete(result).where(result.crawl_source_id == crawl_source_id))
+        listed = list(dict.fromkeys(posting_ids))
+        if listed:
+            await self._session.execute(
+                insert(result),
+                [
+                    {
+                        "id": uuid.uuid4(),
+                        "crawl_source_id": crawl_source_id,
+                        "job_posting_id": posting_id,
+                        "rank": rank,
+                        "fetched_at": at,
+                    }
+                    for rank, posting_id in enumerate(listed)
+                ],
+            )
+
+
 # --- owner zone ------------------------------------------------------------
 
 
@@ -277,14 +396,6 @@ class SqlAlchemyMarketPreferenceRepository(
         found: list[ColumnElement[bool]] = []
         if filter.market is not None:
             found.append(preference.market == filter.market)
-        if filter.names_any_of is not None:
-            named = [
-                _names_every_word(preference.market, words)
-                for name in filter.names_any_of
-                if (words := market_words(name))
-            ]
-            # No usable name matches nobody, rather than everybody.
-            found.append(or_(*named) if named else preference.id.is_(None))
         return found
 
 

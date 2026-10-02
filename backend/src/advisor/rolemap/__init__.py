@@ -10,36 +10,48 @@ import only what is listed here (import-linter contract
 
 from advisor.rolemap import jobs
 from advisor.rolemap.domain import (
-    CANDIDATE_ROLE_COUNT,
+    DEFAULT_MATCHES,
     MAX_COMPANY_NAME,
+    MAX_MATCHES,
     MAX_ROLE_REQUIREMENTS,
     MAX_ROLE_TITLE,
-    RECOMMENDED_ROLE_COUNT,
+    MAX_STRENGTHS,
+    MIN_MATCHES,
 )
 from advisor.rolemap.factory import create_rolemap_service
 from advisor.rolemap.service import (
     BuildRequestView,
     BuildRunView,
     CandidateInput,
+    FitView,
+    MarketWait,
+    MatchedPostingView,
     RequirementView,
     RoleCandidateView,
     RoleMapService,
     RoleView,
+    StrengthInput,
 )
 
 __all__ = [
-    "CANDIDATE_ROLE_COUNT",
+    "DEFAULT_MATCHES",
     "MAX_COMPANY_NAME",
+    "MAX_MATCHES",
     "MAX_ROLE_REQUIREMENTS",
     "MAX_ROLE_TITLE",
-    "RECOMMENDED_ROLE_COUNT",
+    "MAX_STRENGTHS",
+    "MIN_MATCHES",
     "BuildRequestView",
     "BuildRunView",
     "CandidateInput",
+    "FitView",
+    "MarketWait",
+    "MatchedPostingView",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
     "RoleView",
+    "StrengthInput",
     "create_rolemap_service",
     "jobs",
 ]

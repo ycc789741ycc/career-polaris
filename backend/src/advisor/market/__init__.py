@@ -10,12 +10,10 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.market import jobs
-from advisor.market.crawling.run import (
-    crawl_all,
-    crawl_new,
-)
+from advisor.market.crawling.run import CrawlPoliteness, crawl_due
 from advisor.market.factory import (
     create_crawl_ingest,
+    create_crawl_politeness,
     create_market_service,
 )
 from advisor.market.service import (
@@ -25,6 +23,7 @@ from advisor.market.service import (
     BaselineSource,
     CrawlIngest,
     CrawlSourceView,
+    FreshWindows,
     MarketScopeView,
     MarketService,
     NormalizedPosting,
@@ -34,6 +33,8 @@ from advisor.market.service import (
     SalaryRange,
     SourceKind,
     SourceOrigin,
+    SourcesRequestView,
+    TargetLocationOptionView,
     Visibility,
     band_from,
     canonical_key,
@@ -47,7 +48,9 @@ __all__ = [
     "MAX_TARGET_LOCATIONS",
     "BaselineSource",
     "CrawlIngest",
+    "CrawlPoliteness",
     "CrawlSourceView",
+    "FreshWindows",
     "MarketScopeView",
     "MarketService",
     "NormalizedPosting",
@@ -57,12 +60,14 @@ __all__ = [
     "SalaryRange",
     "SourceKind",
     "SourceOrigin",
+    "SourcesRequestView",
+    "TargetLocationOptionView",
     "Visibility",
     "band_from",
     "canonical_key",
-    "crawl_all",
-    "crawl_new",
+    "crawl_due",
     "create_crawl_ingest",
+    "create_crawl_politeness",
     "create_market_service",
     "in_market",
     "jobs",

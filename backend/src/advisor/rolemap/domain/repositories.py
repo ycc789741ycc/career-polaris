@@ -21,9 +21,11 @@ from typing import Protocol
 from advisor.rolemap.domain.entities import (
     BuildRun,
     BuildRunStatus,
+    CandidateStrength,
     LineageEntry,
     Role,
     RoleCandidate,
+    RoleFit,
     RoleMember,
     RoleOrigin,
     RoleRequirement,
@@ -98,6 +100,25 @@ class RoleCandidateFilter:
 class RoleCandidateRepository(Repository[RoleCandidate, RoleCandidateFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateStrengthFilter:
+    """Nothing to filter on: a user has one set, beside their candidates."""
+
+
+class CandidateStrengthRepository(
+    Repository[CandidateStrength, CandidateStrengthFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class RoleFitFilter:
+    role_id: uuid.UUID | None = None
+    assessment_id: uuid.UUID | None = None
+
+
+class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
+
+
 class OwnerRoleMap(Protocol):
     roles: RoleRepository
     members: RoleMemberRepository
@@ -105,6 +126,8 @@ class OwnerRoleMap(Protocol):
     lineage: LineageEntryRepository
     builds: BuildRunRepository
     candidates: RoleCandidateRepository
+    strengths: CandidateStrengthRepository
+    fits: RoleFitRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 
