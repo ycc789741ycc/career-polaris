@@ -17,6 +17,9 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunRepository,
+    CandidatePlacement,
+    CandidatePlacementFilter,
+    CandidatePlacementRepository,
     CandidateStrength,
     CandidateStrengthFilter,
     CandidateStrengthRepository,
@@ -403,3 +406,37 @@ class SqlAlchemyPostingFitRepository(
         if filter.posting_keys is None:
             return []
         return [models.PostingFit.posting_key.in_(filter.posting_keys)]
+
+
+class SqlAlchemyCandidatePlacementRepository(
+    SqlAlchemyRepository[CandidatePlacement, models.CandidatePlacement, CandidatePlacementFilter],
+    CandidatePlacementRepository,
+):
+    model = models.CandidatePlacement
+    id_column = models.CandidatePlacement.id
+    created_column = models.CandidatePlacement.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
+        models.CandidatePlacement.owner_id
+    )
+    noun = "candidate placement"
+
+    def to_entity(self, row: models.CandidatePlacement) -> CandidatePlacement:
+        return mappers.placement(row)
+
+    def to_row(self, entity: CandidatePlacement) -> models.CandidatePlacement:
+        return mappers.placement_row(entity)
+
+    def apply(self, row: models.CandidatePlacement, entity: CandidatePlacement) -> None:
+        mappers.apply_placement(row, entity)
+
+    def id_of(self, entity: CandidatePlacement) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: CandidatePlacementFilter) -> list[ColumnElement[bool]]:
+        placement = models.CandidatePlacement
+        found: list[ColumnElement[bool]] = []
+        if filter.build_run_id is not None:
+            found.append(placement.build_run_id == filter.build_run_id)
+        if filter.candidate_ids is not None:
+            found.append(placement.candidate_id.in_(filter.candidate_ids))
+        return found

@@ -151,8 +151,8 @@ class BuildRun(Base, OwnedMixin):
 
 class RoleCandidate(Base, OwnedMixin):
     """A role the latest analysis recommended from the user's strengths
-    (ADR 0024). Replaced as a set by each analysis; a build places each one on
-    the role it became, or leaves ``role_id`` empty when the market lacks it."""
+    (ADR 0024): the query a build searches and matches with. Replaced as a set
+    by each analysis; what a build made of it is a ``candidate_placement``."""
 
     __tablename__ = "role_candidate"
     __table_args__ = (
@@ -169,11 +169,43 @@ class RoleCandidate(Base, OwnedMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     # The user's dimension keys it rests on, checked against that analysis.
     dimension_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CandidatePlacement(Base, OwnedMixin):
+    """What one build made of one candidate: the role it became, or why none
+    (Phase 8). Kept per build, with the candidate's rank and title copied in,
+    so it still reads after the next analysis replaces the candidates."""
+
+    __tablename__ = "candidate_placement"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('placed', 'outside_top_k', 'too_few_openings')", name="outcome"
+        ),
+        CheckConstraint("(outcome = 'placed') = (role_id IS NOT NULL)", name="role"),
+        UniqueConstraint(
+            "build_run_id", "candidate_id", name="uq_candidate_placement_build_run_id"
+        ),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    build_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("rolemap.build_run.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("rolemap.role_candidate.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
     role_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("rolemap.role.id", ondelete="SET NULL"), nullable=True
     )
-    opening_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    # The local estimate that chose the ten (ADR 0027); not a fit.
+    opening_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The local estimate that chose the k (ADR 0027); not a fit.
     fit_estimate: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

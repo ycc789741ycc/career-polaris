@@ -42,6 +42,8 @@ from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
     BuildRunStatus,
+    CandidatePlacement,
+    CandidatePlacementFilter,
     CandidateStrength,
     CandidateStrengthFilter,
     ClosingLifts,
@@ -50,6 +52,7 @@ from advisor.rolemap.domain import (
     MatchCandidate,
     OwnerRoleMap,
     OwnPostingError,
+    PlacementOutcome,
     PostingEvaluation,
     PostingEvaluationFilter,
     PostingFit,
@@ -198,8 +201,10 @@ class StrengthInput:
 
 @dataclass(frozen=True, slots=True)
 class RoleCandidateView:
-    """A recommended candidate and what the last build made of it: the role it
-    became, or none when the user's target locations lack openings for it."""
+    """A recommended candidate, and what the latest build that read it made of
+    it (its ``CandidatePlacement``): the role it became, or none when it fell
+    outside the top k or the user's target locations lack openings for it.
+    Before any build has read it, no role and no openings."""
 
     id: uuid.UUID
     rank: int
@@ -210,6 +215,8 @@ class RoleCandidateView:
     opening_count: int
     # The local estimate that chose the k (ADR 0027); never a fit.
     fit_estimate: float | None = None
+    # `placed`, `outside_top_k` or `too_few_openings`; none before a build.
+    outcome: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -510,12 +517,32 @@ class RoleMapService:
                 for rank, candidate in enumerate(candidates)
             ]
         log.info("rolemap.candidates_replaced", candidates=len(stored))
-        return [_candidate_view(c) for c in stored]
+        return [_candidate_view(c, None) for c in stored]
 
     async def candidates(self, owner_id: uuid.UUID) -> list[RoleCandidateView]:
-        """The latest analysis's candidates, in its order, each with the role
-        the last build made of it, if any."""
-        return [_candidate_view(c) for c in await self._candidates(owner_id)]
+        """The latest analysis's candidates, in its order, each with what the
+        latest build that read it made of it, if any build has."""
+        candidates = await self._candidates(owner_id)
+        placements = await self._latest_placements(owner_id, candidates)
+        return [_candidate_view(c, placements.get(c.id)) for c in candidates]
+
+    async def _latest_placements(
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate]
+    ) -> dict[uuid.UUID, CandidatePlacement]:
+        """Each candidate's placement by the newest build that read it. A
+        build that found nothing in scope places nobody, so the build before
+        it still speaks for them."""
+        if not candidates:
+            return {}
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.placements.get_list(
+                CandidatePlacementFilter(candidate_ids=tuple(c.id for c in candidates))
+            )
+        latest: dict[uuid.UUID, CandidatePlacement] = {}
+        for placement in found:
+            if placement.candidate_id is not None:
+                latest.setdefault(placement.candidate_id, placement)
+        return latest
 
     async def _candidates(self, owner_id: uuid.UUID) -> list[RoleCandidate]:
         async with self._uow.for_owner(owner_id) as mine:
@@ -688,7 +715,7 @@ class RoleMapService:
             return []
 
         try:
-            roles = await self.recluster(owner_id)
+            roles = await self.recluster(owner_id, build_id)
         except DomainError as exc:
             log.warning("rolemap.build_failed", build_id=str(build_id), code=str(exc.code))
             await self.fail_build(owner_id, build_id, code=str(exc.code), message=exc.message)
@@ -735,8 +762,9 @@ class RoleMapService:
                 )
             )
 
-    async def recluster(self, owner_id: uuid.UUID) -> list[RoleView]:
-        """Rebuild this user's role map from the latest analysis's candidates.
+    async def recluster(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> list[RoleView]:
+        """Rebuild this user's role map from the latest analysis's candidates,
+        as the work of build ``build_id``, which records what it made of each.
 
         Role ids survive: a goal or a saved fit pointing at a role must still
         find it after a crawl changes the underlying postings. With no
@@ -745,13 +773,13 @@ class RoleMapService:
         """
         candidates = await self._candidates(owner_id)
         if candidates:
-            await self._build_recommended(owner_id, candidates)
+            await self._build_recommended(owner_id, candidates, build_id=build_id)
         else:
             log.info("rolemap.no_candidates", owner_id=str(owner_id))
         return await self.roles(owner_id)
 
     async def _build_recommended(
-        self, owner_id: uuid.UUID, candidates: list[RoleCandidate]
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], *, build_id: uuid.UUID
     ) -> None:
         """The top k of the candidates the market has, analysed on the user's
         key; nothing is spent on the rest (ADR 0029).
@@ -842,9 +870,11 @@ class RoleMapService:
         await self._record_lineage(owner_id, reconciliation)
         await self._place_candidates(
             owner_id,
+            build_id,
             candidates,
             placed=placed,
             counts=counts,
+            eligible={candidates[i].id for i in eligible},
             estimates={candidates[i].id: estimates[i] for i in eligible},
         )
 
@@ -901,13 +931,16 @@ class RoleMapService:
     async def _place_candidates(
         self,
         owner_id: uuid.UUID,
+        build_id: uuid.UUID,
         candidates: list[RoleCandidate],
         *,
         placed: dict[uuid.UUID, uuid.UUID],
         counts: dict[uuid.UUID, int],
-        estimates: dict[uuid.UUID, float] | None = None,
+        eligible: set[uuid.UUID],
+        estimates: dict[uuid.UUID, float],
     ) -> None:
-        """Record what the build made of each candidate: its role, or none.
+        """Record what the build made of each candidate, as the build's own
+        record: its role, or why none. The candidate itself is not touched.
 
         An analysis that finished during the build has replaced the set; its
         candidates wait for the build that follows it, so the ones this build
@@ -915,20 +948,29 @@ class RoleMapService:
         """
         async with self._uow.for_owner(owner_id) as mine:
             for read in candidates:
-                candidate = await mine.candidates.get(read.id)
-                if candidate is None:
+                if await mine.candidates.get(read.id) is None:
                     continue
-                role_id = placed.get(candidate.id)
-                estimate = (estimates or {}).get(candidate.id)
-                if role_id is None:
-                    candidate.unplaced(
-                        opening_count=counts.get(candidate.id, 0), fit_estimate=estimate
+                role_id = placed.get(read.id)
+                await mine.placements.create(
+                    CandidatePlacement(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        build_run_id=build_id,
+                        candidate_id=read.id,
+                        rank=read.rank,
+                        title=read.title,
+                        outcome=(
+                            PlacementOutcome.PLACED
+                            if role_id is not None
+                            else PlacementOutcome.OUTSIDE_TOP_K
+                            if read.id in eligible
+                            else PlacementOutcome.TOO_FEW_OPENINGS
+                        ),
+                        opening_count=counts.get(read.id, 0),
+                        role_id=role_id,
+                        fit_estimate=estimates.get(read.id),
                     )
-                else:
-                    candidate.placed(
-                        role_id=role_id, opening_count=counts[candidate.id], fit_estimate=estimate
-                    )
-                await mine.candidates.update(candidate)
+                )
 
     async def _analyse(
         self,
@@ -1203,10 +1245,11 @@ class RoleMapService:
         data: the evidence for keeping the estimate, or going back to the
         analysis's order."""
         scored = {fit.role_id: fit.score for fit in fits}
+        placements = await self._latest_placements(owner_id, await self._candidates(owner_id))
         pairs = [
-            (candidate.fit_estimate, scored[candidate.role_id])
-            for candidate in await self._candidates(owner_id)
-            if candidate.role_id in scored and candidate.fit_estimate is not None
+            (placement.fit_estimate, scored[placement.role_id])
+            for placement in placements.values()
+            if placement.role_id in scored and placement.fit_estimate is not None
         ]
         if len(pairs) < 3:
             return
@@ -1803,16 +1846,19 @@ def _first[T](items: list[T]) -> T | None:
     return items[0] if items else None
 
 
-def _candidate_view(candidate: RoleCandidate) -> RoleCandidateView:
+def _candidate_view(
+    candidate: RoleCandidate, placement: CandidatePlacement | None
+) -> RoleCandidateView:
     return RoleCandidateView(
         id=candidate.id,
         rank=candidate.rank,
         title=candidate.title,
         description=candidate.description,
         dimension_keys=candidate.dimension_keys,
-        role_id=candidate.role_id,
-        opening_count=candidate.opening_count,
-        fit_estimate=candidate.fit_estimate,
+        role_id=placement.role_id if placement is not None else None,
+        opening_count=placement.opening_count if placement is not None else 0,
+        fit_estimate=placement.fit_estimate if placement is not None else None,
+        outcome=str(placement.outcome) if placement is not None else None,
     )
 
 

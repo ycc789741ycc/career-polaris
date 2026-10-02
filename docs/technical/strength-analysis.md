@@ -149,7 +149,8 @@ Nothing the model returns is believed until it is checked:
 `rolemap` schema (ADR 0024):
 
 - **`RoleCandidate`:** title, description and dimension keys, in the
-  analysis's order.
+  analysis's order: the query a build searches with. What a build made of it
+  is the build's `CandidatePlacement` (ADR 0031).
 - **`CandidateStrength`:** one per dimension: its name, its read, its score
   and confidence, and a weight of `score / 100 × confidence`. The build's
   free local fit estimate weighs dimensions by the weight (ADR 0027), and the

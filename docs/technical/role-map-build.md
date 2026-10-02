@@ -221,10 +221,12 @@ step 6:
    that no longer comes from a kept candidate is retired, including one merged
    into another, whose postings now belong to the role it merged into. A role an earlier build already retired gets no new
    entry. `RoleSplitOrMerged` and `RolesReclustered` are recorded.
-8. **Place the candidates.** Each candidate records its role (or none, when
-   the market lacks it), its opening count and its `fit_estimate`.
-   `GET /role-candidates` shows them. If an analysis replaced the candidates
-   during this build, the ones this build read are skipped.
+8. **Place the candidates.** The build records a `CandidatePlacement` per
+   candidate (ADR 0031): `placed` with its role, `outside_top_k`, or
+   `too_few_openings`, with its opening count and `fit_estimate`. The
+   candidate itself is not touched. `GET /role-candidates` shows each
+   candidate's newest placement. If an analysis replaced the candidates during
+   this build, the ones this build read are skipped.
 
 ### 6.2 The hiring bar (`blend`)
 

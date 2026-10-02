@@ -1,5 +1,5 @@
-"""The roles the latest analysis recommended, and the user's strengths handed
-over with them (ADR 0024, ADR 0027).
+"""The roles the latest analysis recommended, as queries for the market, and
+the user's strengths handed over with them (ADR 0024, ADR 0027).
 """
 
 from __future__ import annotations
@@ -11,12 +11,15 @@ from datetime import datetime
 
 @dataclass(slots=True)
 class RoleCandidate:
-    """A role the latest analysis recommended from the user's strengths, before
-    the market is searched for it (ADR 0024).
+    """A role the latest analysis recommended from the user's strengths: the
+    query a build searches the market and matches postings with (ADR 0024,
+    Phase 8).
 
-    ``rank`` is the analysis's own order, best fit first. A build places the
-    candidate on the role it became, or leaves it unplaced when the user's
-    target locations have too few openings for it.
+    ``rank`` is the analysis's own order, best fit first. Only the title
+    leaves the platform, as a search; title and description are embedded to
+    match the postings in scope, and ``dimension_keys`` are the strengths the
+    local fit estimate reads. What a build made of it is that build's record,
+    a ``CandidatePlacement``, never the candidate's.
     """
 
     id: uuid.UUID
@@ -26,28 +29,7 @@ class RoleCandidate:
     title: str
     description: str
     dimension_keys: tuple[str, ...]
-    role_id: uuid.UUID | None = None
-    opening_count: int = 0
-    # How well its openings read like the user's strengths, by the local
-    # estimate that chose the k (ADR 0027); never shown as a fit.
-    fit_estimate: float | None = None
     created_at: datetime | None = None
-
-    @property
-    def is_placed(self) -> bool:
-        return self.role_id is not None
-
-    def placed(
-        self, *, role_id: uuid.UUID, opening_count: int, fit_estimate: float | None = None
-    ) -> None:
-        self.role_id = role_id
-        self.opening_count = opening_count
-        self.fit_estimate = fit_estimate
-
-    def unplaced(self, *, opening_count: int = 0, fit_estimate: float | None = None) -> None:
-        self.role_id = None
-        self.opening_count = opening_count
-        self.fit_estimate = fit_estimate
 
 
 @dataclass(slots=True)

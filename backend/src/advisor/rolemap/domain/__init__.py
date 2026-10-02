@@ -1,5 +1,10 @@
 from advisor.rolemap.domain.agreement import spearman
-from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus
+from advisor.rolemap.domain.build_run import (
+    BuildRun,
+    BuildRunStatus,
+    CandidatePlacement,
+    PlacementOutcome,
+)
 from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
 from advisor.rolemap.domain.constants import (
     CANDIDATE_MATCH_THRESHOLD,
@@ -58,6 +63,8 @@ from advisor.rolemap.domain.own_posting import (
 from advisor.rolemap.domain.repositories import (
     BuildRunFilter,
     BuildRunRepository,
+    CandidatePlacementFilter,
+    CandidatePlacementRepository,
     CandidateStrengthFilter,
     CandidateStrengthRepository,
     LineageEntryFilter,
@@ -111,6 +118,9 @@ __all__ = [
     "BuildRunFilter",
     "BuildRunRepository",
     "BuildRunStatus",
+    "CandidatePlacement",
+    "CandidatePlacementFilter",
+    "CandidatePlacementRepository",
     "CandidateStrength",
     "CandidateStrengthFilter",
     "CandidateStrengthRepository",
@@ -123,6 +133,7 @@ __all__ = [
     "MatchCandidate",
     "OwnPostingError",
     "OwnerRoleMap",
+    "PlacementOutcome",
     "PostingEvaluation",
     "PostingEvaluationFilter",
     "PostingEvaluationRepository",

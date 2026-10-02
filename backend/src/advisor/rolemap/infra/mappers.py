@@ -7,8 +7,10 @@ import uuid
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunStatus,
+    CandidatePlacement,
     CandidateStrength,
     LineageEntry,
+    PlacementOutcome,
     PostingEvaluation,
     PostingEvaluationStatus,
     PostingFit,
@@ -179,9 +181,6 @@ def candidate(row: models.RoleCandidate) -> RoleCandidate:
         title=row.title,
         description=row.description,
         dimension_keys=tuple(row.dimension_keys),
-        role_id=row.role_id,
-        opening_count=row.opening_count,
-        fit_estimate=row.fit_estimate,
         created_at=row.created_at,
     )
 
@@ -199,9 +198,6 @@ def apply_candidate(row: models.RoleCandidate, entity: RoleCandidate) -> None:
     row.title = entity.title
     row.description = entity.description
     row.dimension_keys = list(entity.dimension_keys)
-    row.role_id = entity.role_id
-    row.opening_count = entity.opening_count
-    row.fit_estimate = entity.fit_estimate
 
 
 def strength(row: models.CandidateStrength) -> CandidateStrength:
@@ -398,3 +394,36 @@ def apply_posting_fit(row: models.PostingFit, entity: PostingFit) -> None:
     row.target_profile = dict(entity.target_profile)
     row.gaps = list(entity.gaps)
     row.uncovered = list(entity.uncovered)
+
+
+def placement(row: models.CandidatePlacement) -> CandidatePlacement:
+    return CandidatePlacement(
+        id=row.id,
+        owner_id=row.owner_id,
+        build_run_id=row.build_run_id,
+        candidate_id=row.candidate_id,
+        rank=row.rank,
+        title=row.title,
+        outcome=PlacementOutcome(row.outcome),
+        opening_count=row.opening_count,
+        role_id=row.role_id,
+        fit_estimate=row.fit_estimate,
+        created_at=row.created_at,
+    )
+
+
+def placement_row(entity: CandidatePlacement) -> models.CandidatePlacement:
+    row = models.CandidatePlacement(id=entity.id, owner_id=entity.owner_id)
+    apply_placement(row, entity)
+    return row
+
+
+def apply_placement(row: models.CandidatePlacement, entity: CandidatePlacement) -> None:
+    row.build_run_id = entity.build_run_id
+    row.candidate_id = entity.candidate_id
+    row.rank = entity.rank
+    row.title = entity.title
+    row.outcome = str(entity.outcome)
+    row.opening_count = entity.opening_count
+    row.role_id = entity.role_id
+    row.fit_estimate = entity.fit_estimate

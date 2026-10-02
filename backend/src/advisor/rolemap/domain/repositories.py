@@ -18,7 +18,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
-from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus
+from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus, CandidatePlacement
 from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
 from advisor.rolemap.domain.events import RoleMapEvent
 from advisor.rolemap.domain.fit import PostingFit, PostingRequirementFit, RoleFit
@@ -83,6 +83,17 @@ class BuildRunFilter:
 
 
 class BuildRunRepository(Repository[BuildRun, BuildRunFilter], Protocol): ...
+
+
+@dataclass(frozen=True, slots=True)
+class CandidatePlacementFilter:
+    build_run_id: uuid.UUID | None = None
+    candidate_ids: tuple[uuid.UUID, ...] | None = None
+
+
+class CandidatePlacementRepository(
+    Repository[CandidatePlacement, CandidatePlacementFilter], Protocol
+): ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +167,7 @@ class OwnerRoleMap(Protocol):
     requirements: RoleRequirementRepository
     lineage: LineageEntryRepository
     builds: BuildRunRepository
+    placements: CandidatePlacementRepository
     candidates: RoleCandidateRepository
     strengths: CandidateStrengthRepository
     fits: RoleFitRepository
