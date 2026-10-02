@@ -214,7 +214,7 @@ step 6:
    - **Otherwise:** `_analyse` makes two gateway calls on the user's key:
      `rolemap.extract` (`role_extraction` v1: name, coherence, up to 20
      weighted requirements) and `rolemap.difficulty` (`difficulty_estimate`
-     v1: the hiring bar, as an estimate). Posting text is untrusted input. Up
+     v1: the hiring bar, as an estimate; see 6.3). Posting text is untrusted input. Up
      to 12 postings go into the prompt, each description truncated at 4000
      characters.
 
@@ -240,7 +240,46 @@ narrowed to its company when it names one:
   it has one, and its matches otherwise.
 - **Neither a JD nor any matches:** stays on the map, unscored.
 
-### 6.3 Close the build
+### 6.3 The hiring bar (`blend`)
+
+The bar is the bubble chart's X axis: how hard the interview is, from 0 to
+100. `_analyse` computes it for each role it analyses, so a role kept for free
+keeps its last bar.
+
+**The estimate.** `difficulty_estimate` v1 reads the role's name, the
+requirements `role_extraction` just returned, and the same postings block (or
+JD). It judges seniority, how deep and specific the requirements are, any
+interview stages the postings name, and how selective the employer appears.
+The reply must be:
+
+- `difficulty`, an integer *e* from 0 to 100, where 50 is an average
+  mid-level engineering bar;
+- `confidence`, *cₑ* from 0.0 to 1.0, low when the postings say little about
+  their process;
+- `reasoning`, stored on the role as `bar_reasoning`.
+
+**The blend.** `rolemap.domain.blend` combines *e* with *r*, the reported
+difficulty, and *n*, the number of distinct reporters:
+
+| Case | Weight *w* | `hiring_bar` | `confidence` | `bar_basis` |
+|---|---|---|---|---|
+| No reports, or *n* < 3 (`MIN_REPORTERS`) | 0 | clamp(*e*) | *cₑ* | `estimated` |
+| 3 ≤ *n* < 12 | *n* / 12 | clamp(round(*w*·*r* + (1 − *w*)·*e*)) | max(*cₑ*, *w*) | `blended` |
+| *n* ≥ 12 | 1 | clamp(*r*) | 1.0 | `reported` |
+
+- clamp(*x*) = max(0, min(100, *x*)).
+- `round` is Python's, so a half rounds to the even integer.
+- `sample_size` is *n* in every case.
+- Below 3 reporters, a company and title figure could be traced to one person,
+  so the reports are ignored entirely.
+
+**Today.** No `InterviewReport` exists yet, so `_analyse` always passes
+`reported=None, reporter_count=0`. Every bar is therefore *e*, its confidence
+is *cₑ*, and its basis is `estimated`. The SPA draws those bubbles with a
+dashed outline and labels the bar "(estimated)". A role that has never been
+analysed keeps the column defaults, 50 and `estimated`.
+
+### 6.4 Close the build
 
 The build is marked `ready` with `market_data_at`: the time the stalest
 needed source was last fetched (`market.oldest_fetch`). `RoleMapBuildFinished`
@@ -304,6 +343,8 @@ When the build ends, 03 Roles reloads:
 - [Journey rules](../../backend/src/advisor/activity/service.py)
 - [Role-map service](../../backend/src/advisor/rolemap/service.py)
 - [Selection rules](../../backend/src/advisor/rolemap/domain/selection.py)
+- [Hiring bar blend](../../backend/src/advisor/rolemap/domain/hiring_bar.py)
+- [Difficulty prompt](../../backend/src/kernel/ai_gateway/templates/difficulty_estimate.v1.md)
 - [Worker handlers](../../backend/src/advisor/rolemap/jobs.py)
 - [Task registration and `queue_build`](../../backend/src/wiring/queue.py)
 - [Market service: sources, freshness, scope](../../backend/src/advisor/market/service.py)
