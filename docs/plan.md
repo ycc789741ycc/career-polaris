@@ -989,3 +989,418 @@ Open questions:
 * Whether a concept that outgrows one file becomes a subpackage
   (`domain/role/`). Not needed by anything today, the largest being
   `market/domain/places.py` at 333 lines.
+
+# Phase 8
+The role map becomes the market's side only, and evaluating the user moves
+out of it.
+* A **Role** is a group of openings and what they ask for: no company of its
+  own, no JD, nothing about the user.
+* A **RoleFit** is the evaluation: the user's strengths against a role, and
+  it references the role.
+* A **role candidate** is the query a build searches and matches with.
+* A **PostingFit** is the evaluation of one posting: an opening in a role,
+  or one the user brought themselves. It is never an AI call. The AI
+  evaluates a set of requirements once, a role's (`RoleFit`) or a pasted
+  JD's (`PostingRequirementFit`), and every `PostingFit` is worked out from
+  that locally.
+
+A posting the user brings themselves is aimed at from the Advisor, not added
+to the map. Four branches, in this order, each cut from an epic,
+`epic/<ticket>/phase-8`, cut from mainline:
+
+1. "A posting of your own is a Target, not a role": custom roles leave the
+   role map, and `Role` loses everything only they used.
+2. "A role candidate is only a query": what a build made of each candidate
+   becomes a record of that build.
+3. "Score a fit only when what it reads has changed": a rebuild on an
+   unchanged market and unchanged strengths spends nothing.
+4. "A fit for every opening": each opening in a role gets its own fit,
+   worked out locally from its role's, and Top matched openings lists the
+   selected role's openings by it.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
+`README.md` and `docs/architecture.md` saying what is built.
+
+## A posting of your own is a Target, not a role
+Today "Add a role of your own" (03 Roles) creates a `custom` `Role` from a
+title, an optional company and an optional pasted JD (ADR 0021).
+* It joins the role map, and every build matches it to postings by title
+  words, asks for its company's board, and analyses and fit-scores it.
+* What the user wants from it is to aim the Advisor at one posting. The role
+  map only ever offers them a role and one of its openings, so a posting
+  they found themselves has nowhere else to go.
+* It puts a company and a JD on `Role`, which is otherwise a group of
+  openings, and makes every build spend on a role the market did not make.
+
+In dev data: two live custom roles, both with a company and a JD, and one
+plan, one résumé and one question set aimed at them.
+
+Its own branch, `refactor/<ticket>/own-posting-target`.
+
+1. **The Advisor takes a posting of the user's own.** "Aim at a posting of
+   your own" in 04 Advisor (title, company, pasted JD) replaces "Add a role
+   of your own" in 03 Roles.
+   * The JD is stored as today, in `market_user.private_job_posting`, which
+     the crawler cannot reach.
+   * Before anything runs, its cost is confirmed: reading the JD's
+     requirements, then scoring the fit, on the user's key.
+   * The Advisor's hash names it as `?posting=<private_job_posting_id>`,
+     instead of `?role=` and `&opening=`.
+   * A JD is required: without one there is nothing to read requirements
+     from, now that nothing searches the market for it.
+2. **A Target is a role (and optionally one of its openings), or a posting
+   of the user's own.** `TargetRef` takes either `role_id` with an optional
+   `job_posting_id`, or `private_job_posting_id` alone, and refuses both or
+   neither. `gapplan.plan`, `resume.resume` and `gapfill.question_set` gain
+   a nullable `private_job_posting_id`, `role_id` becomes nullable, and a
+   check constraint keeps exactly one of them set. A posting of your own's
+   requirement basis is its JD, as a custom role's was. In `TargetSnapshot`,
+   `role_id` and `role_name` become optional, and its label comes from the
+   title and company the user entered.
+3. **The posting is evaluated beside the role fits, not in the map.** In
+   `rolemap`, which keeps the one set of fit rules (ADR 0028):
+   * `PostingRequirement` (table `rolemap.posting_requirement`) describes
+     the posting: what its JD asks for, read once when it is added.
+   * `PostingRequirementFit` (table `rolemap.posting_requirement_fit`) is
+     the AI's evaluation of those requirements against the user's
+     dimensions. It is the `fit_projection` call a `RoleFit` makes, giving
+     the mapping, the targets and the reasoning, but over the JD's
+     requirements instead of a role's.
+   * `PostingFit` (table `rolemap.posting_fit`, `basis = own`) is worked out
+     from it locally, with no AI. `evaluate` runs over the JD's requirements
+     at their own weights, since nothing needs reweighting when the
+     requirements come from this one posting. It carries the score, gaps,
+     uncovered requirements and closing lifts the Advisor reads. It
+     references the posting by `posting_key` (`private:<id>`), as
+     `rolemap.role_member` does, so the fourth branch stores openings' fits
+     in the same table.
+   * Adding a posting of your own costs two calls, `rolemap.extract` then
+     `rolemap.fit`. Nothing else on it calls the AI.
+   * None of them is listed, counted or drawn by the role map, and no build
+     reads or scores them.
+   * After a new analysis, the Advisor says the posting's fit was scored
+     against earlier strengths and offers to rescore it, with its cost. A
+     rescore re-runs the `PostingRequirementFit` call, and the `PostingFit`
+     is worked out again from it. Nothing is rescored unasked.
+4. **The role map loses custom roles.**
+   * Gone: `RoleOrigin`, `CustomRoleError`, `add_custom_role`, `POST
+     /roles/custom`, `/roles/custom/cost-estimate`, `CustomRoleAdded`, and
+     the "Your roles" part of 03 Roles.
+   * A build no longer asks for custom roles' companies' boards. Board
+     discovery (`market.discover_board`) has no caller left and goes with
+     them.
+   * `Role` loses `origin`, `company_name` and `private_posting_id`. Its
+     docstring says what it is: a group of openings in the user's target
+     locations, with what they ask for. Every role is recommended, and k
+     roles is the whole map.
+5. **A migration moves what is there.** For each custom role with a JD:
+   * its requirements become the posting's requirements;
+   * its latest fit becomes the posting's fit;
+   * the plans, résumés and question sets aimed at it are pointed at the
+     private posting.
+
+   Then the role is retired. A custom role without a JD is retired, and what
+   was aimed at it stays as history, like any retired role's. It lifts
+   `FORCE ROW LEVEL SECURITY` while it writes and guards with `IF EXISTS`.
+6. **An ADR** supersedes ADR 0021 and the parts of ADR 0022 (a Target is
+   always a role) and ADR 0027 (a build asks for custom roles' boards) it
+   changes, with the index updated.
+
+Tests:
+* Unit:
+  * `TargetRef` refuses both or neither;
+  * a snapshot for a posting of your own reads its JD's requirements and
+    its `PostingFit`, with no role;
+  * its `PostingFit` is worked out from its `PostingRequirementFit` with a
+    gateway that fails on any call;
+  * a build has no custom roles to match, analyse or score;
+  * the role map lists no posting of your own;
+  * rescoring after a new analysis is offered, not run.
+* Integration:
+  * adding a posting of your own stores the JD, its requirements and its
+    fit under row-level security, and another owner reads none of them;
+  * a plan and a résumé aimed at it draft against its JD;
+  * the migration moves a custom role with a JD and its plan, retires one
+    without, and runs twice without harm.
+
+What gets harder:
+* A Target has two shapes, so every reader of `TargetRef` handles both, and
+  the three tables carry two nullable columns and a check.
+* A posting of your own is no longer matched to other postings like it, so
+  nothing tells the user how many similar openings the market has.
+* `rolemap` scores something that is not on the map. The fit rules stay in
+  one place, at the cost of the component's name meaning a little less.
+* A posting's fit can go stale after an analysis until the user rescores it.
+
+Open questions:
+* Whether a posting of your own should be offered a role from the map that
+  is like it, as a second Target to compare against.
+* Whether a pasted link, rather than pasted text, should be accepted, and
+  fetched once.
+
+## A role candidate is only a query
+Today `RoleCandidate` (`rolemap/domain/candidate.py`) does two jobs:
+
+| Job | Fields | Written by |
+|---|---|---|
+| **The query.** The title is searched on Himalayas in each searchable place (only the title leaves the platform). Title and description are embedded to match the postings in scope (`assign_postings`). The dimension keys say which strengths the local fit estimate reads. | `rank`, `title`, `description`, `dimension_keys`, `assessment_id` | the analysis, through `replace_candidates` |
+| **The last build's outcome.** The role the candidate became, how many openings it had, and the estimate that chose the k. | `role_id`, `opening_count`, `fit_estimate` | the build, through `_place_candidates` (`placed` / `unplaced`) |
+
+The second job does not belong to the candidate.
+* **The outcome is a build's, not the analysis's.** Every build overwrites
+  it, so nothing says what an earlier build made of the same candidate, and
+  `compute_fits`'s estimate-agreement log only ever sees the latest one.
+* **It is a second copy.** A placed role's openings are counted live
+  (`map_roles`, Phase 6), so the candidate's `opening_count` can disagree
+  with the bubble.
+* **An empty `role_id` hides why.** "The market has no openings for it"
+  and "it has openings but fell outside the top k" look the same.
+
+Its own branch, `refactor/<ticket>/candidate-as-query`, after the first.
+
+1. **`RoleCandidate` keeps the query only:** `id`, `owner_id`,
+   `assessment_id`, `rank`, `title`, `description`, `dimension_keys`,
+   `created_at`. `role_id`, `opening_count`, `fit_estimate`, `is_placed`,
+   `placed` and `unplaced` go.
+2. **A build records a `CandidatePlacement` per candidate it read**, in
+   `rolemap/domain/build_run.py` beside `BuildRun`, which owns it. Table
+   `rolemap.candidate_placement`:
+   * `build_run_id` → `rolemap.build_run`, `ON DELETE CASCADE`.
+   * `candidate_id` → `rolemap.role_candidate`, `ON DELETE SET NULL`, with
+     the candidate's `rank` and `title` copied in, so the record still reads
+     after the next analysis replaces the candidates.
+   * `outcome`: `placed`, `outside_top_k` (it had openings, and the estimate
+     kept others) or `no_openings`.
+   * `role_id` (set only when `placed`) → `rolemap.role`, `ON DELETE SET
+     NULL`; `opening_count`; `fit_estimate`.
+   * Unique on `(build_run_id, candidate_id)`, owner-zone with row-level
+     security like every `rolemap` table.
+
+   Its repository has the usual six methods, filtered by build run.
+   `_place_candidates` creates the rows instead of updating candidates; a
+   candidate an analysis replaced during the build is still skipped.
+3. **The readers move to the placements of the latest finished build.**
+   * `RoleMapService.candidates` (`GET /role-candidates`) joins each current
+     candidate to its placement in the latest `ready` build that read it.
+     `RoleCandidateView` keeps its fields, so the response, `make
+     gen-client` and the SPA's "the market lacks these" list
+     (`Roles.tsx`) are unchanged. A candidate no build has read yet shows no
+     role and no openings, as today.
+   * `_log_estimate_agreement` pairs each placed placement's
+     `fit_estimate` with the fit of its `role_id`, for the build the fits
+     were scored after.
+4. **A migration moves what is there.** It creates the table, writes one
+   placement per current candidate against the owner's latest `ready` build
+   (`outcome` from `role_id` and `opening_count`: placed; else
+   `no_openings` when the count is 0, otherwise `outside_top_k`), then
+   drops the three columns. It lifts `FORCE ROW LEVEL SECURITY` while it
+   writes and restores it, guards with `IF EXISTS`, and skips an owner with
+   no finished build: their candidates read as not built yet.
+5. **An ADR** supersedes the parts of ADR 0024 and ADR 0027 that put the
+   outcome on the candidate, with the index updated. `docs/domain_model.md`,
+   `docs/architecture.md`, `docs/technical/role-map-build.md` and
+   `CLAUDE.md` say the candidate is a query and the placement a build's
+   record.
+
+Tests:
+* Unit (`rolemap`): a build writes `placed`, `outside_top_k` and
+  `no_openings` placements for the right candidates; the candidate itself
+  is not updated; a candidate replaced mid-build gets no placement;
+  `candidates` reads the latest `ready` build's placements and ignores a
+  failed or older one; the agreement log reads placements.
+* Integration: a build against the database writes placements under
+  row-level security and another owner reads none; `GET /role-candidates`
+  answers with the same body as before; the migration moves a placed, an
+  unplaced-with-openings and an unplaced-without-openings candidate, and
+  runs twice without harm.
+
+What gets harder:
+* "What role did this candidate become" is a join through the latest
+  finished build instead of a column.
+* One more table and repository in `rolemap`, and a row per candidate per
+  build (at most `ROLE_CANDIDATE_COUNT` each).
+* The migration has to guess the outcome of candidates placed before it,
+  from counts that may already be stale.
+
+Open questions:
+* Whether the SPA should say why a recommended role is missing ("no
+  openings in your locations" or "others fit better"), now that the
+  outcome is recorded. That would change the response, so it is a separate
+  change.
+* How long placements are kept. They go with their build run, which is
+  never pruned today.
+
+## Score a fit only when what it reads has changed
+A build already reuses a role whose openings are exactly the last build's:
+it refreshes the count and salary bands and spends nothing on naming or
+requirements (`_keep_role`). That check is keyed on the members, not on
+when the searches were last fetched, on purpose:
+* Searches are shared, so another user's build can refetch one.
+* Boards expire postings.
+* A change of locations changes the scope.
+
+A search that is still fresh can therefore still bring different members.
+But `compute_fits` re-scores every role after every build, so a rebuild on
+an unchanged market and unchanged strengths still spends the key on k fits
+that come out the same.
+
+Its own branch, `feature/<ticket>/reuse-unchanged-fits`, after the second.
+
+1. **An AI fit records what it read.** `RoleFit` and
+   `PostingRequirementFit` gain
+   `requirements_digest`, a hash of the requirements scored against
+   (statement, weight and expected level, in order) and of the fit
+   prompt's template version, and the `assessment_id` of the strengths.
+   A new fit prompt therefore re-scores everything once. A `PostingFit`
+   needs none of this: it costs nothing, so it is simply worked out again
+   from whichever fit it came from.
+2. **`compute_fits` skips a role whose latest fit read the same
+   requirements and the same analysis.** It scores only the rest, and logs
+   how many it reused. A posting of your own's fit is reused by the same
+   rule when the user asks to rescore it.
+3. **Estimates stay ceilings.** Before a build, nobody knows which roles'
+   members will change, so `fits_cost_usd` still prices every role that
+   could be scored. The ledger shows what was actually spent.
+4. **No ADR.** It changes what is spent, not what is stored or shown, and
+   reverts by removing the check.
+
+Tests:
+* Unit:
+  * a second `compute_fits` with unchanged requirements and strengths
+    scores nothing;
+  * a changed requirement re-scores that role only;
+  * a new analysis re-scores every role;
+  * the digest does not depend on how the requirements are loaded.
+* Integration: two builds over an unchanged market write one set of fits,
+  not two.
+
+What gets harder:
+* A fit can be older than the build that shows it. Its `created_at` says
+  when it was scored, not when the map was built.
+* A change to the fit rules outside the prompt (the weights, the lift
+  formula) does not re-score anything by itself. It needs a one-off rescore,
+  or a bump of the template version.
+
+## A fit for every opening
+Today an opening has no fit of its own. Every row of "Top matched openings"
+carries its role's `RoleFit` score (`fit_basis: "role"`), so all of a
+role's openings score the same. The list is drawn across every role
+(`/matched-postings?page_size=10`, `Roles.tsx`): ranked by role fit, one per
+company. Picking a bubble does not change it.
+
+Two openings in one role can ask for quite different things, though: one
+stresses what the user is strong in, another their gap. The user should see
+that difference, and see it for the role they are looking at.
+
+Scoring each opening the way a role is scored would cost one AI call per
+opening instead of one per role. Similarity alone, like `fit_estimates`,
+is free but cannot give a fit. It says a topic is present, not the level
+expected, so there are no targets and no gaps. Something the user lacks has
+nothing to be similar to, so there are no uncovered requirements. Without
+those there are no closing lifts, and the gap plan ranks by lifts. It also
+rewards company blurbs and benefits that happen to sound like the user.
+
+So the AI reads once per role, as now, and each opening's fit is worked out
+locally from it.
+
+Its own branch, `feature/<ticket>/fit-per-opening`, after the third.
+
+1. **The AI reads once per role, unchanged.** It reads a role's
+   requirements from a sample of its openings, then maps them onto the
+   user's dimensions, with a target for each. That is the `RoleFit`, k calls
+   per build, reused under the third branch's rule.
+2. **Each opening's fit is worked out locally, at no cost.** In the worker,
+   after `compute_fits`:
+   * Each of the role's requirement statements is embedded once, with the
+     embedding model postings already use.
+   * Each statement is compared with each opening's stored embedding
+     (`market.posting_embedding`). The similarity is centred on that
+     requirement's mean over the role's openings, as `fit_estimates` centres
+     dimensions. A requirement every opening asks for therefore weighs the
+     same everywhere, and one an opening stresses weighs more there.
+   * The requirement weights are scaled by that relevance. A requirement an
+     opening barely mentions falls below a floor and drops out for it. The
+     scale and the floor are named values in `rolemap/domain/constants.py`.
+   * `evaluate` (`rolemap/domain/fit.py`) runs again with the opening's
+     weights and the role fit's mapping and targets. The result is the
+     opening's own score, gaps, uncovered requirements and closing lifts.
+   * A new rule in `rolemap/domain/fit.py`, `fit_for_opening`, does the
+     reweighting. It is pure and has no I/O.
+3. **It is stored as a `PostingFit` with `basis = role`**, beside the
+   `basis = own` fits of postings the user brought (first branch). It is
+   keyed on the opening's `posting_key` and references the `RoleFit` it was
+   worked out from. Every build re-derives its openings' fits, since this is
+   free, including for roles whose `RoleFit` was reused. A stored
+   `PostingFit` is a cache of a pure computation: never edited, worked out
+   again at every build, and the table could be emptied and rebuilt from
+   the AI fits and the embeddings without an AI call. It is stored because
+   Top matched openings is a list: it sorts and pages by score in SQL, and
+   its inputs change only when a build runs. An opening that left the
+   market since the build drops out when the list is read, against the live
+   scope.
+4. **A `PostingFit` is never an AI call.** That holds for both bases. The
+   code that works them out takes no AI gateway, and a unit test runs it
+   with a gateway that fails on any call. The AI evaluates a set of
+   requirements once, and per-posting work stays local, so the cost of a
+   build grows with its roles, not with its openings.
+5. **Top matched openings follows the selected role.**
+   * `GET /matched-postings?role_id=` ranks the role's openings by their
+     own fit. Each row carries the opening's score and `fit_basis:
+     "posting"`, so `make gen-client` changes.
+   * `one_per_company=true` keeps the best opening from each company. Top
+     matched openings asks for it. The bubble's count and the Advisor's
+     opening picker don't, and still see every opening.
+   * The list across every role goes. The SPA loads the selected role's
+     list, the best fit's until the user picks a bubble, and reloads it on
+     every pick.
+6. **Aiming the Advisor at an opening plans against the opening's fit.** A
+   Target of a role and an opening takes that opening's `PostingFit`: its
+   reweighted requirements, gaps and lifts. Its snapshot's
+   `RequirementBasis` is a new `opening`, so the Advisor says "measured
+   against this opening" rather than "against the role". A Target of a role
+   alone keeps the `RoleFit`. Resolving either still spends nothing.
+7. **An ADR** records the per-opening fit: what it is derived from, what it
+   cannot see, and why it is not an AI call per opening. It supersedes the
+   part of ADR 0022 that says an opening's fit is its role's. The index is
+   updated.
+
+Tests:
+* Unit, `fit_for_opening`:
+  * an opening that stresses a requirement the user is strong in scores
+    above one that stresses their gap;
+  * a requirement every opening asks for moves no opening's score;
+  * a requirement under the floor drops out of that opening's gaps and
+    uncovered list;
+  * with every opening alike, each scores its role's fit.
+* Unit, service:
+  * openings' fits are derived after a build, including when the role fit
+    was reused;
+  * deriving every opening's fit makes no AI call: the gateway fails on
+    any call;
+  * `matched_postings(role_id=)` ranks by the opening's fit, and with
+    `one_per_company` keeps one per company;
+  * a Target with an opening reads the opening's fit.
+* Integration:
+  * a build stores one `PostingFit` per opening under row-level security;
+  * `GET /matched-postings?role_id=` answers with each opening's own score.
+* SPA: picking a bubble reloads Top matched openings for that role.
+
+What gets harder:
+* An opening's fit can only see what its role's requirements name. A
+  requirement only that opening asks for is invisible to it. The exact fit
+  for one opening would need an AI call over its description.
+* One embedding per opening blurs a long description, so the reweighting is
+  coarse. It ranks openings within a role; it is not a verdict on one.
+* A row per opening per build in `rolemap.posting_fit`.
+* The worker embeds every requirement statement on each build. That is
+  local CPU time, on the queue a build already uses.
+* The Advisor's plan for an opening can differ from its plan for the role,
+  and both show.
+
+Open questions:
+* Whether aiming the Advisor at an opening should offer an exact fit, one
+  AI call over that opening's description, priced and confirmed like a
+  posting of your own.
+* Whether openings should be embedded in chunks rather than whole, so a
+  requirement mentioned once in a long description still counts.
