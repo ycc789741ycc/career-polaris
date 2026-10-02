@@ -11,9 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-# The code a lost job is reported with, next to the codes a job fails with.
-STALE = "stale"
-
 
 @dataclass(frozen=True, slots=True)
 class Staleness:
