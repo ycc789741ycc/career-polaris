@@ -103,7 +103,9 @@ def reconcile(
             )
         )
 
-    # A cluster that absorbed more than one previous role is a merge.
+    # A cluster that absorbed more than one previous role is a merge. The
+    # absorbed roles are claimed so no other cluster absorbs them again.
+    absorbed_ids: set[str] = set()
     for index, cluster in enumerate(clusters):
         kept = assignments[index]
         absorbed = tuple(
@@ -120,10 +122,15 @@ def reconcile(
                 RoleLineage(kind=RoleChange.MERGED, role_id=kept, from_role_ids=absorbed)
             )
             claimed.update(absorbed)
+            absorbed_ids.update(absorbed)
 
-    retired = frozenset(previous) - claimed - set(assignments.values())
+    # Every previous role no cluster kept leaves the map, a merged one too:
+    # its postings now belong to the role it merged into. Only the ones that
+    # simply went are recorded as retired; a merge is recorded above.
+    retired = frozenset(previous) - set(assignments.values())
     lineage.extend(
-        RoleLineage(kind=RoleChange.RETIRED, role_id=role_id) for role_id in sorted(retired)
+        RoleLineage(kind=RoleChange.RETIRED, role_id=role_id)
+        for role_id in sorted(retired - absorbed_ids)
     )
 
     return Reconciliation(

@@ -40,7 +40,8 @@ async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
     """The analysed roles: the top k recommended ones at most (ADR 0029), and
     the user's own."""
     # Paged here, not in the service: other components read the roles whole.
-    found = paginate(await deps.rolemap.roles(user), paging.page, paging.page_size)
+    # Counted live, so a bubble's openings are the ones Top matched can list.
+    found = paginate(await deps.rolemap.map_roles(user), paging.page, paging.page_size)
     return RolePage.of(found, Role.from_view)
 
 

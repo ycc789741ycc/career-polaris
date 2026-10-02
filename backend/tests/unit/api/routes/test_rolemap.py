@@ -90,6 +90,14 @@ class FakeRoleMap:
             private_posting_id=kw["private_posting_id"],
         )
 
+    async def map_roles(self, owner_id: uuid.UUID) -> list[RoleView]:
+        """The roles as drawn: counted live, two openings left of the five the
+        build stored."""
+        return [_role(opening_count=2)]
+
+    async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
+        return [_role(opening_count=5)]
+
     async def remove_custom_role(self, owner_id: uuid.UUID, role_id: uuid.UUID) -> None:
         self.removed.append(role_id)
 
@@ -112,6 +120,24 @@ class FakeRoleMap:
 
 ROLE_ID = uuid.uuid4()
 JD_ID = uuid.uuid4()
+
+
+def _role(*, opening_count: int) -> RoleView:
+    return RoleView(
+        id=ROLE_ID,
+        name="Backend Engineer",
+        hiring_bar=60,
+        bar_basis="estimated",
+        bar_confidence=0.5,
+        bar_reasoning=None,
+        opening_count=opening_count,
+        salary_bands={},
+        requirements=(),
+        is_coherent=True,
+        origin="recommended",
+        company_name=None,
+        private_posting_id=None,
+    )
 
 
 class FakeMarket:
@@ -414,3 +440,12 @@ def test_matched_postings_can_be_narrowed_to_one_role(
     assert response.status_code == 200
     assert response.json()["items"] == []
     assert rolemap.matched_for == [ROLE_ID]
+
+
+def test_the_roles_are_drawn_with_the_openings_they_have_now(client: TestClient) -> None:
+    """A bubble's count is what Top matched can list for it, not the build's."""
+    response = client.get("/roles")
+
+    assert response.status_code == 200
+    [role] = response.json()["items"]
+    assert (role["id"], role["opening_count"]) == (str(ROLE_ID), 2)

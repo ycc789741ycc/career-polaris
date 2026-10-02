@@ -1,8 +1,8 @@
 """The role map's "Top matched" list, against a real database (ADR 0028).
 
 What is worth proving: expired postings, retired roles and pasted JDs stay
-out; the order follows the role's fit; and a row knows when the user already
-watches that role at that company.
+out; the order follows the role's fit; and the map counts, for each role,
+exactly the openings this list can show for it.
 """
 
 from __future__ import annotations
@@ -165,6 +165,15 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
         assert [m.title for m in await rolemap.matched_postings(account, limit=1)] == [
             f"Platform {tag}"
         ]
+
+        # The map draws the same roles, each counting the openings Top matched
+        # can list for it: the expired posting and the pasted JD are not
+        # counted, and the retired role is not drawn.
+        drawn = {role.id: role.opening_count for role in await rolemap.map_roles(account)}
+        assert drawn == {backend: 2, platform: 1}
+        for role_id, count in drawn.items():
+            listed = await rolemap.matched_postings(account, limit=None, role_id=role_id)
+            assert len(listed) == count
     finally:
         async with crawler_database.shared() as session:
             await session.execute(
