@@ -163,6 +163,7 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
   - `firstSeenAt`, `lastSeenAt` and `status: open | expired`. A board's missing posting expires. A search's fetch replaces its result list instead, and a searched posting counts only while it is on one.
   - An expired posting is kept for salary history. One nothing holds is thinned after a long while, never deleted.
 - **Fit is a relationship, not an attribute.** Hiring bar (X) and salary (Y) belong to the Role. Fit (bubble size) belongs to a *User × Role* pair and comes from one `FitEvaluator`.
+- **Decision 32: the fit is the Role Map's** ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)). `RoleFit`, its gaps, uncovered requirements and closing lifts, and the ranking of Top matched openings move from the Assessment context to the Role Map context. It is scored against the dimension scores the Analyzer hands over with the candidate roles, so the Role Map still reads nothing from the Assessment. The Assessment describes only the user.
 
 #### Hiring bar = interview difficulty (decisions 5 and 11), unchanged
 - **`InterviewReport`** comes from the app's own users, about two weeks after they tailor a résumé.
@@ -299,14 +300,14 @@ flowchart LR
     CustomRole[Role, origin custom] --> Role
     Role --> RoleRequirement
     EstimatedDifficulty
-  end
-  subgraph Assessment["Assessment (Analyzer)"]
-    SkillAssessment --> SkillDimension
-    SkillAssessment --> ProfileConfidence
     FitEvaluator --> RoleFit
     RoleFit --> TargetProfile
     RoleFit --> SkillGap
     RoleFit --> UncoveredRequirement
+  end
+  subgraph Assessment["Assessment (Analyzer)"]
+    SkillAssessment --> SkillDimension
+    SkillAssessment --> ProfileConfidence
   end
   subgraph TargetCtx["Target (no storage)"]
     Target
@@ -433,13 +434,13 @@ flowchart LR
 | RoleRequirement | A skill requirement pulled from a Role's postings or its private JD (statement, weight, expected level); has no dimension | Role map |
 | EstimatedDifficulty | AI estimate of interview difficulty from posting content, used until enough InterviewReports exist | Role map |
 | Hiring bar | A Role's interview difficulty (bubble chart X axis); blends estimate and reports, with sample size, confidence and basis | Role map |
-| Analyzer | The process that produces the SkillAssessment and RoleFits from Evidence, and triggers the role-map build; the first step after ingestion that calls the LLM | Assessment |
+| Analyzer | The process that produces the SkillAssessment from Evidence, hands its candidate roles and scores to the Role Map, and triggers the role-map build; the first step after ingestion that calls the LLM | Assessment |
 | SkillDimension | One axis of *this user's* skills (5–10 per user), defined by their profile analysis; its id stays stable across re-assessments | Assessment |
 | SkillAssessment | Snapshot of per-dimension scores and confidence for a Profile version (radar), plus profile confidence; records the model used | Assessment |
 | Profile confidence | How well the evidence backs the scores overall; one number on the SkillAssessment, shown on 02 Strengths | Assessment |
 | FitEvaluator | Domain service that maps requirements onto a user's dimensions and scores fit, for a Role, a posting or a private JD | Assessment |
 | TargetProfile | Target score per user dimension for one Role or Target, produced by that mapping | Assessment |
-| RoleFit | Snapshot of fit between a user and a Role or posting (bubble size, list rank), with TargetProfile and reasoning | Assessment |
+| RoleFit | Snapshot of fit between a user and a Role (bubble size, list rank), with TargetProfile and reasoning, scored against the scores the Analyzer handed over (decision 32) | Role Map |
 | SkillGap | User's score minus the target score on one dimension | Assessment |
 | UncoveredRequirement | A requirement that matches none of the user's dimensions, meaning there is no evidence at all | Assessment |
 | Target | What the Advisor aims at: one Role and optionally one opening in it, with a frozen snapshot of its requirements | Target |
@@ -549,6 +550,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 29 | 2026-09-30 | Where the recommended Roles come from | **The analysis recommends candidate roles from the strengths; the role map keeps the first ten the user's market has openings for, and fits are scored once per build** | 2.2: RoleCandidate, RoleSelection; supersedes 2 ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
 | 30 | 2026-09-30 | How a candidate role's openings are found | **Its title is searched on a public job API (Himalayas) for the countries and remote work the user named, as ownerless demand sources; on-site work stays on company boards** | 2.5: CrawlSource as a search; remote work open worldwide is in every searchable target location ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |
 | 31 | 2026-10-02 | When the market is fetched, and the map built | **Only when the user asks for a build: it asks for the sources it reads, waits for the stale ones, and the ten are chosen by a free local fit estimate; nothing the market does builds a map, and nothing reads across users** | 2.5: supersedes 14, amends 24 ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
+| 32 | 2026-10-03 | Where the fit lives | **In the Role Map, scored against the dimension scores the Analyzer hands over with the candidate roles; the Assessment describes only the user** | 2.5: moves RoleFit, SkillGap, UncoveredRequirement and the Top matched ranking from Assessment to Role Map ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
 
 ### 6.2 Remaining questions
 

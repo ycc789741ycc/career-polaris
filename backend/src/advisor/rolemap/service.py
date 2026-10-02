@@ -13,17 +13,28 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from advisor.market import MarketService, PostingView, band_from, in_market, names_every_word
+from advisor.market import (
+    MarketService,
+    PostingView,
+    SalaryRange,
+    Visibility,
+    band_from,
+    in_market,
+    names_every_word,
+)
 from advisor.rolemap.domain import (
     CANDIDATE_ROLE_COUNT,
+    DEFAULT_MATCHES,
     MAX_ROLE_REQUIREMENTS,
+    MAX_ROLE_TITLE,
+    MAX_STRENGTHS,
     MIN_POSTINGS_FOR_A_ROLE,
     RECOMMENDED_ROLE_COUNT,
     BarBasis,
@@ -32,16 +43,21 @@ from advisor.rolemap.domain import (
     BuildRunStatus,
     CandidateStrength,
     CandidateStrengthFilter,
+    ClosingLifts,
     CustomRoleAdded,
     CustomRoleError,
     HiringBar,
     LineageEntry,
+    MatchCandidate,
     Reconciliation,
     Role,
     RoleCandidate,
     RoleCandidateFilter,
     RoleChange,
     RoleFilter,
+    RoleFit,
+    RoleFitFilter,
+    RoleFitsComputed,
     RoleMapBuildFinished,
     RoleMapUnitOfWork,
     RoleMember,
@@ -52,13 +68,20 @@ from advisor.rolemap.domain import (
     RoleRequirementsChanged,
     RoleSplitOrMerged,
     RolesReclustered,
+    SkillGap,
+    TargetScore,
+    UncoveredRequirement,
     assign_postings,
     blend,
     choose_by_estimate,
+    closing_lifts,
+    evaluate,
     fit_estimates,
     keep_on_market,
     max_role_count,
+    rank_matches,
     reconcile,
+    spearman,
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
@@ -71,7 +94,9 @@ __all__ = [
     "BuildRequestView",
     "BuildRunView",
     "CandidateInput",
+    "FitView",
     "MarketWait",
+    "MatchedPostingView",
     "RequirementView",
     "RoleCandidateView",
     "RoleMapService",
@@ -104,6 +129,22 @@ class _DifficultyEstimate(BaseModel):
     reasoning: str
 
 
+class _Mapping(BaseModel):
+    requirement_statement: str
+    dimension_id: str | None = None
+
+
+class _Target(BaseModel):
+    dimension_id: str
+    target: int = Field(ge=0, le=100)
+
+
+class _Projection(BaseModel):
+    mappings: list[_Mapping]
+    target_scores: list[_Target]
+    reasoning: str
+
+
 @dataclass(frozen=True, slots=True)
 class _Group:
     """One candidate's openings, before they are analysed into a role."""
@@ -126,13 +167,19 @@ class CandidateInput:
 @dataclass(frozen=True, slots=True)
 class StrengthInput:
     """One of the user's dimensions as the analysis that recommended the
-    candidates scored it, handed over with them for the local fit estimate
-    (ADR 0027). ``weight`` is score times confidence, from 0 to 1."""
+    candidates scored it, handed over with them. The local fit estimate weighs
+    it (ADR 0027), and the fits are scored against it (ADR 0028)."""
 
     dimension_key: str
     name: str
     read: str
-    weight: float
+    score: int
+    confidence: float
+
+    @property
+    def weight(self) -> float:
+        """Score times confidence, from 0 to 1: how much the estimate leans on it."""
+        return self.score / 100 * self.confidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,8 +207,9 @@ class RequirementView:
 
 @dataclass(frozen=True, slots=True)
 class RoleView:
-    """One bubble. X is the hiring bar, Y is salary; size is fit, which lives
-    in ``assessment`` because it is a property of the User x Role pair."""
+    """One bubble. X is the hiring bar, Y is salary; size is its fit
+    (``FitView``), kept apart from the role because it belongs to the
+    User x Role pair."""
 
     id: uuid.UUID
     name: str
@@ -181,6 +229,55 @@ class RoleView:
     @property
     def is_custom(self) -> bool:
         return self.origin == str(RoleOrigin.CUSTOM)
+
+
+@dataclass(frozen=True, slots=True)
+class FitView:
+    """The user's fit to one of their roles: a bubble's size (ADR 0028)."""
+
+    role_id: uuid.UUID
+    score: int
+    reasoning: str
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    model_id: str
+    created_at: datetime
+    assessment_id: uuid.UUID | None = None
+    target_profile: dict[str, int] = field(default_factory=dict)
+    # What the fit was projected from; empty for fits taken before these were
+    # recorded.
+    requirements: tuple[RequirementView, ...] = ()
+    requirement_map: dict[str, str | None] = field(default_factory=dict)
+
+    def lifts(self) -> ClosingLifts:
+        """Fit points each gap is worth, by the fit's own arithmetic."""
+        return closing_lifts(
+            gaps=[
+                SkillGap(g["dimension_key"], g["user_score"], g["target_score"]) for g in self.gaps
+            ],
+            uncovered=[UncoveredRequirement(u["statement"], u["weight"]) for u in self.uncovered],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MatchedPostingView:
+    """One opening inside one of the user's roles, ranked by that role's fit."""
+
+    posting_id: uuid.UUID
+    role_id: uuid.UUID
+    role_name: str
+    title: str
+    company_name: str
+    location: str | None
+    url: str | None
+    salary: SalaryRange | None
+    fit: int | None
+    # The crawl source kind (atsBoard, jsonLd, publicApi); never a site that
+    # forbids crawling (domain decision 6).
+    source_kind: str | None = None
+    # The job site to credit beside the opening's link, when it was found
+    # through that site's API (ADR 0025).
+    credited_to: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,6 +404,7 @@ class RoleMapService:
                 f"an analysis recommends at most {CANDIDATE_ROLE_COUNT} roles",
                 candidates=len(candidates),
             )
+        _check_strengths(strengths)
         async with self._uow.for_owner(owner_id) as mine:
             for previous in await mine.candidates.get_list(RoleCandidateFilter()):
                 await mine.candidates.delete(previous.id)
@@ -321,7 +419,9 @@ class RoleMapService:
                         dimension_key=strength.dimension_key,
                         name=strength.name,
                         read=strength.read,
-                        weight=min(max(strength.weight, 0.0), 1.0),
+                        weight=strength.weight,
+                        score=strength.score,
+                        confidence=strength.confidence,
                     )
                 )
             stored = [
@@ -825,6 +925,236 @@ class RoleMapService:
             template_version=extracted.template_version,
         )
 
+    # -- fits (ADR 0028) -----------------------------------------------------
+
+    async def estimate_fits(
+        self, owner_id: uuid.UUID, *, recommended: int | None = None, extra_roles: int = 0
+    ) -> dict[str, Any]:
+        """The most scoring a build's fits can cost: one projection per role the
+        map will hold — ``recommended`` roles (by default the ones on the map
+        now), the user's own, and ``extra_roles`` about to be added — each with
+        the most dimensions and requirements there can be. A ceiling, since
+        nothing is known about the roles yet."""
+        live = await self.roles(owner_id)
+        custom = sum(1 for role in live if role.is_custom)
+        if recommended is None:
+            recommended = len(live) - custom
+        roles = min(recommended, RECOMMENDED_ROLE_COUNT) + custom + extra_roles
+        if roles == 0:
+            return {"cost_usd": "0", "roles": 0, "rate_is_published": True}
+        estimate = await self._gateway.estimate(
+            owner_id,
+            task="rolemap.fit",
+            template=load_template("fit_projection", "v1"),
+            inputs=_worst_case_fit_inputs(),
+            untrusted=frozenset({"requirements"}),
+        )
+        return {
+            "cost_usd": str(estimate.cost_usd * roles),
+            "roles": roles,
+            "rate_is_published": estimate.rate_is_published,
+        }
+
+    async def compute_fits(self, owner_id: uuid.UUID) -> list[FitView]:
+        """One projection per role with requirements, against the scores the
+        latest analysis handed over, stored with its reasoning. Run once per
+        build, when it closes (ADR 0024)."""
+        strengths = await self._strengths(owner_id)
+        if not strengths:
+            raise ValidationError("run an analysis before scoring roles")
+
+        roles = await self.roles(owner_id)
+        if not roles:
+            return []
+
+        for role in roles:
+            if not role.requirements:
+                continue
+            await self._project(owner_id, strengths, role)
+
+        async with self._uow.for_owner(owner_id) as mine:
+            mine.record(RoleFitsComputed(owner_id=owner_id, roles=len(roles)))
+        fits = await self.fits(owner_id)
+        await self._log_estimate_agreement(owner_id, fits)
+        return fits
+
+    async def fits(self, owner_id: uuid.UUID) -> list[FitView]:
+        """The current fit per role: the bubble sizes.
+
+        Every fit ever taken is kept as a snapshot; the newest per role is the
+        current one.
+        """
+        async with self._uow.for_owner(owner_id) as mine:
+            snapshots = await mine.fits.get_list(RoleFitFilter())
+        seen: set[uuid.UUID] = set()
+        latest: list[FitView] = []
+        for fit in snapshots:
+            if fit.role_id in seen:
+                continue
+            seen.add(fit.role_id)
+            latest.append(_fit_view(fit))
+        return latest
+
+    async def matched_postings(
+        self,
+        owner_id: uuid.UUID,
+        *,
+        limit: int | None = DEFAULT_MATCHES,
+        role_id: uuid.UUID | None = None,
+    ) -> list[MatchedPostingView]:
+        """The best openings inside the user's roles, or inside one of them:
+        the openings a Target in that role can name (ADR 0022).
+
+        Ranked by the role's current fit; no AI runs here. A custom role's
+        private JD is not an opening: only shared postings are listed.
+        """
+        fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
+
+        by_posting: dict[str, tuple[RoleView, PostingView]] = {}
+        candidates: list[MatchCandidate] = []
+        for role, postings in await self.role_postings(owner_id):
+            if role_id is not None and role.id != role_id:
+                continue
+            for posting in postings:
+                if posting.visibility is not Visibility.SHARED:
+                    continue
+                by_posting[str(posting.id)] = (role, posting)
+                candidates.append(
+                    MatchCandidate(
+                        posting_id=str(posting.id),
+                        role_id=str(role.id),
+                        role_name=role.name,
+                        company_name=posting.company_name,
+                        title=posting.title,
+                        fit=fit_by_role.get(role.id),
+                    )
+                )
+
+        try:
+            ranked = rank_matches(candidates, limit=limit)
+        except ValueError as exc:
+            raise ValidationError(str(exc), limit=limit) from exc
+
+        matched: list[MatchedPostingView] = []
+        for candidate in ranked:
+            role, posting = by_posting[candidate.posting_id]
+            matched.append(
+                MatchedPostingView(
+                    posting_id=posting.id,
+                    role_id=role.id,
+                    role_name=role.name,
+                    title=posting.title,
+                    company_name=posting.company_name,
+                    location=posting.location,
+                    url=posting.url,
+                    salary=posting.salary,
+                    fit=candidate.fit,
+                    source_kind=posting.source_kind,
+                    credited_to=posting.credited_to,
+                )
+            )
+        return matched
+
+    async def _strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.strengths.get_list(CandidateStrengthFilter())
+        return sorted(found, key=lambda s: s.dimension_key)
+
+    async def _project(
+        self, owner_id: uuid.UUID, strengths: list[CandidateStrength], role: RoleView
+    ) -> None:
+        """Map a role's requirements onto the user's dimensions, and store the
+        fit."""
+        user_scores = {s.dimension_key: s.score for s in strengths}
+        known_keys = set(user_scores)
+        requirements = role.requirements
+        projection = await self._gateway.run(
+            owner_id,
+            task="rolemap.fit",
+            template=load_template("fit_projection", "v1"),
+            inputs={
+                "dimensions": _strengths_block(strengths),
+                "role_name": role.name,
+                "requirements": "\n".join(
+                    f"- {r.statement} (weight {r.weight}, expects {r.expected_level})"
+                    for r in requirements
+                ),
+            },
+            output_schema=_Projection,
+            untrusted=frozenset({"requirements"}),
+        )
+
+        targets = [
+            TargetScore(dimension_id=t.dimension_id, target=t.target)
+            for t in projection.value.target_scores
+            # A target for a dimension this user does not have is the model
+            # drifting, not a new axis.
+            if t.dimension_id in known_keys
+        ]
+        uncovered = _uncovered_from(projection.value, requirements, known_keys)
+        fit = evaluate(user_scores=user_scores, targets=targets, uncovered=uncovered)
+        requirement_map: dict[str, str | None] = {r.statement: None for r in requirements}
+        for mapping in projection.value.mappings:
+            if mapping.requirement_statement in requirement_map:
+                requirement_map[mapping.requirement_statement] = (
+                    mapping.dimension_id if mapping.dimension_id in known_keys else None
+                )
+
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.fits.create(
+                RoleFit(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    assessment_id=strengths[0].assessment_id,
+                    role_id=role.id,
+                    requirements=tuple(
+                        {
+                            "statement": r.statement,
+                            "weight": r.weight,
+                            "expected_level": r.expected_level,
+                        }
+                        for r in requirements
+                    ),
+                    requirement_map=requirement_map,
+                    score=fit.score,
+                    reasoning=projection.value.reasoning,
+                    target_profile={t.dimension_id: t.target for t in targets},
+                    gaps=tuple(
+                        {
+                            "dimension_key": gap.dimension_id,
+                            "user_score": gap.user_score,
+                            "target_score": gap.target_score,
+                            "delta": gap.delta,
+                        }
+                        for gap in fit.gaps
+                    ),
+                    uncovered=tuple(
+                        {"statement": u.statement, "weight": u.weight} for u in fit.uncovered
+                    ),
+                    model_id=projection.model_id,
+                    template_version=projection.template_version,
+                )
+            )
+
+    async def _log_estimate_agreement(self, owner_id: uuid.UUID, fits: list[FitView]) -> None:
+        """How well the local estimate that chose the ten agreed with the fits
+        then scored, as a rank correlation (ADR 0027). Numbers only, no user
+        data: the evidence for keeping the estimate, or going back to the
+        analysis's order."""
+        scored = {fit.role_id: fit.score for fit in fits}
+        pairs = [
+            (candidate.fit_estimate, scored[candidate.role_id])
+            for candidate in await self._candidates(owner_id)
+            if candidate.role_id in scored and candidate.fit_estimate is not None
+        ]
+        if len(pairs) < 3:
+            return
+        log.info(
+            "rolemap.estimate_agreement",
+            roles=len(pairs),
+            spearman=round(spearman([e for e, _ in pairs], [float(f) for _, f in pairs]), 3),
+        )
+
     # -- custom roles (ADR 0021) ---------------------------------------------
 
     async def add_custom_role(
@@ -1245,4 +1575,78 @@ def _build_view(build: BuildRun) -> BuildRunView:
         locations=build.locations,
         needed_source_ids=build.needed_source_ids,
         market_data_at=build.market_data_at,
+    )
+
+
+def _check_strengths(strengths: Sequence[StrengthInput]) -> None:
+    """What an analysis hands over: at most ``MAX_STRENGTHS`` dimensions, each
+    scored 0 to 100 with a confidence from 0 to 1."""
+    if len(strengths) > MAX_STRENGTHS:
+        raise ValidationError(
+            f"an analysis hands over at most {MAX_STRENGTHS} dimensions",
+            strengths=len(strengths),
+        )
+    for strength in strengths:
+        if not 0 <= strength.score <= 100 or not 0.0 <= strength.confidence <= 1.0:
+            raise ValidationError(
+                "a dimension is scored 0 to 100 with a confidence from 0 to 1",
+                dimension_key=strength.dimension_key,
+            )
+
+
+def _strengths_block(strengths: Sequence[CandidateStrength]) -> str:
+    return "\n".join(
+        f"- {s.dimension_key}: {s.name} — scored {s.score}/100 (confidence {s.confidence:.2f})"
+        for s in strengths
+    )
+
+
+def _uncovered_from(
+    projection: _Projection, requirements: tuple[RequirementView, ...], known_keys: set[str]
+) -> list[UncoveredRequirement]:
+    """Requirements that map to no dimension of this user's.
+
+    Never dropped: no evidence at all is a different thing from a low score.
+    """
+    mapped = {m.requirement_statement for m in projection.mappings if m.dimension_id in known_keys}
+    return [
+        UncoveredRequirement(statement=r.statement, weight=r.weight)
+        for r in {r.statement: r for r in requirements}.values()
+        if r.statement not in mapped
+    ]
+
+
+def _worst_case_fit_inputs() -> dict[str, str]:
+    """Inputs as large as a fit projection's can be, for pricing it before the
+    dimensions or the roles exist."""
+    return {
+        "dimensions": "\n".join(
+            f"- dimension-{i:02d}: {'x' * 60} — scored 100/100 (confidence 1.00)"
+            for i in range(MAX_STRENGTHS)
+        ),
+        "role_name": "x" * MAX_ROLE_TITLE,
+        "requirements": "\n".join(
+            f"- {'x' * 160} (weight 1.0, expects senior)" for _ in range(MAX_ROLE_REQUIREMENTS)
+        ),
+    }
+
+
+def _fit_view(fit: RoleFit) -> FitView:
+    # Set by the database when the fit was stored.
+    assert fit.created_at is not None, "a stored fit has a creation time"
+    return FitView(
+        role_id=fit.role_id,
+        score=fit.score,
+        reasoning=fit.reasoning,
+        gaps=fit.gaps,
+        uncovered=fit.uncovered,
+        model_id=fit.model_id,
+        created_at=fit.created_at,
+        assessment_id=fit.assessment_id,
+        target_profile=dict(fit.target_profile),
+        requirements=tuple(
+            RequirementView(r["statement"], r["weight"], r["expected_level"])
+            for r in fit.requirements
+        ),
+        requirement_map=dict(fit.requirement_map),
     )

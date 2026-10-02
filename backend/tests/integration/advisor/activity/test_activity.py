@@ -46,7 +46,6 @@ class _Services:
             database,
             profile=self.profile,
             rolemap=self.rolemap,
-            market=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             confidence_threshold=0.6,
         )

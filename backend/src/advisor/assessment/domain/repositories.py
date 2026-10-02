@@ -21,7 +21,6 @@ from advisor.assessment.domain.entities import (
     AnalysisRunStatus,
     AssessedScore,
     DimensionChange,
-    RoleFit,
     SkillAssessment,
     SkillDimension,
 )
@@ -87,23 +86,12 @@ class AnalysisRunFilter:
 class AnalysisRunRepository(Repository[AnalysisRun, AnalysisRunFilter], Protocol): ...
 
 
-@dataclass(frozen=True, slots=True)
-class RoleFitFilter:
-    role_id: uuid.UUID | None = None
-    private_posting_id: uuid.UUID | None = None
-    assessment_id: uuid.UUID | None = None
-
-
-class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
-
-
 class OwnerAssessment(Protocol):
     dimensions: SkillDimensionRepository
     assessments: SkillAssessmentRepository
     scores: AssessedScoreRepository
     changes: DimensionChangeRepository
     runs: AnalysisRunRepository
-    fits: RoleFitRepository
 
     def record(self, event: AssessmentEvent) -> None: ...
 

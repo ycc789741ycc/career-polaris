@@ -28,11 +28,11 @@ _TABLES = ("gapplan.plan", "gapplan.milestone", "gapplan.task")
 
 def upgrade() -> None:
     op.execute(
-        "ALTER TABLE assessment.role_fit "
+        "ALTER TABLE IF EXISTS assessment.role_fit "
         "ADD COLUMN IF NOT EXISTS requirements jsonb NOT NULL DEFAULT '[]'::jsonb"
     )
     op.execute(
-        "ALTER TABLE assessment.role_fit "
+        "ALTER TABLE IF EXISTS assessment.role_fit "
         "ADD COLUMN IF NOT EXISTS requirement_map jsonb NOT NULL DEFAULT '{}'::jsonb"
     )
 
@@ -132,5 +132,5 @@ def downgrade() -> None:
     for table in reversed(_TABLES):
         op.execute(f"DROP TABLE IF EXISTS {table}")
     op.execute('DROP SCHEMA IF EXISTS "gapplan"')
-    op.execute("ALTER TABLE assessment.role_fit DROP COLUMN IF EXISTS requirement_map")
-    op.execute("ALTER TABLE assessment.role_fit DROP COLUMN IF EXISTS requirements")
+    op.execute("ALTER TABLE IF EXISTS assessment.role_fit DROP COLUMN IF EXISTS requirement_map")
+    op.execute("ALTER TABLE IF EXISTS assessment.role_fit DROP COLUMN IF EXISTS requirements")

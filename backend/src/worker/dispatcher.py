@@ -72,7 +72,7 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # (ADR 0024). A successful analysis always builds the map (ADR 0020),
         # so its new scores reach the fits here too; AssessmentCompleted,
         # DimensionsChanged and RoleRequirementsChanged queue nothing.
-        await enqueue("assessment.compute_fits", owner_id=str(owner_id))
+        await enqueue("rolemap.compute_fits", owner_id=str(owner_id))
         return
 
     if name == EventName.ANALYSIS_FINISHED and owner_id:

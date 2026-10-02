@@ -50,8 +50,17 @@ class RoleMapBuildFinished:
     status: str
 
 
+@dataclass(frozen=True, slots=True)
+class RoleFitsComputed:
+    """The fits of a build were scored, one per role with requirements."""
+
+    owner_id: uuid.UUID
+    roles: int
+
+
 RoleMapEvent = (
     CustomRoleAdded
+    | RoleFitsComputed
     | RoleMapBuildFinished
     | RoleRequirementsChanged
     | RoleSplitOrMerged

@@ -21,6 +21,10 @@ MAX_COMPANY_NAME = 255
 # The most requirements one role is read out with. A fit is projected over them,
 # so it also bounds what scoring a role's fit can cost.
 MAX_ROLE_REQUIREMENTS = 20
+# The most dimensions an analysis hands over with its candidates. A fit is
+# projected over them, so with the requirements they bound what scoring one
+# role can cost, priced before any dimension exists.
+MAX_STRENGTHS = 10
 
 
 class RoleOrigin(StrEnum):
@@ -191,7 +195,8 @@ class CandidateStrength:
 
     A copy, handed over with the candidates and replaced with them, so the
     role map never reads ``assessment``, which sits above it (ADR 0018).
-    ``weight`` is score times confidence, from 0 to 1.
+    ``weight`` is score times confidence, from 0 to 1. The fit is scored
+    against the same copy, so the role map never asks ``assessment`` for it.
     """
 
     id: uuid.UUID
@@ -201,6 +206,10 @@ class CandidateStrength:
     name: str
     read: str
     weight: float
+    # The score and confidence ``weight`` came from, which the fit is scored
+    # against (ADR 0028).
+    score: int
+    confidence: float
 
 
 @dataclass(slots=True)
@@ -336,3 +345,28 @@ class BuildRun:
         self.error_code = code
         self.error_message = message
         self.finished_at = at
+
+
+@dataclass(slots=True)
+class RoleFit:
+    """Fit between this user and one of their roles (ADR 0028).
+
+    Fit lives on the User x Role pair, never on the role: a snapshot taken
+    against the scores of one analysis (``assessment_id``), kept with what it
+    was projected from so it can be re-read without the role.
+    """
+
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    assessment_id: uuid.UUID
+    role_id: uuid.UUID
+    score: int
+    reasoning: str
+    target_profile: dict[str, int]
+    gaps: tuple[dict[str, Any], ...]
+    uncovered: tuple[dict[str, Any], ...]
+    model_id: str
+    template_version: str
+    requirements: tuple[dict[str, Any], ...] = ()
+    requirement_map: dict[str, str | None] = field(default_factory=dict)
+    created_at: datetime | None = None

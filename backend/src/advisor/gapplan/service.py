@@ -602,7 +602,7 @@ class GapPlanService:
     async def _stepping_stones(
         self, owner_id: uuid.UUID, snapshot: TargetSnapshot
     ) -> tuple[RoleOption, ...]:
-        fits = {f.role_id: f.score for f in await self._assessment.fits(owner_id) if f.role_id}
+        fits = {f.role_id: f.score for f in await self._rolemap.fits(owner_id)}
         roles = [
             RoleOption(
                 role_id=str(role.id),

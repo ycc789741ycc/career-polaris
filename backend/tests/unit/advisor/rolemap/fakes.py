@@ -27,6 +27,9 @@ from advisor.rolemap.domain import (
     RoleCandidateFilter,
     RoleCandidateRepository,
     RoleFilter,
+    RoleFit,
+    RoleFitFilter,
+    RoleFitRepository,
     RoleMapEvent,
     RoleMapUnitOfWork,
     RoleMember,
@@ -50,6 +53,7 @@ class Store:
     builds: dict[uuid.UUID, BuildRun] = field(default_factory=dict)
     candidates: dict[uuid.UUID, RoleCandidate] = field(default_factory=dict)
     strengths: dict[uuid.UUID, CandidateStrength] = field(default_factory=dict)
+    fits: dict[uuid.UUID, RoleFit] = field(default_factory=dict)
     events: list[RoleMapEvent] = field(default_factory=list)
 
 
@@ -131,6 +135,17 @@ class FakeStrengths(
         return True
 
 
+class FakeFits(FakeRepository[RoleFit, RoleFitFilter], RoleFitRepository):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "fit"
+
+    def matches(self, entity: RoleFit, filter: RoleFitFilter) -> bool:
+        return (filter.role_id is None or entity.role_id == filter.role_id) and (
+            filter.assessment_id is None or entity.assessment_id == filter.assessment_id
+        )
+
+
 class FakeOwner(OwnerRoleMap):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.roles = FakeRoles(store.roles, owner_id=owner_id)
@@ -140,6 +155,7 @@ class FakeOwner(OwnerRoleMap):
         self.builds = FakeBuilds(store.builds, owner_id=owner_id)
         self.candidates = FakeCandidates(store.candidates, owner_id=owner_id)
         self.strengths = FakeStrengths(store.strengths, owner_id=owner_id)
+        self.fits = FakeFits(store.fits, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:

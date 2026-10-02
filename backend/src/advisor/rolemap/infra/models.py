@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -201,6 +202,49 @@ class CandidateStrength(Base, OwnedMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     read: Mapped[str] = mapped_column(Text, nullable=False)
     weight: Mapped[float] = mapped_column(Float, nullable=False)
+    # What the weight came from; the fit is scored against these (ADR 0028).
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class RoleFit(Base, OwnedMixin):
+    """A snapshot of fit between this user and one of their roles (ADR 0028).
+
+    Fit lives here, on the User x Role pair, never as an attribute of a role.
+    Every fit taken is kept; the newest per role is the current one.
+    """
+
+    __tablename__ = "role_fit"
+    __table_args__ = (
+        Index("ix_role_fit_owner_role", "owner_id", "role_id", "created_at"),
+        {"schema": "rolemap"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    # The analysis whose scores the fit was taken against.
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    role_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The projection is an AI judgement, so it is stored with its reasoning and
+    # shown to the user.
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    uncovered: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    # What the fit was projected from, so it can be re-read later without the
+    # role: [{statement, weight, expected_level}].
+    requirements: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    # Requirement statement -> the user's dimension key it maps to, or null.
+    requirement_map: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

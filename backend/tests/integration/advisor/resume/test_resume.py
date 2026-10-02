@@ -133,7 +133,6 @@ async def world(
         database,
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=settings.assessment_confidence_threshold,
     )
@@ -238,7 +237,7 @@ async def _custom_role(
     )
     _score_the_jd(world.stub)
     await world.rolemap.recluster(account)
-    await world.assessment.compute_fits(account)
+    await world.rolemap.compute_fits(account)
     return TargetRef(str(role.id))
 
 

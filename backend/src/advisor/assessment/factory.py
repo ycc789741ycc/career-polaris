@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from advisor.assessment.infra.unit_of_work import SqlAlchemyAssessmentUnitOfWork
 from advisor.assessment.service import AssessmentService
-from advisor.market import MarketService
 from advisor.profile import ProfileService
 from advisor.rolemap import RoleMapService
 from kernel.ai_gateway import AiGateway
@@ -20,7 +19,6 @@ def create_assessment_service(
     *,
     profile: ProfileService,
     rolemap: RoleMapService,
-    market: MarketService,
     gateway: AiGateway,
     confidence_threshold: float,
 ) -> AssessmentService:
@@ -28,7 +26,6 @@ def create_assessment_service(
         SqlAlchemyAssessmentUnitOfWork(database),
         profile=profile,
         rolemap=rolemap,
-        market=market,
         gateway=gateway,
         confidence_threshold=confidence_threshold,
     )

@@ -14,8 +14,6 @@ import pytest
 from advisor.assessment.domain import (
     AssessedScore,
     AssessedScoreFilter,
-    RoleFit,
-    RoleFitFilter,
     SkillAssessment,
     SkillAssessmentFilter,
 )
@@ -51,33 +49,14 @@ async def test_assessment_snapshots_round_trip(
                 evidence_ids=("e1", "e2"),
             )
         )
-        fit = await mine.fits.create(
-            RoleFit(
-                id=uuid.uuid4(),
-                owner_id=account,
-                assessment_id=assessment.id,
-                role_id=uuid.uuid4(),
-                private_posting_id=None,
-                score=64,
-                reasoning="close",
-                target_profile={"api": 80},
-                gaps=({"dimension_key": "api", "user_score": 72, "target_score": 80, "delta": -8},),
-                uncovered=({"statement": "Kafka", "weight": 0.5},),
-                model_id="m",
-                template_version="v1",
-                requirements=({"statement": "APIs", "weight": 0.9, "expected_level": "expert"},),
-                requirement_map={"APIs": "api"},
-            )
-        )
-    assert assessment.created_at is not None and fit.created_at is not None
+    assert assessment.created_at is not None
 
     async with uow.for_owner(account) as mine:
         assert await mine.assessments.get_list(SkillAssessmentFilter(), page_size=1) == [assessment]
         assert await mine.scores.get_list(AssessedScoreFilter(assessment_id=assessment.id)) == [
             score
         ]
-        assert await mine.fits.get_list(RoleFitFilter(role_id=fit.role_id)) == [fit]
 
     async with uow.for_owner(other_account) as theirs:
-        assert await theirs.fits.get(fit.id) is None
+        assert await theirs.scores.get(score.id) is None
         assert await theirs.assessments.get_count(SkillAssessmentFilter()) == 0

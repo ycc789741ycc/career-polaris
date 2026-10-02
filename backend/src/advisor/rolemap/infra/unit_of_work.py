@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from advisor.rolemap.domain import (
     CustomRoleAdded,
     OwnerRoleMap,
+    RoleFitsComputed,
     RoleMapBuildFinished,
     RoleMapEvent,
     RoleMapUnitOfWork,
@@ -29,6 +30,7 @@ from advisor.rolemap.infra.repositories import (
     SqlAlchemyCandidateStrengthRepository,
     SqlAlchemyLineageEntryRepository,
     SqlAlchemyRoleCandidateRepository,
+    SqlAlchemyRoleFitRepository,
     SqlAlchemyRoleMemberRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemyRoleRequirementRepository,
@@ -46,6 +48,7 @@ class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
         self.builds = SqlAlchemyBuildRunRepository(session, owner_id=owner_id)
         self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
         self.strengths = SqlAlchemyCandidateStrengthRepository(session, owner_id=owner_id)
+        self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:
@@ -101,6 +104,8 @@ def _outbox_entry(event: RoleMapEvent) -> tuple[EventName, dict[str, Any], uuid.
                 {"build_id": str(event.build_id), "status": event.status},
                 event.owner_id,
             )
+        case RoleFitsComputed():
+            return EventName.ROLE_FITS_COMPUTED, {"roles": event.roles}, event.owner_id
         case RolesReclustered():
             return EventName.ROLES_RECLUSTERED, {"roles": event.roles}, event.owner_id
         case _:

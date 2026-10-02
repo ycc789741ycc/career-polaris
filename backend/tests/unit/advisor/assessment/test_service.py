@@ -6,7 +6,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,14 +17,11 @@ from advisor.assessment.domain import (
     DimensionsChanged,
     DimensionScore,
     LineageKind,
-    TargetScore,
-    evaluate,
 )
 from kernel.errors import (
     BudgetExceededError,
     NotFoundError,
     OutputInvalidError,
-    ValidationError,
 )
 from tests.unit.advisor.assessment.fakes import FakeAssessmentUnitOfWork
 
@@ -93,7 +89,6 @@ def _service(
         uow,
         profile=profile or FakeProfile(),  # type: ignore[arg-type]
         rolemap=None,  # type: ignore[arg-type]
-        market=None,  # type: ignore[arg-type]
         gateway=gateway,  # type: ignore[arg-type]
         confidence_threshold=0.5,
     )
@@ -215,54 +210,6 @@ async def test_history_is_paged_by_the_store_and_counts_every_run() -> None:
     assert [a.profile_version for a in page.items] == [1]
 
 
-async def _fit(
-    service: AssessmentService,
-    *,
-    score_target: int,
-    role_id: uuid.UUID | None = None,
-    posting_id: uuid.UUID | None = None,
-) -> None:
-    targets = [TargetScore(dimension_id="api", target=score_target)]
-    result: Any = evaluate(user_scores={"api": 60}, targets=targets, uncovered=[])
-    await service._store_fit(
-        OWNER,
-        assessment_id=uuid.uuid4(),
-        role_id=role_id,
-        private_posting_id=posting_id,
-        fit=result,
-        targets=targets,
-        requirements=(),
-        requirement_map={},
-        reasoning="because",
-        model_id="model",
-        template_version="v1",
-    )
-
-
-async def test_the_current_fit_is_the_newest_per_role_or_posting() -> None:
-    uow = FakeAssessmentUnitOfWork()
-    service = _service(uow)
-    role, posting = uuid.uuid4(), uuid.uuid4()
-
-    await _fit(service, score_target=90, role_id=role)
-    await _fit(service, score_target=60, role_id=role)
-    await _fit(service, score_target=70, posting_id=posting)
-
-    fits = await service.fits(OWNER)
-    assert len(fits) == 2 and len(uow.store.fits) == 3
-    by_target = {f.role_id or f.private_posting_id: f for f in fits}
-    assert by_target[role].target_profile == {"api": 60}
-    assert by_target[posting].private_posting_id == posting
-
-
-async def test_a_fit_is_for_exactly_one_role_or_posting() -> None:
-    service = _service(FakeAssessmentUnitOfWork())
-    with pytest.raises(ValidationError):
-        await _fit(service, score_target=60)
-    with pytest.raises(ValidationError):
-        await _fit(service, score_target=60, role_id=uuid.uuid4(), posting_id=uuid.uuid4())
-
-
 # --- analysis runs (ADR 0006, ADR 0018) ------------------------------------
 
 
@@ -378,15 +325,27 @@ class _PricedGateway:
 
 
 class _PricedRoleMap:
+    """Prices each fit projection at $0.10, as the role map would: one per
+    recommended role the build may make, plus the user's own."""
+
     def __init__(self, cost: dict[str, Any], custom_roles: int = 0) -> None:
         self.cost = cost
         self.custom_roles = custom_roles
+        self.fits_asked: list[int | None] = []
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return self.cost
 
-    async def roles(self, owner_id: uuid.UUID) -> list[Any]:
-        return [SimpleNamespace(is_custom=True)] * self.custom_roles
+    async def estimate_fits(
+        self, owner_id: uuid.UUID, *, recommended: int | None = None
+    ) -> dict[str, Any]:
+        self.fits_asked.append(recommended)
+        roles = (recommended or 0) + self.custom_roles
+        return {
+            "cost_usd": str(Decimal("0.10") * roles) if roles else "0",
+            "roles": roles,
+            "rate_is_published": True,
+        }
 
 
 def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentService:
@@ -394,7 +353,6 @@ def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentS
         FakeAssessmentUnitOfWork(),
         profile=FakeProfile(),  # type: ignore[arg-type]
         rolemap=_PricedRoleMap(role_map_cost, custom_roles),  # type: ignore[arg-type]
-        market=None,  # type: ignore[arg-type]
         gateway=_PricedGateway(),  # type: ignore[arg-type]
         confidence_threshold=0.5,
     )
@@ -429,14 +387,6 @@ async def test_analyze_on_a_market_too_thin_for_a_role_costs_the_analysis_alone(
 
     assert estimate["cost_usd"] == "0.10"
     assert (estimate["max_roles"], estimate["fits_cost_usd"]) == (0, "0")
-
-
-async def test_adding_a_role_prices_its_fit_beside_the_ones_already_on_the_map() -> None:
-    service = _priced({}, custom_roles=1)
-
-    fits = await service.estimate_fits(OWNER, extra_roles=1)
-
-    assert (fits["roles"], fits["cost_usd"]) == (2, "0.20")
 
 
 # --- candidate roles for the role map (ADR 0024) ----------------------------
@@ -483,7 +433,6 @@ def _analysing(reply: dict[str, Any]) -> tuple[AssessmentService, _RecordingRole
         uow,
         profile=FakeProfile(),  # type: ignore[arg-type]
         rolemap=rolemap,  # type: ignore[arg-type]
-        market=None,  # type: ignore[arg-type]
         gateway=FakeGateway(reply),  # type: ignore[arg-type]
         confidence_threshold=0.5,
     )
@@ -518,6 +467,9 @@ async def test_an_analysis_hands_the_roles_it_recommends_to_the_role_map() -> No
         ("backend", "Shown by the evidence.")
     }
     assert [s.weight for s in rolemap.strengths] == pytest.approx([0.6 * 0.8] * 5)
+    # And the scores themselves, which the role map scores its fits against
+    # (ADR 0028).
+    assert {(s.score, s.confidence) for s in rolemap.strengths} == {(60, 0.8)}
 
 
 async def test_a_role_resting_on_a_dimension_the_reply_lacks_rejects_the_whole_reply() -> None:

@@ -163,7 +163,6 @@ flowchart TB
   T --> MK[market]
   AS --> RM
   AS --> PR
-  AS --> MK
   RM --> PR
   RM --> MK
   AC[activity] --> GF
@@ -179,8 +178,8 @@ flowchart TB
 | `identity` | none | Accounts, password and Google sign-in, sessions, and the write-only AI credential |
 | `profile` | none | Evidence: GitHub and Jira connectors, résumé upload and parsing; never reaches the AI gateway (rule 10) |
 | `market` | none | Openings: board adapters, discovery and politeness (`crawling/`), the baseline seed, the user's 1–3 target locations, custom roles' private JDs, posting embeddings |
-| `rolemap` | market | Holds the candidate roles each analysis recommends, keeps the first ten the user's market has openings for, and places the user's custom Roles beside them ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
-| `assessment` | market, profile, rolemap | Skill dimensions, the strength report with per-dimension and profile confidence, the candidate roles it hands to `rolemap`, and RoleFit |
+| `rolemap` | market | Holds the candidate roles each analysis recommends, keeps the first ten the user's market has openings for, and places the user's custom Roles beside them ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)). Scores each role's RoleFit against the dimension scores the analysis hands over, and ranks the openings inside the roles by it ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
+| `assessment` | profile, rolemap | Skill dimensions and the strength report with per-dimension and profile confidence; hands the candidate roles, and the scores their fits are taken against, to `rolemap` |
 | `target` | market, rolemap, assessment | Resolves a role (and optionally an opening) into a frozen snapshot; no tables |
 | `gapfill` | profile, assessment, target | Questions per gap of a Target, and the one submit that records every answer as `user_answer` evidence |
 | `gapplan` | profile, rolemap, assessment, target, gapfill | Gap plans per Target: ranked gaps, milestones, tasks, versions; regenerated after answers are submitted |
@@ -201,7 +200,7 @@ flowchart TB
 11. Only a component's `infra/` (and the factory that wires it) imports the ORM, `kernel.db` or the outbox writer. Its domain, use cases and other modules reach stored data through repository interfaces its `domain/` defines — six methods (`create`, `get`, `get_list`, `get_count`, `update`, `delete`) and one filter per aggregate, in domain types ([ADR 0011](decisions/0011-give-every-repository-the-same-six-methods.md)). Enforced for every component.
 
 ### Communication
-- **Queries** are synchronous in-process calls through a component's `__init__.py`. For example, `resume` asks `assessment` for the current RoleFit.
+- **Queries** are synchronous in-process calls through a component's `__init__.py`. For example, `target` asks `rolemap` for the current RoleFit when it freezes a Target.
 - **Side effects** go through **domain events** with a **transactional outbox**. The event row is written in the same transaction as the change, and a dispatcher in `worker` turns events into queued jobs:
 
 | Event | Emitted by | Handled by |
@@ -212,7 +211,7 @@ flowchart TB
 | `TargetLocationsChanged(locations)` | market | nothing: a build spends the user's key, so it waits until they ask. `GET /role-map` says the locations changed since the map was built ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
 | `CustomRoleAdded(role, company?)` | rolemap | a named company → `market.company_named` → `market.discover_board`, which may leave a `demand` `crawl_source` with no user id. The route that added the role already recorded the build that places it (its cost was confirmed when it was added) |
 | `GapAnswersSubmitted(target, evidence ids)` | gapfill | gapplan.regenerate and resume.regenerate for that Target, each only if the user already has one — dispatched separately, so the two never import each other |
-| `RoleMapBuildFinished(build, status)` | rolemap, as a build closes, `ready` or `failed` | assessment.compute_fits: the fits are scored once per build ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
+| `RoleMapBuildFinished(build, status)` | rolemap, as a build closes, `ready` or `failed` | rolemap.compute_fits: the fits are scored once per build ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md), [ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
 | `RoleRequirementsChanged`, `RoleSplitOrMerged` | rolemap | nothing yet; later gapplan.suggest_successor (for Targets whose snapshot came from that Role — not built: rolemap does not emit `RoleSplitOrMerged` yet) |
 | `PlanDrafted` | gapplan | nothing yet; recorded for the match digest and progress history |
 | `ResumeTailored`, `ResumeVersionSaved` | resume | nothing yet; `ResumeTailored` is what the interview-report prompt will key on |
@@ -260,7 +259,7 @@ flowchart TB
 | Resume, ResumeVersion, RevisionThread, exports | `resume.resume`, `resume.version`, `resume.revision`, `resume.export` | Owner zone. A résumé holds its Target like a plan does, with its snapshot and RequirementCoverage. Versions are never overwritten (`generated`, `manual`, `chat`, and `answers` for a regeneration after Fill the gap); each chat exchange keeps the proposal it made and the version it became; exported PDFs live in object storage under `users/{owner}/exports/`. |
 | GapPlan, Milestone, Task | `gapplan.plan`, `gapplan.milestone`, `gapplan.task` | Owner zone. A plan row holds the Target as a `role_id` plus a nullable `job_posting_id` (domain decision 26), and the frozen requirements snapshot, so a plan survives posting expiry and rebuilds. Regenerating adds a row with the next `version`; finished tasks carry over by matching. Each row has a `status` (`drafting`, `ready`, `failed`) and the failure's code ([ADR 0006](decisions/0006-report-ai-job-progress-through-a-status-the-page-polls.md)). |
 | QuestionSet, GapQuestion (domain decision 27) | `gapfill.question_set`, `gapfill.question` | Owner zone. A set is keyed on the Target (`role_id`, nullable `job_posting_id`) and records the model and a `status` the page polls (`writing`, `ready`, `failed`, `superseded`). Each question keeps its gap (dimension id or requirement), "asked because", answer type and choices. Answers are **not** stored here while the user types — they arrive in one submit and are written as `profile.evidence` with source `user_answer`, citing the question; the question keeps the evidence id. |
-| What a fit was projected from | `assessment.role_fit.requirements`, `requirement_map` | The requirements and which of the user's dimensions each mapped to, so a Target snapshot and requirement coverage can be read without the role or posting. A fit may be for a custom role's JD (`private_posting_id`). |
+| What a fit was projected from | `rolemap.role_fit.requirements`, `requirement_map` | The requirements and which of the user's dimensions each mapped to, so a Target snapshot and requirement coverage can be read without the role. Each fit records the `assessment_id` whose scores it was taken against, from `rolemap.candidate_strength` ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)). |
 | A custom role's JD (decisions 12, 25) | `market_user.private_job_posting` | The crawler role and shared queries physically can't reach it. An optional `shared_posting_id` gives a one-way link to a matching crawled posting. It is referenced by the custom role that owns it. |
 | InterviewReport, private part (outcome, stage notes) | `profile.interview_outcome` | Owner only; becomes Evidence and calibrates fit |
 | InterviewReport, shared part (company, title, stages, difficulty) | `market.interview_contribution` with salted `contributor_hash` | Allows one vote per user with no link back to the account |

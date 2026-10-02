@@ -20,8 +20,3 @@ async def run(deps: Any, *, owner_id: str, run_id: str) -> None:
         dimensions=len(assessment.dimensions),
         model_id=assessment.model_id,
     )
-
-
-async def compute_fits(deps: Any, *, owner_id: str) -> None:
-    fits = await deps.assessment.compute_fits(uuid.UUID(owner_id))
-    log.info("assessment.fits_computed", fits=len(fits))

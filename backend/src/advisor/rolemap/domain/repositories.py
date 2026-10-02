@@ -25,6 +25,7 @@ from advisor.rolemap.domain.entities import (
     LineageEntry,
     Role,
     RoleCandidate,
+    RoleFit,
     RoleMember,
     RoleOrigin,
     RoleRequirement,
@@ -109,6 +110,15 @@ class CandidateStrengthRepository(
 ): ...
 
 
+@dataclass(frozen=True, slots=True)
+class RoleFitFilter:
+    role_id: uuid.UUID | None = None
+    assessment_id: uuid.UUID | None = None
+
+
+class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
+
+
 class OwnerRoleMap(Protocol):
     roles: RoleRepository
     members: RoleMemberRepository
@@ -117,6 +127,7 @@ class OwnerRoleMap(Protocol):
     builds: BuildRunRepository
     candidates: RoleCandidateRepository
     strengths: CandidateStrengthRepository
+    fits: RoleFitRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 
