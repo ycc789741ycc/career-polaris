@@ -1475,10 +1475,12 @@ key unless the user asks for that spend.
   rebuild.
 * A plan can cite what the user answered in Fill the gap, for every gap
   the answer was about, including a requirement nothing else covers.
+* Every prompt reads a fact with its date, so recent work counts for more
+  than old work, and a newer fact wins over an older one it contradicts.
 
-Four branches, in this order. The first two were built under
+Five branches, in this order. The first two were built under
 `epic/no-ticket/own-posting-target`, which is already in mainline. The
-other two are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+other three are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
 
 1. "A posting of your own belongs to Target": done (ADR 0033).
 2. "Uploaded or filled in, evaluated when set as the target": done
@@ -1487,6 +1489,8 @@ other two are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
    Fill the gap stops rewriting them.
 4. "A plan cites what you answered": a gap the user answered about can cite
    that answer, including a requirement with no other evidence.
+5. "Read each fact with its date": every prompt that reads evidence sees
+   when each fact is from, and is told what to do when facts conflict.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -1738,3 +1742,132 @@ Open questions:
   with no re-analysis at all: a local rule that marks the requirement
   covered at low confidence. That changes what a fit means, so it would need
   its own ADR.
+
+## Read each fact with its date
+Today every fact carries a date, `Evidence.observed_on`:
+* an `item` (one commit, one issue): when that work happened;
+* a `summary` ("40 commits authored in x"): only the latest of the items it
+  counts;
+* a résumé line: none;
+* an answer from Fill the gap: the day it was given.
+
+The connectors use it to choose what to collect: GitHub keeps the 25 newest
+commits, and Jira ranks epics by when they were last worked on (ADR 0017).
+After that no prompt sees it. `skill_assessment`, `gap_plan`,
+`gap_questions`, `resume_write` and `resume_revise` all get each fact as
+`[handle] (source) reference: fact`, each from its own copy of
+`_evidence_block`. So:
+* A skill last used five years ago weighs the same as last month's work.
+* Two facts that contradict each other both reach the model, with nothing
+  that says which is current. Examples:
+  * "Junior developer at X" on an older résumé, and "Senior engineer at X"
+    on a newer one under another file name. Résumé lines are keyed by file
+    name and line number, and an upload retires nothing.
+  * A résumé line against what GitHub or Jira shows.
+* No prompt says what to do about a conflict. The reply is checked only for
+  whether a cited id exists in the user's profile, so a stale fact can be
+  scored, planned on, or written into a résumé.
+* `ProfileSnapshot.evidence` is sorted by source alone. Fill the gap sends
+  only the first `MAX_EVIDENCE_LINES` (60), so the facts it leaves out are
+  whichever sort last. That is the user's own answers (`user_answer`), not
+  the oldest facts.
+
+Its own branch, `feature/<ticket>/evidence-dates`, after "A plan cites what
+you answered", whose `gap_plan` v2 it builds on.
+
+1. **An evidence line is written once, in `profile`.** A pure
+   `get_evidence_line(evidence, handle=None)`, exported from `profile`,
+   replaces the five copies. It puts the date beside the source, saying what
+   the date means:
+   * an item, the day the work happened: `[e3] (github, 2026-08-14) …`;
+   * a summary, the latest of its items: `(github, latest 2026-08-14)`;
+   * a résumé line, the day its file was uploaded:
+     `(resume, from a résumé uploaded 2026-05-02)`. The snapshot takes this
+     from the file the line was last found in (`resume_file_id`);
+   * an answer: `(user_answer, answered 2026-09-30)`;
+   * a fact with no date: `(github, undated)`.
+
+   Only the platform writes the date, so no user-written text goes into it.
+2. **Newest first.** `ProfileSnapshot.evidence` is ordered by that date,
+   newest first and undated last, so any cut such as Fill the gap's 60 drops
+   the oldest facts. Each prompt's handles are still assigned per call.
+3. **Each prompt gets a new version with a rule on time:** `skill_assessment`
+   v4, `gap_plan` v3, `gap_questions` v2, `resume_write` v2, `resume_revise`
+   v2. The common rules:
+   * A date says when the work happened, or when the fact was stated. A
+     résumé's upload date or an answer's date is the second kind, and never
+     makes the work itself recent.
+   * When two facts contradict each other, the newer one wins. The older one
+     is not cited as current.
+   * An undated fact never overrides a dated one.
+
+   Then, prompt by prompt:
+   * `skill_assessment`: recent work weighs more than old work in `score`. A
+     dimension resting only on old work keeps what that work shows, and its
+     `read` says how old it is. A conflict the newer fact settled is named in
+     `read`. `confidence` still reflects how much evidence there is.
+   * `gap_plan`: a skill shown only by old work is a refresher, not a gap
+     to learn from scratch. It keeps v2's pairing of answers with gaps, and
+     an answer listed beside a gap wins over an older fact on that gap.
+   * `gap_questions`: when facts on a gap contradict each other, ask which
+     is current rather than asking about the gap from scratch.
+   * `resume_write` and `resume_revise`: never write a fact another one has
+     superseded, such as an older title, as the person's current state.
+4. **Nothing reruns by itself.** The journey only runs forward, and an
+   analysis spends the user's key. The new rules apply from the next
+   analysis, plan, question set or résumé the user asks for. A new analysis
+   re-scores the fits anyway, because a fit records the `assessment_id` it
+   read. A plan or résumé is not marked outdated by the new versions either:
+   the `DraftBasis` from "Regenerate the plan and résumé only when asked"
+   records the evidence and the Target, not the prompt.
+5. **Estimates need no change.** The gateway prices the rendered prompt, so
+   they rise by the dates' tokens, a few per line.
+6. **No migration.** Nothing stored or public changes, and it reverts by
+   loading the previous template versions.
+7. **An ADR** (0037): every prompt reads a fact with its date, and a newer
+   fact wins over an older one it contradicts. Update the index,
+   `docs/domain_model.md` and `CLAUDE.md`.
+
+Tests:
+* Unit, `get_evidence_line`: one line for each kind of date (an item, a
+  summary, a résumé line, an answer, an undated fact), with and without a
+  handle.
+* Unit, the snapshot:
+  * it is newest first, with undated facts last;
+  * a résumé line carries the upload date of the file it was last found in.
+* Unit, each of the five services: it loads the new template version, and
+  the evidence it sends carries the dates (a fake gateway records the
+  inputs).
+* Unit, Fill the gap: with more than 60 facts, the oldest are the ones left
+  out, and recent answers are kept.
+* Integration: the snapshot reads the résumé file's upload date under
+  row-level security, and a line found again in a newer file takes the
+  newer file's date.
+
+What gets harder:
+* Strengths before and after `skill_assessment` v4 are not like for like. A
+  dimension can drop with no new evidence because its work has aged, and
+  comparing two assessments shows a change that no new evidence caused.
+* Recency is weighed by the model, not by a rule we can test. The same
+  facts can score differently from one analysis to the next.
+* A summary's date is only its latest item. "40 commits authored in x,
+  latest 2026-08-14" looks current even when 39 of them are years old.
+* A résumé's upload date is when it was stated, not when the work happened.
+  An old résumé uploaded today wins over GitHub work from last year if the
+  model misreads the rule.
+* An answer dated today wins over an older fact that contradicts it, so a
+  user can talk the analysis out of what their own sources show.
+* Every prompt that reads evidence is a little longer, on the user's key.
+
+Open questions:
+* No code writes a `CareerPosition`: the résumé parser stores lines, not
+  positions. So the timeline every prompt receives is "(no positions
+  recorded)" and `total_experience_months` is 0. Reading positions from the
+  résumé would give its lines a date the work happened, not just the day it
+  was uploaded.
+* Whether a new résumé should retire the lines of the older ones
+  (`replaced_refs` of `resume:*`), rather than leaving the prompt to choose
+  between them.
+* Whether Strengths should show how old each dimension's newest cited fact
+  is. That needs no AI call: it is worked out from the dates of the cited
+  facts.
