@@ -15,6 +15,8 @@ TEMPLATES = [
     ("follow_up_questions", "v1"),
     # v2 keeps where and how a role is worked out of its name (Phase 8).
     ("role_extraction", "v2"),
+    # A role filled in by hand with nothing listed (ADR 0034).
+    ("typical_requirements", "v1"),
     ("difficulty_estimate", "v1"),
     ("fit_projection", "v1"),
     # Phase 2

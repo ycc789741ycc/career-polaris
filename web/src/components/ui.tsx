@@ -25,6 +25,7 @@ export function Button({
   disabled = false,
   block = false,
   type = "button",
+  "aria-label": ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -33,6 +34,8 @@ export function Button({
   disabled?: boolean;
   block?: boolean;
   type?: "button" | "submit";
+  /** When the visible text alone is ambiguous, e.g. one Remove per row. */
+  "aria-label"?: string | undefined;
 }) {
   const className = [
     "btn",
@@ -47,6 +50,7 @@ export function Button({
       className={className}
       onClick={onClick}
       disabled={disabled || busy}
+      aria-label={ariaLabel}
       aria-busy={busy || undefined}
     >
       {busy ? "Working…" : children}

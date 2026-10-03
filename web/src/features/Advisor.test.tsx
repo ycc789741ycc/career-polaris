@@ -60,8 +60,10 @@ function own(id: string, overrides: Partial<OwnPosting> = {}): OwnPosting {
     private_job_posting_id: id,
     title: "Staff Platform Engineer",
     company_name: "Meridian Labs",
-    source: "pasted",
+    source: "filled_in",
     filename: null,
+    has_estimated_requirements: false,
+    created_at: "2026-10-01T09:00:00Z",
     status: "ready",
     error_code: null,
     error_message: null,
@@ -179,54 +181,61 @@ describe("the Advisor's one target role", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks for a target, and offers a posting of your own, when nothing is aimed", async () => {
-    renderAdvisor(null);
-    expect(screen.getByText("Pick a target first")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Aim at a posting of your own" }),
-    ).toBeInTheDocument();
-    const list = await screen.findByRole("list", { name: "Your postings" });
-    expect(list).toHaveTextContent("Reading and scoring it…");
-  });
-
-  it("aims at a scored posting of your own from its list", async () => {
+  it("asks for a target from the map or a role of your own, when nothing is aimed", async () => {
     const user = userEvent.setup();
     const shell = renderAdvisor(null);
 
-    const list = await screen.findByRole("list", { name: "Your postings" });
+    expect(screen.getByText("Pick a target first")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use your own role" }));
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "own" });
     await user.click(
-      within(list).getByRole("button", { name: "Aim the Advisor at it" }),
+      screen.getByRole("button", { name: "Pick from role map" }),
     );
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { posting: "j1" },
-    });
+    expect(shell.navigate).toHaveBeenCalledWith("roles");
   });
 
-  it("measures everything against a posting of your own's own requirements", async () => {
+  it("brings a role of your own on its own tab, even with nothing aimed", async () => {
+    renderAdvisor(null, "own");
+
+    expect(
+      await screen.findByRole("heading", { name: "Bring the job yourself" }),
+    ).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "My roles" });
+    expect(list).toHaveTextContent("reading and scoring it…");
+  });
+
+  it("says which target a role of your own would replace", async () => {
+    renderAdvisor({ role: "r1" }, "own");
+
+    expect(
+      await screen.findByText(
+        /It replaces Staff Backend Engineer as your target\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("measures everything against a role of your own", async () => {
     const user = userEvent.setup();
     const shell = renderAdvisor({ posting: "j1" });
 
     const banner = await screen.findByRole("region", {
       name: "Your target role",
     });
-    expect(banner).toHaveTextContent("Your target posting");
     expect(banner).toHaveTextContent("Staff Platform Engineer");
     expect(banner).toHaveTextContent("at Meridian Labs");
     expect(banner).toHaveTextContent("64%");
-    expect(banner).toHaveTextContent(
-      "measured against this posting's own requirements",
-    );
+    expect(banner).toHaveTextContent("measured against this one role");
     await user.click(
-      within(banner).getByRole("button", { name: "Change posting" }),
+      within(banner).getByRole("button", { name: "Use your own role" }),
     );
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", { focus: null });
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "own" });
   });
 
-  it("waits for a posting of your own to be scored before aiming at it", async () => {
+  it("waits for a role of your own to be scored before planning for it", async () => {
     renderAdvisor({ posting: "j2" });
 
     expect(
-      await screen.findByText("Staff Platform Engineer is not scored yet"),
+      await screen.findByText("Reading and scoring Staff Platform Engineer"),
     ).toBeInTheDocument();
   });
 
@@ -263,7 +272,7 @@ describe("the Advisor's one target role", () => {
     expect(banner).not.toHaveTextContent("posting");
   });
 
-  it("offers no picker of its own: changing role goes back to the map", async () => {
+  it("offers no picker of its own: the map, or a role of your own", async () => {
     const user = userEvent.setup();
     const shell = renderAdvisor({ role: "r1" });
 
@@ -272,9 +281,12 @@ describe("the Advisor's one target role", () => {
     });
     expect(document.querySelector(".target-chip")).toBeNull();
     await user.click(
-      within(banner).getByRole("button", { name: "Change role" }),
+      within(banner).getByRole("button", { name: "Pick from role map" }),
     );
     expect(shell.navigate).toHaveBeenCalledWith("roles");
+    expect(
+      within(banner).getByRole("button", { name: "Use your own role" }),
+    ).toBeInTheDocument();
   });
 
   it("says so when the target has left the map", async () => {
@@ -351,6 +363,11 @@ describe("what a focus aims at", () => {
       private_job_posting_id: "j1",
     });
     expect(target?.isOwnPosting).toBe(true);
+    expect(target?.requirementsEstimated).toBe(false);
+    expect(
+      ownTargetFor("j1", [own("j1", { has_estimated_requirements: true })])
+        ?.requirementsEstimated,
+    ).toBe(true);
     expect(ownTargetFor("j1", [own("j1", { fit: null })])).toBeNull();
     expect(ownTargetFor("gone", [own("j1")])).toBeNull();
   });

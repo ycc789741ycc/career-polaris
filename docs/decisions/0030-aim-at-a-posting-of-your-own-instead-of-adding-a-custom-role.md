@@ -1,6 +1,6 @@
 # 0030. Aim the Advisor at a posting of your own instead of adding a custom role
 
-**Status:** Accepted — 2026-10-04. Supersedes [0021](0021-let-users-add-custom-roles-beside-the-ten.md), and amends [0022](0022-make-a-target-a-role-and-an-optional-opening.md) and [0027](0027-fetch-the-market-only-when-a-build-needs-it.md). Amended by [0033](0033-keep-a-posting-of-your-own-in-target.md).
+**Status:** Accepted — 2026-10-04. Supersedes [0021](0021-let-users-add-custom-roles-beside-the-ten.md), and amends [0022](0022-make-a-target-a-role-and-an-optional-opening.md) and [0027](0027-fetch-the-market-only-when-a-build-needs-it.md). Amended by [0033](0033-keep-a-posting-of-your-own-in-target.md) and [0034](0034-add-a-role-of-your-own-without-evaluating-it.md).
 
 ## Context
 

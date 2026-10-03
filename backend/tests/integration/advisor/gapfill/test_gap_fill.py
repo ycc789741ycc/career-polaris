@@ -146,13 +146,16 @@ async def world(
 
 
 async def _own_posting(world: World, account: uuid.UUID) -> TargetRef:
-    """A posting of the user's own, read and scored when it is added (Phase 8)."""
-    posting, run_id = await world.target.add_own_posting(
+    """A posting of the user's own, read and scored when it is set as the
+    target (ADR 0034)."""
+    posting = await world.target.add_own_posting(
         account,
         title="Staff Platform Engineer",
         company_name="Meridian Labs",
-        job_description="Set technical direction across three product teams...",
+        requirements=("Set technical direction across three product teams...",),
     )
+    _posting, run_id = await world.target.set_as_target(account, posting.private_job_posting_id)
+    assert run_id is not None
     world.stub.replies += [
         json.dumps(
             {

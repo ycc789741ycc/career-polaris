@@ -234,14 +234,16 @@ async def _own_posting(
     title: str = "Staff Platform Engineer",
     company: str = "Meridian Labs",
 ) -> TargetRef:
-    """A posting of the user's own, read and scored when it is added, aimed at
-    as a Target (Phase 8)."""
-    posting, run_id = await world.target.add_own_posting(
+    """A posting of the user's own, read and scored when it is set as the
+    target (ADR 0034), aimed at as a Target (Phase 8)."""
+    posting = await world.target.add_own_posting(
         account,
         title=title,
         company_name=company,
-        job_description="Set technical direction across three product teams...",
+        requirements=("Set technical direction across three product teams...",),
     )
+    _posting, run_id = await world.target.set_as_target(account, posting.private_job_posting_id)
+    assert run_id is not None
     _score_the_jd(world.stub)
     await world.target.evaluate_own_posting(account, run_id)
     return TargetRef(private_job_posting_id=str(posting.private_job_posting_id))

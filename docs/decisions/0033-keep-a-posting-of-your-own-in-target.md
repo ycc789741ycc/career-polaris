@@ -1,6 +1,6 @@
 # 0033. Keep a posting of your own in Target, and score it with the role map's fit kit
 
-**Status:** Accepted — 2026-10-06. Amends [0005](0005-resolve-targets-in-their-own-module.md) and [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md).
+**Status:** Accepted — 2026-10-06. Amends [0005](0005-resolve-targets-in-their-own-module.md) and [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md). Amended by [0034](0034-add-a-role-of-your-own-without-evaluating-it.md).
 
 ## Context
 

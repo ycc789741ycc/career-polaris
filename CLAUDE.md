@@ -451,15 +451,15 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
     `resume.resume` and `gapfill.question_set` keep exactly one, by check
     constraint. Routes take the three ids in bodies and query strings
     (`api.dependencies.TargetQuery`); the hash says `?posting=`.
-  - **Its evaluation, in `target` since ADR 0033.** `POST /own-postings`
-    (priced by `/own-postings/cost-estimate`) stores the JD privately and
-    records a `PostingEvaluation` run, which `target.evaluate_own_posting`
-    works through and the Advisor polls. The run reads `PostingRequirement`s
+  - **Its evaluation, in `target` since ADR 0033.** Since ADR 0034,
+    `POST /own-postings/{id}/target` (priced by `/target-estimate`) records a
+    `PostingEvaluation` run when the posting is set as the target, which
+    `target.evaluate_own_posting` works through and the Advisor polls. The run reads `PostingRequirement`s
     (`rolemap.extract`) and the AI's `PostingRequirementFit` (`rolemap.fit`),
     then works out the fit (`OwnPostingFit`) locally with
     `get_posting_fit_result`: a posting's fit is never an AI call. No build reads or
-    scores it; after a new analysis it is `is_stale`, and
-    `/own-postings/{id}/rescore` re-runs the projection only when asked.
+    scores it; after a new analysis it is `is_stale`, and setting it as the
+    target again re-runs the projection only then.
   - **What went.** `Role.origin`, `company_name` and `private_posting_id`,
     `/roles/custom`, `CustomRoleAdded`, `market.discover_board` and its
     probing, and `request_sources`'s company ids. Migration 0025 moved custom
@@ -519,19 +519,29 @@ under `epic/no-ticket/own-posting-target`:
   `/own-postings` routes live in `api/routes/target.py`, and the job is
   `target.evaluate_own_posting`.
 - **The fit rules stay in `rolemap`, lent as a stateless kit.**
-  `RoleMapService.strengths`, `extract_requirements`, `project_requirements`,
-  `estimate_requirements` and `estimate_projection`, and the pure
+  `RoleMapService.strengths`, `extract_requirements`, `infer_requirements`,
+  `project_requirements`, `estimate_requirements`,
+  `estimate_inferred_requirements` and `estimate_projection`, and the pure
   `get_projection_digest` and `get_posting_fit_result`, store nothing.
   `rolemap.posting_fit` holds openings' fits only: no `basis`, `role_id`
   NOT NULL.
-- **Pasted or uploaded.** "Aim at a posting of your own" takes the JD as text
-  or as a PDF, Word or text file (`POST /own-postings/upload`, priced by
-  `/own-postings/upload-estimate` as a ceiling). The file is stored in object
-  storage and read by the worker, never in a request handler, with
-  `kernel.documents` (shared with the résumé parser), under
-  `OWN_POSTING_MAX_BYTES` / `OWN_POSTING_MAX_PAGES`; once read it becomes the
-  JD and the file is deleted. Migration 0031 added `source`, `filename`,
-  `content_type` and `storage_key`.
+- **Uploaded or filled in** (ADR 0034). "Use your own role" (`#/advisor/own`)
+  takes a PDF, Word or text file (`POST /own-postings/upload`, title
+  optional), or a title, an optional company and optional requirements, one
+  per line (`POST /own-postings`). Adding spends nothing and queues nothing.
+  The file is stored in object storage and read by the worker, never in a
+  request handler, with `kernel.documents` (shared with the résumé parser),
+  under `OWN_POSTING_MAX_BYTES` / `OWN_POSTING_MAX_PAGES`; once read it
+  becomes the JD and the file is deleted. Migration 0031 added `source`,
+  `filename`, `content_type` and `storage_key`. Pasting a JD is gone.
+- **Evaluated when set as the target** (ADR 0034). "Set as target" is priced
+  by `GET /own-postings/{id}/target-estimate` (0 when the fit is current)
+  and queued by `POST /own-postings/{id}/target`, which replaced `/rescore`;
+  the SPA then opens Fill the gap. A role filled in with nothing listed
+  (`has_estimated_requirements`) has its requirements estimated from its
+  title (`rolemap.infer_requirements`, template `typical_requirements`); an
+  upload with no title (`has_placeholder_title`) takes the name the
+  extraction reads. Migration 0032 added both flags and `source = 'filled_in'`.
 - **`market` has no pasted JDs.** `PrivateJobPosting`, the paste methods and
   `GET /job-descriptions` are gone. Migration 0030 moved the data; 0015, 0025
   and 0028 are guarded so a fresh database still builds.

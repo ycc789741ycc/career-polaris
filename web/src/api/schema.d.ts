@@ -689,32 +689,10 @@ export interface paths {
         put?: never;
         /**
          * Add Own Posting
-         * @description Store the JD privately and queue reading and scoring it; poll
-         *     ``GET /own-postings``. Never placed on the role map, and builds nothing.
+         * @description Store a role filled in by hand, privately. Spends nothing and queues
+         *     nothing; it is read and scored when it is set as the target.
          */
         post: operations["add_own_posting_api_v1_own_postings_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/own-postings/cost-estimate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Own Posting Estimate
-         * @description Priced before "Aim at it", so nothing is spent unasked: reading the JD's
-         *     requirements, then scoring the fit. A POST, because a pasted JD does not
-         *     fit in a query string.
-         */
-        post: operations["own_posting_estimate_api_v1_own_postings_cost_estimate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -732,32 +710,12 @@ export interface paths {
         put?: never;
         /**
          * Upload Own Posting
-         * @description Store the file privately and queue reading it, then reading and scoring
-         *     its requirements; poll ``GET /own-postings``. A PDF, a Word file or plain
-         *     text. Never placed on the role map, and builds nothing.
+         * @description Store an uploaded JD privately: a PDF, a Word file or plain text.
+         *     Without a title it is named after its file until it is read. Spends
+         *     nothing and queues nothing; the worker reads it when it is set as the
+         *     target.
          */
         post: operations["upload_own_posting_api_v1_own_postings_upload_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/own-postings/upload-estimate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Own Posting Upload Estimate
-         * @description Priced before the file is sent: a ceiling, as if it held the longest JD
-         *     there may be, since nothing reads it until the worker does.
-         */
-        post: operations["own_posting_upload_estimate_api_v1_own_postings_upload_estimate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -785,7 +743,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/own-postings/{private_job_posting_id}/rescore": {
+    "/api/v1/own-postings/{private_job_posting_id}/target": {
         parameters: {
             query?: never;
             header?: never;
@@ -795,18 +753,19 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Rescore
-         * @description Score it again against the latest strengths, at the cost the user
-         *     confirmed. Asking while a run is going returns that one.
+         * Set As Target
+         * @description Make it ready to aim the Advisor at, at the cost the user confirmed:
+         *     queue reading and scoring it, unless its fit is current or a run is
+         *     already going. Poll ``GET /own-postings``.
          */
-        post: operations["rescore_api_v1_own_postings__private_job_posting_id__rescore_post"];
+        post: operations["set_as_target_api_v1_own_postings__private_job_posting_id__target_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/own-postings/{private_job_posting_id}/rescore-estimate": {
+    "/api/v1/own-postings/{private_job_posting_id}/target-estimate": {
         parameters: {
             query?: never;
             header?: never;
@@ -814,10 +773,12 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Rescore Estimate
-         * @description What scoring it again against the latest strengths costs: the fit only.
+         * Target Estimate
+         * @description What setting it as the target costs: nothing when its fit is current,
+         *     otherwise reading what it asks for if that is not read yet, and scoring
+         *     the fit. An unread file is priced as a ceiling.
          */
-        get: operations["rescore_estimate_api_v1_own_postings__private_job_posting_id__rescore_estimate_get"];
+        get: operations["target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1364,7 +1325,7 @@ export interface components {
             /** File */
             file: string;
             /** Title */
-            title: string;
+            title?: string | null;
         };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
@@ -1779,6 +1740,8 @@ export interface components {
         OwnPosting: {
             /** Company Name */
             company_name: string;
+            /** Created At */
+            created_at: string | null;
             /** Error Code */
             error_code: string | null;
             /** Error Message */
@@ -1787,6 +1750,8 @@ export interface components {
             filename: string | null;
             /** Fit */
             fit: number | null;
+            /** Has Estimated Requirements */
+            has_estimated_requirements: boolean;
             /** Is Stale */
             is_stale: boolean;
             /**
@@ -1800,7 +1765,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "pasted" | "uploaded";
+            source: "pasted" | "uploaded" | "filled_in";
             /** Status */
             status: ("running" | "ready" | "failed") | null;
             /** Title */
@@ -1808,8 +1773,9 @@ export interface components {
         };
         /**
          * OwnPostingEstimate
-         * @description What reading and scoring a posting of the user's own costs, shown
-         *     before anything runs: two calls to add one, one to rescore it.
+         * @description What setting a posting of the user's own as the target costs, shown
+         *     before anything runs: reading what it asks for, if that is not read yet,
+         *     and scoring the fit. Nothing when its fit is current.
          */
         OwnPostingEstimate: {
             /** Cost Usd */
@@ -1832,25 +1798,15 @@ export interface components {
         };
         /**
          * OwnPostingRequest
-         * @description A posting of the user's own (Phase 8): a title, optionally a company,
-         *     and the job description, which stays private to the user.
+         * @description A role the user fills in by hand (ADR 0034): a title, optionally a
+         *     company, and optionally what it asks for, one requirement per line. With
+         *     none listed, what it asks for is estimated from its title.
          */
         OwnPostingRequest: {
             /** Company Name */
             company_name?: string | null;
-            /** Job Description */
-            job_description: string;
-            /** Title */
-            title: string;
-        };
-        /**
-         * OwnPostingUploadEstimateRequest
-         * @description A posting of the user's own to be uploaded as a file: priced before the
-         *     file is read, so only its title and company are known.
-         */
-        OwnPostingUploadEstimateRequest: {
-            /** Company Name */
-            company_name?: string | null;
+            /** Requirements */
+            requirements?: string[];
             /** Title */
             title: string;
         };
@@ -4729,63 +4685,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OwnPosting"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    own_posting_estimate_api_v1_own_postings_cost_estimate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OwnPostingRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OwnPostingEstimate"];
                 };
             };
             /** @description The request could not be read. */
@@ -4831,63 +4736,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            202: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["OwnPosting"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    own_posting_upload_estimate_api_v1_own_postings_upload_estimate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OwnPostingUploadEstimateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OwnPostingEstimate"];
                 };
             };
             /** @description The request could not be read. */
@@ -4966,7 +4820,7 @@ export interface operations {
             };
         };
     };
-    rescore_api_v1_own_postings__private_job_posting_id__rescore_post: {
+    set_as_target_api_v1_own_postings__private_job_posting_id__target_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5015,7 +4869,7 @@ export interface operations {
             };
         };
     };
-    rescore_estimate_api_v1_own_postings__private_job_posting_id__rescore_estimate_get: {
+    target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get: {
         parameters: {
             query?: never;
             header?: never;

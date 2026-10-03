@@ -1,6 +1,7 @@
 """Target HTTP surface: the postings the user brings themselves to aim the
-Advisor at (Phase 8, ADR 0033), pasted or uploaded as a file, which are never
-on the role map."""
+Advisor at (Phase 8, ADR 0033), uploaded as a file or filled in by hand, which
+are never on the role map. Adding one spends nothing; setting it as the target
+reads and scores it (ADR 0034)."""
 
 from __future__ import annotations
 
@@ -16,7 +17,6 @@ from api.schemas.target import (
     OwnPostingEstimate,
     OwnPostingPage,
     OwnPostingRequest,
-    OwnPostingUploadEstimateRequest,
 )
 from kernel.paging import paginate
 from wiring.queue import enqueue
@@ -32,62 +32,32 @@ async def own_postings(user: CurrentUser, deps: Deps, paging: Paging) -> OwnPost
     return OwnPostingPage.of(found, OwnPosting.from_view)
 
 
-@router.post("/own-postings/cost-estimate")
-async def own_posting_estimate(
-    body: OwnPostingRequest, user: CurrentUser, deps: Deps
-) -> OwnPostingEstimate:
-    """Priced before "Aim at it", so nothing is spent unasked: reading the JD's
-    requirements, then scoring the fit. A POST, because a pasted JD does not
-    fit in a query string."""
-    return OwnPostingEstimate.model_validate(
-        await deps.target.estimate_own_posting(
-            user,
-            title=body.title,
-            company_name=body.company_name,
-            job_description=body.job_description,
-        )
-    )
-
-
-@router.post("/own-postings", status_code=202)
+@router.post("/own-postings", status_code=201)
 async def add_own_posting(body: OwnPostingRequest, user: CurrentUser, deps: Deps) -> OwnPosting:
-    """Store the JD privately and queue reading and scoring it; poll
-    ``GET /own-postings``. Never placed on the role map, and builds nothing."""
-    posting, evaluation_id = await deps.target.add_own_posting(
+    """Store a role filled in by hand, privately. Spends nothing and queues
+    nothing; it is read and scored when it is set as the target."""
+    posting = await deps.target.add_own_posting(
         user,
         title=body.title,
         company_name=body.company_name,
-        job_description=body.job_description,
-    )
-    await enqueue(
-        "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
+        requirements=tuple(body.requirements),
     )
     return OwnPosting.from_view(posting)
 
 
-@router.post("/own-postings/upload-estimate")
-async def own_posting_upload_estimate(
-    body: OwnPostingUploadEstimateRequest, user: CurrentUser, deps: Deps
-) -> OwnPostingEstimate:
-    """Priced before the file is sent: a ceiling, as if it held the longest JD
-    there may be, since nothing reads it until the worker does."""
-    return OwnPostingEstimate.model_validate(
-        await deps.target.estimate_upload(user, title=body.title, company_name=body.company_name)
-    )
-
-
-@router.post("/own-postings/upload", status_code=202)
+@router.post("/own-postings/upload", status_code=201)
 async def upload_own_posting(
     user: CurrentUser,
     deps: Deps,
-    title: Annotated[str, Form(min_length=1, max_length=MAX_TITLE)],
     file: Annotated[UploadFile, File()],
+    title: Annotated[str | None, Form(max_length=MAX_TITLE)] = None,
     company_name: Annotated[str | None, Form(max_length=MAX_COMPANY_NAME)] = None,
 ) -> OwnPosting:
-    """Store the file privately and queue reading it, then reading and scoring
-    its requirements; poll ``GET /own-postings``. A PDF, a Word file or plain
-    text. Never placed on the role map, and builds nothing."""
-    posting, evaluation_id = await deps.target.upload_own_posting(
+    """Store an uploaded JD privately: a PDF, a Word file or plain text.
+    Without a title it is named after its file until it is read. Spends
+    nothing and queues nothing; the worker reads it when it is set as the
+    target."""
+    posting = await deps.target.upload_own_posting(
         user,
         title=title,
         company_name=company_name,
@@ -95,27 +65,29 @@ async def upload_own_posting(
         content_type=file.content_type or "application/octet-stream",
         content=await file.read(),
     )
-    await enqueue(
-        "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
-    )
     return OwnPosting.from_view(posting)
 
 
-@router.get("/own-postings/{private_job_posting_id}/rescore-estimate")
-async def rescore_estimate(
+@router.get("/own-postings/{private_job_posting_id}/target-estimate")
+async def target_estimate(
     private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
 ) -> OwnPostingEstimate:
-    """What scoring it again against the latest strengths costs: the fit only."""
+    """What setting it as the target costs: nothing when its fit is current,
+    otherwise reading what it asks for if that is not read yet, and scoring
+    the fit. An unread file is priced as a ceiling."""
     return OwnPostingEstimate.model_validate(
-        await deps.target.estimate_rescore(user, private_job_posting_id)
+        await deps.target.estimate_target(user, private_job_posting_id)
     )
 
 
-@router.post("/own-postings/{private_job_posting_id}/rescore", status_code=202)
-async def rescore(private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps) -> OwnPosting:
-    """Score it again against the latest strengths, at the cost the user
-    confirmed. Asking while a run is going returns that one."""
-    posting, evaluation_id = await deps.target.rescore_own_posting(user, private_job_posting_id)
+@router.post("/own-postings/{private_job_posting_id}/target", status_code=202)
+async def set_as_target(
+    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+) -> OwnPosting:
+    """Make it ready to aim the Advisor at, at the cost the user confirmed:
+    queue reading and scoring it, unless its fit is current or a run is
+    already going. Poll ``GET /own-postings``."""
+    posting, evaluation_id = await deps.target.set_as_target(user, private_job_posting_id)
     if evaluation_id is not None:
         await enqueue(
             "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
