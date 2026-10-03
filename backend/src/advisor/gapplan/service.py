@@ -19,6 +19,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,7 @@ from advisor.gapplan.domain import (
     MAX_MILESTONES,
     MAX_PROJECTS,
     MAX_TASKS_PER_MILESTONE,
+    PLAN_STAGE_SHARES,
     SHOWN_GAPS,
     DraftMilestone,
     DraftProject,
@@ -42,6 +44,7 @@ from advisor.gapplan.domain import (
     OwnerGapPlans,
     PlanDrafted,
     PlanError,
+    PlanStage,
     PlanStatus,
     RoleOption,
     Task,
@@ -74,6 +77,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.errors import (
+    ConflictError,
     DomainError,
     EvidenceNotOwnedError,
     NotFoundError,
@@ -82,6 +86,7 @@ from kernel.errors import (
 )
 from kernel.logging import get_logger
 from kernel.paging import Page, paginate
+from kernel.progress import JobCancelledError, Progress, RunningJobView, get_stage_progress
 
 __all__ = [
     "EvidenceCite",
@@ -282,6 +287,8 @@ class GapPlanService:
         preview = await self._target.preview(owner_id, ref)
         async with self._uow.for_owner(owner_id) as mine:
             earlier = await mine.plans.get_list(_same_target(ref), page_size=1)
+            if earlier and earlier[0].is_drafting:
+                raise ConflictError("a plan for this target is already being drafted")
             plan = await mine.plans.create(
                 GapPlan.requested(
                     owner_id=owner_id,
@@ -308,7 +315,10 @@ class GapPlanService:
         ref = _ref_of(plan)
 
         try:
+            await self._advance(owner_id, plan_id, PlanStage.READING)
             await self._draft(owner_id, plan_id, ref)
+        except JobCancelledError:
+            log.info("gapplan.draft_cancelled", plan_id=str(plan_id))
         except DomainError as exc:
             log.warning("gapplan.draft_failed", plan_id=str(plan_id), code=str(exc.code))
             await self._fail(owner_id, plan_id, code=str(exc.code), message=exc.message)
@@ -326,7 +336,9 @@ class GapPlanService:
             plan = await mine.plans.get(plan_id)
             if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
-            same_target = await mine.plans.get_list(_same_target(_ref_of(plan)))
+            same_target = [
+                p for p in await mine.plans.get_list(_same_target(_ref_of(plan))) if p.is_shown
+            ]
             milestones = sorted(
                 await mine.milestones.get_list(MilestoneFilter(plan_id=plan_id)),
                 key=lambda m: m.position,
@@ -399,11 +411,49 @@ class GapPlanService:
         latest: list[PlanSummaryView] = []
         for plan in plans:
             ref = _ref_of(plan)
-            if ref in seen:
+            if ref in seen or not plan.is_shown:
                 continue
             seen.add(ref)
             latest.append(_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)))
         return paginate(latest, page, page_size)
+
+    async def cancel(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
+        """Stop a plan being drafted, before its next call or its save (ADR
+        0042). A call already sent is still charged; the version before it
+        stays current."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+            if plan is None:
+                raise NotFoundError("plan not found", plan_id=str(plan_id))
+            try:
+                plan.update_cancelled()
+            except PlanError as exc:
+                raise ConflictError(str(exc), plan_id=str(plan_id)) from exc
+            await mine.plans.update(plan)
+        log.info("gapplan.cancel_requested", plan_id=str(plan_id))
+
+    async def running_jobs(self, owner_id: uuid.UUID) -> tuple[RunningJobView, ...]:
+        """Every plan still being drafted, for ``GET /activity`` (ADR 0042)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plans = await mine.plans.get_list(GapPlanFilter())
+        return tuple(
+            RunningJobView(
+                kind="gap_plan",
+                id=str(plan.id),
+                role_id=str(plan.role_id) if plan.role_id else None,
+                job_posting_id=str(plan.job_posting_id) if plan.job_posting_id else None,
+                private_job_posting_id=(
+                    str(plan.private_job_posting_id) if plan.private_job_posting_id else None
+                ),
+                label=plan.target_label,
+                stage=str(plan.stage) if plan.stage else None,
+                progress=plan.progress,
+                started_at=plan.created_at,
+                estimated_cost_usd=plan.estimated_cost_usd,
+            )
+            for plan in plans
+            if plan.is_drafting
+        )
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
         async with self._uow.for_owner(owner_id) as mine:
@@ -426,6 +476,16 @@ class GapPlanService:
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
         answers = await self._gapfill.get_answers(owner_id, ref)
+
+        async def drafting(progress: Progress) -> None:
+            await self._advance(
+                owner_id,
+                plan_id,
+                PlanStage.DRAFTING,
+                fraction=progress.fraction,
+                cost=progress.estimated_cost_usd,
+            )
+
         result = await self._gateway.run(
             owner_id,
             task="gapplan.draft",
@@ -441,7 +501,9 @@ class GapPlanService:
             ),
             output_schema=_Plan,
             untrusted=_UNTRUSTED,
+            on_progress=drafting,
         )
+        await self._advance(owner_id, plan_id, PlanStage.CHECKING)
         draft = result.value
         readings = [GapReading(g.key, g.why, tuple(g.evidence_ids)) for g in draft.gaps]
         milestones = [
@@ -513,10 +575,14 @@ class GapPlanService:
         ]
 
         stones = await self._stepping_stones(owner_id, snapshot)
+        await self._advance(owner_id, plan_id, PlanStage.SAVING)
         async with self._uow.for_owner(owner_id) as mine:
             plan = await mine.plans.get(plan_id)
             if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
+            if not plan.is_drafting:
+                # Cancelled at the last moment: nothing of it is saved.
+                raise JobCancelledError
             previous_done = await _previous_done(mine, plan)
 
             new_tasks: list[Task] = []
@@ -644,6 +710,28 @@ class GapPlanService:
         return stepping_stones(
             target_role_id=snapshot.role_id, target_fit=snapshot.fit_score, roles=roles
         )
+
+    async def _advance(
+        self,
+        owner_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        stage: PlanStage,
+        *,
+        fraction: float = 0.0,
+        cost: Decimal | None = None,
+    ) -> None:
+        """Record the stage the plan has reached, unless it was cancelled, which
+        stops the job here: before a call, or while one streams."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+            if plan is None or not plan.is_drafting:
+                raise JobCancelledError
+            plan.update_stage(
+                stage,
+                progress=get_stage_progress(PLAN_STAGE_SHARES, str(stage), fraction),
+                cost=cost,
+            )
+            await mine.plans.update(plan)
 
     async def _fail(
         self, owner_id: uuid.UUID, plan_id: uuid.UUID, *, code: str, message: str

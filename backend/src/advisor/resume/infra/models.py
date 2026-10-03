@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -33,7 +36,9 @@ from kernel.db.base import Base, OwnedMixin, new_id
 class Resume(Base, OwnedMixin):
     __tablename__ = "resume"
     __table_args__ = (
-        CheckConstraint("status IN ('drafting', 'ready', 'failed', 'filling')", name="status"),
+        CheckConstraint(
+            "status IN ('drafting', 'ready', 'failed', 'filling', 'cancelled')", name="status"
+        ),
         CheckConstraint("template IN ('organic', 'plain')", name="template"),
         # A built-in template, or one of the user's own: exactly one (ADR 0040).
         CheckConstraint("num_nonnulls(template, custom_template_id) = 1", name="look"),
@@ -86,6 +91,10 @@ class Resume(Base, OwnedMixin):
             """ {"kind": "skills", "title": null}]'::jsonb"""
         ),
     )
+    # Where the job running on it has got (ADR 0042).
+    stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
 
 
 class ResumeVersion(Base, OwnedMixin):

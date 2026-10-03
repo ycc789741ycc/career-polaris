@@ -87,7 +87,7 @@ function renderStrengths(activity: Activity | null = null) {
         value={{
           activity,
           refresh: async () => {},
-          settled: { sources: 0, analysis: 0, roleMap: 0 },
+          settled: { sources: 0, analysis: 0, roleMap: 0, advisor: 0 },
         }}
       >
         <Strengths />
@@ -216,6 +216,7 @@ describe("Strengths", () => {
     serve(assessment({}));
     renderStrengths({
       syncing: [],
+      advisor_jobs: [],
       parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
       analysis: null,
       role_map: null,
@@ -233,6 +234,7 @@ describe("Strengths", () => {
     serve(assessment({}));
     renderStrengths({
       syncing: [],
+      advisor_jobs: [],
       parsing: [],
       analysis: {
         status: "failed",
@@ -290,6 +292,7 @@ describe("Strengths", () => {
     serve(assessment({}));
     renderStrengths({
       syncing: [],
+      advisor_jobs: [],
       parsing: [],
       analysis: {
         status: "running",

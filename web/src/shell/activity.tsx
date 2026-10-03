@@ -23,6 +23,8 @@ export interface Settled {
   sources: number;
   analysis: number;
   roleMap: number;
+  /** An Advisor job finished, failed or was cancelled (ADR 0042). */
+  advisor: number;
 }
 
 export interface ActivityState {
@@ -36,7 +38,7 @@ export interface ActivityState {
 const IDLE: ActivityState = {
   activity: null,
   refresh: async () => {},
-  settled: { sources: 0, analysis: 0, roleMap: 0 },
+  settled: { sources: 0, analysis: 0, roleMap: 0, advisor: 0 },
 };
 
 export const ActivityContext = createContext<ActivityState>(IDLE);
@@ -62,8 +64,15 @@ function anythingBusy(activity: Activity | null): boolean {
   return (
     sourcesBusy(activity) ||
     isBusy(activity?.analysis) ||
-    isBusy(activity?.role_map)
+    isBusy(activity?.role_map) ||
+    (activity?.advisor_jobs.length ?? 0) > 0
   );
+}
+
+/** An Advisor job that was running is no longer: done, failed or cancelled. */
+function advisorJobEnded(before: Activity, next: Activity): boolean {
+  const running = new Set(next.advisor_jobs.map((job) => job.id));
+  return before.advisor_jobs.some((job) => !running.has(job.id));
 }
 
 const SOURCE_NAMES: Record<string, string> = { github: "GitHub", jira: "Jira" };
@@ -126,11 +135,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     const sourcesDone = sourcesBusy(before) && !sourcesBusy(next);
     const analysisDone = isBusy(before.analysis) && !isBusy(next.analysis);
     const roleMapDone = isBusy(before.role_map) && !isBusy(next.role_map);
-    if (sourcesDone || analysisDone || roleMapDone) {
+    const advisorDone = advisorJobEnded(before, next);
+    if (sourcesDone || analysisDone || roleMapDone || advisorDone) {
       setSettled((count) => ({
         sources: count.sources + (sourcesDone ? 1 : 0),
         analysis: count.analysis + (analysisDone ? 1 : 0),
         roleMap: count.roleMap + (roleMapDone ? 1 : 0),
+        advisor: count.advisor + (advisorDone ? 1 : 0),
       }));
     }
     // One toast at a time: the latest stage to finish is the one to mention.

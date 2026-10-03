@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from advisor.target.domain import (
+    EvaluationStage,
     OwnPostingFit,
     PostingEvaluation,
     PostingEvaluationStatus,
@@ -60,6 +61,8 @@ def evaluation(row: models.PostingEvaluation) -> PostingEvaluation:
         finished_at=row.finished_at,
         error_code=row.error_code,
         error_message=row.error_message,
+        stage=EvaluationStage(row.stage) if row.stage else None,
+        progress=row.progress,
     )
 
 
@@ -77,6 +80,8 @@ def apply_evaluation(row: models.PostingEvaluation, entity: PostingEvaluation) -
     row.finished_at = entity.finished_at
     row.error_code = entity.error_code
     row.error_message = entity.error_message
+    row.stage = str(entity.stage) if entity.stage else None
+    row.progress = entity.progress
 
 
 def requirement(row: models.PostingRequirement) -> PostingRequirement:

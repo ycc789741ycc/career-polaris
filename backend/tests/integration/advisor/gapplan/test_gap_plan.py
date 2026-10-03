@@ -30,7 +30,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
-from kernel.errors import NotFoundError
+from kernel.errors import ConflictError, NotFoundError
 from kernel.storage import ObjectStore
 from tests.integration.places import WINDOWS, store_target_locations
 
@@ -63,7 +63,9 @@ class StubProvider(Provider):
         )
 
     async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
-        yield ""
+        # A job's call streams (ADR 0042): the queued reply, in one chunk.
+        self.calls.append(request)
+        yield self.replies.pop(0) if self.replies else "{}"
 
 
 @dataclass
@@ -507,3 +509,43 @@ async def test_another_user_cannot_read_the_plan(
     with pytest.raises(NotFoundError):
         await world.gapplan.get(other_account, requested.id)
     assert (await world.gapplan.history(other_account)).items == ()
+
+
+async def test_advisor_jobs_are_listed_and_cancelled_by_their_owner_only(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """ADR 0042: a running plan and question set are listed for their owner,
+    cancelled only by them, and only while they run."""
+    ref = await _own_posting(world, account)
+    plan = await world.gapplan.request(account, ref)
+    questions = await world.gapfill.request(account, ref)
+
+    running = {
+        (job.kind, job.id)
+        for job in (
+            *await world.gapplan.running_jobs(account),
+            *await world.gapfill.running_jobs(account),
+        )
+    }
+    assert running == {("gap_plan", str(plan.id)), ("questions", str(questions.id))}
+    assert await world.gapplan.running_jobs(other_account) == ()
+    assert await world.gapfill.running_jobs(other_account) == ()
+    with pytest.raises(NotFoundError):
+        await world.gapplan.cancel(other_account, plan.id)
+    with pytest.raises(NotFoundError):
+        await world.gapfill.cancel(other_account, questions.id)
+
+    await world.gapplan.cancel(account, plan.id)
+    await world.gapfill.cancel(account, questions.id)
+    calls = len(world.stub.calls)
+    await world.gapplan.draft(account, plan.id)
+
+    # Cancelled before its call: the job makes none.
+    assert len(world.stub.calls) == calls
+    assert (await world.gapplan.history(account)).items == ()
+    assert await world.gapfill.current(account, ref) is None
+    with pytest.raises(ConflictError):
+        await world.gapplan.cancel(account, plan.id)
+    # The posting's own evaluation is over, so it cannot be cancelled either.
+    with pytest.raises(ConflictError):
+        await world.target.cancel_evaluation(account, uuid.UUID(ref.private_job_posting_id or ""))

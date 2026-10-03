@@ -16,6 +16,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field
 from advisor.gapfill.domain import (
     ASKED_GAPS,
     MAX_CHOICES,
+    QUESTION_STAGE_SHARES,
     Answer,
     AnswerType,
     AskedGap,
@@ -37,6 +39,7 @@ from advisor.gapfill.domain import (
     QuestionSet,
     QuestionSetFilter,
     QuestionSetStatus,
+    QuestionStage,
     answer_fact,
     assert_questions_valid,
 )
@@ -45,8 +48,15 @@ from advisor.target import DimensionGap, TargetRef, TargetService, TargetSnapsho
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
-from kernel.errors import DomainError, NotFoundError, TargetUnusableError, ValidationError
+from kernel.errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    TargetUnusableError,
+    ValidationError,
+)
 from kernel.logging import get_logger
+from kernel.progress import JobCancelledError, Progress, RunningJobView, get_stage_progress
 
 __all__ = [
     "Answer",
@@ -211,12 +221,46 @@ class GapFillService:
             "rate_is_published": estimate.rate_is_published,
         }
 
+    async def estimate_ceiling(self, owner_id: uuid.UUID, label: str) -> dict[str, Any]:
+        """Writing questions for a Target whose gaps are not known yet — a
+        posting of the user's own still to be scored — priced as if it had
+        the most gaps asked about: a ceiling, confirmed with the scoring so
+        one confirmation covers both (ADR 0042)."""
+        profile = await self._profile.snapshot(owner_id)
+        gaps = "\n".join(
+            f"- gap{index} — a requirement of {label} (partial, worth up to 10 fit points):"
+            " scores 50, the job expects 80"
+            for index in range(ASKED_GAPS)
+        )
+        estimate = await self._gateway.estimate(
+            owner_id,
+            task="gapfill.write",
+            template=load_template(*_TEMPLATE),
+            inputs={
+                "target": label,
+                "gaps": gaps,
+                "evidence": "\n".join(
+                    f"- {get_evidence_line(e)}" for e in profile.evidence[:MAX_EVIDENCE_LINES]
+                )
+                or "(no evidence yet)",
+            },
+            untrusted=_UNTRUSTED,
+        )
+        return {
+            "cost_usd": str(estimate.cost_usd),
+            "model_id": estimate.model_id,
+            "input_tokens": estimate.input_tokens,
+            "rate_is_published": estimate.rate_is_published,
+        }
+
     async def request(self, owner_id: uuid.UUID, ref: TargetRef) -> QuestionSetView:
         """Record a set as writing; the caller queues ``write``.
 
         The Target is resolved here, so one with nothing to ask about is
-        refused now. A newer set supersedes the Target's earlier ones; answers
-        already submitted stay evidence.
+        refused now. Once written, a newer set supersedes the Target's earlier
+        ones, so cancelling it leaves them as they were (ADR 0042); answers
+        already submitted stay evidence. A Target with a set still being written
+        is refused: there is one job of a kind per Target at a time.
         """
         snapshot = await self._target.snapshot(owner_id, ref)
         gaps = _asked(snapshot)
@@ -225,10 +269,10 @@ class GapFillService:
                 f"you already clear everything {snapshot.label} asks for; there is nothing to ask"
             )
         async with self._uow.for_owner(owner_id) as mine:
-            for earlier in await mine.sets.get_list(_for_target(ref)):
-                if earlier.status is not QuestionSetStatus.SUPERSEDED:
-                    earlier.supersede()
-                    await mine.sets.update(earlier)
+            if await mine.sets.get_list(
+                _for_target(ref, statuses=(QuestionSetStatus.WRITING,)), page_size=1
+            ):
+                raise ConflictError("questions for this target are already being written")
             created = await mine.sets.create(
                 QuestionSet.requested(
                     owner_id=owner_id,
@@ -250,7 +294,10 @@ class GapFillService:
         if found.status is not QuestionSetStatus.WRITING:
             return
         try:
+            await self._advance(owner_id, set_id, QuestionStage.READING)
             await self._write(owner_id, found)
+        except JobCancelledError:
+            log.info("gapfill.write_cancelled", set_id=str(set_id))
         except DomainError as exc:
             log.warning("gapfill.write_failed", set_id=str(set_id), code=str(exc.code))
             await self._fail(owner_id, set_id, code=str(exc.code), message=exc.message)
@@ -259,6 +306,43 @@ class GapFillService:
                 owner_id, set_id, code="internal", message="writing the questions stopped"
             )
             raise
+
+    async def cancel(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> None:
+        """Stop a set being written, before its next call or its save (ADR
+        0042). A call already sent is still charged. The Target's earlier set,
+        if any, stays current."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            try:
+                found.update_cancelled()
+            except GapFillError as exc:
+                raise ConflictError(str(exc), set_id=str(set_id)) from exc
+            await mine.sets.update(found)
+        log.info("gapfill.cancel_requested", set_id=str(set_id))
+
+    async def running_jobs(self, owner_id: uuid.UUID) -> tuple[RunningJobView, ...]:
+        """Every set still being written, for ``GET /activity`` (ADR 0042)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            writing = await mine.sets.get_list(
+                QuestionSetFilter(statuses=(QuestionSetStatus.WRITING,))
+            )
+        return tuple(
+            RunningJobView(
+                kind="questions",
+                id=str(found.id),
+                role_id=str(found.role_id) if found.role_id else None,
+                job_posting_id=str(found.job_posting_id) if found.job_posting_id else None,
+                private_job_posting_id=(
+                    str(found.private_job_posting_id) if found.private_job_posting_id else None
+                ),
+                label=found.label,
+                stage=str(found.stage) if found.stage else None,
+                progress=found.progress,
+                started_at=found.created_at,
+                estimated_cost_usd=found.estimated_cost_usd,
+            )
+            for found in writing
+        )
 
     async def submit(
         self, owner_id: uuid.UUID, set_id: uuid.UUID, answers: Sequence[Answer]
@@ -336,6 +420,16 @@ class GapFillService:
     async def _write(self, owner_id: uuid.UUID, found: QuestionSet) -> None:
         ref = _ref_of(found)
         snapshot = await self._target.snapshot(owner_id, ref)
+
+        async def writing(progress: Progress) -> None:
+            await self._advance(
+                owner_id,
+                found.id,
+                QuestionStage.WRITING,
+                fraction=progress.fraction,
+                cost=progress.estimated_cost_usd,
+            )
+
         result = await self._gateway.run(
             owner_id,
             task="gapfill.write",
@@ -343,7 +437,9 @@ class GapFillService:
             inputs=await self._inputs(owner_id, snapshot, found.gaps),
             output_schema=_Questions,
             untrusted=_UNTRUSTED,
+            on_progress=writing,
         )
+        await self._advance(owner_id, found.id, QuestionStage.CHECKING)
         drafts = [
             DraftQuestion(
                 gap_key=q.gap_key,
@@ -382,10 +478,20 @@ class GapFillService:
                     )
                 )
             stored = await _owned(mine, found.id)
+            if not stored.is_writing:
+                # Cancelled while it was checked: nothing of it is saved.
+                raise JobCancelledError
             stored.written(
                 model_id=result.model_id, template_version=result.template_version, at=utcnow()
             )
             await mine.sets.update(stored)
+            for earlier in await mine.sets.get_list(_for_target(ref)):
+                if earlier.id != stored.id and earlier.status in (
+                    QuestionSetStatus.READY,
+                    QuestionSetStatus.FAILED,
+                ):
+                    earlier.supersede()
+                    await mine.sets.update(earlier)
 
     async def _inputs(
         self, owner_id: uuid.UUID, snapshot: TargetSnapshot, gaps: Sequence[AskedGap]
@@ -411,6 +517,28 @@ class GapFillService:
             "gaps": "\n".join(lines),
             "evidence": "\n".join(evidence) or "(no evidence yet)",
         }
+
+    async def _advance(
+        self,
+        owner_id: uuid.UUID,
+        set_id: uuid.UUID,
+        stage: QuestionStage,
+        *,
+        fraction: float = 0.0,
+        cost: Decimal | None = None,
+    ) -> None:
+        """Record the stage the set has reached, unless it was cancelled, which
+        stops the job here: before a call, or while one streams."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            if not found.is_writing:
+                raise JobCancelledError
+            found.update_stage(
+                stage,
+                progress=get_stage_progress(QUESTION_STAGE_SHARES, str(stage), fraction),
+                cost=cost,
+            )
+            await mine.sets.update(found)
 
     async def _fail(
         self, owner_id: uuid.UUID, set_id: uuid.UUID, *, code: str, message: str

@@ -13,8 +13,13 @@ export interface paths {
         };
         /**
          * Activity
-         * @description Syncs and parses still running, and the newest analysis and role-map
-         *     build. The shell polls this while any of it is busy.
+         * @description Syncs and parses still running, the newest analysis and role-map build,
+         *     and the Advisor's jobs still running. The shell polls this while any of it
+         *     is busy.
+         *
+         *     ``activity`` sits beside ``gapplan`` and ``resume`` and cannot read them,
+         *     so the Advisor's jobs are gathered here, from each component's public API
+         *     (ADR 0042).
          */
         get: operations["activity_api_v1_activity_get"];
         put?: never;
@@ -495,6 +500,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gap-plans/{plan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Plan
+         * @description Stops drafting the plan before its next call or its save (ADR 0042).
+         *     A call already sent is still charged; the version before stays current.
+         */
+        post: operations["cancel_plan_api_v1_gap_plans__plan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gap-question-sets": {
         parameters: {
             query?: never;
@@ -588,6 +614,27 @@ export interface paths {
          *     then read as outdated, and the user regenerates them (ADR 0035).
          */
         post: operations["submit_api_v1_gap_question_sets__set_id__answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Set
+         * @description Stops writing the questions before the next call or the save (ADR
+         *     0042). A call already sent is still charged.
+         */
+        post: operations["cancel_set_api_v1_gap_question_sets__set_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -723,6 +770,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/own-postings/{private_job_posting_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Evaluation
+         * @description Stops scoring it before its next call (ADR 0042). A call already sent
+         *     is still charged.
+         */
+        post: operations["cancel_evaluation_api_v1_own_postings__private_job_posting_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/own-postings/{private_job_posting_id}/target": {
         parameters: {
             query?: never;
@@ -736,7 +804,8 @@ export interface paths {
          * Set As Target
          * @description Make it ready to aim the Advisor at, at the cost the user confirmed:
          *     queue reading and scoring it, unless its fit is current or a run is
-         *     already going. Poll ``GET /own-postings``.
+         *     already going. Poll ``GET /own-postings``. ``write_questions`` then writes
+         *     Fill the gap's questions, once it is scored (ADR 0042).
          */
         post: operations["set_as_target_api_v1_own_postings__private_job_posting_id__target_post"];
         delete?: never;
@@ -756,7 +825,9 @@ export interface paths {
          * Target Estimate
          * @description What setting it as the target costs: nothing when its fit is current,
          *     otherwise reading what it asks for if that is not read yet, and scoring
-         *     the fit. An unread file is priced as a ceiling.
+         *     the fit. An unread file is priced as a ceiling. ``with_questions`` adds
+         *     writing Fill the gap's questions, which follows (ADR 0042): priced as a
+         *     ceiling until the posting is scored.
          */
         get: operations["target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get"];
         put?: never;
@@ -1133,6 +1204,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tailored-resumes/{resume_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Resume
+         * @description Stops writing the résumé, or filling a section, before its next call
+         *     or its save (ADR 0042). A call already sent is still charged.
+         */
+        post: operations["cancel_resume_api_v1_tailored_resumes__resume_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tailored-resumes/{resume_id}/exports": {
         parameters: {
             query?: never;
@@ -1380,12 +1472,40 @@ export interface components {
          *     is busy (ADR 0006, ADR 0018).
          */
         Activity: {
+            /** Advisor Jobs */
+            advisor_jobs: components["schemas"]["AdvisorJob"][];
             analysis: components["schemas"]["RunStatus"] | null;
             /** Parsing */
             parsing: components["schemas"]["PendingWork"][];
             role_map: components["schemas"]["RunStatus"] | null;
             /** Syncing */
             syncing: components["schemas"]["PendingWork"][];
+        };
+        /**
+         * AdvisorJob
+         * @description One short AI job of the Advisor still running (ADR 0042): its Target,
+         *     the stage it has reached and how far it is, 0 to 1, never going backwards.
+         *     ``estimated_cost_usd`` is set once its call is priced, before it is sent.
+         */
+        AdvisorJob: {
+            /** Estimated Cost Usd */
+            estimated_cost_usd: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "questions" | "gap_plan" | "resume" | "section" | "own_posting_evaluation";
+            /** Label */
+            label: string;
+            /** Progress */
+            progress: number;
+            /** Stage */
+            stage: string | null;
+            /** Started At */
+            started_at: string;
+            target: components["schemas"]["TargetRefBody"];
         };
         /**
          * AnalysisEstimate
@@ -4578,6 +4698,53 @@ export interface operations {
             };
         };
     };
+    cancel_plan_api_v1_gap_plans__plan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     request_set_api_v1_gap_question_sets_post: {
         parameters: {
             query?: never;
@@ -4803,6 +4970,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Submitted"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_set_api_v1_gap_question_sets__set_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {
@@ -5182,9 +5396,58 @@ export interface operations {
             };
         };
     };
-    set_as_target_api_v1_own_postings__private_job_posting_id__target_post: {
+    cancel_evaluation_api_v1_own_postings__private_job_posting_id__cancel_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                private_job_posting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_as_target_api_v1_own_postings__private_job_posting_id__target_post: {
+        parameters: {
+            query?: {
+                write_questions?: boolean;
+            };
             header?: never;
             path: {
                 private_job_posting_id: string;
@@ -5233,7 +5496,9 @@ export interface operations {
     };
     target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get: {
         parameters: {
-            query?: never;
+            query?: {
+                with_questions?: boolean;
+            };
             header?: never;
             path: {
                 private_job_posting_id: string;
@@ -6345,6 +6610,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TailoredResume"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_resume_api_v1_tailored_resumes__resume_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

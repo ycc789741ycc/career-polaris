@@ -6,6 +6,16 @@ can use it. Each group is headed by the module whose rules use it.
 
 from __future__ import annotations
 
+# --- own_posting: evaluation stages ----------------------------------------------
+
+# Each stage's share of evaluating a posting, (start, end) of 0 to 1 (ADR 0042).
+EVALUATION_STAGE_SHARES = {
+    "reading_file": (0.0, 0.1),
+    "reading_requirements": (0.1, 0.4),
+    "scoring": (0.4, 0.9),
+    "working_out_fit": (0.9, 1.0),
+}
+
 # --- own_posting -------------------------------------------------------------
 
 # A posting of the user's own's job title, as long as a role's title.

@@ -260,8 +260,11 @@ In: the gap plan — plan a route to a Target (a role, and optionally one openin
 in it; ADR 0022), with gaps ranked by the fit points each is worth, milestones,
 tasks and projects drafted on the user's key, versions per Target with finished
 work carried forward, and plan history. `target` resolves what a plan aims at
-(ADR 0005); since ADR 0033 it also keeps the postings of the user's own. Drafting is a job whose row the page polls
-(ADR 0006).
+(ADR 0005); since ADR 0033 it also keeps the postings of the user's own. Drafting is a job
+whose row records its stage (ADR 0006); since ADR 0042 it runs in the background
+— the shell lists it in `GET /activity`, the tab shows a card with Cancel, and
+the other tabs stay usable — so a drafting plan is no longer a page the user
+waits on.
 
 And the Resume Advisor: a résumé written for a Target from cited evidence, over
 the uploaded résumé when there is one, with requirement coverage decided by
@@ -608,3 +611,16 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   is deleted once read or failed (`unreadable_file`); nothing of its text, name
   or fonts is stored, and `resume.forget_template_reading` deletes the run a
   day on. Saving it is ADR 0040's `POST /resume-templates`. Migration 0037.
+- **Advisor jobs in the background** (ADR 0042). Questions, a plan, a résumé
+  or a section, and scoring a posting of the user's own record `stage`,
+  `progress` and `estimated_cost_usd` on their rows (migration 0038);
+  `AiGateway.run(on_progress=)` streams the reply and reports its share of
+  `expected_output_tokens`, capped at 95% (`kernel.progress`). `POST
+  .../cancel` marks a running job `cancelled`; it stops before its next call,
+  mid-stream, or before its save (`JobCancelledError`), and a cancelled
+  version is never shown. One job of a kind per Target at a time. `GET
+  /activity` gathers every component's `running_jobs` as `advisor_jobs`; the
+  SPA shows `AdvisorJobCard` on the job's tab, a spinner on the step tabs and
+  `AdvisorJobNotice` in the corner. "Target this role" prices and starts the
+  questions; "Set as target" queues them after scoring
+  (`wiring.queue.queue_questions`).

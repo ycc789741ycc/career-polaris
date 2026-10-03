@@ -2511,6 +2511,20 @@ Open questions:
   spend.
 
 ## Advisor jobs run in the background
+**Done** (ADR 0042, migration 0038). Where the build differs from the plan
+below:
+* Each component lists its own jobs (`running_jobs`) in the kernel's
+  `RunningJobView`, which `advisor.activity` re-exports for the schemas; a
+  posting's evaluation reports stages only, since its calls go through the
+  role map's kit.
+* A question set supersedes the Target's earlier ones when it is written,
+  not when it is requested, so a cancelled one leaves them current.
+* One job of a kind per Target at a time: a second request is a 409.
+* "Set as target" prices the questions as a ceiling until the posting is
+  scored (`gapfill.estimate_ceiling`), and the worker writes them after
+  scoring (`wiring.queue.queue_questions`).
+* A failed job shows its error on its tab as before, not in the card.
+
 The prototype was updated on 3 October 2026 (evening): `GapsBuilding`,
 `PlanBuilding`, `ResumeBuilding` and `PlanWhileResume` in
 `prototype/screens/`, and the domain spec's §6.4 and §7. It calls writing

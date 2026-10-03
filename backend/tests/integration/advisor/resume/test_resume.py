@@ -79,6 +79,10 @@ class StubProvider(Provider):
 
     async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
         self.calls.append(request)
+        if "<<<PROPOSAL>>>" not in request.system + request.user:
+            # A job's call streams too (ADR 0042): the queued reply, whole.
+            yield self.replies.pop(0) if self.replies else "{}"
+            return
         for chunk in self.streams.pop(0) if self.streams else []:
             yield chunk
 

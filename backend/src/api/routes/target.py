@@ -6,11 +6,12 @@ reads and scores it (ADR 0034)."""
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, Query, UploadFile
 
-from advisor.target import MAX_COMPANY_NAME, MAX_TITLE
+from advisor.target import MAX_COMPANY_NAME, MAX_TITLE, TargetRef
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.target import (
     OwnPosting,
@@ -19,7 +20,7 @@ from api.schemas.target import (
     OwnPostingRequest,
 )
 from kernel.paging import paginate
-from wiring.queue import enqueue
+from wiring.queue import enqueue, queue_questions
 
 router = APIRouter(tags=["target"])
 
@@ -70,29 +71,65 @@ async def upload_own_posting(
 
 @router.get("/own-postings/{private_job_posting_id}/target-estimate")
 async def target_estimate(
-    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+    private_job_posting_id: uuid.UUID,
+    user: CurrentUser,
+    deps: Deps,
+    with_questions: Annotated[bool, Query()] = False,
 ) -> OwnPostingEstimate:
     """What setting it as the target costs: nothing when its fit is current,
     otherwise reading what it asks for if that is not read yet, and scoring
-    the fit. An unread file is priced as a ceiling."""
-    return OwnPostingEstimate.model_validate(
-        await deps.target.estimate_target(user, private_job_posting_id)
+    the fit. An unread file is priced as a ceiling. ``with_questions`` adds
+    writing Fill the gap's questions, which follows (ADR 0042): priced as a
+    ceiling until the posting is scored."""
+    scoring = await deps.target.estimate_target(user, private_job_posting_id)
+    if not with_questions:
+        return OwnPostingEstimate.model_validate(scoring)
+    if Decimal(scoring["cost_usd"]) == 0:
+        ref = TargetRef(private_job_posting_id=str(private_job_posting_id))
+        questions = await deps.gapfill.estimate_cost(user, ref)
+    else:
+        posting = await deps.target.own_posting(user, private_job_posting_id)
+        questions = await deps.gapfill.estimate_ceiling(user, posting.title)
+    return OwnPostingEstimate(
+        cost_usd=str(Decimal(scoring["cost_usd"]) + Decimal(questions["cost_usd"])),
+        model_id=scoring["model_id"] or questions["model_id"],
+        rate_is_published=bool(scoring.get("rate_is_published", True))
+        and bool(questions["rate_is_published"]),
     )
 
 
 @router.post("/own-postings/{private_job_posting_id}/target", status_code=202)
 async def set_as_target(
-    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+    private_job_posting_id: uuid.UUID,
+    user: CurrentUser,
+    deps: Deps,
+    write_questions: Annotated[bool, Query()] = False,
 ) -> OwnPosting:
     """Make it ready to aim the Advisor at, at the cost the user confirmed:
     queue reading and scoring it, unless its fit is current or a run is
-    already going. Poll ``GET /own-postings``."""
+    already going. Poll ``GET /own-postings``. ``write_questions`` then writes
+    Fill the gap's questions, once it is scored (ADR 0042)."""
     posting, evaluation_id = await deps.target.set_as_target(user, private_job_posting_id)
+    questions_for = str(private_job_posting_id) if write_questions else None
     if evaluation_id is not None:
         await enqueue(
-            "target.evaluate_own_posting", owner_id=str(user), evaluation_id=str(evaluation_id)
+            "target.evaluate_own_posting",
+            owner_id=str(user),
+            evaluation_id=str(evaluation_id),
+            then_write_questions_for=questions_for,
         )
+    elif questions_for is not None and posting.status == "ready":
+        await queue_questions(user, TargetRef(private_job_posting_id=questions_for))
     return OwnPosting.from_view(posting)
+
+
+@router.post("/own-postings/{private_job_posting_id}/cancel", status_code=204)
+async def cancel_evaluation(
+    private_job_posting_id: uuid.UUID, user: CurrentUser, deps: Deps
+) -> None:
+    """Stops scoring it before its next call (ADR 0042). A call already sent
+    is still charged."""
+    await deps.target.cancel_evaluation(user, private_job_posting_id)
 
 
 @router.delete("/own-postings/{private_job_posting_id}", status_code=204)

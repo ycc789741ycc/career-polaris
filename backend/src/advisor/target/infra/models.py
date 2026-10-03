@@ -75,7 +75,7 @@ class PostingEvaluation(Base, OwnedMixin):
 
     __tablename__ = "posting_evaluation"
     __table_args__ = (
-        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint("status IN ('running', 'ready', 'failed', 'cancelled')", name="status"),
         Index(
             "ix_posting_evaluation_owner_posting",
             "owner_id",
@@ -92,6 +92,9 @@ class PostingEvaluation(Base, OwnedMixin):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     # False for a rescore, which keeps the requirements already read.
     reads_requirements: Mapped[bool] = mapped_column(nullable=False)
+    # Where the run has got (ADR 0042).
+    stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_at: Mapped[datetime] = mapped_column(

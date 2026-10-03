@@ -20,6 +20,7 @@ import {
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
+import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { OutdatedBanner } from "./OutdatedBanner";
@@ -55,6 +56,8 @@ export function GapPlan({
 }) {
   const { status, navigate } = useShell();
   const flash = useToast();
+  // A job just started: the shell polls it, and the tab shows its card.
+  const { refresh: refreshActivity } = useActivity();
   const model = modelName(status.credential);
   const ref: Ref = target.ref;
 
@@ -138,6 +141,7 @@ export function GapPlan({
       setPlan(null);
       setPlanId(created.id);
       onChanged();
+      void refreshActivity();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {

@@ -16,6 +16,7 @@ import {
   PillToggle,
 } from "../components/ui";
 import { modelName, useShell } from "../shell/ShellContext";
+import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { type AdvisorTarget, targetQuery } from "./target";
@@ -45,6 +46,8 @@ export function FillTheGap({
 }) {
   const { status, navigate } = useShell();
   const flash = useToast();
+  // A job just started: the shell polls it, and the tab shows its card.
+  const { refresh: refreshActivity } = useActivity();
   const model = modelName(status.credential);
   const [set, setSet] = useState<QuestionSet | null | undefined>(undefined);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -130,6 +133,7 @@ export function FillTheGap({
       setDrafts({});
       setSubmitted(null);
       setSet(created);
+      void refreshActivity();
     });
 
   const answers = (set?.questions ?? [])

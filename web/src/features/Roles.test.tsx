@@ -134,7 +134,18 @@ function serve() {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input).replace("http://api.test/api/v1", "");
-      return new Response(JSON.stringify(routes[url] ?? null), {
+      // Writing a Target's questions, priced before "Target this role".
+      const body = url.startsWith("/gap-question-sets/cost-estimate")
+        ? {
+            cost_usd: "0.03",
+            model_id: "claude-opus-5",
+            input_tokens: 900,
+            rate_is_published: true,
+          }
+        : url === "/gap-question-sets"
+          ? { id: "q1" }
+          : (routes[url] ?? null);
+      return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -159,7 +170,7 @@ function renderRoles(focus: Focus | null, activity: Activity | null = null) {
         value={{
           activity,
           refresh: async () => {},
-          settled: { sources: 0, analysis: 0, roleMap: 0 },
+          settled: { sources: 0, analysis: 0, roleMap: 0, advisor: 0 },
         }}
       >
         <ToastProvider>
@@ -187,8 +198,28 @@ describe("the role map's one Advisor target", () => {
     await user.click(
       within(bar).getByRole("button", { name: "Target this role" }),
     );
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { role: "r2" },
+    // The questions are priced first, and start only once confirmed.
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(confirm).toHaveTextContent("$0.03");
+    expect(shell.navigate).not.toHaveBeenCalled();
+    await user.click(within(confirm).getAllByRole("button")[0]!);
+    await vi.waitFor(() =>
+      expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+        tab: "gaps",
+        focus: { role: "r2" },
+      }),
+    );
+    const posted = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/gap-question-sets") && init?.method === "POST",
+      );
+    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
+      role_id: "r2",
+      job_posting_id: null,
     });
   });
 
@@ -218,9 +249,16 @@ describe("the role map's one Advisor target", () => {
     await user.click(
       within(bar).getByRole("button", { name: "Target this opening" }),
     );
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-      focus: { role: "r1", opening: "p1" },
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
     });
+    await user.click(within(confirm).getAllByRole("button")[0]!);
+    await vi.waitFor(() =>
+      expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+        tab: "gaps",
+        focus: { role: "r1", opening: "p1" },
+      }),
+    );
   });
 
   it("selects an opening when its row is picked", async () => {
@@ -359,6 +397,7 @@ describe("the role map while an analysis runs", () => {
   it("shows the building screen, waiting on the analysis, since a finished analysis builds the map", async () => {
     renderRoles(null, {
       syncing: [],
+      advisor_jobs: [],
       parsing: [],
       analysis: { status: "running", ...running },
       role_map: null,
@@ -380,6 +419,7 @@ describe("the role map while an analysis runs", () => {
   it("says when a build is searching the market for its roles", async () => {
     renderRoles(null, {
       syncing: [],
+      advisor_jobs: [],
       parsing: [],
       analysis: null,
       role_map: { status: "waiting", waiting_for: "market", ...running },
@@ -396,6 +436,7 @@ describe("the role map while an analysis runs", () => {
   it("shows only the building screen while a build runs: no map, no second build", async () => {
     renderRoles(null, {
       syncing: [],
+      advisor_jobs: [],
       parsing: [],
       analysis: null,
       role_map: { status: "running", ...running },

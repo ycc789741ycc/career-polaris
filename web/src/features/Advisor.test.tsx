@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  Activity,
   Fit,
   MatchedPosting,
   OwnPosting,
@@ -10,10 +11,12 @@ import type {
   Role,
 } from "../api/types";
 import type { AdvisorTab, Focus } from "../shell/navigation";
+import { ActivityContext } from "../shell/activity";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { Advisor, focusOf, ownTargetFor, targetFor } from "./Advisor";
 import { page } from "../test/page";
+import { cancelPath, jobTab, jobWord } from "./AdvisorJobs";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   return {
@@ -150,7 +153,11 @@ function serve() {
   );
 }
 
-function renderAdvisor(focus: Focus | null, tab: AdvisorTab = "plan") {
+function renderAdvisor(
+  focus: Focus | null,
+  tab: AdvisorTab = "plan",
+  activity: Activity | null = null,
+) {
   const shell: Shell = {
     status: {
       me: null,
@@ -166,9 +173,17 @@ function renderAdvisor(focus: Focus | null, tab: AdvisorTab = "plan") {
   };
   render(
     <ShellContext.Provider value={shell}>
-      <ToastProvider>
-        <Advisor tab={tab} />
-      </ToastProvider>
+      <ActivityContext.Provider
+        value={{
+          activity,
+          refresh: async () => {},
+          settled: { sources: 0, analysis: 0, roleMap: 0, advisor: 0 },
+        }}
+      >
+        <ToastProvider>
+          <Advisor tab={tab} />
+        </ToastProvider>
+      </ActivityContext.Provider>
     </ShellContext.Provider>,
   );
   return shell;
@@ -393,5 +408,94 @@ describe("what a focus aims at", () => {
         private_job_posting_id: "j1",
       }),
     ).toEqual({ posting: "j1" });
+  });
+});
+
+describe("Advisor jobs in the background (ADR 0042)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const writing: Activity = {
+    syncing: [],
+    parsing: [],
+    analysis: null,
+    role_map: null,
+    advisor_jobs: [
+      {
+        kind: "resume",
+        id: "res-9",
+        target: {
+          role_id: "r1",
+          job_posting_id: null,
+          private_job_posting_id: null,
+        },
+        label: "Backend Engineer",
+        stage: "writing",
+        progress: 0.4,
+        started_at: "2026-10-11T09:00:00+00:00",
+        estimated_cost_usd: "0.031",
+      },
+    ],
+  };
+
+  it("keeps the gap plan open while the résumé is written, with a spinner and a notice", async () => {
+    const user = userEvent.setup();
+    const shell = renderAdvisor({ role: "r1" }, "plan", writing);
+
+    const tabs = await screen.findByRole("group", { name: "Advisor tabs" });
+    expect(
+      within(tabs).getByRole("button", { name: /Résumé/ }),
+    ).toHaveTextContent("writing…");
+    expect(
+      within(tabs).getByRole("button", { name: /Gap plan/ }),
+    ).not.toHaveTextContent("drafting…");
+    // The plan tab is its own page, not the résumé's card.
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    const notice = screen
+      .getByText("Writing your résumé · 40%")
+      .closest("div")!;
+    await user.click(within(notice).getByRole("button", { name: "View" }));
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "resume" });
+  });
+
+  it("shows the job's card on its own tab, and Cancel posts", async () => {
+    const user = userEvent.setup();
+    renderAdvisor({ role: "r1" }, "resume", writing);
+
+    const card = await screen.findByRole("status", {
+      name: "Writing your résumé…",
+    });
+    expect(within(card).getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "40",
+    );
+    expect(card).toHaveTextContent("About $0.03 on your key");
+    expect(card).toHaveTextContent("Your model is writing.");
+    await user.click(within(card).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(globalThis.fetch)
+          .mock.calls.some(
+            ([url, init]) =>
+              String(url).endsWith("/tailored-resumes/res-9/cancel") &&
+              init?.method === "POST",
+          ),
+      ).toBe(true),
+    );
+  });
+
+  it("names each kind of job by its tab and words", () => {
+    expect(jobTab("questions")).toBe("gaps");
+    expect(jobTab("own_posting_evaluation")).toBe("gaps");
+    expect(jobWord("gap_plan")).toBe("drafting…");
+    expect(jobWord("section")).toBe("writing…");
+    expect(
+      cancelPath({ ...writing.advisor_jobs[0]!, kind: "gap_plan", id: "p1" }),
+    ).toBe("/gap-plans/p1/cancel");
   });
 });

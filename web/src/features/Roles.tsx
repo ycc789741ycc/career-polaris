@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type {
   Assessment,
   Fit,
@@ -12,6 +12,8 @@ import type {
   RolePage,
   SalaryBand,
   MarketScope,
+  PlanEstimate,
+  TargetRef,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
@@ -29,6 +31,7 @@ import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
 import { modelName, useHeading, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
+import { targetQuery } from "./target";
 import {
   EmptyMap,
   getBuildSteps,
@@ -76,6 +79,12 @@ export function Roles() {
     [settled.analysis, settled.roleMap],
   );
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
+  // "Target this role" prices writing its questions first (ADR 0042).
+  const [questionCost, setQuestionCost] = useState<{
+    focus: Focus;
+    label: string;
+    cost: PlanEstimate;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -161,6 +170,50 @@ export function Roles() {
   // While a build runs or is about to, its waiting screen is the page.
   const waiting = isMapComing(activity);
   useHeading(waiting ? "Building your role map" : null);
+
+  /** Price the questions for what the bar aims at; a Target with nothing to
+   * ask about, or one already being prepared, opens without a spend. */
+  async function priceTarget(target: { focus: Focus; label: string }) {
+    setBusy(true);
+    setError(null);
+    try {
+      const cost = await api.get<PlanEstimate>(
+        `/gap-question-sets/cost-estimate?${targetQuery(refOf(target.focus))}`,
+      );
+      setQuestionCost({ ...target, cost });
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === "target_unusable") {
+        navigate("advisor", { tab: "gaps", focus: target.focus });
+      } else {
+        setError(messageOf(caught));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Aim the Advisor and start writing the questions: Fill the gap opens
+   * preparing, and every other tab stays usable meanwhile. */
+  async function targetAndAsk() {
+    if (!questionCost) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post("/gap-question-sets", refOf(questionCost.focus));
+    } catch (caught) {
+      // Questions already being written for it: open them as they are.
+      if (!(caught instanceof ApiError && caught.code === "conflict")) {
+        setError(messageOf(caught));
+        setBusy(false);
+        return;
+      }
+    }
+    setBusy(false);
+    const focus = questionCost.focus;
+    setQuestionCost(null);
+    await refreshActivity();
+    navigate("advisor", { tab: "gaps", focus });
+  }
 
   async function rebuild() {
     setBusy(true);
@@ -259,6 +312,19 @@ export function Roles() {
         </p>
       )}
       <ErrorNote error={error} />
+      {questionCost && (
+        <CostConfirm
+          busy={busy}
+          onCancel={() => setQuestionCost(null)}
+          onConfirm={() => void targetAndAsk()}
+        >
+          Aiming the Advisor at {questionCost.label} starts by writing your
+          follow-up questions about its gaps. That costs about{" "}
+          <strong>${questionCost.cost.cost_usd}</strong> on{" "}
+          {questionCost.cost.model_id} and runs in the background — the gap plan
+          and the résumé stay open while it does.
+        </CostConfirm>
+      )}
       {estimate && (
         <CostConfirm
           busy={busy}
@@ -551,7 +617,7 @@ export function Roles() {
             <Eyebrow>Advisor target</Eyebrow>
             <div className="ellipsis target-bar-label">{aim.label}</div>
           </div>
-          <Button onClick={() => navigate("advisor", { focus: aim.focus })}>
+          <Button busy={busy} onClick={() => void priceTarget(aim)}>
             Target this {aim.what}
           </Button>
         </div>
@@ -736,4 +802,11 @@ function SkillFitLegend() {
       </span>
     </div>
   );
+}
+
+/** The Target a role-map focus names. Pure. */
+function refOf(focus: Focus): TargetRef {
+  if ("posting" in focus)
+    return { role_id: null, private_job_posting_id: focus.posting };
+  return { role_id: focus.role, job_posting_id: focus.opening ?? null };
 }

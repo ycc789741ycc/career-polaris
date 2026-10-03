@@ -13,6 +13,7 @@ from advisor.resume.domain import (
     ExportStatus,
     Options,
     ReadingStatus,
+    ResumeStage,
     ResumeStatus,
     ResumeVersion,
     Revision,
@@ -59,6 +60,9 @@ def resume(row: models.Resume) -> TailoredResume:
         target_digest=row.target_digest,
         section_plan=tuple(SectionSlot.from_dict(slot) for slot in row.section_plan),
         custom_template_id=row.custom_template_id,
+        stage=ResumeStage(row.stage) if row.stage else None,
+        progress=row.progress,
+        estimated_cost_usd=row.estimated_cost_usd,
     )
 
 
@@ -89,6 +93,9 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.target_digest = entity.target_digest
     row.section_plan = [slot.to_dict() for slot in entity.section_plan]
     row.custom_template_id = entity.custom_template_id
+    row.stage = str(entity.stage) if entity.stage else None
+    row.progress = entity.progress
+    row.estimated_cost_usd = entity.estimated_cost_usd
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:

@@ -47,6 +47,7 @@ new record that supersedes the old one.
 | [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
 | [0040](0040-keep-resume-templates-as-checked-specs.md) | A résumé template is a checked spec, and a user can keep their own | Accepted |
 | [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
+| [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from kernel.ai_gateway import pricing, templates
 from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, UsageRecord
-from kernel.ai_gateway.providers import REGISTRY, Request
+from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.ai_gateway.templates import PromptTemplate
 from kernel.config import Settings
 from kernel.crypto import decrypt
@@ -35,8 +36,19 @@ from kernel.errors import (
 )
 from kernel.fetch import GuardedClient
 from kernel.logging import get_logger
+from kernel.progress import (
+    REPORT_EVERY_SECONDS,
+    WRITING_CAP,
+    JobCancelledError,
+    Progress,
+    ProgressCallback,
+)
 
 T = TypeVar("T", bound=BaseModel)
+
+# Read through a name of its own, so a test can move it without moving the
+# event loop's clock.
+_clock = time.monotonic
 
 log = get_logger(__name__)
 
@@ -190,18 +202,43 @@ class AiGateway:
         inputs: dict[str, str],
         output_schema: type[T],
         untrusted: frozenset[str] = frozenset(),
+        on_progress: ProgressCallback | None = None,
     ) -> Result[T]:
+        """One call, validated against ``output_schema``, retried with a
+        repair note when it is not.
+
+        With ``on_progress`` the reply is streamed, and the callback hears how
+        far it has got (ADR 0042): once before each attempt is sent, then at
+        most every ``REPORT_EVERY_SECONDS``. It may raise to stop the call
+        where it is; one already sent is still recorded, as it is billed. A
+        streamed reply's output tokens are estimated from its length, as the
+        chat's always were.
+        """
         request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
         await self._budget.check(owner_id, estimate.cost_usd)
 
-        provider = REGISTRY[(await self._credentials.load(owner_id)).provider]
+        credential = await self._credentials.load(owner_id)
+        provider = REGISTRY[credential.provider]
         attempts = self._settings.ai_max_output_retries + 1
         last_error: Exception | None = None
 
         async with self._client() as client:
             for attempt in range(attempts):
                 try:
-                    completion = await provider.complete(client, request)
+                    if on_progress is None:
+                        completion = await provider.complete(client, request)
+                    else:
+                        completion = await self._complete_streamed(
+                            owner_id,
+                            client,
+                            provider,
+                            request,
+                            model=credential.model,
+                            task=task,
+                            template=template,
+                            estimate=estimate,
+                            on_progress=on_progress,
+                        )
                 except CredentialFailedError as exc:
                     await self._credentials.mark_failed(owner_id, exc.message)
                     raise
@@ -256,6 +293,67 @@ class AiGateway:
             task=task,
             template=template.version_id,
         ) from last_error
+
+    async def _complete_streamed(
+        self,
+        owner_id: uuid.UUID,
+        client: GuardedClient,
+        provider: Provider,
+        request: Request,
+        *,
+        model: str,
+        task: str,
+        template: PromptTemplate,
+        estimate: pricing.CostEstimate,
+        on_progress: ProgressCallback,
+    ) -> Completion:
+        """One attempt, streamed, reporting its share of the expected output.
+        A callback that raises stops it; what was written so far is recorded
+        in the ledger before the error goes on."""
+        await on_progress(Progress(fraction=0.0, estimated_cost_usd=estimate.cost_usd))
+        expected = max(template.expected_output_tokens, 1)
+        parts: list[str] = []
+        last_report = _clock()
+        try:
+            async for chunk in provider.stream(client, request):
+                parts.append(chunk)
+                now = _clock()
+                if now - last_report >= REPORT_EVERY_SECONDS:
+                    last_report = now
+                    written = pricing.estimate_tokens("".join(parts))
+                    await on_progress(
+                        Progress(
+                            fraction=min(written / expected, WRITING_CAP),
+                            estimated_cost_usd=estimate.cost_usd,
+                        )
+                    )
+        except JobCancelledError:
+            if parts:
+                output_tokens = pricing.estimate_tokens("".join(parts))
+                await self._budget.record(
+                    UsageRecord(
+                        owner_id=owner_id,
+                        task=task,
+                        provider=provider.name,
+                        model=model,
+                        template_version=template.version_id,
+                        input_tokens=estimate.input_tokens,
+                        output_tokens=output_tokens,
+                        cost_usd=pricing.cost_of(
+                            model,
+                            input_tokens=estimate.input_tokens,
+                            output_tokens=output_tokens,
+                        ),
+                    )
+                )
+            raise
+        text = "".join(parts)
+        return Completion(
+            text=text,
+            model=model,
+            input_tokens=estimate.input_tokens,
+            output_tokens=pricing.estimate_tokens(text),
+        )
 
     async def stream(
         self,

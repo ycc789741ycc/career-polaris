@@ -47,6 +47,13 @@ async def get_set(set_id: uuid.UUID, user: CurrentUser, deps: Deps) -> QuestionS
     return QuestionSet.from_view(await deps.gapfill.get(user, set_id))
 
 
+@router.post("/gap-question-sets/{set_id}/cancel", status_code=204)
+async def cancel_set(set_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stops writing the questions before the next call or the save (ADR
+    0042). A call already sent is still charged."""
+    await deps.gapfill.cancel(user, set_id)
+
+
 @router.post("/gap-question-sets/{set_id}/answers")
 async def submit(
     set_id: uuid.UUID, body: AnswersRequest, user: CurrentUser, deps: Deps

@@ -48,7 +48,7 @@ function serve(estimate = "0.06"): Sent[] {
       const url = String(input).replace("http://api.test/api/v1", "");
       const method = init?.method ?? "GET";
       sent.push({ method, url, body: init?.body });
-      const body = url.endsWith("/target-estimate")
+      const body = url.endsWith("/target-estimate?with_questions=true")
         ? {
             cost_usd: estimate,
             model_id: "claude-opus-5",
@@ -165,7 +165,9 @@ describe("bringing a role of your own", () => {
     expect(
       await screen.findByRole("region", { name: "Cost estimate" }),
     ).toHaveTextContent("$0.06");
-    expect(posted(sent, "/own-postings/j1/target")).toBeUndefined();
+    expect(
+      posted(sent, "/own-postings/j1/target?write_questions=true"),
+    ).toBeUndefined();
 
     await user.click(screen.getByRole("button", { name: "Run it" }));
 
@@ -175,7 +177,9 @@ describe("bringing a role of your own", () => {
         focus: { posting: "j1" },
       }),
     );
-    expect(posted(sent, "/own-postings/j1/target")).toBeDefined();
+    expect(
+      posted(sent, "/own-postings/j1/target?write_questions=true"),
+    ).toBeDefined();
     expect(reload).toHaveBeenCalled();
   });
 
@@ -188,7 +192,9 @@ describe("bringing a role of your own", () => {
 
     await waitFor(() => expect(shell.navigate).toHaveBeenCalled());
     expect(screen.queryByRole("region", { name: "Cost estimate" })).toBeNull();
-    expect(posted(sent, "/own-postings/j1/target")).toBeDefined();
+    expect(
+      posted(sent, "/own-postings/j1/target?write_questions=true"),
+    ).toBeDefined();
   });
 
   it("removes a role", async () => {

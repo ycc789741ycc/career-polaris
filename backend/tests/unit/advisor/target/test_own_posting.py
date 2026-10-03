@@ -92,3 +92,30 @@ def test_an_upload_with_a_title_keeps_it() -> None:
     posting.update_title("Principal Engineer")
 
     assert posting.title == "Staff Engineer" and posting.is_waiting_for_its_file
+
+
+# -- a job in the background (ADR 0042) -------------------------------------------
+
+
+def test_an_evaluation_records_stages_forward_and_is_cancelled_only_while_running() -> None:
+    from datetime import UTC, datetime
+
+    from advisor.target.domain import (
+        EvaluationStage,
+        OwnPostingError,
+        PostingEvaluation,
+        PostingEvaluationStatus,
+    )
+
+    at = datetime(2026, 10, 11, tzinfo=UTC)
+    run = PostingEvaluation.requested(
+        owner_id=uuid.uuid4(), private_job_posting_id=uuid.uuid4(), reads_requirements=True, at=at
+    )
+    run.update_stage(EvaluationStage.SCORING, progress=0.4)
+    run.update_stage(EvaluationStage.SCORING, progress=0.1)
+    assert (run.stage, run.progress) == (EvaluationStage.SCORING, 0.4)
+
+    run.update_cancelled(at)
+    assert run.status is PostingEvaluationStatus.CANCELLED and not run.is_running
+    with pytest.raises(OwnPostingError):
+        run.update_cancelled(at)

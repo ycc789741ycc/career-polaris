@@ -11,6 +11,7 @@ from advisor.gapfill.domain import (
     GapStatus,
     QuestionSet,
     QuestionSetStatus,
+    QuestionStage,
 )
 from advisor.gapfill.infra import models
 
@@ -32,6 +33,9 @@ def question_set(row: models.QuestionSet) -> QuestionSet:
         error_message=row.error_message,
         written_at=row.written_at,
         submitted_at=row.submitted_at,
+        stage=QuestionStage(row.stage) if row.stage else None,
+        progress=row.progress,
+        estimated_cost_usd=row.estimated_cost_usd,
     )
 
 
@@ -61,6 +65,9 @@ def apply_question_set(row: models.QuestionSet, entity: QuestionSet) -> None:
     row.error_message = entity.error_message
     row.written_at = entity.written_at
     row.submitted_at = entity.submitted_at
+    row.stage = str(entity.stage) if entity.stage else None
+    row.progress = entity.progress
+    row.estimated_cost_usd = entity.estimated_cost_usd
 
 
 def question(row: models.Question) -> GapQuestion:

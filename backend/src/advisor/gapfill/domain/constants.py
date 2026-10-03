@@ -8,6 +8,13 @@ from __future__ import annotations
 
 # --- questions ---------------------------------------------------------------
 
+# Each stage's share of writing a set, (start, end) of 0 to 1 (ADR 0042).
+QUESTION_STAGE_SHARES = {
+    "reading": (0.0, 0.1),
+    "writing": (0.1, 0.9),
+    "checking": (0.9, 1.0),
+}
+
 # The costliest gaps of a Target are asked about, as the gap plan shows them.
 ASKED_GAPS = 4
 

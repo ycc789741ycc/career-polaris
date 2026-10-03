@@ -501,3 +501,46 @@ async def test_a_section_already_there_or_while_busy_is_refused() -> None:
         await service.request_section(OWNER, resume_id, SectionSlot(SectionKind.CERTIFICATIONS))
     with pytest.raises(NotFoundError):
         await service.request_section(OTHER, resume_id, SectionSlot(SectionKind.CERTIFICATIONS))
+
+
+# -- a job in the background (ADR 0042) -------------------------------------------
+
+
+async def test_a_first_draft_cancelled_is_no_longer_listed() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    [job] = await service.running_jobs(OWNER)
+    assert (job.kind, job.id) == ("resume", str(resume_id))
+
+    await service.cancel(OWNER, resume_id)
+
+    assert uow.store.resumes[resume_id].status is ResumeStatus.CANCELLED
+    assert (await service.saved(OWNER)).items == ()
+    assert await service.running_jobs(OWNER) == ()
+
+
+async def test_a_redraft_cancelled_goes_back_to_its_last_version() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    uow.store.resumes[resume_id].status = ResumeStatus.READY
+    await service.redraft(OWNER, resume_id)
+
+    await service.cancel(OWNER, resume_id)
+
+    stored = uow.store.resumes[resume_id]
+    assert stored.status is ResumeStatus.READY
+    assert stored.section_plan == make_content(Bullet("x", ("e1",))).get_plan()
+    with pytest.raises(ConflictError):
+        await service.cancel(OWNER, resume_id)
+
+
+async def test_a_second_resume_for_a_target_waits_for_the_first() -> None:
+    service = _service(FakeResumeUnitOfWork())
+    ref = TargetRef(str(uuid.uuid4()))
+    await service.request(OWNER, ref, template="organic", options=Options())
+
+    with pytest.raises(ConflictError):
+        await service.request(OWNER, ref, template="organic", options=Options())

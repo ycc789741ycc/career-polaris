@@ -8,6 +8,14 @@ from __future__ import annotations
 
 # --- plan --------------------------------------------------------------------
 
+# Each stage's share of drafting a plan, (start, end) of 0 to 1 (ADR 0042).
+PLAN_STAGE_SHARES = {
+    "reading": (0.0, 0.1),
+    "drafting": (0.1, 0.85),
+    "checking": (0.85, 0.95),
+    "saving": (0.95, 1.0),
+}
+
 MIN_MILESTONES = 2
 
 MAX_MILESTONES = 5

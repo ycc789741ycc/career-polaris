@@ -7,6 +7,7 @@ import type {
 } from "../api/types";
 import { Button, ErrorNote, Eyebrow, FitBadge } from "../components/ui";
 import { useShell } from "../shell/ShellContext";
+import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { dayLabel } from "./time";
@@ -329,6 +330,7 @@ export function MyRoles({
 }) {
   const { navigate } = useShell();
   const flash = useToast();
+  const { refresh: refreshActivity } = useActivity();
   const [pricing, setPricing] = useState<{
     posting: OwnPosting;
     estimate: OwnPostingEstimate;
@@ -350,10 +352,12 @@ export function MyRoles({
 
   const aim = (posting: OwnPosting) =>
     run(async () => {
+      // Scoring it, then its questions, once confirmed (ADR 0042).
       await api.post<OwnPosting>(
-        `/own-postings/${posting.private_job_posting_id}/target`,
+        `/own-postings/${posting.private_job_posting_id}/target?write_questions=true`,
         {},
       );
+      await refreshActivity();
       setPricing(null);
       await onChanged();
       navigate("advisor", {
@@ -365,7 +369,7 @@ export function MyRoles({
   const price = (posting: OwnPosting) =>
     run(async () => {
       const estimate = await api.get<OwnPostingEstimate>(
-        `/own-postings/${posting.private_job_posting_id}/target-estimate`,
+        `/own-postings/${posting.private_job_posting_id}/target-estimate?with_questions=true`,
       );
       if (Number(estimate.cost_usd) === 0) {
         // Its fit is current: nothing to spend, so nothing to confirm.
@@ -403,15 +407,16 @@ export function MyRoles({
           onConfirm={() => void aim(pricing.posting)}
           onCancel={() => setPricing(null)}
         >
-          Reading what {pricing.posting.title} asks for and scoring your fit to
-          it will cost about <strong>${pricing.estimate.cost_usd}</strong>
+          Reading what {pricing.posting.title} asks for, scoring your fit to it
+          and writing your follow-up questions about its gaps will cost about{" "}
+          <strong>${pricing.estimate.cost_usd}</strong>
           {pricing.estimate.model_id ? ` on ${pricing.estimate.model_id}` : ""},
           charged to your own provider
           {pricing.posting.status === null &&
           pricing.posting.source === "uploaded"
             ? " — at most, since its file is not read yet"
             : ""}
-          . Fill the gap then writes its questions.
+          . It all runs in the background; Fill the gap opens preparing.
         </CostConfirm>
       )}
       {postings.length === 0 ? (

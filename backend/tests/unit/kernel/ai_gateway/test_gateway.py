@@ -21,6 +21,7 @@ from kernel.errors import (
     CredentialFailedError,
     OutputInvalidError,
 )
+from kernel.progress import WRITING_CAP, JobCancelledError, Progress
 
 OWNER = uuid.UUID("11111111-1111-1111-1111-111111111111")
 
@@ -328,3 +329,89 @@ async def test_an_invalid_structured_part_is_rejected_without_a_retry(
     with pytest.raises(OutputInvalidError, match="did not match the schema"):
         await _collect(gw)
     assert len(provider.requests) == 1
+
+
+# -- progress while a job's call streams (ADR 0042) ----------------------------
+
+
+@pytest.fixture
+def ticking_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every read of the clock is three seconds on, so each chunk reports."""
+    from kernel.ai_gateway import gateway as gateway_module
+
+    now = iter(range(0, 10_000, 3))
+    monkeypatch.setattr(gateway_module, "_clock", lambda: float(next(now)))
+
+
+async def test_a_streamed_call_reports_its_share_capped_until_checked(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider, ticking_clock: None
+) -> None:
+    gw, _, budget = gateway
+    # Far more text than the template expects: the share stops at the cap.
+    stub_provider(['{"name": "API design", ', '"score": 81}', " " * 2000])
+    seen: list[Progress] = []
+
+    async def report(progress: Progress) -> None:
+        seen.append(progress)
+
+    result = await gw.run(
+        OWNER,
+        task="assess",
+        template=TEMPLATE,
+        inputs={"subject": "a backend engineer"},
+        output_schema=Answer,
+        on_progress=report,
+    )
+
+    assert result.value == Answer(name="API design", score=81)
+    fractions = [p.fraction for p in seen]
+    assert fractions[0] == 0.0
+    assert fractions == sorted(fractions)
+    assert max(fractions) == WRITING_CAP
+    assert all(p.estimated_cost_usd == budget.checked[0] for p in seen)
+    assert len(budget.recorded) == 1
+
+
+async def test_a_job_cancelled_before_its_call_sends_nothing(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    provider = stub_provider(['{"name": "API design", "score": 81}'])
+
+    async def cancelled(progress: Progress) -> None:
+        raise JobCancelledError
+
+    with pytest.raises(JobCancelledError):
+        await gw.run(
+            OWNER,
+            task="assess",
+            template=TEMPLATE,
+            inputs={"subject": "x"},
+            output_schema=Answer,
+            on_progress=cancelled,
+        )
+    assert provider.requests == [] and budget.recorded == []
+
+
+async def test_a_job_cancelled_while_it_streams_stops_and_is_still_charged(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider, ticking_clock: None
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(['{"name": ', '"API design", ', '"score": 81}'])
+
+    async def cancel_once_writing(progress: Progress) -> None:
+        if progress.fraction > 0:
+            raise JobCancelledError
+
+    with pytest.raises(JobCancelledError):
+        await gw.run(
+            OWNER,
+            task="assess",
+            template=TEMPLATE,
+            inputs={"subject": "x"},
+            output_schema=Answer,
+            on_progress=cancel_once_writing,
+        )
+    # What was written before the stop is billed, so the ledger has it.
+    [usage] = budget.recorded
+    assert usage.output_tokens > 0
