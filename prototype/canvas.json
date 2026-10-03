@@ -27,7 +27,7 @@
       "y": 2180
     },
     "Resume.dc.html": {
-      "h": 1560,
+      "h": 1820,
       "is_interactive": true,
       "title": "04 Advisor — Résumé",
       "w": 1440,
@@ -88,6 +88,38 @@
       "w": 1440,
       "x": 6080,
       "y": 2180
+    },
+    "GapsBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Fill the gap: preparing",
+      "w": 1440,
+      "x": 0,
+      "y": 4400
+    },
+    "PlanBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Gap plan: drafting",
+      "w": 1440,
+      "x": 1520,
+      "y": 4400
+    },
+    "ResumeBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Résumé: writing",
+      "w": 1440,
+      "x": 3040,
+      "y": 4400
+    },
+    "PlanWhileResume.dc.html": {
+      "h": 1480,
+      "is_interactive": true,
+      "title": "04 Advisor — Gap plan while résumé is writing",
+      "w": 1440,
+      "x": 4560,
+      "y": 4400
     }
   },
   "createdOnFiles": {
@@ -130,6 +162,14 @@
       "w": 360,
       "x": 4560,
       "y": 980
+    },
+    "row3": {
+      "kind": "title1",
+      "maxW": 6000,
+      "text": "04 Advisor — generating states (the page stays usable; switch tabs while it runs)",
+      "w": 240,
+      "x": 0,
+      "y": 4100
     }
   },
   "order": [
@@ -143,7 +183,11 @@
     "Plan.dc.html",
     "Resume.dc.html",
     "Model.dc.html",
-    "Sidebar.dc.html"
+    "Sidebar.dc.html",
+    "GapsBuilding.dc.html",
+    "PlanBuilding.dc.html",
+    "ResumeBuilding.dc.html",
+    "PlanWhileResume.dc.html"
   ],
   "pages": [],
   "title": "Career Advisor — current layout"
