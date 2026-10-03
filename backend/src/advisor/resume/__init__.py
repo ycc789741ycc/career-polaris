@@ -11,6 +11,7 @@ import only what is listed here (import-linter contract
 from advisor.resume import jobs
 from advisor.resume.factory import create_resume_service
 from advisor.resume.service import (
+    TEMPLATE_READING_KEEP_SECONDS,
     CoverageView,
     ExportView,
     Options,
@@ -25,11 +26,13 @@ from advisor.resume.service import (
     SectionSlot,
     Template,
     TemplateLimitsView,
+    TemplateReadingView,
     TemplateView,
     VersionView,
 )
 
 __all__ = [
+    "TEMPLATE_READING_KEEP_SECONDS",
     "CoverageView",
     "ExportView",
     "Options",
@@ -44,6 +47,7 @@ __all__ = [
     "SectionSlot",
     "Template",
     "TemplateLimitsView",
+    "TemplateReadingView",
     "TemplateView",
     "VersionView",
     "create_resume_service",

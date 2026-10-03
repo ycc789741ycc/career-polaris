@@ -25,6 +25,8 @@ def create_resume_service(
     gateway: AiGateway,
     object_store: ObjectStore,
     template_max: int,
+    template_upload_max_bytes: int = 5_242_880,
+    template_upload_max_pages: int = 3,
 ) -> ResumeService:
     return ResumeService(
         SqlAlchemyResumeUnitOfWork(database),
@@ -34,4 +36,6 @@ def create_resume_service(
         gateway=gateway,
         object_store=object_store,
         template_max=template_max,
+        template_upload_max_bytes=template_upload_max_bytes,
+        template_upload_max_pages=template_upload_max_pages,
     )

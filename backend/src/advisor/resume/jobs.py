@@ -32,3 +32,13 @@ async def fill_section(
 async def export(deps: Any, *, owner_id: str, export_id: str) -> None:
     await deps.resume.export(uuid.UUID(owner_id), uuid.UUID(export_id))
     log.info("resume.export_finished", export_id=export_id)
+
+
+async def read_template(deps: Any, *, owner_id: str, template_reading_id: str) -> None:
+    """Read an uploaded PDF's style into a draft template (ADR 0041)."""
+    await deps.resume.read_template(uuid.UUID(owner_id), uuid.UUID(template_reading_id))
+
+
+async def forget_template_reading(deps: Any, *, owner_id: str, template_reading_id: str) -> None:
+    """A day after the upload: the draft goes, saved as a template or not."""
+    await deps.resume.forget_template_reading(uuid.UUID(owner_id), uuid.UUID(template_reading_id))

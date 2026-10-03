@@ -27,6 +27,7 @@ from advisor.resume.infra.repositories import (
     SqlAlchemyResumeVersionRepository,
     SqlAlchemyRevisionRepository,
     SqlAlchemyTailoredResumeRepository,
+    SqlAlchemyTemplateReadingRepository,
 )
 from kernel.db import Database
 from kernel.outbox import EventName, emit
@@ -39,6 +40,7 @@ class SqlAlchemyOwnerResumes(OwnerResumes):
         self.revisions = SqlAlchemyRevisionRepository(session, owner_id=owner_id)
         self.exports = SqlAlchemyExportRepository(session, owner_id=owner_id)
         self.templates = SqlAlchemyCustomTemplateRepository(session, owner_id=owner_id)
+        self.readings = SqlAlchemyTemplateReadingRepository(session, owner_id=owner_id)
         self.pending: list[ResumeEvent] = []
 
     def record(self, event: ResumeEvent) -> None:

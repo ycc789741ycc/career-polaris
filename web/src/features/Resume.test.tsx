@@ -217,6 +217,7 @@ const limits: ResumeTemplateLimits = {
   min_contrast: 4.5,
   max_name: 60,
   max_templates: 10,
+  upload_max_bytes: 5_242_880,
 };
 
 type Call = { method: string; url: string; body: unknown };
@@ -229,7 +230,10 @@ function serve(route: (call: Call) => Response | unknown) {
       const call = {
         method: init?.method ?? "GET",
         url: String(input).replace("http://api.test/api/v1", ""),
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        body:
+          typeof init?.body === "string"
+            ? JSON.parse(init.body)
+            : (init?.body ?? undefined),
       };
       calls.push(call);
       // The templates, as the renderer draws them: every screen reads them.
@@ -758,6 +762,55 @@ describe("templates of your own (ADR 0040)", () => {
     } finally {
       templates.items.pop();
     }
+  });
+
+  it("starts from a file: opens on its draft with read and defaulted values marked", async () => {
+    const reading = {
+      id: "r-1",
+      status: "ready",
+      error: null,
+      spec: {
+        ...organic.spec,
+        layout: "sidebar_left",
+        sidebar_kinds: ["skills"],
+      },
+      read: ["layout", "heading_font", "accent_color", "name_pt", "body_pt"],
+      defaulted: ["bullet", "rule", "sidebar_kinds"],
+      created_at: "2026-10-10T00:00:00+00:00",
+    };
+    const calls = serve((call) =>
+      call.method === "POST" && call.url === "/resume-templates/upload"
+        ? reading
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Make your own" }),
+    );
+    await user.upload(
+      screen.getByLabelText("Résumé PDF to start from"),
+      new File(["%PDF-1.4"], "someone.pdf", { type: "application/pdf" }),
+    );
+
+    expect(
+      await screen.findByText(/We read: a left sidebar, a display name/),
+    ).toBeInTheDocument();
+    const editor = screen.getByRole("group", { name: "Make your own" });
+    expect(
+      within(editor).getByLabelText("Layout — read from the file"),
+    ).toHaveValue("sidebar_left");
+    expect(
+      within(editor).getByLabelText("Bullets — not read; Organic's, check it"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Résumé" }).dataset.layout).toBe(
+      "sidebar_left",
+    );
+    // Nothing is a template until it is saved.
+    expect(
+      calls.some((c) => c.method === "POST" && c.url === "/resume-templates"),
+    ).toBe(false);
   });
 
   it("will not save text too light to read", async () => {

@@ -24,6 +24,7 @@ from advisor.resume.domain.events import ResumeEvent
 from advisor.resume.domain.export import Export, ExportStatus
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.tailored_resume import ResumeVersion, TailoredResume
+from advisor.resume.domain.template_reading import TemplateReading
 
 
 class Repository[Entity, Filter](Protocol):
@@ -91,12 +92,21 @@ class CustomTemplateFilter:
 class CustomTemplateRepository(Repository[CustomTemplate, CustomTemplateFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class TemplateReadingFilter:
+    """Nothing to filter on: a reading is fetched by id."""
+
+
+class TemplateReadingRepository(Repository[TemplateReading, TemplateReadingFilter], Protocol): ...
+
+
 class OwnerResumes(Protocol):
     resumes: TailoredResumeRepository
     versions: ResumeVersionRepository
     revisions: RevisionRepository
     exports: ExportRepository
     templates: CustomTemplateRepository
+    readings: TemplateReadingRepository
 
     def record(self, event: ResumeEvent) -> None: ...
 

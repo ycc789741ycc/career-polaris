@@ -32,6 +32,9 @@ from advisor.resume.domain import (
     TailoredResume,
     TailoredResumeFilter,
     TailoredResumeRepository,
+    TemplateReading,
+    TemplateReadingFilter,
+    TemplateReadingRepository,
 )
 from advisor.target import DraftBasis, OutdatedReason, TargetRef
 from tests.unit.kernel.db.fake_repository import FakeRepository
@@ -44,6 +47,7 @@ class Store:
     revisions: dict[uuid.UUID, Revision] = field(default_factory=dict)
     exports: dict[uuid.UUID, Export] = field(default_factory=dict)
     templates: dict[uuid.UUID, CustomTemplate] = field(default_factory=dict)
+    readings: dict[uuid.UUID, TemplateReading] = field(default_factory=dict)
     events: list[ResumeEvent] = field(default_factory=list)
 
 
@@ -107,6 +111,17 @@ class FakeTemplates(FakeRepository[CustomTemplate, CustomTemplateFilter], Custom
         return True
 
 
+class FakeReadings(
+    FakeRepository[TemplateReading, TemplateReadingFilter], TemplateReadingRepository
+):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "template reading"
+
+    def matches(self, entity: TemplateReading, filter: TemplateReadingFilter) -> bool:
+        return True
+
+
 class FakeOwner(OwnerResumes):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.resumes = FakeResumes(store.resumes, owner_id=owner_id)
@@ -114,6 +129,7 @@ class FakeOwner(OwnerResumes):
         self.revisions = FakeRevisions(store.revisions, owner_id=owner_id)
         self.exports = FakeExports(store.exports, owner_id=owner_id)
         self.templates = FakeTemplates(store.templates, owner_id=owner_id)
+        self.readings = FakeReadings(store.readings, owner_id=owner_id)
         self.pending: list[ResumeEvent] = []
 
     def record(self, event: ResumeEvent) -> None:
@@ -137,6 +153,12 @@ class FakeObjectStore:
 
     def put(self, key: str, content: bytes, content_type: str) -> None:
         self.objects[key] = content
+
+    def get(self, key: str) -> bytes:
+        return self.objects[key]
+
+    def delete(self, key: str) -> None:
+        self.objects.pop(key, None)
 
     def signed_url(self, key: str, *, download_name: str | None = None) -> str:
         saved_as = f"?as={download_name}" if download_name is not None else ""

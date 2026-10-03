@@ -801,6 +801,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resume-template-readings/{template_reading_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Template Reading */
+        get: operations["template_reading_api_v1_resume_template_readings__template_reading_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resume-templates": {
         parameters: {
             query?: never;
@@ -840,6 +857,28 @@ export interface paths {
         get: operations["template_limits_api_v1_resume_templates_limits_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Template File
+         * @description Starts a template from a PDF: stores it and queues reading its style;
+         *     poll ``GET /resume-template-readings/{id}``. Only the style is read, and
+         *     the file is deleted once it is (ADR 0041). Spends nothing.
+         */
+        post: operations["upload_template_file_api_v1_resume_templates_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1441,6 +1480,11 @@ export interface components {
         };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_template_file_api_v1_resume_templates_upload_post */
+        Body_upload_template_file_api_v1_resume_templates_upload_post: {
             /** File */
             file: string;
         };
@@ -2440,6 +2484,8 @@ export interface components {
                 number,
                 number
             ];
+            /** Upload Max Bytes */
+            upload_max_bytes: number;
         };
         /** ResumeTemplatePage */
         ResumeTemplatePage: {
@@ -2954,6 +3000,32 @@ export interface components {
             sidebar_kinds?: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
             /** Text Color */
             text_color: string;
+        };
+        /**
+         * TemplateReading
+         * @description A PDF being read for its style (ADR 0041). Once ready, a draft spec the
+         *     editor opens on, with which values were read from the file and which took
+         *     Organic's. Nothing of the file's text is kept.
+         */
+        TemplateReading: {
+            /** Created At */
+            created_at: string;
+            /** Defaulted */
+            defaulted: ("layout" | "heading_font" | "body_font" | "accent_color" | "name_color" | "text_color" | "rule_color" | "rule" | "name_pt" | "heading_pt" | "body_pt" | "sidebar_kinds" | "heading_case" | "bullet")[];
+            error: components["schemas"]["JobError"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Read */
+            read: ("layout" | "heading_font" | "body_font" | "accent_color" | "name_color" | "text_color" | "rule_color" | "rule" | "name_pt" | "heading_pt" | "body_pt" | "sidebar_kinds" | "heading_case" | "bullet")[];
+            spec: components["schemas"]["TemplateSpecBody"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "reading" | "ready" | "failed";
         };
         /** TemplateRequest */
         TemplateRequest: {
@@ -5304,6 +5376,55 @@ export interface operations {
             };
         };
     };
+    template_reading_api_v1_resume_template_readings__template_reading_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_reading_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateReading"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     templates_api_v1_resume_templates_get: {
         parameters: {
             query?: {
@@ -5423,6 +5544,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeTemplateLimits"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    upload_template_file_api_v1_resume_templates_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_template_file_api_v1_resume_templates_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateReading"];
                 };
             };
             /** @description The request could not be read. */

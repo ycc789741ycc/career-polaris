@@ -598,3 +598,13 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   moves its résumés to Organic. An export stores the `spec` it rendered and
   reuse compares specs. The preview draws every layout; the SPA hosts DejaVu
   Serif and Mono subsets. Migration 0036.
+- **A template from a file** (ADR 0041). "Start from a file" posts a PDF to
+  `POST /resume-templates/upload` (under `TEMPLATE_UPLOAD_MAX_BYTES` /
+  `_PAGES`); a `TemplateReading` (`resume.template_reading`, RLS) is polled at
+  `GET /resume-template-readings/{id}` while `resume.read_template` (queue
+  `docs`) walks the first page with pypdf (`infra/style_reader.py`) into
+  `StyleRun`s, with no text in them, and `get_template_spec_from_runs` makes
+  the draft, listing which values were read and which took Organic's. The file
+  is deleted once read or failed (`unreadable_file`); nothing of its text, name
+  or fonts is stored, and `resume.forget_template_reading` deletes the run a
+  day on. Saving it is ADR 0040's `POST /resume-templates`. Migration 0037.

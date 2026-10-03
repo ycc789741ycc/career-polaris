@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 import pytest_asyncio
+from botocore.exceptions import ClientError
+from sqlalchemy import text
 
 from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.identity import create_identity_service
@@ -35,7 +37,7 @@ from advisor.resume import (
     Template,
     create_resume_service,
 )
-from advisor.resume.domain import TemplateSpec
+from advisor.resume.domain import Layout, TemplateSpec
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
@@ -605,3 +607,45 @@ async def test_a_template_of_your_own_sets_the_pdf_and_is_yours_alone(
     await world.resume.delete_template(account, uuid.UUID(mine.id))
     assert (await world.resume.get(account, resume_id)).template == "organic"
     assert [t.id for t in (await world.resume.templates(account)).items] == ["organic", "plain"]
+
+
+async def test_a_template_starts_from_a_pdf_whose_file_is_gone_once_read(
+    world: World, database: Database, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """ADR 0041: only the style is read, on the worker; the stored file is
+    deleted, and another user cannot see the reading."""
+    from advisor.resume.infra.render import render_html, render_pdf
+    from tests.unit.advisor.resume.builders import make_content
+
+    spec = TemplateSpec(layout=Layout.SIDEBAR_LEFT, sidebar_kinds=(SectionKind.SKILLS,))
+    pdf = render_pdf(render_html(make_content(), spec=spec, options=Options()))
+    reading = await world.resume.upload_template_file(
+        account, content_type="application/pdf", content=pdf
+    )
+    async with database.for_user(account) as session:
+        key = (
+            await session.execute(
+                text("SELECT storage_key FROM resume.template_reading WHERE id = :id"),
+                {"id": reading.id},
+            )
+        ).scalar_one()
+    assert key.startswith(f"users/{account}/templatefiles/")
+    assert world.store.get(key) == pdf
+
+    await world.resume.read_template(account, reading.id)
+
+    ready = await world.resume.template_reading(account, reading.id)
+    assert ready.status == "ready" and ready.spec is not None
+    assert ready.spec.layout is Layout.SIDEBAR_LEFT
+    with pytest.raises(ClientError):
+        world.store.get(key)
+    with pytest.raises(NotFoundError):
+        await world.resume.template_reading(other_account, reading.id)
+
+    saved = await world.resume.create_template(
+        account, name="From a file", spec=ready.spec.to_dict()
+    )
+    assert not saved.is_built_in
+    await world.resume.forget_template_reading(account, reading.id)
+    with pytest.raises(NotFoundError):
+        await world.resume.template_reading(account, reading.id)

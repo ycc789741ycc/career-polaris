@@ -186,3 +186,32 @@ class CustomTemplate(Base, OwnedMixin):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class TemplateReading(Base, OwnedMixin):
+    """An upload being read for its style (ADR 0041): the draft spec and which
+    values were read, and nothing of the file. Forgotten after a day."""
+
+    __tablename__ = "template_reading"
+    __table_args__ = (
+        CheckConstraint("status IN ('reading', 'ready', 'failed')", name="status"),
+        {"schema": "resume"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Where the file is until it is read; null once it is deleted.
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    spec: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    read_fields: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'[]'::jsonb")
+    )
+    defaulted_fields: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'[]'::jsonb")
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

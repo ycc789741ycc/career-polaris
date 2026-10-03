@@ -38,6 +38,8 @@ from advisor.resume.domain.repositories import (
     RevisionRepository,
     TailoredResumeFilter,
     TailoredResumeRepository,
+    TemplateReadingFilter,
+    TemplateReadingRepository,
 )
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.section import (
@@ -55,6 +57,16 @@ from advisor.resume.domain.section import (
     assert_plan_valid,
 )
 from advisor.resume.domain.tailored_resume import ResumeStatus, ResumeVersion, TailoredResume
+from advisor.resume.domain.template_reading import (
+    FontKind,
+    ReadingStatus,
+    StyleRun,
+    TemplateDraft,
+    TemplateReading,
+    TemplateReadingError,
+    get_font_kind,
+    get_template_spec_from_runs,
+)
 from advisor.resume.domain.template_spec import (
     BUILT_IN_TEMPLATES,
     BuiltInTemplate,
@@ -93,11 +105,13 @@ __all__ = [
     "ExportFilter",
     "ExportRepository",
     "ExportStatus",
+    "FontKind",
     "HeadingCase",
     "Layout",
     "Options",
     "Origin",
     "OwnerResumes",
+    "ReadingStatus",
     "Repository",
     "ResumeContent",
     "ResumeError",
@@ -117,10 +131,16 @@ __all__ = [
     "SectionKind",
     "SectionShape",
     "SectionSlot",
+    "StyleRun",
     "TailoredResume",
     "TailoredResumeFilter",
     "TailoredResumeRepository",
     "Template",
+    "TemplateDraft",
+    "TemplateReading",
+    "TemplateReadingError",
+    "TemplateReadingFilter",
+    "TemplateReadingRepository",
     "TemplateSpec",
     "TemplateSpecError",
     "Verdict",
@@ -133,7 +153,9 @@ __all__ = [
     "get_built_in_spec",
     "get_contrast",
     "get_download_name",
+    "get_font_kind",
     "get_planned",
+    "get_template_spec_from_runs",
     "mark_edits",
     "settle_revision",
 ]
