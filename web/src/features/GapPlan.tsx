@@ -16,13 +16,13 @@ import {
   Loading,
   ProgressBar,
   RoundCheck,
-  YouVsBar,
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
+import { EvidenceDisclosure } from "./EvidenceDisclosure";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
@@ -302,8 +302,9 @@ export function GapPlan({
           />
           <span className="model-pill" style={{ marginBottom: 16 }}>
             Drafted by {plan.model_id ?? model} for {plan.label}
-            {plan.snapshot?.fit != null &&
-              ` · ${plan.snapshot.fit}% fit today`}{" "}
+            {plan.snapshot?.fit != null && ` · ${plan.snapshot.fit}% fit today`}
+            {plan.answer_count > 0 &&
+              ` · uses your ${plan.answer_count} ${plan.answer_count === 1 ? "answer" : "answers"} from Fill the gap`}{" "}
             ·{" "}
             <button
               type="button"
@@ -328,14 +329,17 @@ export function GapPlan({
                 between you and {planTarget}
               </h3>
               <p className="subcopy" style={{ marginBottom: 14 }}>
-                Ranked by how much each moves your fit score. Every line cites
-                the work it was read from.
-                {plan.snapshot?.basis === "posting"
-                  ? " Requirements read from the posting itself."
-                  : " Requirements are the role's, across its openings."}
+                Ranked by how much each moves your fit score. The bar shows the
+                fit points out of {plan.lift_scale}. Open a gap to see the work
+                it was read from.
               </p>
               {plan.gaps.map((gap, index) => (
-                <GapCard key={gap.key} gap={gap} rank={index + 1} />
+                <GapCard
+                  key={gap.key}
+                  gap={gap}
+                  rank={index + 1}
+                  scale={plan.lift_scale}
+                />
               ))}
 
               {plan.stepping_stones.length > 0 && (
@@ -467,34 +471,52 @@ export function GapPlan({
   );
 }
 
-function GapCard({ gap, rank }: { gap: PlanGap; rank: number }) {
+/** "Closing this gap adds 9 of 10 possible fit points". Pure. */
+export function liftLabel(lift: number, scale: number): string {
+  return `Closing this gap adds ${lift} of ${scale} possible fit points`;
+}
+
+/** One gap, as the prototype draws it: its fit points as a bar out of the
+ * plan's scale, why it matters, and its evidence collapsed. */
+export function GapCard({
+  gap,
+  rank,
+  scale,
+}: {
+  gap: PlanGap;
+  rank: number;
+  scale: number;
+}) {
   return (
     <div className="gap-card">
-      <div className="row-between">
+      <div className="row-between" style={{ alignItems: "baseline", gap: 12 }}>
         <span className="gap-card-title">
-          {String(rank).padStart(2, "0")} · {gap.name}
+          {rank} · {gap.name}
         </span>
         <span className="gap-card-lift">+{gap.lift} fit pts</span>
       </div>
-      <div style={{ margin: "12px 0" }}>
-        {gap.kind === "dimension" &&
-        gap.user_score !== null &&
-        gap.target_score !== null ? (
-          <YouVsBar
-            you={gap.user_score}
-            bar={gap.target_score}
-            label={gap.name}
-          />
-        ) : (
-          <span className="tag tag-neutral">No evidence at all</span>
-        )}
+      <div
+        className="lift-bar"
+        role="img"
+        aria-label={liftLabel(gap.lift, scale)}
+      >
+        <div
+          className="lift-bar-fill"
+          style={{ width: `${Math.min(100, (gap.lift / scale) * 100)}%` }}
+        />
       </div>
-      <p className="gap-card-why">{gap.why}</p>
-      {gap.evidence.map((item) => (
-        <div key={item.id} className="gap-card-cite">
-          {item.reference} — {item.fact}
-        </div>
-      ))}
+      {gap.kind !== "dimension" && (
+        <span className="tag tag-neutral" style={{ marginTop: 8 }}>
+          No evidence at all
+        </span>
+      )}
+      <p className="gap-card-why" style={{ marginTop: 8 }}>
+        {gap.why}
+      </p>
+      <EvidenceDisclosure
+        evidence={gap.evidence}
+        empty="Nothing in your sources speaks to it either way."
+      />
     </div>
   );
 }

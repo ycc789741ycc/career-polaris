@@ -297,6 +297,47 @@ describe("résumé screen", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("is laid out as the prototype: tools, page, then requirements collapsed", async () => {
+    serve((call) =>
+      call.url.startsWith("/tailored-resumes/cost-estimate")
+        ? {
+            cost_usd: "0.04",
+            model_id: "claude-opus-5",
+            rate_is_published: true,
+          }
+        : defaults(call),
+    );
+    renderResume();
+
+    await screen.findByRole("article", { name: "Résumé" });
+    const tools = document.querySelector(".resume-col-tools")!;
+    const text = tools.textContent ?? "";
+    const order = ["Saved résumés", "Template", "Sections", "Revise with"].map(
+      (heading) => text.indexOf(heading),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    // "Regenerate résumé" sits on the Write-for card, with what it costs.
+    expect(
+      screen.getByRole("button", { name: "Regenerate résumé" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /about \$0\.04 on your key · saved as a new version/,
+      ),
+    ).toBeInTheDocument();
+
+    // Each requirement's evidence is collapsed behind "Evidence ▾".
+    const requirements = document.querySelector(".resume-col-requirements")!;
+    const disclosures = requirements.querySelectorAll("details");
+    expect(disclosures.length).toBeGreaterThan(0);
+    disclosures.forEach((d) => expect(d).not.toHaveAttribute("open"));
+    expect(
+      within(requirements as HTMLElement).getAllByText("Evidence ▾").length,
+    ).toBe(disclosures.length);
+  });
+
   it("opens the latest résumé with cited lines and coverage", async () => {
     serve(defaults);
     const user = userEvent.setup();
@@ -317,7 +358,7 @@ describe("résumé screen", () => {
     expect(screen.getByText("Covered")).toBeInTheDocument();
     expect(screen.getByText("Gap")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Save this version" }),
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
     ).toBeDisabled();
   });
 
@@ -377,7 +418,7 @@ describe("résumé screen", () => {
     line.textContent = "Owned the retry layer, end to end";
     fireEvent.blur(line);
 
-    const save = screen.getByRole("button", { name: "Save this version" });
+    const save = screen.getByRole("button", { name: /^Save as v\d+$/ });
     expect(save).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Export as PDF" }),

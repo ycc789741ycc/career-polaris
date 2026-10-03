@@ -51,6 +51,7 @@ from advisor.gapplan.domain import (
     TaskFilter,
     assert_draft_valid,
     carried_done,
+    get_lift_scale,
     progress,
     stepping_stones,
 )
@@ -222,6 +223,11 @@ class PlanView:
     # (ADR 0035); empty when it does, for an older version, and for a plan
     # drafted before that was recorded.
     outdated_by: tuple[OutdatedReason, ...] = ()
+    # The fit points the gap bars are drawn out of: 10, or the largest lift.
+    lift_scale: int = 10
+    # Answers from Fill the gap given before the plan was drafted: the ones
+    # its draft read (ADR 0036).
+    answer_count: int = 0
 
     @property
     def is_outdated(self) -> bool:
@@ -393,6 +399,8 @@ class GapPlanService:
             ),
             template_version=plan.template_version,
             outdated_by=outdated_by,
+            lift_scale=get_lift_scale(g["lift"] for g in plan.gaps),
+            answer_count=await self._answer_count(owner_id, plan),
         )
 
     async def history(
@@ -710,6 +718,13 @@ class GapPlanService:
         return stepping_stones(
             target_role_id=snapshot.role_id, target_fit=snapshot.fit_score, roles=roles
         )
+
+    async def _answer_count(self, owner_id: uuid.UUID, plan: GapPlan) -> int:
+        """The answers its draft read: those given before it was drafted."""
+        if plan.drafted_at is None:
+            return 0
+        answers = await self._gapfill.get_answers(owner_id, _ref_of(plan))
+        return sum(1 for a in answers if a.answered_at <= plan.drafted_at)
 
     async def _advance(
         self,

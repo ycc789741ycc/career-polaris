@@ -624,3 +624,11 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   `AdvisorJobNotice` in the corner. "Target this role" prices and starts the
   questions; "Set as target" queues them after scoring
   (`wiring.queue.queue_questions`).
+- **The Advisor as prototyped** (no ADR). Evidence is collapsed everywhere
+  (`EvidenceDisclosure`: "Show evidence (n)", "Evidence ▾"). Each gap of a
+  plan has a bar of its fit points out of `lift_scale` (10, or the plan's
+  largest lift), and the plan's header names the `answer_count` its draft
+  read. The Résumé has three columns — Saved résumés, Template + Export,
+  Sections and Revise with AI on the left; the page with "Save as vN" in the
+  middle; the requirements on the right — stacking page first when narrow,
+  and "Regenerate résumé" with its last-generated line on the Write-for card.

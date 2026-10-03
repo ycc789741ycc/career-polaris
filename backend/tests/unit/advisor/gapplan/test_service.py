@@ -99,6 +99,13 @@ class NoRoles:
         return []
 
 
+class NoAnswers:
+    """Fill the gap with nothing answered for any Target."""
+
+    async def get_answers(self, owner_id: uuid.UUID, ref: TargetRef) -> tuple[Any, ...]:
+        return ()
+
+
 def _service(
     uow: FakeGapPlanUnitOfWork,
     *,
@@ -113,7 +120,7 @@ def _service(
         profile=profile or VersionedProfile(0),  # type: ignore[arg-type]
         assessment=NoAssessment(),  # type: ignore[arg-type]
         rolemap=NoRoles(),  # type: ignore[arg-type]
-        gapfill=gapfill,
+        gapfill=gapfill or NoAnswers(),  # type: ignore[arg-type]
         gateway=gateway,
     )
 
