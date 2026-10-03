@@ -7,7 +7,7 @@ one user. Facts only — a score never lives here.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from fnmatch import fnmatchcase
@@ -32,6 +32,8 @@ from advisor.profile.domain import (
     SourceConnectionFilter,
     SourceSynced,
     assert_citations_exist,
+    get_date_label,
+    get_shown_date,
     total_experience_months,
 )
 from advisor.profile.domain import (
@@ -62,6 +64,7 @@ __all__ = [
     "ResumeFileView",
     "SourceProcessingView",
     "assert_citations_exist",
+    "get_evidence_line",
 ]
 
 log = get_logger(__name__)
@@ -86,6 +89,30 @@ class EvidenceView:
     granularity: EvidenceGranularity
     tally: int | None
     subject: str | None
+    # A résumé line's stated date: the day the file it was last found in was
+    # uploaded. None for every other source (ADR 0037).
+    stated_on: date | None = None
+
+    @property
+    def shown_on(self) -> date | None:
+        """The date the fact is shown and ordered by."""
+        return get_shown_date(
+            source=self.source, observed_on=self.observed_on, stated_on=self.stated_on
+        )
+
+
+def get_evidence_line(evidence: EvidenceView, handle: str | None = None) -> str:
+    """One fact as every prompt shows it: its handle when it can be cited, the
+    source and what its date means, then where it is from and what it says
+    (ADR 0037). Only the platform writes the date part. Pure."""
+    label = get_date_label(
+        source=evidence.source,
+        granularity=evidence.granularity,
+        observed_on=evidence.observed_on,
+        stated_on=evidence.stated_on,
+    )
+    cited = f"[{handle}] " if handle is not None else ""
+    return f"{cited}({evidence.source}, {label}) {evidence.reference}: {evidence.fact}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,7 +475,8 @@ class ProfileService:
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.evidence.get_list(everything, page=page, page_size=page_size)
             total = await mine.evidence.get_count(everything)
-        return Page(tuple(_evidence_view(e) for e in found), page, page_size, total)
+            uploaded = await _upload_dates(mine)
+        return Page(tuple(_evidence_view(e, uploaded) for e in found), page, page_size, total)
 
     async def delete_resume(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
         """Remove an uploaded résumé and every line of evidence it owns.
@@ -539,21 +567,22 @@ class ProfileService:
     # -- reading the profile ------------------------------------------------
 
     async def snapshot(self, owner_id: uuid.UUID) -> ProfileSnapshot:
-        """Every fact, grouped by source, with the timeline and the version.
+        """Every fact, newest first, with the timeline and the version.
 
-        One user's profile: bounded by what they connected and uploaded, and
-        read whole because the assessment reasons over all of it.
+        Ordered by the date each fact is shown with, undated last (ADR 0037),
+        so a prompt that shows only the first so many drops the oldest. One
+        user's profile: bounded by what they connected and uploaded, and read
+        whole because the assessment reasons over all of it.
         """
         async with self._uow.for_owner(owner_id) as mine:
             evidence = await mine.evidence.get_list(EvidenceFilter())
             timeline = await mine.positions.get_list(CareerPositionFilter())
             versions = await mine.versions.get_list(ProfileVersionFilter(), page_size=1)
+            uploaded = await _upload_dates(mine)
         positions = tuple(p.value for p in timeline)
         return ProfileSnapshot(
             version=versions[0].version if versions else 0,
-            evidence=tuple(
-                _evidence_view(e) for e in sorted(evidence, key=lambda e: str(e.source))
-            ),
+            evidence=get_newest_first(_evidence_view(e, uploaded) for e in evidence),
             positions=positions,
             total_experience_months=total_experience_months(list(positions), as_of=utcnow().date()),
         )
@@ -702,7 +731,9 @@ def _connection_view(connection: SourceConnection) -> ConnectionView:
     )
 
 
-def _evidence_view(evidence: Evidence) -> EvidenceView:
+def _evidence_view(
+    evidence: Evidence, uploaded: dict[uuid.UUID, date] | None = None
+) -> EvidenceView:
     return EvidenceView(
         id=evidence.id,
         source=evidence.source,
@@ -712,7 +743,33 @@ def _evidence_view(evidence: Evidence) -> EvidenceView:
         granularity=evidence.granularity,
         tally=evidence.tally,
         subject=evidence.subject,
+        stated_on=(
+            (uploaded or {}).get(evidence.resume_file_id)
+            if evidence.source is EvidenceSource.RESUME and evidence.resume_file_id
+            else None
+        ),
     )
+
+
+def get_newest_first(evidence: Iterable[EvidenceView]) -> tuple[EvidenceView, ...]:
+    """Newest first by the date each fact is shown with, undated last; ties by
+    source, then id, so the order is the same every time. Pure."""
+
+    def order(e: EvidenceView) -> tuple[bool, int, str, str]:
+        shown = e.shown_on
+        return (shown is None, -shown.toordinal() if shown else 0, str(e.source), str(e.id))
+
+    return tuple(sorted(evidence, key=order))
+
+
+async def _upload_dates(mine: OwnerProfile) -> dict[uuid.UUID, date]:
+    """The day each of the user's résumé files was uploaded: what a résumé
+    line is dated by. One user's uploads: a handful."""
+    return {
+        r.id: r.created_at.date()
+        for r in await mine.resumes.get_list(ResumeFileFilter())
+        if r.created_at is not None
+    }
 
 
 def _resume_view(resume: ResumeFile) -> ResumeFileView:

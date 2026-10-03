@@ -41,6 +41,7 @@ from advisor.profile.service import (
     ResumeFileView,
     SourceProcessingView,
     assert_citations_exist,
+    get_evidence_line,
 )
 
 __all__ = [
@@ -64,6 +65,7 @@ __all__ = [
     "authorize_url",
     "create_profile_service",
     "exchange_code",
+    "get_evidence_line",
     "jobs",
     "sign_state",
     "verify_state",

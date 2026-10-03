@@ -1789,6 +1789,19 @@ Open questions:
   its own ADR.
 
 ## Read each fact with its date
+**Done** (ADR 0037). As planned, with these details:
+
+* The date label is a domain rule, `get_date_label`, beside `get_shown_date`
+  (the date a fact is shown and ordered by); `get_evidence_line` composes it.
+* `EvidenceView` carries `stated_on`, a résumé line's upload date, on the
+  Sources list too, not only in the snapshot.
+* `gap_plan` is v3, after step 4's v2.
+* Found while building it: the evidence mapper never saved
+  `resume_file_id` on an update, so a line a newer upload restated stayed
+  tied to the older file in the database (only the in-memory fake moved it).
+  Deleting the older résumé took such lines away. Fixed, with an integration
+  test.
+
 Today every fact carries a date, `Evidence.observed_on`:
 * an `item` (one commit, one issue): when that work happened;
 * a `summary` ("40 commits authored in x"): only the latest of the items it

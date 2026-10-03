@@ -37,6 +37,7 @@ from advisor.profile import (
     ProfileService,
     ProfileSnapshot,
     assert_citations_exist,
+    get_evidence_line,
 )
 from advisor.resume.domain import (
     MAX_BULLETS_PER_ROLE,
@@ -110,8 +111,8 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v1")
-_REVISE = ("resume_revise", "v1")
+_WRITE = ("resume_write", "v2")
+_REVISE = ("resume_revise", "v2")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
 _CONVERSATION_TURNS = 6
@@ -943,10 +944,7 @@ def _write_inputs(
 
 def _evidence_block(evidence: Any, handles: CitationHandles) -> str:
     return (
-        "\n".join(
-            f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}" for e in evidence
-        )
-        or "(no evidence)"
+        "\n".join(get_evidence_line(e, handles.handle(e.id)) for e in evidence) or "(no evidence)"
     )
 
 

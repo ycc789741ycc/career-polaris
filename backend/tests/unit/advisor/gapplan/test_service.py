@@ -14,6 +14,8 @@ import pytest
 from advisor.gapfill import GapAnswerView
 from advisor.gapplan import GapPlanService, PlanStatus
 from advisor.gapplan.domain import Milestone, Task
+from advisor.profile import EvidenceSource, EvidenceView
+from advisor.profile.domain import EvidenceGranularity
 from advisor.target import (
     DimensionGap,
     DraftBasis,
@@ -64,7 +66,16 @@ class VersionedProfile:
     def __init__(self, version: int, evidence: tuple[tuple[str, str, str, str], ...] = ()) -> None:
         self.current = version
         self.evidence = tuple(
-            SimpleNamespace(id=i, source=source, reference=reference, fact=fact)
+            EvidenceView(
+                id=uuid.UUID(i),
+                source=EvidenceSource(source),
+                reference=reference,
+                fact=fact,
+                observed_on=None,
+                granularity=EvidenceGranularity.ITEM,
+                tally=None,
+                subject=None,
+            )
             for i, source, reference, fact in evidence
         )
 
@@ -425,6 +436,8 @@ async def test_each_answered_gap_lists_its_answers_and_a_requirement_cites_its_o
     gaps = gateway.inputs[0]["gaps"]
     assert f"- {ORG} — no evidence at all for" in gaps and "answered in [E2])" in gaps
     assert "answered in [E3])" in gaps
+    evidence = gateway.inputs[0]["evidence"]
+    assert "[E1] (github, undated) GitHub · ledger: Led the ledger split" in evidence
     view = await plans.get(OWNER, plan.id)
     assert view.summary.status is PlanStatus.READY, view.summary.error_message
     org = next(g for g in view.gaps if g.key == ORG)
