@@ -79,6 +79,7 @@ function renderStrengths(activity: Activity | null = null) {
   const shell = {
     status: { me: null, credential: null },
     navigate: vi.fn(),
+    setHeading: vi.fn(),
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>
@@ -283,5 +284,39 @@ describe("Strengths", () => {
         name: /Profile confidence: how well the evidence supports these scores/,
       }),
     ).toHaveAttribute("aria-valuenow", "72");
+  });
+
+  it("shows the analysing screen while an analysis runs, and the last report on request", async () => {
+    serve(assessment({}));
+    renderStrengths({
+      syncing: [],
+      parsing: [],
+      analysis: {
+        status: "running",
+        started_at: "2026-09-28T09:00:00Z",
+        finished_at: null,
+        error: null,
+      },
+      role_map: null,
+    });
+
+    const progress = await screen.findByRole("region", {
+      name: "Strength analysis progress",
+    });
+    expect(
+      within(progress)
+        .getAllByRole("listitem")
+        .map((step) => step.lastChild?.textContent),
+    ).toEqual(["Done", "Running", "Waiting"]);
+    expect(
+      screen.queryByRole("button", { name: /Re-analyse|Analysing/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "See your last report" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Analysing…" }),
+    ).toBeDisabled();
   });
 });

@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import type { Credential, Me } from "../api/types";
 import type { AdvisorTab, Focus, Screen } from "./navigation";
 
@@ -26,6 +26,9 @@ export interface Shell {
   /** The header's target chip: what the plan or résumé is aimed at. */
   target: string | null;
   setTarget: (label: string | null) => void;
+  /** Replaces the page heading while a screen shows a state of its own, such
+   * as a waiting screen; null gives the screen's usual heading back. */
+  setHeading: (heading: string | null) => void;
 }
 
 const EMPTY: ShellStatus = {
@@ -41,10 +44,21 @@ export const ShellContext = createContext<Shell>({
   refresh: async () => {},
   target: null,
   setTarget: () => {},
+  setHeading: () => {},
 });
 
 export function useShell(): Shell {
   return useContext(ShellContext);
+}
+
+/** Shows `heading` as the page heading while it is set, and gives the
+ * screen's own back when it is not, or when the screen goes. */
+export function useHeading(heading: string | null): void {
+  const { setHeading } = useShell();
+  useEffect(() => {
+    setHeading(heading);
+    return () => setHeading(null);
+  }, [heading, setHeading]);
 }
 
 /** The model a screen names in its copy: the configured one, or a stand-in. */

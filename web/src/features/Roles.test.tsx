@@ -146,6 +146,7 @@ function renderRoles(focus: Focus | null, activity: Activity | null = null) {
   const shell: Shell = {
     status: { me: null, credential: null },
     navigate: vi.fn(),
+    setHeading: vi.fn(),
     focus,
     setFocus: vi.fn(),
     refresh: async () => {},
@@ -349,8 +350,13 @@ describe("the role map while an analysis runs", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("queues a build that starts when the analysis finishes", async () => {
-    const user = userEvent.setup();
+  function steps() {
+    return within(screen.getByRole("list", { name: "Steps" }))
+      .getAllByRole("listitem")
+      .map((step) => step.textContent);
+  }
+
+  it("shows the building screen, waiting on the analysis, since a finished analysis builds the map", async () => {
     renderRoles(null, {
       syncing: [],
       parsing: [],
@@ -358,29 +364,17 @@ describe("the role map while an analysis runs", () => {
       role_map: null,
     });
 
-    await user.click(
-      await screen.findByRole("button", { name: "Rebuild role map" }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Run it" }));
-
     expect(
-      await screen.findByText(
-        "Role map queued — it starts when your analysis finishes.",
-      ),
+      await screen.findByRole("region", { name: "Role map progress" }),
     ).toBeInTheDocument();
-  });
-
-  it("offers no second build while one waits", async () => {
-    renderRoles(null, {
-      syncing: [],
-      parsing: [],
-      analysis: { status: "running", ...running },
-      role_map: { status: "waiting", ...running },
-    });
-
+    expect(steps()).toEqual([
+      "Read your strength analysisWaiting for your analysis to finishRunning",
+      "Search open postings in your locations1,284 open postings in Berlin and Remote EUWaiting",
+      "Pick your 8 best-fit roles and score your fitSalary, hiring bar and fit for each role on the mapWaiting",
+    ]);
     expect(
-      await screen.findByRole("button", { name: "Waiting for analysis…" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Rebuild role map" }),
+    ).not.toBeInTheDocument();
   });
 
   it("says when a build is searching the market for its roles", async () => {
@@ -391,8 +385,28 @@ describe("the role map while an analysis runs", () => {
       role_map: { status: "waiting", waiting_for: "market", ...running },
     });
 
+    await screen.findByRole("region", { name: "Role map progress" });
+    expect(steps().map((step) => step?.endsWith("Running"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("offers the last map while a build runs, with no second build", async () => {
+    const user = userEvent.setup();
+    renderRoles(null, {
+      syncing: [],
+      parsing: [],
+      analysis: null,
+      role_map: { status: "running", ...running },
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "See your last map" }),
+    );
     expect(
-      await screen.findByRole("button", { name: "Searching the market…" }),
+      await screen.findByRole("button", { name: "Building…" }),
     ).toBeDisabled();
   });
 
