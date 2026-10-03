@@ -2662,6 +2662,19 @@ Open questions:
   while the new one is written.
 
 ## The Advisor as prototyped
+**Done** (no ADR: presentation only). Where the build differs from the plan
+below:
+* `EvidenceDisclosure` collapses the gap plan's gaps and the résumé's
+  requirements panel. The résumé's per-line source notes stay behind "Show
+  where each line came from", which already shows them only on demand.
+* The gap bar replaces the "you vs the bar" chart on a skill gap, as the
+  prototype draws it. `lift_scale` is `get_lift_scale`, in the gap plan's
+  domain.
+* The header's answer count is `answer_count` on the plan view: the answers
+  given before the plan was drafted, read through `GapFillService.get_answers`.
+* "Regenerate résumé" is priced up front, through the same cost estimate,
+  so the line beneath it shows the cost in dollars.
+
 The same prototype update changes what the Advisor's pages look like, beyond
 the jobs. Matched against the SPA today:
 

@@ -19,7 +19,6 @@ import type {
   TargetRef,
 } from "../api/types";
 import {
-  AutoGrid,
   Button,
   EmptyState,
   ErrorNote,
@@ -40,6 +39,7 @@ import {
   sectionHeading,
   SectionsPanel,
 } from "./ResumeSections";
+import { EvidenceDisclosure } from "./EvidenceDisclosure";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { TemplateEditor, withSpec } from "./ResumeTemplates";
 import { ago } from "./time";
@@ -151,6 +151,28 @@ export function Resume({
     templates.find((t) => t.id === template) ?? templates[0] ?? null;
   // While a template is being edited, the page previews it.
   const look = editor && preview ? withSpec(editor.from, preview) : chosen;
+
+  // What writing it again costs, priced up front for the Write-for card.
+  const [regenerateCost, setRegenerateCost] = useState<PlanEstimate | null>(
+    null,
+  );
+  const nextVersion = (resume?.versions[0]?.number ?? 0) + 1;
+  useEffect(() => {
+    if (resume?.status !== "ready") return;
+    let cancelled = false;
+    api
+      .get<PlanEstimate>(
+        `/tailored-resumes/cost-estimate?${targetQuery(resume.target)}`,
+      )
+      .then((cost) => {
+        if (!cancelled) setRegenerateCost(cost);
+      })
+      // The line just leaves the price out; Regenerate prices it again.
+      .catch(() => setRegenerateCost(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [resume?.id, resume?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dirty =
     !!draft &&
@@ -510,6 +532,19 @@ export function Resume({
             ? `${resume.label}${resume.snapshot?.fit != null ? ` · ${resume.snapshot.fit}% fit` : ""}`
             : `${target.label}${target.fit !== null ? ` · ${target.fit}% fit` : ""}`}
         </div>
+        {resume?.status === "ready" && (
+          <div className="row" style={{ marginTop: 14, gap: 12 }}>
+            <Button
+              busy={busy}
+              onClick={() => void price(resume.target, resume.label, resume.id)}
+            >
+              Regenerate résumé
+            </Button>
+            <span className="subcopy" style={{ fontSize: 12.5 }}>
+              {lastGeneratedLine(resume, regenerateCost)}
+            </span>
+          </div>
+        )}
         {!resumeId && (
           <div className="row" style={{ marginTop: 14 }}>
             <Button busy={busy} onClick={() => void price(ref, target.label)}>
@@ -554,8 +589,8 @@ export function Resume({
         />
       )}
 
-      <AutoGrid col={320} gap={20}>
-        <div className="stack" style={{ gap: 18 }}>
+      <div className="resume-layout">
+        <div className="stack resume-col-tools" style={{ gap: 18 }}>
           <div className="panel panel-tight">
             <Eyebrow style={{ marginBottom: 12 }}>Saved résumés</Eyebrow>
             {saved.length === 0 ? (
@@ -585,19 +620,6 @@ export function Resume({
                   </Button>
                 </div>
               ))
-            )}
-            <Button
-              variant="secondary"
-              busy={busy}
-              disabled={!dirty}
-              onClick={() => void saveVersion(draft)}
-            >
-              Save this version
-            </Button>
-            {dirty && (
-              <p className="subcopy" style={{ fontSize: 12.5, marginTop: 8 }}>
-                You have unsaved edits.
-              </p>
             )}
           </div>
 
@@ -739,9 +761,26 @@ export function Resume({
                 onAdd={(slot) => void priceSection(slot)}
               />
             )}
+          <ChatPanel
+            model={model}
+            target={
+              resume?.snapshot?.role_name ?? resume?.snapshot?.title ?? null
+            }
+            enabled={resume?.status === "ready" && !!draft}
+            exchanges={exchanges}
+            onSend={(message) => void send(message)}
+            onApply={(revisionId) => void apply(revisionId)}
+            onDismiss={(index) =>
+              setExchanges((all) =>
+                all.map((e, i) =>
+                  i === index ? { ...e, hasProposal: false } : e,
+                ),
+              )
+            }
+          />
         </div>
 
-        <div>
+        <div className="resume-col-page">
           {!resume ? (
             resumeId ? (
               <Loading what="the résumé" />
@@ -809,13 +848,28 @@ export function Resume({
                 showSources={showSources}
                 onChange={setDraft}
               />
+              <div className="row" style={{ marginTop: 12, gap: 10 }}>
+                <Button
+                  variant="secondary"
+                  busy={busy}
+                  disabled={!dirty}
+                  onClick={() => void saveVersion(draft)}
+                >
+                  Save as v{nextVersion}
+                </Button>
+                <span className="resume-annotation" style={{ margin: 0 }}>
+                  {dirty
+                    ? "You have unsaved edits."
+                    : "Click any line to edit it in place."}
+                </span>
+              </div>
             </>
           ) : draft ? (
             <Loading what="the template" />
           ) : null}
         </div>
 
-        <div className="stack" style={{ gap: 18 }}>
+        <div className="stack resume-col-requirements" style={{ gap: 18 }}>
           <div className="callout" style={{ padding: 22 }}>
             <Eyebrow>Their requirements → your evidence</Eyebrow>
             {!resume || resume.coverage.length === 0 ? (
@@ -827,57 +881,42 @@ export function Resume({
                 as covered, partial or a gap, with the work that backs it.
               </p>
             ) : (
-              <div className="divided">
-                {resume.coverage.map((row) => (
-                  <div key={row.requirement}>
-                    <div
-                      className="row"
-                      style={{
-                        gap: 8,
-                        flexWrap: "nowrap",
-                        alignItems: "baseline",
-                      }}
-                    >
-                      <VerdictBadge verdict={row.verdict} />
-                      <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                        {row.requirement}
-                      </span>
+              <>
+                <p
+                  className="callout-note"
+                  style={{ fontSize: 13, margin: "6px 0 10px" }}
+                >
+                  Open a requirement to see the evidence behind it.
+                </p>
+                <div className="divided">
+                  {resume.coverage.map((row) => (
+                    <div key={row.requirement} className="requirement-row">
+                      <div
+                        className="row"
+                        style={{
+                          gap: 8,
+                          flexWrap: "nowrap",
+                          alignItems: "baseline",
+                        }}
+                      >
+                        <VerdictBadge verdict={row.verdict} />
+                        <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                          {row.requirement}
+                        </span>
+                      </div>
+                      <EvidenceDisclosure
+                        compact
+                        evidence={row.evidence}
+                        empty="Nothing in your sources speaks to this yet."
+                      />
                     </div>
-                    <div
-                      className="callout-note"
-                      style={{ fontSize: 12.5, marginTop: 5 }}
-                    >
-                      {row.evidence.length > 0
-                        ? row.evidence
-                            .map((e) => `${e.reference} — ${e.fact}`)
-                            .join(" · ")
-                        : "Nothing in your sources speaks to this yet."}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
-
-          <ChatPanel
-            model={model}
-            target={
-              resume?.snapshot?.role_name ?? resume?.snapshot?.title ?? null
-            }
-            enabled={resume?.status === "ready" && !!draft}
-            exchanges={exchanges}
-            onSend={(message) => void send(message)}
-            onApply={(revisionId) => void apply(revisionId)}
-            onDismiss={(index) =>
-              setExchanges((all) =>
-                all.map((e, i) =>
-                  i === index ? { ...e, hasProposal: false } : e,
-                ),
-              )
-            }
-          />
         </div>
-      </AutoGrid>
+      </div>
     </section>
   );
 }
@@ -1164,8 +1203,8 @@ function ResumePage({
         )}
       </article>
       <p className="resume-annotation" style={{ marginTop: 10 }}>
-        Click any line to edit it in place. The page is laid out as the PDF
-        prints it; the line across it marks where an A4 page ends.
+        The page is laid out as the PDF prints it; the line across it marks
+        where an A4 page ends.
       </p>
     </div>
   );
@@ -1344,4 +1383,27 @@ function ChatPanel({
       </form>
     </div>
   );
+}
+
+/** "Last generated 27 Sep 2026 · about $0.04 on your key · saved as a new
+ * version". Pure. */
+export function lastGeneratedLine(
+  resume: TailoredResume,
+  cost: PlanEstimate | null,
+): string {
+  const generated = resume.versions.find((v) => v.source !== "manual");
+  const when = generated
+    ? new Date(generated.created_at).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+  return [
+    when ? `Last generated ${when}` : null,
+    cost ? `about $${Number(cost.cost_usd).toFixed(2)} on your key` : null,
+    "saved as a new version",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

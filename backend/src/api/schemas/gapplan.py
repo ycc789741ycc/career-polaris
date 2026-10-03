@@ -169,6 +169,11 @@ class Plan(PlanSummary):
     # changed since it was drafted. Regenerating is a new request (ADR 0035).
     is_outdated: bool
     outdated_by: list[OutdatedReasonName]
+    # The fit points each gap's bar is drawn out of: 10, or the plan's
+    # largest lift when that is larger.
+    lift_scale: int
+    # Answers from Fill the gap its draft read.
+    answer_count: int
 
     @classmethod
     def from_plan(cls, plan: PlanView) -> Plan:
@@ -203,6 +208,8 @@ class Plan(PlanSummary):
             versions=[PlanSummary.from_view(v) for v in plan.versions],
             is_outdated=plan.is_outdated,
             outdated_by=[str(r) for r in plan.outdated_by],
+            lift_scale=plan.lift_scale,
+            answer_count=plan.answer_count,
         )
 
 

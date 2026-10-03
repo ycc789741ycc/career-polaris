@@ -1410,3 +1410,56 @@ select.input { appearance: auto; }
   box-shadow: var(--shadow-md);
   font-size: 13.5px;
 }
+
+/* Evidence, collapsed until opened (domain spec §7). */
+.evidence-disclosure { margin-top: 8px; }
+.evidence-disclosure summary {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-accent-700);
+  cursor: pointer;
+}
+.evidence-item {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.evidence-reference {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-secondary-800, #3d472b);
+}
+.evidence-fact { font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.evidence-empty { font-size: 13px; color: var(--color-neutral-800); margin: 8px 0 0; }
+
+/* A gap's fit points, as a bar out of the plan's scale. */
+.lift-bar {
+  height: 10px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--color-neutral-300);
+  overflow: hidden;
+}
+.lift-bar-fill { height: 100%; border-radius: 999px; background: var(--color-accent); }
+
+/* The Résumé as prototyped: tools on the left, the page in the middle, the
+ * requirements on the right; stacked page first when narrow. */
+.resume-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-areas: "tools page requirements";
+  align-items: start;
+}
+.resume-col-tools { grid-area: tools; }
+.resume-col-page { grid-area: page; min-width: 0; }
+.resume-col-requirements { grid-area: requirements; }
+@media (max-width: 1100px) {
+  .resume-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "page" "tools" "requirements";
+  }
+}

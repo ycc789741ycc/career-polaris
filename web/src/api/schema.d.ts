@@ -2098,6 +2098,8 @@ export interface components {
         };
         /** Plan */
         Plan: {
+            /** Answer Count */
+            answer_count: number;
             /** Created At */
             created_at: string;
             /** Drafted At */
@@ -2114,6 +2116,8 @@ export interface components {
             is_outdated: boolean;
             /** Label */
             label: string;
+            /** Lift Scale */
+            lift_scale: number;
             /** Milestones */
             milestones: components["schemas"]["Milestone"][];
             /** Model Id */

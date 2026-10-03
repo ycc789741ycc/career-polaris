@@ -21,6 +21,7 @@ from enum import StrEnum
 from typing import Any
 
 from advisor.gapplan.domain.constants import (
+    LIFT_SCALE_FLOOR,
     MAX_MILESTONES,
     MAX_PROJECTS,
     MAX_STEPPING_STONES,
@@ -358,3 +359,9 @@ class Task:
     def mark(self, done: bool, *, at: datetime) -> None:
         """Ticking an already-done task keeps when it was first done."""
         self.done_at = (self.done_at or at) if done else None
+
+
+def get_lift_scale(lifts: Iterable[int]) -> int:
+    """The fit points a plan's gap bars are drawn out of: 10, or the largest
+    lift when one is larger, so no bar overflows. Pure."""
+    return max(LIFT_SCALE_FLOOR, *lifts, 0)

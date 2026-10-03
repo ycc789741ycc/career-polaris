@@ -116,6 +116,8 @@ const readyPlan: Plan = {
   ],
   versions: [summary],
   is_outdated: false,
+  lift_scale: 25,
+  answer_count: 3,
   outdated_by: [],
 };
 
@@ -234,18 +236,26 @@ describe("gap plan screen", () => {
     renderPlan([summary]);
 
     expect(
-      await screen.findByText("01 · Demonstrated org-level influence"),
+      await screen.findByText("1 · Demonstrated org-level influence"),
     ).toBeInTheDocument();
     expect(screen.getByText("+25 fit pts")).toBeInTheDocument();
     expect(screen.getByText("No evidence at all")).toBeInTheDocument();
+    // Each gap's fit points, as a bar out of the plan's largest lift.
+    const bar = screen.getByRole("img", {
+      name: "Closing this gap adds 10 of 25 possible fit points",
+    });
+    expect(bar.firstElementChild).toHaveStyle({ width: "40%" });
     expect(
-      screen.getByRole("img", {
-        name: "Technical leadership: you 70, the bar is 90",
-      }),
+      screen.getByText(/The bar shows the fit points out of 25/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("GitHub · payments-svc — 38 merged PRs"),
+      screen.getByText(/uses your 3 answers from Fill the gap/),
     ).toBeInTheDocument();
+    // Evidence is collapsed until opened; a gap with none says so.
+    const shown = screen.getByText("Show evidence (1)").closest("details")!;
+    expect(shown).not.toHaveAttribute("open");
+    expect(within(shown).getByText("38 merged PRs")).toBeInTheDocument();
+    expect(screen.getByText("Show evidence (none found)")).toBeInTheDocument();
     expect(screen.getByText("Platform Engineer")).toBeInTheDocument();
   });
 
@@ -282,7 +292,7 @@ describe("gap plan screen", () => {
     serve((_method, url) => (url === "/gap-plans/plan-1" ? readyPlan : null));
     renderPlan([summary]);
 
-    await screen.findByText("01 · Demonstrated org-level influence");
+    await screen.findByText("1 · Demonstrated org-level influence");
     expect(screen.queryByRole("status", { name: "Outdated" })).toBeNull();
   });
 

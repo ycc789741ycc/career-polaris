@@ -324,3 +324,10 @@ def test_with_no_fit_for_the_target_there_is_nothing_to_step_towards() -> None:
         stepping_stones(target_role_id=None, target_fit=None, roles=[RoleOption("a", "A", 99, 1)])
         == ()
     )
+
+
+@pytest.mark.parametrize(("lifts", "scale"), [([9, 6, 4], 10), ([10], 10), ([14, 3], 14), ([], 10)])
+def test_gap_bars_are_drawn_out_of_ten_or_the_largest_lift(lifts: list[int], scale: int) -> None:
+    from advisor.gapplan.domain import get_lift_scale
+
+    assert get_lift_scale(lifts) == scale
