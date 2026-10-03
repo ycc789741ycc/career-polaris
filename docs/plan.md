@@ -1479,13 +1479,15 @@ key unless the user asks for that spend.
   than old work, and a newer fact wins over an older one it contradicts.
 * The exported PDF looks like the résumé previewed, and Export downloads it
   with no link to click.
+* A user chooses a résumé's blocks: removes one they do not want, such as
+  skills, adds one, such as side projects, and orders them.
 * A user can design a résumé template of their own, from fixed layouts,
   bundled fonts and checked colours, or start one from another résumé's PDF,
   whose style is read and whose text is kept nowhere.
 
-Eight branches, in this order. The first two were built under
+Nine branches, in this order. The first two were built under
 `epic/no-ticket/own-posting-target`, which is already in mainline. The
-other six are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+other seven are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
 
 1. "A posting of your own belongs to Target": done (ADR 0033).
 2. "Uploaded or filled in, evaluated when set as the target": done
@@ -1498,9 +1500,11 @@ other six are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
    when each fact is from, and is told what to do when facts conflict.
 6. "Export what you previewed": the PDF and the preview share fonts, sizes,
    trimming and colours, and Export downloads the file itself.
-7. "Templates of your own": a template is a checked style spec, and a user
+7. "Blocks you choose": a résumé is an ordered list of blocks, which the
+   user adds, removes and moves.
+8. "Templates of your own": a template is a checked style spec, and a user
    can design their own from a built-in one.
-8. "Start a template from a file": an uploaded PDF's style is read
+9. "Start a template from a file": an uploaded PDF's style is read
    locally into a draft spec the user reviews in the editor.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
@@ -2024,6 +2028,145 @@ Open questions:
 * Whether old exports should be deleted after a while. Reuse stops most new
   ones, but nothing removes what is already stored.
 
+## Blocks you choose
+A tailored résumé always has the same three sections, in the same order:
+summary, experience and skills. `ResumeContent` has a field for each, and
+the write prompt, the revise prompt, the renderer and the preview all assume
+those three. A user cannot:
+* leave one out, such as skills, which some people would rather show
+  through their work;
+* add one, such as side projects, education or certifications;
+* change the order, such as putting projects ahead of experience for a
+  first job.
+
+Side projects matter most. GitHub evidence is often personal work that
+belongs to no position, and today it can only be pushed into a role it was
+not part of, or left out.
+
+Its own branch, `feature/<ticket>/resume-blocks`, after "Export what you
+previewed". "Templates of your own" builds on it.
+
+1. **A résumé is a header and an ordered list of blocks.**
+   * `ResumeContent` keeps `name`, `headline` and `contact`, and replaces
+     `summary`, `experience` and `skills` with `blocks: tuple[Block, ...]`,
+     in a new `resume/domain/block.py`.
+   * A `Block` has a `kind` (`BlockKind`) and the content that kind holds:
+
+     | Kind | Holds | At most |
+     |---|---|---|
+     | `summary` | text | one |
+     | `experience` | entries: title, organisation, when, bullets | one |
+     | `projects` | entries: name, link, when, bullets | one |
+     | `education` | entries: school, degree, when, bullets | one |
+     | `skills` | a list of short items | one |
+     | `certifications` | a list of short items | one |
+     | `custom` | a title the user writes, and bullets | `MAX_CUSTOM_BLOCKS` (3) |
+
+   * `experience`, `projects` and `education` share one `Entry` shape, and
+     every bullet is today's `Bullet`, with its citations, `origin` and
+     `answers`.
+   * A résumé has at least one block and at most `MAX_BLOCKS` (8). The
+     limits that today apply to experience and skills (`MAX_ROLES`,
+     `MAX_BULLETS_PER_ROLE`, `MAX_SKILLS`) apply to every block of that
+     shape.
+   * `assert_written_lines_cited`, `cited()` and `with_citations` walk every
+     block. So a written line cites its evidence wherever it sits, and a line
+     the user wrote is `yours`, as today.
+   * A project's `link` is shown as text and is never fetched or turned into
+     a live link by the renderer.
+2. **Stored versions move to the new shape.** Migration 0035 rewrites every
+   saved version's `content`, and every revision's stored `proposal`, from
+   the three fields into blocks in today's order. Nothing is lost.
+   `from_dict` reads only the new shape, so no code carries both.
+3. **The résumé remembers its blocks.**
+   * `Resume.block_plan` is the kinds in order, with each custom block's
+     title. It is the shape every new version is written to, and it changes
+     when the user adds, removes or moves a block.
+   * A new résumé starts with summary, experience and skills, as today. If
+     the evidence has GitHub work outside every position on the timeline,
+     it also gets projects.
+   * Regenerating keeps the user's plan, so a removed skills block stays
+     removed.
+4. **The prompts write to the plan.** `resume_write` and `resume_revise`
+   each get a new version, after the ones "Read each fact with its date"
+   brings in. Each is given the block plan and answers in blocks:
+   * write only the blocks in the plan, in its order;
+   * a `projects` entry rests on evidence that belongs to no position, such
+     as a repository's commits, and cites it;
+   * a custom block is written to its title from the evidence, or left
+     empty when nothing in the evidence fits;
+   * the revise prompt may add or remove a block only when the person asks
+     for that in the chat, and its proposal is applied only on request, as
+     today.
+5. **The user adds, removes and moves blocks, for free.**
+   * In the Résumé tab, each block has "Remove" and "Move up/down". After the
+     last block, "Add a block" offers the kinds not already there, and
+     "Custom", which asks for a title.
+   * Those edits are a manual change: no AI call. They are saved as a
+     version, like any other edit, and update `block_plan`.
+   * An added block starts empty, for the user to fill in by hand, or to
+     ask the chat to fill ("add my side projects from GitHub"). The chat is
+     priced and confirmed as it is today.
+   * Removing a block that has lines in it asks first. Its lines stay in the
+     earlier versions.
+6. **The renderer and the preview draw blocks.**
+   * `render_html` and the preview walk the blocks in order. Each kind has
+     one way to be drawn: entries like today's positions, lists like
+     today's skills, text like today's summary.
+   * Trimming applies per shape: bullets per entry and items per list
+     (generalising step 6's limits), served by `GET /resume-templates`.
+   * A removed block is simply absent: no heading, no space.
+7. **An ADR** (0039): a résumé is an ordered list of blocks that the user
+   chooses, and every written line still cites evidence. Update the index,
+   `CLAUDE.md`'s Resume Advisor paragraph and `docs/domain_model.md`, and
+   run `make gen-client`.
+
+Tests:
+* Unit, the blocks:
+  * each kind keeps its limits, and a second block of a single-use kind is
+    refused;
+  * a résumé with no blocks is refused;
+  * a written line in a projects or custom block cites evidence, like one in
+    experience;
+  * `from_dict` and `to_dict` round-trip every kind.
+* Unit, the service:
+  * removing, adding and moving a block saves a version and updates the
+    plan, with no AI call (a gateway that fails on any call);
+  * regenerating writes only the planned blocks, in their order;
+  * a new résumé gets projects only when there is evidence outside every
+    position.
+* Unit, `render_html`: each kind renders, a removed block leaves no
+  heading, and trimming cuts each shape by its limit.
+* Integration:
+  * migration 0035 rewrites stored versions and proposals and downgrades
+    them back;
+  * a stored version reads back as the blocks it was saved with, under
+    row-level security.
+* SPA:
+  * Remove, Add a block and Move change the preview and save a version;
+  * removing a block with lines asks first.
+
+What gets harder:
+* Every part that reads a résumé (two prompts, the renderer, the preview,
+  coverage and the chat's proposals) now walks a list of kinds instead of
+  three fields. A new kind means work in all of them.
+* A user can remove what the job screens for, such as skills for a role
+  that lists them. Coverage will show those requirements as unanswered on
+  the page, but nothing stops it.
+* A custom block's title is the user's text, shown on the page and sent to
+  the model. It is escaped and passed as untrusted, like the rest of the
+  résumé.
+* Migration 0035 rewrites JSON in place. Its downgrade has to put a résumé
+  with extra blocks back into three fields, so the extra blocks are lost on
+  a downgrade.
+
+Open questions:
+* Whether projects should become a kind of evidence of their own, so that
+  a repository is one fact rather than a tally of commits.
+* Whether education and certifications should be read from the uploaded
+  résumé when it has them, as positions might be (see "Read each fact with
+  its date").
+
 ## Templates of your own
 After "Export what you previewed", a template is data: `_LOOKS` is served by
 `GET /resume-templates`, and the preview and the PDF both draw from it. But
@@ -2035,8 +2178,9 @@ A template stays a set of checked values, never markup. The renderer is safe
 because nothing a user supplies reaches its HTML or CSS unescaped and nothing
 is fetched (ADR 0007), and that holds for a user's template too.
 
-Its own branch, `feature/<ticket>/own-resume-templates`, after "Export what
-you previewed".
+Its own branch, `feature/<ticket>/own-resume-templates`, after "Blocks you
+choose". A template styles each kind of block. Which blocks a résumé has,
+and in what order, is the résumé's, not the template's.
 
 1. **A template is a `TemplateSpec`**, a value object in a new
    `resume/domain/template.py`. Each value is limited to what both the
@@ -2049,7 +2193,7 @@ you previewed".
    | `accent_color`, `name_color`, `text_color` | hex colours; text and name at least 4.5:1 against white |
    | `rule` | `none`, `thin`, `thick`, in the accent colour |
    | `name_size`, `heading_size`, `body_size` | points, each within a range (`TEMPLATE_SIZE_RANGES`) |
-   | `section_order` | an order of summary, experience and skills |
+   | `sidebar_kinds` | for a sidebar layout, which list kinds go in the sidebar: skills, certifications, or both |
    | `heading_case` | `upper` or `as_written` |
    | `bullet` | `dot`, `dash`, `none` |
 
@@ -2063,7 +2207,7 @@ you previewed".
    * A user keeps at most `RESUME_TEMPLATE_MAX` (default 10) templates.
    * A résumé uses either a built-in `template` or a `custom_template_id`,
      exactly one, by check constraint, the way a Target keeps one shape.
-   * Migration 0035 adds the table and the column, and replaces the
+   * Migration 0036 adds the table and the column, and replaces the
      constraint.
 3. **The routes.**
    * `GET /resume-templates` lists the built-in templates and then the
@@ -2077,19 +2221,19 @@ you previewed".
    * `render_html(content, spec, options)` builds each layout from the
      spec. Every value goes into the CSS from a checked enum or a validated
      number or colour, never as text from the user.
-   * The preview has the same layouts. A sidebar holds the skills and the
-     contact line, and the experience breaks across pages on the main
-     column only.
+   * The preview has the same layouts. A sidebar holds the contact line and
+     the blocks of the kinds the spec sends there. Every other block stays
+     in the main column, which is the only one that breaks across pages.
 5. **An export records the spec it rendered.** An edit to a template after
    an export must not change a stored PDF's meaning or let an outdated one
    be reused. So an export stores the spec it rendered, and reuse compares
    specs, not template ids.
 6. **The SPA's editor.** Under the template picker, "Make your own" opens an
    editor on a copy of the chosen template: layout, two fonts, three
-   colours, the sizes, the section order, the heading case and the bullet.
+   colours, the sizes, the sidebar's blocks, the heading case and the bullet.
    The preview redraws as each value changes. A colour that fails the
    contrast check is flagged, and cannot be saved.
-7. **An ADR** (0039): a résumé template is a checked spec, never markup,
+7. **An ADR** (0040): a résumé template is a checked spec, never markup,
    and a user can keep their own. It amends ADR 0007, which kept the look
    in the renderer alone. Update the index, `CLAUDE.md`'s Resume Advisor
    paragraph and `docs/domain_model.md`.
@@ -2098,7 +2242,7 @@ Tests:
 * Unit, `TemplateSpec`:
   * every value outside its set or range is refused;
   * a colour under 4.5:1 is refused;
-  * a section order that leaves one out or repeats one is refused.
+  * `sidebar_kinds` naming a kind that is not a list is refused.
 * Unit, `render_html`:
   * each layout renders each section once;
   * nothing from a spec appears in the CSS except checked values;
@@ -2110,7 +2254,7 @@ Tests:
 * Integration:
   * the template routes under row-level security, where another user's
     template answers 404;
-  * migration 0035 upgrades and downgrades, and a résumé cannot hold
+  * migration 0036 upgrades and downgrades, and a résumé cannot hold
     both a template and a custom template.
 * SPA:
   * the editor redraws the preview;
@@ -2192,7 +2336,7 @@ your own".
    and each defaulted one flagged. Nothing is a template until it is saved,
    through `POST /resume-templates`, under the same checks. A draft that is
    never saved is deleted with its run after a day.
-5. **An ADR** (0040): a template can start from someone else's résumé,
+5. **An ADR** (0041): a template can start from someone else's résumé,
    read locally for its style only, and the file and its text are never
    kept. Update the index and `CLAUDE.md`.
 
