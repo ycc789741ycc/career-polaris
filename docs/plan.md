@@ -1462,3 +1462,164 @@ Open questions:
   posting of your own.
 * Whether openings should be embedded in chunks rather than whole, so a
   requirement mentioned once in a long description still counts.
+
+# Phase 9
+A posting of the user's own belongs to Target, and nothing spends the user's
+key unless the user asks for that spend.
+* A posting of the user's own is kept, read and evaluated in `target`
+  (ADR 0033), uploaded or filled in, and evaluated only when it is set as
+  the target (ADR 0034).
+* A gap plan or a tailored résumé is written again only when the user asks.
+  When what it read has changed since, the Advisor says it is outdated, and
+  regenerating it is a cost the user confirms, like an analysis or a
+  rebuild.
+
+Three branches, in this order. The first two were built under
+`epic/no-ticket/own-posting-target`, which is already in mainline. The third
+is cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+
+1. "A posting of your own belongs to Target": done (ADR 0033).
+2. "Uploaded or filled in, evaluated when set as the target": done
+   (ADR 0034).
+3. "Regenerate the plan and résumé only when asked": submitting answers in
+   Fill the gap stops rewriting them.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
+`README.md` and `docs/architecture.md` saying what is built.
+
+## A posting of your own belongs to Target
+**Done** (ADR 0033, migration 0030). The `target` schema holds the posting,
+its evaluation runs, its requirements and their fits. `market` keeps no
+pasted JDs. The fit rules stay in `rolemap` as a stateless kit.
+
+## Uploaded or filled in, evaluated when set as the target
+**Done** (ADR 0034, migrations 0031 and 0032). Adding a posting spends
+nothing. "Set as target" is priced, then queues the evaluation, then opens
+Fill the gap.
+
+## Regenerate the plan and résumé only when asked
+Since ADR 0023, submitting answers in Fill the gap records them as evidence
+and emits `GapAnswersSubmitted`. The dispatcher then queues
+`gapplan.regenerate` and `resume.regenerate`, and each rewrites the Target's
+plan or résumé on the user's key if one exists. The price is shown next to
+Submit (`GET /gap-question-sets/{id}/submit-estimate`). This causes three
+problems:
+* Answering a question is itself a spend. A user cannot answer now and
+  rewrite later, or answer a second set first and rewrite once.
+* It is the only spend in the journey that the user does not ask for
+  explicitly. An analysis, a role-map build, setting a posting of your own as
+  the target, and writing questions are each confirmed on their own.
+* Answers are not the only thing that can change what a plan or résumé
+  reads. A sync, a résumé upload, a re-analysis or a rebuild changes it too,
+  and none of these rewrites anything or says anything.
+
+So nothing is rewritten automatically. Each plan and résumé records what it
+read. When that has changed, the Advisor says the plan or résumé is outdated
+and offers to regenerate it, at a price shown first.
+
+Its own branch, `feature/<ticket>/regenerate-on-request`.
+
+1. **Submitting spends nothing.**
+   * `GapAnswersSubmitted` is still recorded, but the dispatcher queues
+     nothing for it. It is like `TargetLocationsChanged`, which builds
+     nothing (ADR 0027).
+   * Delete these:
+     * the `gapplan.regenerate` and `resume.regenerate` tasks;
+     * the services' `regenerate`;
+     * `GET /gap-question-sets/{id}/submit-estimate`;
+     * `SubmitEstimate`.
+   * `VersionSource.ANSWERS` stays only for versions written before this
+     change.
+2. **A draft records what it read.**
+   * A draft reads two things, and both are recorded:
+     * `profile_version`: from the `ProfileSnapshot` the draft read.
+     * `target_digest`: from `get_target_digest(TargetSnapshot)`, a pure
+       function in `target.domain`. It hashes the requirements in order
+       (statement, weight and expected level), the basis, the fit score, the
+       dimension gaps and the uncovered requirements. It leaves out
+       `taken_at` and the label.
+   * The two values are a `DraftBasis` value object in `target.domain`,
+     exported from `target`'s `__init__.py`. Both `gapplan` and `resume`
+     already depend on `target`.
+   * `GapPlan` stores the `DraftBasis` when its draft finishes.
+     `TailoredResume` stores it on every generate.
+   * A manual edit or an applied revision reads neither snapshot, so it
+     leaves the recorded basis alone.
+   * Migration 0033 adds two nullable columns each to `gapplan.plan` and
+     `resume.resume`. Rows from before it have no basis. They count as
+     unknown, never as outdated.
+3. **Outdated is worked out on read, and spends nothing.**
+   * `PlanView` and `ResumeView` already take a fresh Target snapshot for
+     the fit today. They now also read the profile version.
+     `DraftBasis.outdated_by(current)` returns `evidence`, `target`, both or
+     neither.
+   * Only a ready plan or résumé is judged. For a plan, only the Target's
+     latest version is judged; older versions are history.
+   * The views and the schemas carry `is_outdated` and
+     `outdated_by: list[OutdatedReason]`, then `make gen-client`.
+   * The Target snapshot can be unusable, for example when the role has not
+     been scored since a rebuild. Then the plan or résumé is outdated by
+     `target`, as it is when the fit changes.
+4. **Regenerating is a request with a confirmed cost.**
+   * A plan already regenerates as a new version through `POST /gap-plans`,
+     priced by `/gap-plans/cost-estimate`. Finished tasks carry over.
+   * A résumé gets `POST /tailored-resumes/{id}/regenerate` (202), priced by
+     `/tailored-resumes/cost-estimate`. It redrafts the same résumé and
+     queues `resume.generate`, which saves the result as its next version
+     with source `generated`.
+5. **The SPA.**
+   * Fill the gap's Submit shows no cost and asks for no confirmation. After
+     a submit, the page says the answers are saved as evidence. It says the
+     Target's plan and résumé use them once regenerated.
+   * The Advisor's plan and résumé tabs show "Outdated: your evidence
+     changed" or "Outdated: the target changed" (or both). The banner has a
+     Regenerate button that prices the rewrite in `CostConfirm`.
+   * The plan's existing "regenerate" link stays, for rewriting a plan that
+     is up to date.
+6. **An ADR** (0035) amends ADR 0023's "One submit" decision: submitting
+   records evidence and rewrites nothing. Update the index, `CLAUDE.md`'s
+   Fill the gap bullet, `README.md`, `docs/architecture.md`,
+   `docs/domain_model.md` and `docs/technical/task-queue.md` to match.
+
+Tests:
+* Unit:
+  * a submitted set queues no job, and the dispatcher queues nothing for
+    `GapAnswersSubmitted`;
+  * `get_target_digest` changes with a requirement, a weight, the basis, the
+    fit score or a gap, and does not change with `taken_at` or the order the
+    requirements were loaded in;
+  * `DraftBasis.outdated_by` returns each reason, both reasons, and none,
+    and treats a missing basis as unknown;
+  * a plan or résumé is outdated by `evidence` after `record_answers`, and
+    by `target` after a new fit;
+  * a manual résumé edit keeps its basis;
+  * regenerating a résumé saves a new version with the new basis.
+* Integration:
+  * submitting answers leaves the plan and résumé untouched, and both read
+    as outdated by `evidence`;
+  * `POST /tailored-resumes/{id}/regenerate` queues a generate under
+    row-level security, and someone else's résumé answers 404;
+  * migration 0033 upgrades and downgrades, and old rows read as not
+    outdated.
+* SPA:
+  * Submit makes no estimate call;
+  * the outdated banner shows its reasons;
+  * Regenerate prices the rewrite before it posts.
+
+What gets harder:
+* A user who answers questions and never regenerates keeps a plan and résumé
+  that ignore those answers. The banner is the only thing that tells them.
+* The digest decides what counts as a change. A change to the plan or
+  résumé prompt, or to the fit rules outside what the snapshot carries, does
+  not mark anything outdated.
+* Any evidence change marks every plan and résumé outdated by `evidence`,
+  even one that does not touch this Target. Telling them apart would need
+  the cited evidence, not a version number.
+* Two more columns on two tables, and a profile-version read on every view
+  of a plan or résumé.
+
+Open questions:
+* Whether Strengths should say the same. An assessment already records the
+  profile version it read, so "Your evidence changed since this analysis"
+  would cost nothing to show.
