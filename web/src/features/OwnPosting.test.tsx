@@ -67,6 +67,7 @@ function renderForm(onAdded = vi.fn(async () => {})) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    setHeading: vi.fn(),
   };
   render(
     <ShellContext.Provider value={shell}>

@@ -28,8 +28,14 @@ import {
 } from "../components/ui";
 import { isBusy, useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
-import { modelName, useShell } from "../shell/ShellContext";
+import { modelName, useHeading, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
+import {
+  EmptyMap,
+  getBuildSteps,
+  isMapComing,
+  RunProgress,
+} from "./RunProgress";
 import { dayLabel } from "./time";
 import { messageOf, useAsync } from "./useAsync";
 
@@ -74,6 +80,8 @@ export function Roles() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
+  // While a build runs, the last map can still be read on request.
+  const [showPrevious, setShowPrevious] = useState(false);
 
   const fitByRole = useMemo(
     () => new Map((fits.data ?? []).map((fit) => [fit.role_id, fit])),
@@ -155,6 +163,8 @@ export function Roles() {
 
   const building = isBusy(activity?.role_map);
   const analysing = activity?.analysis?.status === "running";
+  const waiting = isMapComing(activity) && !showPrevious;
+  useHeading(waiting ? "Building your role map" : null);
 
   async function act(label: string, run: () => Promise<unknown>) {
     setBusy(true);
@@ -180,6 +190,53 @@ export function Roles() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (waiting) {
+    const model = modelName(status.credential);
+    return (
+      <RunProgress
+        label="Role map progress"
+        heading="Finding the roles that fit you best"
+        subline={
+          analysing
+            ? "Starts automatically when your strength analysis finishes. Usually takes 2–4 minutes."
+            : "Usually takes 2–4 minutes."
+        }
+        startedAt={
+          activity?.role_map?.started_at ??
+          activity?.analysis?.started_at ??
+          null
+        }
+        steps={getBuildSteps({
+          activity,
+          assessment: assessment.data,
+          scope: scope.data ? scopeLine(scope.data).replace(/\.$/, "") : null,
+          maxRoles: rebuildCost.data?.max_roles ?? null,
+        })}
+        previewTitle="Your map will appear here"
+        preview={<EmptyMap />}
+        previewNote="It is drawn once the roles are picked and scored."
+        leaveCopy="The search keeps running if you leave this page. The running bar says when your map is ready."
+        back={{
+          label: "Back to Strengths",
+          onClick: () => navigate("strengths"),
+        }}
+        costCopy={`Charged to your own key on ${model}, at the estimate you confirmed before it started. Searching only ${
+          scope.data && scope.data.target_locations.length > 0
+            ? scope.data.target_locations.join(" and ")
+            : "your locations"
+        } keeps this down.`}
+        previous={
+          bubbles.length > 0
+            ? {
+                label: "See your last map",
+                onClick: () => setShowPrevious(true),
+              }
+            : undefined
+        }
+      />
+    );
   }
 
   return (

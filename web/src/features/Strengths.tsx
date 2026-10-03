@@ -1,11 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import type {
-  Assessment,
-  AnalysisEstimate,
-  Evidence,
-  EvidencePage,
-} from "../api/types";
+import type { Assessment, Evidence, EvidencePage } from "../api/types";
 import { SkillRadar } from "../charts/SkillRadar";
 import {
   AutoGrid,
@@ -17,10 +12,11 @@ import {
   ProgressBar,
 } from "../components/ui";
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
-import { modelName, useShell } from "../shell/ShellContext";
-import { CostConfirm } from "./CostConfirm";
+import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import { EmptyRadar, getAnalysisSteps, RunProgress } from "./RunProgress";
 import { dayLabel } from "./time";
-import { messageOf, useAsync } from "./useAsync";
+import { useStartAnalysis } from "./useStartAnalysis";
+import { useAsync } from "./useAsync";
 
 /**
  * The strength report.
@@ -43,10 +39,11 @@ import { messageOf, useAsync } from "./useAsync";
  * An analysis reads the evidence as it stands, so it cannot start while a
  * source is still syncing or a résumé still parsing (ADR 0018); the running
  * bar says what it waits for, and the report reloads when a run finishes.
+ * While one runs, the page is its waiting screen (`RunProgress`) instead.
  */
 export function Strengths() {
   const { status, navigate } = useShell();
-  const { activity, refresh: refreshActivity, settled } = useActivity();
+  const { activity, settled } = useActivity();
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [settled.analysis],
@@ -55,39 +52,10 @@ export function Strengths() {
     () => api.items<EvidencePage>("/evidence"),
     [],
   );
-  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const start = useStartAnalysis();
   const [selected, setSelected] = useState<string | undefined>(undefined);
-
-  async function askForEstimate() {
-    setBusy(true);
-    setError(null);
-    try {
-      setEstimate(
-        await api.get<AnalysisEstimate>("/assessments/cost-estimate"),
-      );
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirm() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post("/assessments");
-      setEstimate(null);
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-      // Refused or started, the running bar should say why.
-      await refreshActivity();
-    }
-  }
+  // While an analysis runs, the last report can still be read on request.
+  const [showPrevious, setShowPrevious] = useState(false);
 
   const processing = sourcesBusy(activity);
   const analysing = isBusy(activity?.analysis);
@@ -104,6 +72,38 @@ export function Strengths() {
   const activeKey = selected ?? leastCertain[0]?.key;
   const active = dimensions.find((d) => d.key === activeKey);
   const byId = new Map((evidence.data ?? []).map((item) => [item.id, item]));
+  const waiting = analysing && !showPrevious;
+  useHeading(waiting ? "Analysing your strengths" : null);
+
+  if (waiting) {
+    return (
+      <RunProgress
+        label="Strength analysis progress"
+        heading="Scoring what your evidence shows"
+        subline={`Reading ${
+          evidence.data ? `all ${evidence.data.length} facts` : "every fact"
+        } from your sources. Usually takes 1–2 minutes.`}
+        startedAt={activity?.analysis?.started_at ?? null}
+        steps={getAnalysisSteps(evidence.data, modelName(status.credential))}
+        previewTitle="Your skill radar will appear here"
+        preview={<EmptyRadar axes={dimensions.length} />}
+        previewNote="It is drawn once every dimension is scored."
+        leaveCopy="The analysis keeps running if you leave this page. When it finishes, your role map starts building automatically."
+        back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
+        costCopy={`Charged to your own key on ${modelName(
+          status.credential,
+        )}, at the estimate you confirmed before it started.`}
+        previous={
+          assessment.data
+            ? {
+                label: "See your last report",
+                onClick: () => setShowPrevious(true),
+              }
+            : undefined
+        }
+      />
+    );
+  }
 
   return (
     <section>
@@ -113,8 +113,8 @@ export function Strengths() {
       >
         <Button
           variant={assessment.data ? "secondary" : "primary"}
-          onClick={askForEstimate}
-          busy={busy}
+          onClick={() => void start.ask()}
+          busy={start.busy}
           disabled={processing || analysing}
         >
           {analysing
@@ -137,7 +137,7 @@ export function Strengths() {
         )}
       </div>
 
-      <ErrorNote error={error} />
+      <ErrorNote error={start.error} />
       {processing && !analysing && (
         <p role="status" className="subcopy" style={{ margin: "8px 0" }}>
           Waiting for your sources to finish syncing and parsing — the analysis
@@ -166,30 +166,7 @@ export function Strengths() {
           Re-analyse to catch up.
         </p>
       )}
-      {estimate && (
-        <CostConfirm
-          busy={busy}
-          onConfirm={confirm}
-          onCancel={() => setEstimate(null)}
-        >
-          This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-          {estimate.model_id}, charged to your own provider: $
-          {estimate.analysis_cost_usd} for the analysis, at most $
-          {estimate.role_map_cost_usd} for the role map built after it
-          {estimate.max_roles > 0
-            ? `, up to ${estimate.max_roles} roles`
-            : ", which has no roles to name yet"}
-          , and at most ${estimate.fits_cost_usd} for scoring your fit against
-          them.
-          {estimate.rate_is_published === false && (
-            <>
-              {" "}
-              We have no published price for that model, so this is a
-              deliberately high guess.
-            </>
-          )}
-        </CostConfirm>
-      )}
+      {start.confirmation}
 
       {assessment.loading ? (
         <Loading what="your analysis" />

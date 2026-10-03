@@ -93,6 +93,7 @@ function renderConnect() {
   const shell = {
     status: { me: null, credential: null },
     navigate: vi.fn(),
+    setHeading: vi.fn(),
     focus: null,
     setFocus: vi.fn(),
     refresh: async () => {},
@@ -104,6 +105,7 @@ function renderConnect() {
       <Connect />
     </ShellContext.Provider>,
   );
+  return shell;
 }
 
 describe("Connect", () => {
@@ -391,5 +393,45 @@ describe("Connect", () => {
         name: /^Facts by source: GitHub 1 \(50%\), Jira 1/,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("prices an analysis before Analyze with AI starts one, then opens Strengths", async () => {
+    const user = userEvent.setup();
+    const calls = serve((call) => {
+      if (call.url === "/assessments/cost-estimate")
+        return {
+          cost_usd: "0.60",
+          model_id: "claude-opus-5",
+          input_tokens: 1200,
+          rate_is_published: true,
+          analysis_cost_usd: "0.10",
+          role_map_cost_usd: "0.40",
+          fits_cost_usd: "0.10",
+          max_roles: 10,
+        };
+      if (call.method === "POST" && call.url === "/assessments") return {};
+      return undefined;
+    });
+    const shell = renderConnect();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Analyze with AI" }),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Cost estimate" }),
+    ).toHaveTextContent("$0.60");
+    expect(
+      calls.some((c) => c.method === "POST" && c.url === "/assessments"),
+    ).toBe(false);
+    expect(shell.navigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Run it" }));
+
+    await vi.waitFor(() =>
+      expect(shell.navigate).toHaveBeenCalledWith("strengths"),
+    );
+    expect(
+      calls.some((c) => c.method === "POST" && c.url === "/assessments"),
+    ).toBe(true);
   });
 });

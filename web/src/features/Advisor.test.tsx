@@ -160,6 +160,7 @@ function renderAdvisor(focus: Focus | null, tab: AdvisorTab = "plan") {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    setHeading: vi.fn(),
   };
   render(
     <ShellContext.Provider value={shell}>

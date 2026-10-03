@@ -1085,3 +1085,128 @@ select.input { appearance: auto; }
   background: var(--color-accent-2-200);
   color: var(--color-accent-2-800);
 }
+
+/* The waiting screens (StrengthsBuilding / RolesBuilding). */
+.run-progress-heading {
+  margin: 6px 0 0;
+  font-family: var(--font-heading);
+  font-weight: 400;
+  font-size: 26px;
+}
+.run-progress-subline {
+  font-size: 14px;
+  color: var(--color-neutral-800);
+  margin: 6px 0 0;
+}
+.run-progress-count {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  line-height: 1;
+}
+.run-progress-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .run-progress-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.run-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.run-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 16px;
+}
+.run-step-running {
+  background: var(--color-bg);
+}
+.run-step-label {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.run-step-waiting .run-step-label {
+  color: var(--color-neutral-700);
+}
+.run-step-detail {
+  font-size: 13px;
+  color: var(--color-neutral-800);
+  margin-top: 3px;
+}
+.run-step-state {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-neutral-700);
+}
+.run-step-done .run-step-state {
+  color: var(--color-accent-2-800);
+}
+.run-step-running .run-step-state {
+  color: var(--color-accent-700);
+}
+.run-step-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.run-step-icon-done {
+  background: var(--color-accent-2-700);
+  color: var(--color-neutral-100);
+}
+.run-step-icon-running {
+  border: 3px solid var(--color-accent);
+  border-top-color: var(--color-bg);
+  animation: runSpin 1s linear infinite;
+}
+.run-step-icon-waiting {
+  border: 2px dashed rgba(32, 30, 29, 0.3);
+}
+@keyframes runSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-step-icon-running {
+    animation: none;
+  }
+}
+.run-preview {
+  background: var(--color-bg);
+  border-radius: 20px;
+  padding: 18px;
+}
+.run-progress-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.run-card-heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 400;
+  font-size: 19px;
+}
+.run-card-copy {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-neutral-800);
+  margin: 6px 0 14px;
+}
