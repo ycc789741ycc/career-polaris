@@ -15,7 +15,9 @@ import { ago } from "./time";
  * the analysis, searching the market, building — so the screen claims no
  * progress the server has not reported: there is no percentage and no time
  * left, only how far through its steps a run is and when it started. Nothing
- * here stops a run; leaving the page does not either.
+ * here stops a run; leaving the page does not either. While a run is going,
+ * this screen is the only place its screen shows it: the shell's running bar
+ * leaves it out there.
  */
 
 export type StepState = "done" | "running" | "waiting";
@@ -38,7 +40,6 @@ export function RunProgress({
   leaveCopy,
   back,
   costCopy,
-  previous,
 }: {
   /** The section's accessible name, e.g. "Strength analysis progress". */
   label: string;
@@ -52,8 +53,6 @@ export function RunProgress({
   leaveCopy: string;
   back: { label: string; onClick: () => void };
   costCopy: string;
-  /** A link to the result the run will replace, when there is one. */
-  previous?: { label: string; onClick: () => void } | undefined;
 }) {
   const done = steps.filter((step) => step.state === "done").length;
   return (
@@ -125,16 +124,6 @@ export function RunProgress({
         <div className="panel">
           <h3 className="run-card-heading">What this run costs</h3>
           <p className="run-card-copy">{costCopy}</p>
-          {previous && (
-            <button
-              type="button"
-              className="link-button"
-              style={{ fontSize: 13, fontWeight: 600 }}
-              onClick={previous.onClick}
-            >
-              {previous.label}
-            </button>
-          )}
         </div>
       </div>
     </div>

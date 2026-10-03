@@ -54,8 +54,6 @@ export function Strengths() {
   );
   const start = useStartAnalysis();
   const [selected, setSelected] = useState<string | undefined>(undefined);
-  // While an analysis runs, the last report can still be read on request.
-  const [showPrevious, setShowPrevious] = useState(false);
 
   const processing = sourcesBusy(activity);
   const analysing = isBusy(activity?.analysis);
@@ -72,10 +70,10 @@ export function Strengths() {
   const activeKey = selected ?? leastCertain[0]?.key;
   const active = dimensions.find((d) => d.key === activeKey);
   const byId = new Map((evidence.data ?? []).map((item) => [item.id, item]));
-  const waiting = analysing && !showPrevious;
-  useHeading(waiting ? "Analysing your strengths" : null);
+  useHeading(analysing ? "Analysing your strengths" : null);
 
-  if (waiting) {
+  // While an analysis runs, its waiting screen is the page.
+  if (analysing) {
     return (
       <RunProgress
         label="Strength analysis progress"
@@ -93,14 +91,6 @@ export function Strengths() {
         costCopy={`Charged to your own key on ${modelName(
           status.credential,
         )}, at the estimate you confirmed before it started.`}
-        previous={
-          assessment.data
-            ? {
-                label: "See your last report",
-                onClick: () => setShowPrevious(true),
-              }
-            : undefined
-        }
       />
     );
   }
@@ -115,13 +105,9 @@ export function Strengths() {
           variant={assessment.data ? "secondary" : "primary"}
           onClick={() => void start.ask()}
           busy={start.busy}
-          disabled={processing || analysing}
+          disabled={processing}
         >
-          {analysing
-            ? "Analysing…"
-            : assessment.data
-              ? "Re-analyse"
-              : "Analyse with AI"}
+          {assessment.data ? "Re-analyse" : "Analyse with AI"}
         </Button>
         {assessment.data && (
           <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
@@ -138,13 +124,13 @@ export function Strengths() {
       </div>
 
       <ErrorNote error={start.error} />
-      {processing && !analysing && (
+      {processing && (
         <p role="status" className="subcopy" style={{ margin: "8px 0" }}>
           Waiting for your sources to finish syncing and parsing — the analysis
           reads every fact, so it starts once they are in.
         </p>
       )}
-      {lastRunFailed && !analysing && (
+      {lastRunFailed && (
         <div role="alert" className="note-warning" style={{ margin: "8px 0" }}>
           <span aria-hidden="true">⚠</span> The last analysis did not finish:{" "}
           {lastRun?.error?.message ?? "it stopped before finishing"}.
@@ -158,7 +144,7 @@ export function Strengths() {
           )}
         </div>
       )}
-      {assessment.data?.is_out_of_date && !analysing && (
+      {assessment.data?.is_out_of_date && (
         <p role="status" className="note-warning" style={{ margin: "8px 0" }}>
           {/* Never colour alone. */}
           <span aria-hidden="true">⚠</span> Out of date: your evidence has
