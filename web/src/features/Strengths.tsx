@@ -19,6 +19,7 @@ import {
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
 import { modelName, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
+import { dayLabel } from "./time";
 import { messageOf, useAsync } from "./useAsync";
 
 /**
@@ -37,7 +38,7 @@ import { messageOf, useAsync } from "./useAsync";
  * never changes an earlier one's result. So the report reads only the evidence
  * and the analysis: no fit, role or bar from the role map, which reclusters
  * and rescores as the market moves. Comparing against a role's bar is the role
- * map's job, where "How you fit each dimension" already does it.
+ * map's job, where "How you fit each skill" already does it.
  *
  * An analysis reads the evidence as it stands, so it cannot start while a
  * source is still syncing or a résumé still parsing (ADR 0018); the running
@@ -107,38 +108,33 @@ export function Strengths() {
   return (
     <section>
       <div
-        className="row-between"
-        style={{
-          alignItems: "center",
-          flexWrap: "wrap",
-          justifyContent: "flex-end",
-          marginBottom: 18,
-        }}
+        className="row report-toolbar"
+        style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
       >
-        <div className="row">
-          {assessment.data && (
-            <span className="muted" style={{ fontSize: 12.5 }}>
-              Profile v{assessment.data.profile_version} ·{" "}
-              {assessment.data.model_id} ·{" "}
-              {new Date(assessment.data.created_at).toLocaleDateString()}
-            </span>
-          )}
-          {assessment.data?.profile_confidence != null && (
-            <ProfileConfidence value={assessment.data.profile_confidence} />
-          )}
-          <Button
-            variant={assessment.data ? "secondary" : "primary"}
-            onClick={askForEstimate}
-            busy={busy}
-            disabled={processing || analysing}
-          >
-            {analysing
-              ? "Analysing…"
-              : assessment.data
-                ? "Re-analyse"
-                : "Analyse with AI"}
-          </Button>
-        </div>
+        <Button
+          variant={assessment.data ? "secondary" : "primary"}
+          onClick={askForEstimate}
+          busy={busy}
+          disabled={processing || analysing}
+        >
+          {analysing
+            ? "Analysing…"
+            : assessment.data
+              ? "Re-analyse"
+              : "Analyse with AI"}
+        </Button>
+        {assessment.data && (
+          <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
+            {analysedLine(
+              assessment.data.created_at,
+              assessment.data.model_id,
+              evidence.data?.length ?? null,
+            )}
+          </span>
+        )}
+        {assessment.data?.profile_confidence != null && (
+          <ProfileConfidence value={assessment.data.profile_confidence} />
+        )}
       </div>
 
       <ErrorNote error={error} />
@@ -382,8 +378,10 @@ function factCount(count: number): string {
 function ProfileConfidence({ value }: { value: number }) {
   const percent = Math.round(value * 100);
   return (
-    <span className="row" style={{ gap: 8, alignItems: "center" }}>
-      <span className="eyebrow">Profile confidence</span>
+    <span className="confidence-pill">
+      <span className="eyebrow" style={{ fontSize: 11.5 }}>
+        Profile confidence
+      </span>
       <span
         className="progress"
         style={{ width: 140, height: 10 }}
@@ -394,11 +392,30 @@ function ProfileConfidence({ value }: { value: number }) {
         aria-valuenow={percent}
       >
         <span
-          className="progress-fill"
+          className="progress-fill progress-fill-positive"
           style={{ display: "block", width: `${percent}%`, height: "100%" }}
         />
       </span>
-      <strong>{percent}%</strong>
+      <span style={{ fontFamily: "var(--font-heading)", fontSize: 20 }}>
+        {percent}%
+      </span>
+      <span style={{ fontSize: 12.5, color: "var(--color-neutral-800)" }}>
+        how well the evidence backs these scores
+      </span>
     </span>
   );
+}
+
+/**
+ * "Analysed 26 Sep 2026 on claude-sonnet-5 · 158 facts read". The fact count
+ * is left out until the evidence has loaded. Pure.
+ */
+export function analysedLine(
+  createdAt: string,
+  modelId: string,
+  factsRead: number | null,
+): string {
+  const parts = [`Analysed ${dayLabel(createdAt)} on ${modelId}`];
+  if (factsRead !== null) parts.push(`${factCount(factsRead)} read`);
+  return parts.join(" · ");
 }
