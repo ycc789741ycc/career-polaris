@@ -2270,6 +2270,21 @@ Open questions:
   its date").
 
 ## Templates of your own
+**Done** (ADR 0040, migration 0036). Where the build differs from the plan
+below:
+* The spec lives in `resume/domain/template_spec.py`, with the built-in specs
+  beside it (`BUILT_IN_TEMPLATES`). The sizes are `name_pt`, `heading_pt` and
+  `body_pt`, with one range constant each.
+* The spec has a fourth colour, `rule_color`, because Plain's rule and
+  bullets were never the same colour.
+* The serif and the monospace are DejaVu Serif and DejaVu Sans Mono, already
+  in the worker image; the SPA hosts Latin subsets of the same files.
+* `GET /resume-templates/limits` gives the editor its lists and ranges. A
+  résumé's template travels as one id: a built-in name or the uuid of the
+  user's own.
+* `wiring.models.OWNER_ZONE_TABLES` is listed referencing tables first, so a
+  user's rows are purged without tripping the new foreign key.
+
 After "Export what you previewed", a template is data: `_LOOKS` is served by
 `GET /resume-templates`, and the preview and the PDF both draw from it. But
 there are still two templates, a closed `Template` enum, and a check

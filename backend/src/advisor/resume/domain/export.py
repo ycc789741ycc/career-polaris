@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from advisor.resume.domain.content import Template
 
@@ -24,13 +25,18 @@ class Export:
     id: uuid.UUID
     owner_id: uuid.UUID
     version_id: uuid.UUID
-    template: Template
+    # The built-in template it was rendered in; None for one of the user's own.
+    template: Template | None
     status: ExportStatus
     created_at: datetime
     # Whether it was cut to one page, read when Export was clicked: with the
     # version and the template, what an export rendered, so an unchanged one
     # is reused (ADR 0038). None on exports from before it was kept.
     trim: bool | None = None
+    # The look it was rendered in, as ``TemplateSpec.to_dict()``: what a
+    # reuse compares, so a template edited since is rendered again (ADR 0040).
+    # None on exports from before it was kept.
+    spec: dict[str, Any] | None = None
     storage_key: str | None = None
     error_code: str | None = None
     error_message: str | None = None

@@ -31,7 +31,9 @@ class TailoredResume:
     role_id: uuid.UUID | None
     job_posting_id: uuid.UUID | None
     target_label: str
-    template: Template
+    # A built-in template, or None when one of the user's own is chosen
+    # (``custom_template_id``): exactly one of the two (ADR 0040).
+    template: Template | None
     options: Options
     status: ResumeStatus
     created_at: datetime
@@ -49,6 +51,7 @@ class TailoredResume:
     target_digest: str | None = None
     # The sections every new version is written to, in order (ADR 0039).
     section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
+    custom_template_id: uuid.UUID | None = None
 
     @classmethod
     def requested(
@@ -58,11 +61,14 @@ class TailoredResume:
         role_id: uuid.UUID | None,
         job_posting_id: uuid.UUID | None,
         label: str,
-        template: Template,
+        template: Template | None,
         options: Options,
         at: datetime,
         private_job_posting_id: uuid.UUID | None = None,
+        custom_template_id: uuid.UUID | None = None,
     ) -> TailoredResume:
+        if (template is None) == (custom_template_id is None):
+            raise ValueError("a résumé has one template: built in, or of your own")
         return cls(
             id=uuid.uuid4(),
             owner_id=owner_id,
@@ -71,6 +77,7 @@ class TailoredResume:
             private_job_posting_id=private_job_posting_id,
             target_label=label[:400],
             template=template,
+            custom_template_id=custom_template_id,
             options=options,
             status=ResumeStatus.DRAFTING,
             created_at=at,
@@ -126,8 +133,19 @@ class TailoredResume:
         self.error_message = message
         self.updated_at = at
 
-    def restyle(self, *, template: Template, options: Options, at: datetime) -> None:
+    def restyle(
+        self,
+        *,
+        template: Template | None,
+        options: Options,
+        at: datetime,
+        custom_template_id: uuid.UUID | None = None,
+    ) -> None:
+        """A built-in template, or one of the user's own: exactly one."""
+        if (template is None) == (custom_template_id is None):
+            raise ValueError("a résumé has one template: built in, or of your own")
         self.template = template
+        self.custom_template_id = custom_template_id
         self.options = options
         self.updated_at = at
 

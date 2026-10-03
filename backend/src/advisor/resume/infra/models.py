@@ -35,6 +35,8 @@ class Resume(Base, OwnedMixin):
     __table_args__ = (
         CheckConstraint("status IN ('drafting', 'ready', 'failed', 'filling')", name="status"),
         CheckConstraint("template IN ('organic', 'plain')", name="template"),
+        # A built-in template, or one of the user's own: exactly one (ADR 0040).
+        CheckConstraint("num_nonnulls(template, custom_template_id) = 1", name="look"),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
         {"schema": "resume"},
@@ -53,7 +55,13 @@ class Resume(Base, OwnedMixin):
     coverage: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=sql_text("'[]'::jsonb")
     )
-    template: Mapped[str] = mapped_column(String(16), nullable=False)
+    template: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    custom_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        # Deleting a template moves its résumés to Organic first, in the same
+        # transaction; the key refuses a delete that forgot to.
+        ForeignKey("resume.custom_template.id"),
+        nullable=True,
+    )
     options: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -141,10 +149,13 @@ class Export(Base, OwnedMixin):
     version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("resume.version.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    template: Mapped[str] = mapped_column(String(16), nullable=False)
+    # The built-in template; null for one of the user's own (ADR 0040).
+    template: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Cut to one page or not, read when Export was clicked (ADR 0038). None on
     # exports from before it was kept, which are never reused.
     trim: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # The look it was rendered in (ADR 0040); reuse compares it.
+    spec: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -153,3 +164,25 @@ class Export(Base, OwnedMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CustomTemplate(Base, OwnedMixin):
+    """A résumé template of the user's own: a name and a checked spec
+    (ADR 0040)."""
+
+    __tablename__ = "custom_template"
+    __table_args__ = (
+        Index("ix_custom_template_owner_created", "owner_id", "created_at"),
+        {"schema": "resume"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    # TemplateSpec.to_dict(), checked again whenever it is read.
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

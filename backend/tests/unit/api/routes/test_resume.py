@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -37,6 +37,7 @@ from api.dependencies import current_user, get_container
 from api.routes import resume as resume_api
 from kernel.errors import ConflictError, TargetUnusableError
 from tests.unit.advisor.resume.builders import make_content
+from tests.unit.advisor.resume.fakes import FakeResumeUnitOfWork
 
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
@@ -69,9 +70,19 @@ class FakeResumes:
             updated_at=datetime(2026, 9, 23, tzinfo=UTC),
         )
 
-    def templates(self, *, page: int = 1, page_size: int | None = None) -> Any:
-        # The real catalogue: it reads nothing but the domain's looks.
-        return ResumeService.templates(cast(ResumeService, self), page=page, page_size=page_size)
+    async def templates(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Any:
+        # The real catalogue, over storage holding none of the user's own.
+        service = ResumeService(
+            FakeResumeUnitOfWork(),
+            target=None,  # type: ignore[arg-type]
+            profile=None,  # type: ignore[arg-type]
+            assessment=None,  # type: ignore[arg-type]
+            gateway=None,  # type: ignore[arg-type]
+            object_store=None,  # type: ignore[arg-type]
+        )
+        return await service.templates(owner_id, page=page, page_size=page_size)
 
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
@@ -290,13 +301,32 @@ def test_every_template_is_served_as_the_renderer_draws_it(client: TestClient) -
 
     assert body["total"] == 2 and body["page"] == 1
     organic, plain = body["items"]
-    assert (organic["id"], organic["heading_font"], organic["body_font"]) == (
-        "organic",
+    assert organic["id"] == "organic" and organic["is_built_in"]
+    assert (organic["spec"]["heading_font"], organic["spec"]["body_font"]) == (
         "Caprasimo",
         "Figtree",
     )
+    assert (organic["title_pt"], organic["contact_pt"], organic["small_pt"]) == (11.0, 9.5, 9.0)
     assert (organic["trimmed_bullets"], organic["trimmed_skills"]) == (3, 12)
     assert plain["rule"] == "1px solid #cfcac5"
+
+
+def test_a_template_of_your_own_is_refused_in_the_envelope_when_it_is_markup(
+    client: TestClient,
+) -> None:
+    spec = {
+        "accent_color": "#c67139; } body { display: none",
+        "name_color": "#8a4a20",
+        "text_color": "#201e1d",
+        "rule_color": "#c67139",
+        "name_pt": 22,
+        "heading_pt": 8.5,
+        "body_pt": 9.5,
+    }
+    response = client.post("/resume-templates", json={"name": "Mine", "spec": spec})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_failed"
 
 
 @pytest.mark.parametrize(

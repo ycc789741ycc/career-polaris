@@ -810,12 +810,58 @@ export interface paths {
         };
         /**
          * Templates
-         * @description Every template as the PDF renderer draws it, for the preview (ADR 0038).
+         * @description Every template the user can choose, the built-in ones first, as the PDF
+         *     renderer draws it, for the preview (ADR 0038, ADR 0040).
          */
         get: operations["templates_api_v1_resume_templates_get"];
         put?: never;
+        /**
+         * Create Template
+         * @description Keeps a template of the user's own: checked values, never markup.
+         */
+        post: operations["create_template_api_v1_resume_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Template Limits
+         * @description What a template of the user's own may set.
+         */
+        get: operations["template_limits_api_v1_resume_templates_limits_get"];
+        put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Template */
+        put: operations["update_template_api_v1_resume_templates__template_id__put"];
+        post?: never;
+        /**
+         * Delete Template
+         * @description Résumés set in it go back to Organic.
+         */
+        delete: operations["delete_template_api_v1_resume_templates__template_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2185,11 +2231,8 @@ export interface components {
              * @enum {string}
              */
             status: "rendering" | "ready" | "failed";
-            /**
-             * Template
-             * @enum {string}
-             */
-            template: "organic" | "plain";
+            /** Template */
+            template: ("organic" | "plain") | null;
             /**
              * Version Id
              * Format: uuid
@@ -2241,8 +2284,11 @@ export interface components {
             private_job_posting_id?: string | null;
             /** Role Id */
             role_id?: string | null;
-            /** @default organic */
-            template: components["schemas"]["Template"];
+            /**
+             * Template
+             * @default organic
+             */
+            template: string;
         };
         /**
          * ResumeSection
@@ -2330,37 +2376,24 @@ export interface components {
         /**
          * ResumeTemplate
          * @description One template as the PDF renderer draws it, for the picker and the
-         *     preview to draw the same page (ADR 0038). Sizes in points, the page in
-         *     millimetres.
+         *     preview to draw the same page (ADR 0038, ADR 0040). Sizes in points, the
+         *     page in millimetres.
          */
         ResumeTemplate: {
-            /** Body Font */
-            body_font: string;
-            /** Body Pt */
-            body_pt: number;
+            /** Band Color */
+            band_color: string;
             /** Contact Pt */
             contact_pt: number;
-            /** Dot Color */
-            dot_color: string;
-            /** Heading Font */
-            heading_font: string;
-            /** Heading Pt */
-            heading_pt: number;
-            /**
-             * Id
-             * @enum {string}
-             */
-            id: "organic" | "plain";
+            /** Id */
+            id: string;
+            /** Is Built In */
+            is_built_in: boolean;
             /** Margin Side Mm */
             margin_side_mm: number;
             /** Margin Top Mm */
             margin_top_mm: number;
             /** Name */
             name: string;
-            /** Name Color */
-            name_color: string;
-            /** Name Pt */
-            name_pt: number;
             /** Note */
             note: string;
             /** Page Height Mm */
@@ -2371,14 +2404,42 @@ export interface components {
             rule: string;
             /** Small Pt */
             small_pt: number;
-            /** Swatch */
-            swatch: string;
+            spec: components["schemas"]["TemplateSpecBody"];
             /** Title Pt */
             title_pt: number;
             /** Trimmed Bullets */
             trimmed_bullets: number;
             /** Trimmed Skills */
             trimmed_skills: number;
+        };
+        /**
+         * ResumeTemplateLimits
+         * @description What a template of the user's own may set, for the editor.
+         */
+        ResumeTemplateLimits: {
+            /** Body Pt Range */
+            body_pt_range: [
+                number,
+                number
+            ];
+            /** Fonts */
+            fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono")[];
+            /** Heading Pt Range */
+            heading_pt_range: [
+                number,
+                number
+            ];
+            /** Max Name */
+            max_name: number;
+            /** Max Templates */
+            max_templates: number;
+            /** Min Contrast */
+            min_contrast: number;
+            /** Name Pt Range */
+            name_pt_range: [
+                number,
+                number
+            ];
         };
         /** ResumeTemplatePage */
         ResumeTemplatePage: {
@@ -2653,7 +2714,8 @@ export interface components {
         /** SettingsRequest */
         SettingsRequest: {
             options: components["schemas"]["OptionsBody"];
-            template: components["schemas"]["Template"];
+            /** Template */
+            template: string;
         };
         /** SignInMethods */
         SignInMethods: {
@@ -2743,11 +2805,8 @@ export interface components {
              */
             status: "drafting" | "ready" | "failed" | "filling";
             target: components["schemas"]["TargetRefBody"];
-            /**
-             * Template
-             * @enum {string}
-             */
-            template: "organic" | "plain";
+            /** Template */
+            template: string;
             /** Updated At */
             updated_at: string;
             version: components["schemas"]["ResumeVersion"] | null;
@@ -2838,12 +2897,119 @@ export interface components {
             done: boolean;
         };
         /**
-         * Template
-         * @description Visual layout for export: rendering only, never a domain rule. The
-         *     prototype's two: Organic (rounded, terracotta rule) and Plain.
-         * @enum {string}
+         * TemplateDesign
+         * @description A template's look as checked values, never markup (ADR 0040). Sizes in
+         *     points. The server checks every value again, contrast included.
          */
-        Template: "organic" | "plain";
+        TemplateDesign: {
+            /** Accent Color */
+            accent_color: string;
+            /**
+             * Body Font
+             * @default Figtree
+             * @enum {string}
+             */
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Body Pt */
+            body_pt: number;
+            /**
+             * Bullet
+             * @default dot
+             * @enum {string}
+             */
+            bullet: "dot" | "dash" | "none";
+            /**
+             * Heading Case
+             * @default upper
+             * @enum {string}
+             */
+            heading_case: "upper" | "as_written";
+            /**
+             * Heading Font
+             * @default Caprasimo
+             * @enum {string}
+             */
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Heading Pt */
+            heading_pt: number;
+            /**
+             * Layout
+             * @default single_column
+             * @enum {string}
+             */
+            layout: "single_column" | "sidebar_left" | "sidebar_right" | "header_band";
+            /** Name Color */
+            name_color: string;
+            /** Name Pt */
+            name_pt: number;
+            /**
+             * Rule
+             * @default thick
+             * @enum {string}
+             */
+            rule: "none" | "thin" | "thick";
+            /** Rule Color */
+            rule_color: string;
+            /** Sidebar Kinds */
+            sidebar_kinds?: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
+            /** Text Color */
+            text_color: string;
+        };
+        /** TemplateRequest */
+        TemplateRequest: {
+            /** Name */
+            name: string;
+            spec: components["schemas"]["TemplateDesign"];
+        };
+        /** TemplateSpecBody */
+        TemplateSpecBody: {
+            /** Accent Color */
+            accent_color: string;
+            /**
+             * Body Font
+             * @enum {string}
+             */
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Body Pt */
+            body_pt: number;
+            /**
+             * Bullet
+             * @enum {string}
+             */
+            bullet: "dot" | "dash" | "none";
+            /**
+             * Heading Case
+             * @enum {string}
+             */
+            heading_case: "upper" | "as_written";
+            /**
+             * Heading Font
+             * @enum {string}
+             */
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Heading Pt */
+            heading_pt: number;
+            /**
+             * Layout
+             * @enum {string}
+             */
+            layout: "single_column" | "sidebar_left" | "sidebar_right" | "header_band";
+            /** Name Color */
+            name_color: string;
+            /** Name Pt */
+            name_pt: number;
+            /**
+             * Rule
+             * @enum {string}
+             */
+            rule: "none" | "thin" | "thick";
+            /** Rule Color */
+            rule_color: string;
+            /** Sidebar Kinds */
+            sidebar_kinds: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
+            /** Text Color */
+            text_color: string;
+        };
         /** UncoveredRequirement */
         UncoveredRequirement: {
             /** Statement */
@@ -5160,6 +5326,204 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResumeTemplatePage"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_resume_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    template_limits_api_v1_resume_templates_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplateLimits"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_template_api_v1_resume_templates__template_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_template_api_v1_resume_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

@@ -14,6 +14,9 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.resume.domain import (
+    CustomTemplate,
+    CustomTemplateFilter,
+    CustomTemplateRepository,
     Export,
     ExportFilter,
     ExportRepository,
@@ -54,7 +57,9 @@ class SqlAlchemyTailoredResumeRepository(
         return entity.id
 
     def conditions(self, filter: TailoredResumeFilter) -> list[ColumnElement[bool]]:
-        return []
+        if filter.custom_template_id is None:
+            return []
+        return [models.Resume.custom_template_id == filter.custom_template_id]
 
 
 class SqlAlchemyResumeVersionRepository(
@@ -151,10 +156,34 @@ class SqlAlchemyExportRepository(
         found: list[ColumnElement[bool]] = []
         if filter.version_id is not None:
             found.append(models.Export.version_id == filter.version_id)
-        if filter.template is not None:
-            found.append(models.Export.template == str(filter.template))
         if filter.trim is not None:
             found.append(models.Export.trim == filter.trim)
         if filter.status is not None:
             found.append(models.Export.status == str(filter.status))
         return found
+
+
+class SqlAlchemyCustomTemplateRepository(
+    SqlAlchemyRepository[CustomTemplate, models.CustomTemplate, CustomTemplateFilter],
+    CustomTemplateRepository,
+):
+    model = models.CustomTemplate
+    id_column = models.CustomTemplate.id
+    created_column = models.CustomTemplate.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.CustomTemplate.owner_id
+    noun = "template"
+
+    def to_entity(self, row: models.CustomTemplate) -> CustomTemplate:
+        return mappers.custom_template(row)
+
+    def to_row(self, entity: CustomTemplate) -> models.CustomTemplate:
+        return mappers.custom_template_row(entity)
+
+    def apply(self, row: models.CustomTemplate, entity: CustomTemplate) -> None:
+        mappers.apply_custom_template(row, entity)
+
+    def id_of(self, entity: CustomTemplate) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: CustomTemplateFilter) -> list[ColumnElement[bool]]:
+        return []

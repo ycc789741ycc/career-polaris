@@ -6,7 +6,9 @@ import type {
   ResumeContent,
   ResumeSection,
   ResumeSummary,
+  ResumeTemplateLimits,
   ResumeTemplateLook,
+  ResumeTemplateSpec,
   TailoredResume,
 } from "../api/types";
 import type { AdvisorTarget } from "./target";
@@ -161,22 +163,32 @@ const organic: ResumeTemplateLook = {
   id: "organic",
   name: "Organic",
   note: "Rounded, terracotta rule.",
+  is_built_in: true,
+  spec: {
+    layout: "single_column",
+    heading_font: "Caprasimo",
+    body_font: "Figtree",
+    accent_color: "#c67139",
+    name_color: "#8a4a20",
+    text_color: "#201e1d",
+    rule_color: "#c67139",
+    rule: "thick",
+    name_pt: 22,
+    heading_pt: 8.5,
+    body_pt: 10,
+    sidebar_kinds: [],
+    heading_case: "upper",
+    bullet: "dot",
+  },
   rule: "3px solid #c67139",
-  swatch: "#c67139",
-  name_color: "#8a4a20",
-  dot_color: "#c67139",
-  heading_font: "Caprasimo",
-  body_font: "Figtree",
+  band_color: "#f8ede6",
+  title_pt: 11,
+  contact_pt: 9.5,
+  small_pt: 9,
   page_width_mm: 210,
   page_height_mm: 297,
   margin_top_mm: 18,
   margin_side_mm: 17,
-  name_pt: 22,
-  title_pt: 11,
-  body_pt: 10,
-  contact_pt: 9.5,
-  small_pt: 9,
-  heading_pt: 8.5,
   trimmed_bullets: 3,
   trimmed_skills: 12,
 };
@@ -197,6 +209,16 @@ const templates = {
   total: 2,
 };
 
+const limits: ResumeTemplateLimits = {
+  fonts: ["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"],
+  name_pt_range: [16, 30],
+  heading_pt_range: [7, 11],
+  body_pt_range: [8.5, 11.5],
+  min_contrast: 4.5,
+  max_name: 60,
+  max_templates: 10,
+};
+
 type Call = { method: string; url: string; body: unknown };
 
 function serve(route: (call: Call) => Response | unknown) {
@@ -211,9 +233,12 @@ function serve(route: (call: Call) => Response | unknown) {
       };
       calls.push(call);
       // The templates, as the renderer draws them: every screen reads them.
-      const result = call.url.startsWith("/resume-templates")
-        ? templates
-        : route(call);
+      const result =
+        call.method === "GET" && call.url.startsWith("/resume-templates")
+          ? call.url === "/resume-templates/limits"
+            ? limits
+            : templates
+          : route(call);
       return result instanceof Response ? result : json(result);
     }),
   );
@@ -611,6 +636,22 @@ describe("the page's measures", () => {
     expect(style["--page-ratio"]).toBe(String(297 / 210));
   });
 
+  it("draws the template's choices: headings, bullets, colours", () => {
+    const style = pageStyle({
+      ...organic,
+      spec: {
+        ...organic.spec,
+        heading_case: "as_written",
+        bullet: "dash",
+        text_color: "#333333",
+      },
+    });
+    expect(style["--heading-case"]).toBe("none");
+    expect(style["--bullet"]).toBe('"\\2013  "');
+    expect(style["--text-color"]).toBe("#333333");
+    expect(style["--dot-color"]).toBe("#c67139");
+  });
+
   it("says what trimming leaves out, or that it leaves nothing", () => {
     const content = resume.content!;
     expect(
@@ -630,6 +671,113 @@ describe("the page's measures", () => {
         organic,
       ),
     ).toBe("Trimmed to one page: 2 items left out of the PDF.");
+  });
+});
+
+describe("templates of your own (ADR 0040)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("previews a sidebar while it is made, then saves it and sets the résumé in it", async () => {
+    const calls = serve((call) => {
+      if (call.method === "POST" && call.url === "/resume-templates") {
+        const body = call.body as { name: string; spec: ResumeTemplateSpec };
+        return { ...organic, id: "t-1", is_built_in: false, ...body };
+      }
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Make your own" }),
+    );
+    const editor = screen.getByRole("group", { name: "Make your own" });
+    await user.selectOptions(
+      within(editor).getByLabelText("Layout"),
+      "sidebar_left",
+    );
+    await user.click(within(editor).getByRole("checkbox", { name: "Skills" }));
+
+    const page = screen.getByRole("article", { name: "Résumé" });
+    expect(page.dataset.layout).toBe("sidebar_left");
+    const side = page.querySelector(".resume-side")!;
+    expect(side.textContent).toContain("Skills");
+    expect(page.querySelector(".resume-main")!.textContent).toContain(
+      "Experience",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save template" }));
+
+    await vi.waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "PUT" && c.url.endsWith("/settings"))
+          ?.body,
+      ).toMatchObject({ template: "t-1" }),
+    );
+    const created = calls.find(
+      (c) => c.method === "POST" && c.url === "/resume-templates",
+    )!.body as { name: string; spec: ResumeTemplateSpec };
+    expect(created.name).toBe("Organic — mine");
+    expect(created.spec).toMatchObject({
+      layout: "sidebar_left",
+      sidebar_kinds: ["skills"],
+    });
+  });
+
+  it("deletes your own template and leaves the résumé on Organic", async () => {
+    const mine = { ...organic, id: "t-1", name: "Mine", is_built_in: false };
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1"
+        ? { ...resume, template: "t-1" }
+        : defaults(call),
+    );
+    templates.items.push(mine);
+    try {
+      const user = userEvent.setup();
+      renderResume();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change Mine" }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Delete this template" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Delete it" }));
+
+      await vi.waitFor(() =>
+        expect(screen.getByRole("button", { name: /Organic/ })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        ),
+      );
+      expect(calls.some((c) => c.method === "DELETE")).toBe(true);
+      expect(screen.queryByRole("button", { name: /Mine/ })).toBeNull();
+    } finally {
+      templates.items.pop();
+    }
+  });
+
+  it("will not save text too light to read", async () => {
+    serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Make your own" }),
+    );
+    fireEvent.input(screen.getByLabelText("Text"), {
+      target: { value: "#eeeeee" },
+    });
+
+    expect(
+      await screen.findByText("The text is too light to read on a white page."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save template" }),
+    ).toBeDisabled();
   });
 });
 

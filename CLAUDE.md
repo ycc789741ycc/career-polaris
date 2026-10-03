@@ -568,7 +568,7 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   that reads evidence has rules on time — `skill_assessment` v4, `gap_plan` v3,
   `gap_questions` v2, `resume_write` and `resume_revise` v2: the newer fact
   wins, and a stated date never makes the work recent.
-- **Export what you previewed** (ADR 0038). `TEMPLATE_LOOKS` and the page
+- **Export what you previewed** (ADR 0038). A template's spec and the page
   constants in `resume/domain` are the one look: `render_html` reads them and
   `GET /resume-templates` serves them to the preview, which is laid out as the
   A4 page in points and trims what the PDF trims. The worker image carries
@@ -585,3 +585,16 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   (`/sections/estimate`), sets the résumé `filling`, and `resume.fill_section`
   writes that section only (`resume_section` v1). `resume_write` and
   `resume_revise` are v3. Migration 0035 moved stored content into sections.
+- **Templates of your own** (ADR 0040). A template is a `TemplateSpec`
+  (`resume/domain/template_spec.py`): layout, two fonts from `TEMPLATE_FONTS`,
+  four `#rrggbb` colours (name and text at least 4.5:1 on white), sizes in
+  their ranges, sidebar list kinds, heading case and bullet; never markup.
+  Organic and Plain are `BUILT_IN_TEMPLATES`. `CustomTemplate`
+  (`resume.custom_template`, RLS) keeps a user's own, up to
+  `RESUME_TEMPLATE_MAX`; a résumé holds a built-in `template` or a
+  `custom_template_id`, exactly one (`ck_resume_look`), and the wire carries
+  either as one template id. `POST`/`PUT`/`DELETE /resume-templates` keep
+  them, `GET /resume-templates/limits` feeds the editor, and deleting one
+  moves its résumés to Organic. An export stores the `spec` it rendered and
+  reuse compares specs. The preview draws every layout; the SPA hosts DejaVu
+  Serif and Mono subsets. Migration 0036.

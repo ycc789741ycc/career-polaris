@@ -39,7 +39,7 @@ MAX_LINK = 200
 # The prototype's threshold.
 PARTIAL_WITHIN = 14
 
-# --- template_look -----------------------------------------------------------
+# --- template_spec: the built-in sizes -------------------------------------
 
 # One page is what "trim" means; these keep a résumé on it. The preview drops
 # what the PDF drops, by these same numbers (ADR 0038).
@@ -56,16 +56,11 @@ PAGE_MARGIN_TOP_MM = 18
 
 PAGE_MARGIN_SIDE_MM = 17
 
-# Type sizes on the page, in points.
+# The built-in templates' type sizes, in points. An entry's title, the
+# contact line and small print follow the body size (``get_derived_pt``).
 NAME_PT = 22.0
 
-TITLE_PT = 11.0
-
 BODY_PT = 10.0
-
-CONTACT_PT = 9.5
-
-SMALL_PT = 9.0
 
 HEADING_PT = 8.5
 
@@ -77,3 +72,21 @@ HEADING_FONT = "Caprasimo"
 BODY_FONT = "Figtree"
 
 FALLBACK_FONT = "DejaVu Sans"
+
+# --- template_spec -----------------------------------------------------------
+
+# Every font a template may name: bundled in the worker image and hosted by
+# the SPA, so the PDF and the preview set the same type (ADR 0040).
+TEMPLATE_FONTS = ("Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono")
+
+# Type sizes a template may set, in points: (smallest, largest).
+NAME_PT_RANGE = (16.0, 30.0)
+
+HEADING_PT_RANGE = (7.0, 11.0)
+
+BODY_PT_RANGE = (8.5, 11.5)
+
+# The name and the text against the white page, WCAG AA for normal text.
+MIN_CONTRAST = 4.5
+
+MAX_TEMPLATE_NAME = 60

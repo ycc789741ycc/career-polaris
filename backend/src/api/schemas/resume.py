@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
@@ -16,7 +16,7 @@ from advisor.resume import (
     RevisionText,
     SectionKind,
     SectionSlot,
-    Template,
+    TemplateLimitsView,
     TemplateView,
     VersionView,
 )
@@ -31,6 +31,14 @@ from api.schemas.common import (
 from api.schemas.target import TargetFields, TargetRefBody
 
 TemplateName = Literal["organic", "plain"]
+# A built-in template's name, or the id of one of the user's own (ADR 0040).
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+TemplateId = Annotated[str, Field(pattern=rf"^(organic|plain|{_UUID})$")]
+LayoutName = Literal["single_column", "sidebar_left", "sidebar_right", "header_band"]
+FontName = Literal["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"]
+RuleName = Literal["none", "thin", "thick"]
+HeadingCaseName = Literal["upper", "as_written"]
+BulletName = Literal["dot", "dash", "none"]
 # What moved on since the résumé was last written (ADR 0035).
 OutdatedReasonName = Literal["evidence", "target"]
 
@@ -42,12 +50,12 @@ class OptionsBody(RequestModel):
 
 
 class ResumeRequest(TargetFields):
-    template: Template = Template.ORGANIC
+    template: TemplateId = "organic"
     options: OptionsBody = Field(default_factory=OptionsBody)
 
 
 class SettingsRequest(RequestModel):
-    template: Template
+    template: TemplateId
     options: OptionsBody
 
 
@@ -227,7 +235,8 @@ class Revision(ApiModel):
 
 
 class TailoredResume(ResumeSummary):
-    template: TemplateName
+    # A built-in template's name, or the id of one of the user's own.
+    template: str
     options: ResumeOptions
     snapshot: ResumeSnapshot | None
     coverage: list[Coverage]
@@ -249,7 +258,7 @@ class TailoredResume(ResumeSummary):
         snapshot = resume.snapshot
         return cls(
             **ResumeSummary.from_view(resume.summary).model_dump(),
-            template=str(resume.template),
+            template=resume.template,
             options=ResumeOptions(
                 metrics=resume.options.metrics,
                 reorder=resume.options.reorder,
@@ -307,7 +316,8 @@ class TailoredResume(ResumeSummary):
 class ResumeExport(ApiModel):
     id: uuid.UUID
     version_id: uuid.UUID
-    template: TemplateName
+    # The built-in template it was rendered in; null for one of the user's own.
+    template: TemplateName | None
     # rendering -> ready | failed
     status: Literal["rendering", "ready", "failed"]
     error: JobError | None
@@ -320,7 +330,7 @@ class ResumeExport(ApiModel):
         return cls(
             id=export.id,
             version_id=export.version_id,
-            template=str(export.template),
+            template=str(export.template) if export.template else None,
             status=export.status,
             error=JobError.of(export.error_code, export.error_message),
             download_url=export.download_url,
@@ -364,60 +374,126 @@ class ResumeSummaryPage(Page[ResumeSummary]):
     pass
 
 
+class TemplateDesign(RequestModel):
+    """A template's look as checked values, never markup (ADR 0040). Sizes in
+    points. The server checks every value again, contrast included."""
+
+    layout: LayoutName = "single_column"
+    heading_font: FontName = "Caprasimo"
+    body_font: FontName = "Figtree"
+    accent_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    name_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    text_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    rule_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    rule: RuleName = "thick"
+    name_pt: float
+    heading_pt: float
+    body_pt: float
+    # For a sidebar layout: which list sections sit in the sidebar.
+    sidebar_kinds: list[SectionKindName] = Field(default_factory=list, max_length=12)
+    heading_case: HeadingCaseName = "upper"
+    bullet: BulletName = "dot"
+
+
+class TemplateRequest(RequestModel):
+    name: str = Field(min_length=1, max_length=60)
+    spec: TemplateDesign
+
+
+class TemplateSpecBody(ApiModel):
+    layout: LayoutName
+    heading_font: FontName
+    body_font: FontName
+    accent_color: str
+    name_color: str
+    text_color: str
+    rule_color: str
+    rule: RuleName
+    name_pt: float
+    heading_pt: float
+    body_pt: float
+    sidebar_kinds: list[SectionKindName]
+    heading_case: HeadingCaseName
+    bullet: BulletName
+
+
 class ResumeTemplate(ApiModel):
     """One template as the PDF renderer draws it, for the picker and the
-    preview to draw the same page (ADR 0038). Sizes in points, the page in
-    millimetres."""
+    preview to draw the same page (ADR 0038, ADR 0040). Sizes in points, the
+    page in millimetres."""
 
-    id: TemplateName
+    # A built-in template's name, or the id of one of the user's own.
+    id: str
     name: str
     note: str
+    is_built_in: bool
+    spec: TemplateSpecBody
     # The line under the header, as a CSS border shorthand.
     rule: str
-    swatch: str
-    name_color: str
-    dot_color: str
-    heading_font: str
-    body_font: str
+    # The header band's tint, for the header_band layout.
+    band_color: str
+    # Worked out from the body size, as the renderer does.
+    title_pt: float
+    contact_pt: float
+    small_pt: float
     page_width_mm: int
     page_height_mm: int
     margin_top_mm: int
     margin_side_mm: int
-    name_pt: float
-    title_pt: float
-    body_pt: float
-    contact_pt: float
-    small_pt: float
-    heading_pt: float
     # What "Trim to one page" keeps: bullets per position, and skills.
     trimmed_bullets: int
     trimmed_skills: int
 
     @classmethod
     def from_view(cls, template: TemplateView) -> ResumeTemplate:
-        look = template.look
+        spec = template.spec
+        title_pt, contact_pt, small_pt = spec.get_derived_pt()
         return cls(
-            id=str(look.template),
-            name=look.name,
-            note=look.note,
-            rule=look.rule,
-            swatch=look.swatch,
-            name_color=look.name_color,
-            dot_color=look.dot_color,
-            heading_font=look.heading_font,
-            body_font=look.body_font,
+            id=template.id,
+            name=template.name,
+            note=template.note,
+            is_built_in=template.is_built_in,
+            spec=TemplateSpecBody.model_validate(spec.to_dict()),
+            rule=spec.get_rule_css(),
+            band_color=spec.get_band_color(),
+            title_pt=title_pt,
+            contact_pt=contact_pt,
+            small_pt=small_pt,
             page_width_mm=template.page_width_mm,
             page_height_mm=template.page_height_mm,
             margin_top_mm=template.margin_top_mm,
             margin_side_mm=template.margin_side_mm,
-            name_pt=template.name_pt,
-            title_pt=template.title_pt,
-            body_pt=template.body_pt,
-            contact_pt=template.contact_pt,
-            small_pt=template.small_pt,
-            heading_pt=template.heading_pt,
             trimmed_bullets=template.trimmed_bullets,
             trimmed_skills=template.trimmed_skills,
+        )
+
+
+class ResumeTemplateLimits(ApiModel):
+    """What a template of the user's own may set, for the editor."""
+
+    fonts: list[FontName]
+    name_pt_range: tuple[float, float]
+    heading_pt_range: tuple[float, float]
+    body_pt_range: tuple[float, float]
+    # The name and the text against the white page.
+    min_contrast: float
+    max_name: int
+    # How many templates of their own a user may keep.
+    max_templates: int
+
+    @classmethod
+    def from_view(cls, limits: TemplateLimitsView) -> ResumeTemplateLimits:
+        # The fonts are checked against ``FontName`` here, not cast.
+        return cls.model_validate(
+            {
+                "fonts": list(limits.fonts),
+                "name_pt_range": limits.name_pt_range,
+                "heading_pt_range": limits.heading_pt_range,
+                "body_pt_range": limits.body_pt_range,
+                "min_contrast": limits.min_contrast,
+                "max_name": limits.max_name,
+                "max_templates": limits.max_templates,
+            }
         )
 
 

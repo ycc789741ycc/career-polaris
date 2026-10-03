@@ -24,6 +24,7 @@ from advisor.resume.service import (
     SectionKind,
     SectionSlot,
     Template,
+    TemplateLimitsView,
     TemplateView,
     VersionView,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "SectionKind",
     "SectionSlot",
     "Template",
+    "TemplateLimitsView",
     "TemplateView",
     "VersionView",
     "create_resume_service",

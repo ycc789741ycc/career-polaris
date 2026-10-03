@@ -203,6 +203,7 @@ def build(settings: Settings | None = None) -> Container:
         assessment=assessment,
         gateway=gateway,
         object_store=object_store,
+        template_max=settings.resume_template_max,
     )
 
     activity = ActivityService(
