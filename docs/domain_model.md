@@ -239,6 +239,7 @@ The rest is unchanged:
 - **`RequirementCoverage { requirement, verdict: covered | partial | gap, evidenceRefs }`**, shown as "Their requirements → your evidence".
 - **Every generated bullet cites Evidence.** A bullet with none is rejected.
 - **Versions:** `ResumeVersion`, listed as "Saved résumés" per Target and company. Manual edits and the `RevisionThread` chat both produce versions, and a chat proposal applies only when the user says so.
+- **Sections** ([ADR 0039](decisions/0039-let-the-user-choose-a-resumes-sections.md)): a résumé is a header and an ordered list of sections the user chooses — summary, experience (always), side projects, open source, education, talks & writing, skills, certifications, and up to three of their own. Moving or removing one is an edit saved as a version; adding one fills it from the sources, at a price shown first.
 - **Export is presentation:** the Template (the prototype shows Organic and Plain), a white page, and PDF.
 
 ### 2.10 Cross-cutting concerns to keep out of the core

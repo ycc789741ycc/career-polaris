@@ -18,8 +18,11 @@ from html import escape
 from advisor.resume.domain import (
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
+    Bullet,
     Options,
     ResumeContent,
+    Section,
+    SectionShape,
     Template,
     get_template_look,
 )
@@ -40,24 +43,7 @@ def render_html(content: ResumeContent, *, template: Template, options: Options)
     look = get_template_look(template)
     heading = f'"{look.heading_font}", "{FALLBACK_FONT}", serif'
     body = f'"{look.body_font}", "{FALLBACK_FONT}", sans-serif'
-    skills = content.skills[:TRIMMED_SKILLS] if options.trim else content.skills
-
-    positions = []
-    for position in content.experience:
-        bullets = position.bullets[:TRIMMED_BULLETS] if options.trim else position.bullets
-        items = "".join(f"<li>{escape(b.text)}</li>" for b in bullets)
-        title = " — ".join(escape(part) for part in (position.title, position.org) if part)
-        positions.append(
-            '<section class="job">'
-            '<div class="job-head">'
-            f'<span class="job-title">{title}</span>'
-            f'<span class="job-when">{escape(position.when)}</span>'
-            "</div>"
-            f"<ul>{items}</ul>"
-            "</section>"
-        )
-
-    skill_items = "".join(f'<span class="skill">{escape(s)}</span>' for s in skills)
+    sections = "".join(_section(s, trim=options.trim) for s in content.sections)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{escape(content.name)}</title>
 <style>
@@ -75,6 +61,7 @@ h2 {{ font-size: {HEADING_PT}pt; letter-spacing: 0.1em; text-transform: uppercas
 .job-head {{ display: flex; justify-content: space-between; gap: 12pt; }}
 .job-title {{ font-family: {heading}; font-size: {TITLE_PT}pt; }}
 .job-when {{ font-size: {SMALL_PT}pt; color: #6b6560; white-space: nowrap; }}
+.job-link {{ font-size: {SMALL_PT}pt; color: #6b6560; }}
 ul {{ margin: 4pt 0 0; padding-left: 12pt; }}
 li {{ margin-bottom: 3pt; }}
 li::marker {{ color: {look.dot_color}; }}
@@ -87,13 +74,44 @@ li::marker {{ color: {look.dot_color}; }}
 <h1>{escape(content.name)}</h1>
 <div class="contact">{escape(" · ".join(p for p in (content.headline, content.contact) if p))}</div>
 </header>
-<h2>Summary</h2>
-<p class="summary">{escape(content.summary)}</p>
-<h2>Experience</h2>
-{"".join(positions)}
-<h2>Skills</h2>
-<div class="skills">{skill_items}</div>
+{sections}
 </body></html>"""
+
+
+def _section(section: Section, *, trim: bool) -> str:
+    """One section, by its shape. An empty one prints nothing at all."""
+    if section.is_empty:
+        return ""
+    title = f"<h2>{escape(section.heading)}</h2>"
+    if section.shape is SectionShape.TEXT:
+        return f'{title}<p class="summary">{escape(section.text)}</p>'
+    if section.shape is SectionShape.LIST:
+        items = section.items[:TRIMMED_SKILLS] if trim else section.items
+        chips = "".join(f'<span class="skill">{escape(i)}</span>' for i in items)
+        return f'{title}<div class="skills">{chips}</div>'
+    if section.shape is SectionShape.BULLETS:
+        return f"{title}{_lines(section.bullets, trim=trim)}"
+    entries = []
+    for entry in section.entries:
+        name = " — ".join(escape(part) for part in (entry.title, entry.org) if part)
+        link = f'<div class="job-link">{escape(entry.link)}</div>' if entry.link else ""
+        entries.append(
+            '<section class="job">'
+            '<div class="job-head">'
+            f'<span class="job-title">{name}</span>'
+            f'<span class="job-when">{escape(entry.when)}</span>'
+            "</div>"
+            f"{link}{_lines(entry.bullets, trim=trim)}"
+            "</section>"
+        )
+    return title + "".join(entries)
+
+
+def _lines(bullets: tuple[Bullet, ...], *, trim: bool) -> str:
+    shown = bullets[:TRIMMED_BULLETS] if trim else bullets
+    if not shown:
+        return ""
+    return "<ul>" + "".join(f"<li>{escape(b.text)}</li>" for b in shown) + "</ul>"
 
 
 def render_pdf(html: str) -> bytes:

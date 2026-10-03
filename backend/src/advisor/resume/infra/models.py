@@ -33,7 +33,7 @@ from kernel.db.base import Base, OwnedMixin, new_id
 class Resume(Base, OwnedMixin):
     __tablename__ = "resume"
     __table_args__ = (
-        CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
+        CheckConstraint("status IN ('drafting', 'ready', 'failed', 'filling')", name="status"),
         CheckConstraint("template IN ('organic', 'plain')", name="template"),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
@@ -68,6 +68,16 @@ class Resume(Base, OwnedMixin):
     # first write, and on résumés written before they were recorded.
     profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The sections every new version is written to, in order: [{kind, title}]
+    # (ADR 0039).
+    section_plan: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text(
+            """'[{"kind": "summary", "title": null}, {"kind": "experience", "title": null},"""
+            """ {"kind": "skills", "title": null}]'::jsonb"""
+        ),
+    )
 
 
 class ResumeVersion(Base, OwnedMixin):

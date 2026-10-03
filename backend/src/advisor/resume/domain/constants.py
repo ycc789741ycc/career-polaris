@@ -16,6 +16,25 @@ MAX_SKILLS = 30
 
 MAX_TEXT = 600
 
+# --- section -----------------------------------------------------------------
+
+# Every section a résumé can have at once: one of each kind, and a few of the
+# user's own (ADR 0039).
+MAX_SECTIONS = 9
+
+MAX_CUSTOM_SECTIONS = 3
+
+# A custom section's heading, the user's own words.
+MAX_SECTION_TITLE = 60
+
+MAX_SUMMARY = 1200
+
+# A list item: one skill or one certification.
+MAX_ITEM = 120
+
+# A side project's or an open-source project's link, shown as text.
+MAX_LINK = 200
+
 # A dimension this far below the Target's bar still counts as partly covered.
 # The prototype's threshold.
 PARTIAL_WITHIN = 14

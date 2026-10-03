@@ -14,6 +14,7 @@ from advisor.resume.domain import (
     ResumeStatus,
     ResumeVersion,
     Revision,
+    SectionSlot,
     TailoredResume,
     Template,
     VersionSource,
@@ -52,6 +53,7 @@ def resume(row: models.Resume) -> TailoredResume:
         error_message=row.error_message,
         profile_version=row.profile_version,
         target_digest=row.target_digest,
+        section_plan=tuple(SectionSlot.from_dict(slot) for slot in row.section_plan),
     )
 
 
@@ -80,6 +82,7 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.updated_at = entity.updated_at
     row.profile_version = entity.profile_version
     row.target_digest = entity.target_digest
+    row.section_plan = [slot.to_dict() for slot in entity.section_plan]
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:

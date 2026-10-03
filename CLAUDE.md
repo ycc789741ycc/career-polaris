@@ -576,3 +576,12 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   link is signed as an attachment ("<name> — <role>.pdf") and the SPA
   downloads it at once; an export records its `trim` (migration 0034), and an
   unchanged one is reused.
+- **Sections you choose** (ADR 0039). `ResumeContent` is a header and
+  `sections` (`resume/domain/section.py`: `SectionKind`, one shape each —
+  text, entries, list, bullets); Experience always, every other kind once, up
+  to three custom ones. `Resume.section_plan` is what each version is written
+  to, and every saved version sets it. The Sections panel moves and removes
+  sections as edits saved as versions; adding one is priced
+  (`/sections/estimate`), sets the résumé `filling`, and `resume.fill_section`
+  writes that section only (`resume_section` v1). `resume_write` and
+  `resume_revise` are v3. Migration 0035 moved stored content into sections.

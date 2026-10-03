@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -14,7 +13,6 @@ from advisor.resume.domain import (
     Bullet,
     Options,
     Origin,
-    Position,
     ResumeContent,
     ResumeError,
     Template,
@@ -28,17 +26,11 @@ from advisor.resume.domain import (
     settle_revision,
 )
 from advisor.resume.infra.render import render_html, render_pdf
+from tests.unit.advisor.resume.builders import get_lines, make_content
 
 
 def content(*bullets: Bullet, name: str = "Maya Lin Chen") -> ResumeContent:
-    return ResumeContent(
-        name=name,
-        headline="Backend Engineer",
-        contact="maya@example.com",
-        summary="Builds payment systems.",
-        experience=(Position("Backend Engineer", "Kestrel", "2022 — now", bullets),),
-        skills=("Go", "Postgres"),
-    )
+    return make_content(*bullets, name=name)
 
 
 CITED = Bullet("Owned the retry layer for payments-svc", ("e1",))
@@ -74,7 +66,7 @@ def test_an_edited_line_becomes_the_users_and_an_untouched_one_keeps_its_source(
 
     settled = mark_edits(before, edited)
 
-    kept, changed = settled.experience[0].bullets
+    kept, changed = get_lines(settled)
     assert kept == CITED
     assert changed.origin is Origin.YOURS
     assert changed.evidence_ids == ("e2",)
@@ -89,7 +81,7 @@ def test_a_proposal_cannot_relabel_the_users_own_line() -> None:
 
     settled = settle_revision(content(mine), proposed, lambda cited: cited)
 
-    kept, new = settled.experience[0].bullets
+    kept, new = get_lines(settled)
     assert kept == mine, "an unchanged line is the line it was"
     assert new.origin is Origin.WRITTEN, "new text is the model's, whatever it claims"
 
@@ -104,7 +96,7 @@ def test_only_a_proposals_new_lines_have_their_citations_resolved() -> None:
 
     settled = settle_revision(content(CITED), proposed, lambda cited: tuple(ids[c] for c in cited))
 
-    kept, new = settled.experience[0].bullets
+    kept, new = get_lines(settled)
     assert kept == CITED
     assert new.evidence_ids == ("e1", "e2")
 
@@ -112,7 +104,7 @@ def test_only_a_proposals_new_lines_have_their_citations_resolved() -> None:
 def test_citations_can_be_renamed_throughout() -> None:
     renamed = content(CITED).with_citations(lambda ids: tuple(i.upper() for i in ids))
     assert renamed.cited() == {"E1"}
-    assert renamed.experience[0].bullets[0].text == CITED.text
+    assert get_lines(renamed)[0].text == CITED.text
 
 
 # -- coverage -------------------------------------------------------------
@@ -215,7 +207,7 @@ def test_each_template_is_drawn_from_its_look(template: Template) -> None:
 
 
 def test_trim_cuts_skills_by_the_shared_limit_too() -> None:
-    many = replace(content(CITED), skills=tuple(f"Skill {i}" for i in range(20)))
+    many = make_content(CITED, skills=tuple(f"Skill {i}" for i in range(20)))
     html = render_html(many, template=Template.PLAIN, options=Options(trim=True))
 
     assert f"Skill {TRIMMED_SKILLS - 1}<" in html and f"Skill {TRIMMED_SKILLS}<" not in html

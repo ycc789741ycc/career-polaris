@@ -15,28 +15,20 @@ scores").
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
 
-from advisor.resume.domain.constants import (
-    MAX_BULLETS_PER_ROLE,
-    MAX_ROLES,
-    MAX_SKILLS,
-    MAX_TEXT,
-    PARTIAL_WITHIN,
+from advisor.resume.domain.constants import PARTIAL_WITHIN
+from advisor.resume.domain.section import (
+    Bullet,
+    Origin,
+    ResumeError,
+    Section,
+    SectionSlot,
+    assert_plan_valid,
+    assert_section_well_formed,
 )
-
-
-class ResumeError(ValueError):
-    """Content that breaks the rules; it is rejected, not repaired."""
-
-
-class Origin(StrEnum):
-    """Who wrote a line. Only the model's lines must cite evidence."""
-
-    WRITTEN = "written"
-    YOURS = "yours"
 
 
 class VersionSource(StrEnum):
@@ -75,50 +67,35 @@ class Options:
 
 
 @dataclass(frozen=True, slots=True)
-class Bullet:
-    text: str
-    evidence_ids: tuple[str, ...] = ()
-    origin: Origin = Origin.WRITTEN
-    # Which of the Target's requirements this line answers, if any.
-    answers: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class Position:
-    title: str
-    org: str
-    when: str
-    bullets: tuple[Bullet, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class ResumeContent:
+    """A header, and the sections the user chose, in their order (ADR 0039)."""
+
     name: str
     headline: str
     contact: str
-    summary: str
-    experience: tuple[Position, ...]
-    skills: tuple[str, ...] = field(default_factory=tuple)
+    sections: tuple[Section, ...]
 
     def bullets(self) -> Iterable[Bullet]:
-        for position in self.experience:
-            yield from position.bullets
+        for section in self.sections:
+            yield from section.get_bullets()
 
     def cited(self) -> set[str]:
         return {i for bullet in self.bullets() for i in bullet.evidence_ids}
+
+    def get_section(self, slot: SectionSlot) -> Section | None:
+        return next((s for s in self.sections if s.slot == slot), None)
+
+    def get_plan(self) -> tuple[SectionSlot, ...]:
+        """Which sections there are, in order: the résumé's plan."""
+        return tuple(s.slot for s in self.sections)
 
     def with_citations(self, cite: Callable[[tuple[str, ...]], tuple[str, ...]]) -> ResumeContent:
         """The same résumé with every line's citations passed through ``cite``."""
         return replace(
             self,
-            experience=tuple(
-                replace(
-                    position,
-                    bullets=tuple(
-                        replace(b, evidence_ids=cite(b.evidence_ids)) for b in position.bullets
-                    ),
-                )
-                for position in self.experience
+            sections=tuple(
+                s.update_bullets(lambda b: replace(b, evidence_ids=cite(b.evidence_ids)))
+                for s in self.sections
             ),
         )
 
@@ -127,25 +104,7 @@ class ResumeContent:
             "name": self.name,
             "headline": self.headline,
             "contact": self.contact,
-            "summary": self.summary,
-            "experience": [
-                {
-                    "title": p.title,
-                    "org": p.org,
-                    "when": p.when,
-                    "bullets": [
-                        {
-                            "text": b.text,
-                            "evidence_ids": list(b.evidence_ids),
-                            "origin": str(b.origin),
-                            "answers": b.answers,
-                        }
-                        for b in p.bullets
-                    ],
-                }
-                for p in self.experience
-            ],
-            "skills": list(self.skills),
+            "sections": [s.to_dict() for s in self.sections],
         }
 
     @classmethod
@@ -154,52 +113,36 @@ class ResumeContent:
             name=str(data.get("name", "")),
             headline=str(data.get("headline", "")),
             contact=str(data.get("contact", "")),
-            summary=str(data.get("summary", "")),
-            experience=tuple(
-                Position(
-                    title=str(p.get("title", "")),
-                    org=str(p.get("org", "")),
-                    when=str(p.get("when", "")),
-                    bullets=tuple(
-                        Bullet(
-                            text=str(b.get("text", "")),
-                            evidence_ids=tuple(str(i) for i in b.get("evidence_ids", [])),
-                            origin=Origin(b.get("origin", Origin.WRITTEN)),
-                            answers=b.get("answers"),
-                        )
-                        for b in p.get("bullets", [])
-                    ),
-                )
-                for p in data.get("experience", [])
-            ),
-            skills=tuple(str(s) for s in data.get("skills", [])),
+            sections=tuple(Section.from_dict(s) for s in data.get("sections", [])),
         )
+
+
+def get_planned(content: ResumeContent, plan: Sequence[SectionSlot]) -> ResumeContent:
+    """The content laid out as ``plan``: its sections in the plan's order, an
+    empty one for any the plan has and the content lacks, and none the plan
+    does not have. Pure."""
+    return replace(
+        content,
+        sections=tuple(content.get_section(slot) or Section.create_empty(slot) for slot in plan),
+    )
 
 
 def assert_well_formed(content: ResumeContent) -> None:
     if not content.name.strip():
         raise ResumeError("a résumé needs a name")
-    if len(content.experience) > MAX_ROLES:
-        raise ResumeError(f"at most {MAX_ROLES} roles")
-    if len(content.skills) > MAX_SKILLS:
-        raise ResumeError(f"at most {MAX_SKILLS} skills")
-    for position in content.experience:
-        if len(position.bullets) > MAX_BULLETS_PER_ROLE:
-            raise ResumeError(f"at most {MAX_BULLETS_PER_ROLE} bullets under {position.title!r}")
-        for bullet in position.bullets:
-            if not bullet.text.strip():
-                raise ResumeError(f"an empty line under {position.title!r}")
-            if len(bullet.text) > MAX_TEXT:
-                raise ResumeError(f"a line under {position.title!r} is too long")
+    assert_plan_valid(content.get_plan())
+    for section in content.sections:
+        assert_section_well_formed(section)
 
 
 def assert_written_lines_cited(content: ResumeContent) -> None:
-    """Every line the model wrote cites the work it was written from."""
-    for position in content.experience:
-        for bullet in position.bullets:
+    """Every line the model wrote cites the work it was written from, in
+    whichever section it sits."""
+    for section in content.sections:
+        for bullet in section.get_bullets():
             if bullet.origin is Origin.WRITTEN and not bullet.evidence_ids:
                 raise ResumeError(
-                    f"a written line under {position.title!r} cites no evidence: "
+                    f"a written line under {section.heading!r} cites no evidence: "
                     f"{bullet.text[:80]!r}"
                 )
 
@@ -208,20 +151,16 @@ def mark_edits(previous: ResumeContent | None, edited: ResumeContent) -> ResumeC
     """A line the user changed is theirs; one left as it was keeps its origin.
 
     Matching is by exact text: a line that reads the same is the same line,
-    wherever it moved.
+    wherever it moved, in whichever section.
     """
     before = {b.text: b for b in previous.bullets()} if previous else {}
     return replace(
         edited,
-        experience=tuple(
-            replace(
-                position,
-                bullets=tuple(
-                    before[b.text] if b.text in before else replace(b, origin=Origin.YOURS)
-                    for b in position.bullets
-                ),
+        sections=tuple(
+            s.update_bullets(
+                lambda b: before[b.text] if b.text in before else replace(b, origin=Origin.YOURS)
             )
-            for position in edited.experience
+            for s in edited.sections
         ),
     )
 
@@ -241,17 +180,15 @@ def settle_revision(
     before = {b.text: b for b in current.bullets()}
     return replace(
         proposed,
-        experience=tuple(
-            replace(
-                position,
-                bullets=tuple(
+        sections=tuple(
+            s.update_bullets(
+                lambda b: (
                     before[b.text]
                     if b.text in before
                     else replace(b, origin=Origin.WRITTEN, evidence_ids=resolve(b.evidence_ids))
-                    for b in position.bullets
-                ),
+                )
             )
-            for position in proposed.experience
+            for s in proposed.sections
         ),
     )
 

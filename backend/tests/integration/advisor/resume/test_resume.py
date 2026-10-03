@@ -14,6 +14,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -29,6 +30,8 @@ from advisor.resume import (
     RevisionDone,
     RevisionFailed,
     RevisionText,
+    SectionKind,
+    SectionSlot,
     Template,
     create_resume_service,
 )
@@ -258,24 +261,40 @@ def _resume_reply(cited: str) -> str:
             "name": "Maya Lin Chen",
             "headline": "Staff Platform Engineer",
             "contact": "maya@example.com",
-            "summary": "Leads platform work across teams.",
-            "experience": [
+            "sections": [
+                {"kind": "summary", "text": "Leads platform work across teams."},
                 {
-                    "title": "Backend Engineer",
-                    "org": "Kestrel Financial",
-                    "when": "2022 — now",
-                    "bullets": [
+                    "kind": "experience",
+                    "entries": [
                         {
-                            "text": "Led the checkout migration across two teams",
-                            "evidence_ids": [cited],
-                            "answers": LEADS,
+                            "title": "Backend Engineer",
+                            "org": "Kestrel Financial",
+                            "when": "2022 — now",
+                            "bullets": [
+                                {
+                                    "text": "Led the checkout migration across two teams",
+                                    "evidence_ids": [cited],
+                                    "answers": LEADS,
+                                }
+                            ],
                         }
                     ],
-                }
+                },
+                {"kind": "skills", "items": ["Go", "Postgres"]},
             ],
-            "skills": ["Go", "Postgres"],
         }
     )
+
+
+def _lines(content: dict[str, Any]) -> list[dict[str, Any]]:
+    """The first experience entry's lines, in stored content."""
+    experience = next(s for s in content["sections"] if s["kind"] == "experience")
+    lines: list[dict[str, Any]] = experience["entries"][0]["bullets"]
+    return lines
+
+
+def _summary(content: Any) -> str:
+    return next(s.text for s in content.sections if str(s.kind) == "summary")
 
 
 async def _written(world: World, account: uuid.UUID) -> uuid.UUID:
@@ -301,8 +320,8 @@ async def test_a_resume_is_written_cited_with_coverage_decided_by_scores(
     assert view.version is not None
     assert (view.version.number, str(view.version.source)) == (1, "generated")
     assert view.content is not None
-    [bullet] = view.content.experience[0].bullets
-    assert bullet.evidence_ids == (world.evidence_id,)
+    [bullet] = _lines(view.content.to_dict())
+    assert bullet["evidence_ids"] == [world.evidence_id]
     assert "I led it across two teams" in view.evidence[world.evidence_id].fact
 
     # 70 against 90 is 20 short: a gap. 70 against 60 clears it. Org influence
@@ -341,25 +360,25 @@ async def test_an_edit_is_the_users_own_but_cannot_cite_someone_elses_evidence(
     view = await world.resume.get(account, resume_id)
     assert view.content is not None
     edited = view.content.to_dict()
-    edited["experience"][0]["bullets"][0]["text"] = "Led checkout's migration, end to end"
+    _lines(edited)[0]["text"] = "Led checkout's migration, end to end"
 
     saved = await world.resume.save_version(account, resume_id, content=edited)
     assert (saved.number, str(saved.source)) == (2, "manual")
     again = await world.resume.get(account, resume_id)
     assert again.content is not None
-    assert str(again.content.experience[0].bullets[0].origin) == "yours"
+    assert _lines(again.content.to_dict())[0]["origin"] == "yours"
 
     # Unchanged text is the same line: its stored citation stands, and an id
     # slipped in beside it is not what gets saved.
     stranger = str(uuid.uuid4())
-    edited["experience"][0]["bullets"][0]["evidence_ids"] = [stranger]
+    _lines(edited)[0]["evidence_ids"] = [stranger]
     await world.resume.save_version(account, resume_id, content=edited)
     kept = await world.resume.get(account, resume_id)
     assert kept.content is not None
     assert stranger not in kept.content.cited()
 
     # A line the user rewrites keeps what they cite — which must be theirs.
-    edited["experience"][0]["bullets"][0]["text"] = "Led the migration, start to finish"
+    _lines(edited)[0]["text"] = "Led the migration, start to finish"
     with pytest.raises(EvidenceNotOwnedError):
         await world.resume.save_version(account, resume_id, content=edited)
 
@@ -372,7 +391,7 @@ async def test_a_chat_proposal_streams_and_becomes_a_version_only_when_applied(
     assert view.content is not None
     current = view.content.to_dict()
     proposed = json.loads(_resume_reply(CITED))
-    proposed["summary"] = "Short."
+    proposed["sections"][0]["text"] = "Short."
     world.stub.streams.append(
         [
             "Shorter summary; ",
@@ -393,13 +412,13 @@ async def test_a_chat_proposal_streams_and_becomes_a_version_only_when_applied(
     assert text == "Shorter summary; the lead line stays.\n"
     done = events[-1]
     assert isinstance(done, RevisionDone)
-    assert done.proposal is not None and done.proposal.summary == "Short."
+    assert done.proposal is not None and _summary(done.proposal) == "Short."
     assert len((await world.resume.get(account, resume_id)).versions) == 1
 
     applied = await world.resume.apply_revision(account, resume_id, done.revision_id)
     assert (applied.number, str(applied.source)) == (2, "chat")
     after = await world.resume.get(account, resume_id)
-    assert after.content is not None and after.content.summary == "Short."
+    assert after.content is not None and _summary(after.content) == "Short."
     assert after.revisions[0].applied_version_id == applied.id
 
 
@@ -410,9 +429,7 @@ async def test_a_proposal_with_an_uncited_new_line_is_rejected_in_the_stream(
     view = await world.resume.get(account, resume_id)
     assert view.content is not None
     proposed = json.loads(_resume_reply(CITED))
-    proposed["experience"][0]["bullets"].append(
-        {"text": "Promoted to Staff in 2024", "evidence_ids": []}
-    )
+    _lines(proposed).append({"text": "Promoted to Staff in 2024", "evidence_ids": []})
     world.stub.streams.append(
         [
             "Added your promotion.",
@@ -484,6 +501,56 @@ async def test_new_evidence_marks_the_resume_outdated_until_it_is_regenerated(
     assert regenerated.summary.status == "ready", regenerated.summary.error_message
     assert [v.number for v in regenerated.versions] == [2, 1]
     assert regenerated.outdated_by == ()
+
+
+async def test_a_section_is_added_filled_and_kept_when_the_resume_is_regenerated(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """Sections the user chose are the résumé's plan (ADR 0039)."""
+    resume_id = await _written(world, account)
+    education = SectionSlot(SectionKind.EDUCATION)
+    with pytest.raises(NotFoundError):
+        await world.resume.request_section(other_account, resume_id, education)
+
+    filling = await world.resume.request_section(account, resume_id, education)
+    assert filling.status == "filling"
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "section": {
+                    "kind": "education",
+                    "entries": [
+                        {
+                            "title": "Led a study group",
+                            "org": "TU Berlin",
+                            "when": "2016",
+                            "bullets": [
+                                {"text": "Ran the systems study group", "evidence_ids": [CITED]}
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+    )
+    await world.resume.fill_section(account, resume_id, education)
+
+    filled = await world.resume.get(account, resume_id)
+    assert filled.summary.status == "ready", filled.summary.error_message
+    assert filled.content is not None
+    kinds = [str(s.kind) for s in filled.content.sections]
+    assert kinds == ["summary", "experience", "skills", "education"]
+    assert filled.section_plan[-1] == education
+
+    await world.resume.redraft(account, resume_id)
+    world.stub.replies.append(_resume_reply(CITED))
+    await world.resume.generate(account, resume_id)
+
+    again = await world.resume.get(account, resume_id)
+    assert again.content is not None
+    # The reply wrote three sections; the plan keeps the fourth, empty.
+    assert [str(s.kind) for s in again.content.sections] == kinds
+    assert again.content.sections[-1].is_empty
 
 
 async def test_another_user_cannot_read_the_resume_or_its_export(
