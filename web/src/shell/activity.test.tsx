@@ -12,6 +12,7 @@ import { ToastProvider } from "./toast";
 
 const IDLE: Activity = {
   syncing: [],
+  advisor_jobs: [],
   parsing: [],
   analysis: null,
   role_map: null,
@@ -66,6 +67,7 @@ describe("what is running", () => {
     const lines = describeWork(
       {
         syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
+        advisor_jobs: [],
         parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
         analysis: run("running"),
         role_map: run("waiting"),
@@ -168,6 +170,7 @@ describe("the running bar", () => {
 describe("the running bar on a screen with its own waiting screen", () => {
   const activity = {
     syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
+    advisor_jobs: [],
     parsing: [],
     analysis: {
       status: "running" as const,

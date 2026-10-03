@@ -10,8 +10,9 @@ from kernel.errors import ValidationError
 # Each template at the version the code loads.
 TEMPLATES = [
     # Candidate roles joined the reply in v2 (ADR 0024); v3 asks for the
-    # configured number of them (ADR 0029).
-    ("skill_assessment", "v3"),
+    # configured number of them (ADR 0029); v4 reads each fact with its date
+    # (ADR 0037).
+    ("skill_assessment", "v4"),
     ("follow_up_questions", "v1"),
     # v2 keeps where and how a role is worked out of its name (Phase 8).
     ("role_extraction", "v2"),
@@ -19,11 +20,35 @@ TEMPLATES = [
     ("typical_requirements", "v1"),
     ("difficulty_estimate", "v1"),
     ("fit_projection", "v1"),
-    # Phase 2
-    ("gap_plan", "v1"),
-    ("resume_write", "v1"),
-    ("resume_revise", "v1"),
+    # Phase 2. v2 of the plan pairs answers with their gaps (ADR 0036); from
+    # there each reads each fact with its date (ADR 0037).
+    ("gap_plan", "v3"),
+    ("gap_questions", "v2"),
+    # v3 writes to the résumé's sections (ADR 0039).
+    ("resume_write", "v3"),
+    ("resume_revise", "v3"),
+    ("resume_section", "v1"),
 ]
+
+
+@pytest.mark.parametrize(
+    ("name", "version"),
+    [
+        ("skill_assessment", "v4"),
+        ("gap_plan", "v3"),
+        ("gap_questions", "v2"),
+        ("resume_write", "v3"),
+        ("resume_revise", "v3"),
+        ("resume_section", "v1"),
+    ],
+)
+def test_every_prompt_that_reads_evidence_is_told_what_its_dates_mean(
+    name: str, version: str
+) -> None:
+    system = templates.load(name, version).system
+    assert "Rules on time:" in system
+    assert "the newer one wins" in system
+    assert "never make the work itself recent" in system
 
 
 @pytest.mark.parametrize(("name", "version"), TEMPLATES)

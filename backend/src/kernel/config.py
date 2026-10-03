@@ -129,6 +129,15 @@ class Settings(BaseSettings):
     own_posting_max_pages: int = Field(default=10, alias="OWN_POSTING_MAX_PAGES")
     parse_timeout_seconds: int = Field(default=60, alias="PARSE_TIMEOUT_SECONDS")
 
+    # --- Résumé templates ---------------------------------------------------
+    # How many templates of their own each user may keep (ADR 0040).
+    resume_template_max: int = Field(default=10, ge=1, le=100, alias="RESUME_TEMPLATE_MAX")
+    # A PDF a template starts from, read for its style only (ADR 0041).
+    template_upload_max_bytes: int = Field(
+        default=5_242_880, ge=1, alias="TEMPLATE_UPLOAD_MAX_BYTES"
+    )
+    template_upload_max_pages: int = Field(default=3, ge=1, alias="TEMPLATE_UPLOAD_MAX_PAGES")
+
     # --- Crawler ------------------------------------------------------------
     crawl_user_agent: str = Field(default="JobSearchingAdvisorBot/1.0", alias="CRAWL_USER_AGENT")
     crawl_http_timeout_seconds: int = Field(default=30, alias="CRAWL_HTTP_TIMEOUT_SECONDS")

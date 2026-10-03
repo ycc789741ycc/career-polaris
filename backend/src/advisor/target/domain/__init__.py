@@ -1,4 +1,5 @@
 from advisor.target.domain.constants import (
+    EVALUATION_STAGE_SHARES,
     MAX_COMPANY_NAME,
     MAX_FILENAME,
     MAX_JOB_DESCRIPTION,
@@ -6,7 +7,13 @@ from advisor.target.domain.constants import (
     MAX_REQUIREMENT_LINES,
     MAX_TITLE,
 )
+from advisor.target.domain.draft_basis import (
+    DraftBasis,
+    OutdatedReason,
+    get_target_digest,
+)
 from advisor.target.domain.own_posting import (
+    EvaluationStage,
     OwnPostingError,
     PostingEvaluation,
     PostingEvaluationStatus,
@@ -49,6 +56,7 @@ from advisor.target.domain.snapshot import (
 )
 
 __all__ = [
+    "EVALUATION_STAGE_SHARES",
     "MAX_COMPANY_NAME",
     "MAX_FILENAME",
     "MAX_JOB_DESCRIPTION",
@@ -56,6 +64,9 @@ __all__ = [
     "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
     "DimensionGap",
+    "DraftBasis",
+    "EvaluationStage",
+    "OutdatedReason",
     "OwnPostingError",
     "OwnPostingFit",
     "OwnPostingFitFilter",
@@ -86,6 +97,7 @@ __all__ = [
     "gap_key_for_dimension",
     "gap_key_for_uncovered",
     "get_placeholder_title",
+    "get_target_digest",
     "parse_requirement_lines",
     "parse_title_and_company",
 ]

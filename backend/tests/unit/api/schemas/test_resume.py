@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -23,26 +24,19 @@ from advisor.resume import (
     Template,
     VersionView,
 )
-from advisor.resume.domain import Bullet, Position, ResumeContent
+from advisor.resume.domain import Bullet
 from advisor.resume.domain.content import VersionSource
 from advisor.resume.service import EvidenceNote
-from advisor.target import TargetRef
+from advisor.target import OutdatedReason, TargetRef
 from api.schemas.resume import ResumeContent as ContentBody
 from api.schemas.resume import ResumeExport, TailoredResume, revision_event
+from tests.unit.advisor.resume.builders import make_content
 
 AT = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
 ROLE_ID = uuid.uuid4()
 RESUME_ID = uuid.uuid4()
 VERSION_ID = uuid.uuid4()
-CONTENT = ResumeContent(
-    name="Maya",
-    headline="Platform engineer",
-    contact="maya@example.test",
-    summary="Short.",
-    experience=(
-        Position("Engineer", "Kestrel", "2022 - now", (Bullet("Cut p99 by 40%", ("e1",)),)),
-    ),
-)
+CONTENT = make_content(Bullet("Cut p99 by 40%", ("e1",)), name="Maya", summary="Short.")
 
 
 def _view() -> ResumeView:
@@ -119,6 +113,22 @@ def test_a_tailored_resume_carries_its_summary_and_its_content() -> None:
     assert body["content"] == CONTENT.to_dict()
     assert body["evidence"] == {"e1": {"reference": "PR #12", "fact": "Migrated to EKS"}}
     assert body["revisions"][0]["applied_version_id"] == str(VERSION_ID)
+    assert (body["is_outdated"], body["outdated_by"]) == (False, [])
+
+
+def test_an_outdated_resume_says_what_moved_on() -> None:
+    view = replace(_view(), outdated_by=(OutdatedReason.EVIDENCE, OutdatedReason.TARGET))
+    body = TailoredResume.from_resume(view).model_dump(mode="json")
+
+    assert (body["is_outdated"], body["outdated_by"]) == (True, ["evidence", "target"])
+
+
+def test_a_version_rewritten_after_fill_the_gap_still_reads() -> None:
+    """Nothing saves ``answers`` since ADR 0035; versions saved before keep it."""
+    old = replace(_view().versions[0], source=VersionSource.ANSWERS)
+    body = TailoredResume.from_resume(replace(_view(), version=old, versions=(old,)))
+
+    assert body.version is not None and body.version.source == "answers"
 
 
 def test_content_that_drifted_from_the_contract_is_refused() -> None:

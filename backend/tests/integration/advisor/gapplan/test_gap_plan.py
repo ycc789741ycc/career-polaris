@@ -19,17 +19,18 @@ import pytest
 import pytest_asyncio
 
 from advisor.assessment import AssessmentService, create_assessment_service
+from advisor.gapfill import Answer, GapFillService, create_gapfill_service
 from advisor.gapplan import GapPlanService, PlanStatus, create_gapplan_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
-from advisor.profile import create_profile_service
+from advisor.profile import ProfileService, create_profile_service
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
 from kernel.config import Settings
 from kernel.db import Database
-from kernel.errors import NotFoundError
+from kernel.errors import ConflictError, NotFoundError
 from kernel.storage import ObjectStore
 from tests.integration.places import WINDOWS, store_target_locations
 
@@ -62,7 +63,9 @@ class StubProvider(Provider):
         )
 
     async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
-        yield ""
+        # A job's call streams (ADR 0042): the queued reply, in one chunk.
+        self.calls.append(request)
+        yield self.replies.pop(0) if self.replies else "{}"
 
 
 @dataclass
@@ -74,6 +77,8 @@ class World:
     target: TargetService
     gapplan: GapPlanService
     evidence_id: str
+    profile: ProfileService
+    gapfill: GapFillService
 
 
 @pytest_asyncio.fixture
@@ -133,12 +138,14 @@ async def world(
         upload_max_bytes=settings.own_posting_max_bytes,
         upload_max_pages=settings.own_posting_max_pages,
     )
+    gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     gapplan = create_gapplan_service(
         database,
         target=target,
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        gapfill=gapfill,
         gateway=gateway,
     )
 
@@ -175,6 +182,8 @@ async def world(
         target=target,
         gapplan=gapplan,
         evidence_id=str(evidence.id),
+        profile=profile,
+        gapfill=gapfill,
     )
 
 
@@ -345,7 +354,7 @@ async def test_a_posting_of_your_own_is_planned_for_with_gaps_ranked_by_worth(
     ]
     assert plan.summary.progress == 0
     assert plan.summary.model_id == "claude-opus-5"
-    assert plan.template_version == "gap_plan@v1"
+    assert plan.template_version == "gap_plan@v3"
     # Only the draft runs on the key: the build already read the JD and
     # scored the role (ADR 0022).
     assert len(world.stub.calls) == calls_before + 1
@@ -414,6 +423,81 @@ async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
     assert "unexplained" in (plan.summary.error_message or "")
 
 
+async def test_new_evidence_marks_the_latest_plan_outdated_and_rewrites_nothing(
+    world: World, account: uuid.UUID
+) -> None:
+    """Answering in Fill the gap records evidence and spends nothing: the plan
+    is left as it was and says it is outdated (ADR 0035)."""
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(_plan_reply(CITED))
+    requested = await world.gapplan.request(account, ref)
+    await world.gapplan.draft(account, requested.id)
+    drafted = await world.gapplan.get(account, requested.id)
+    assert drafted.summary.status is PlanStatus.READY, drafted.summary.error_message
+    assert drafted.outdated_by == ()
+    calls = len(world.stub.calls)
+
+    await world.profile.record_answer(
+        account, question_id="later", question="Did another team adopt it?", answer="Yes"
+    )
+
+    after = await world.gapplan.get(account, requested.id)
+    assert [str(r) for r in after.outdated_by] == ["evidence"]
+    assert [v.version for v in after.versions] == [1]
+    assert after.gaps == drafted.gaps
+    assert len(world.stub.calls) == calls
+
+
+async def test_a_requirement_with_no_evidence_cites_the_answer_given_about_it(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """What the user answered in Fill the gap is the one thing an uncovered
+    requirement can rest on (ADR 0036)."""
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "gap_key": ORG_KEY,
+                        "text": "Did another team build on a design you wrote?",
+                        "asked_because": "Nothing speaks to influence beyond a team.",
+                        "answer_type": "free_text",
+                        "choices": [],
+                    }
+                ]
+            }
+        )
+    )
+    questions = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, questions.id)
+    written = await world.gapfill.get(account, questions.id)
+    assert written.status == "ready", written.error_message
+    done = await world.gapfill.submit(
+        account,
+        written.id,
+        [Answer(question_id=written.questions[0].id, text="Payments built on my ledger RFC.")],
+    )
+    [answer_id] = done.evidence_ids
+    assert [a.evidence_id for a in await world.gapfill.get_answers(account, ref)] == [answer_id]
+    assert await world.gapfill.get_answers(other_account, ref) == ()
+
+    profile = await world.profile.snapshot(account)
+    handle = {str(e.id): f"E{n}" for n, e in enumerate(profile.evidence, start=1)}
+    reply = json.loads(_plan_reply(handle[world.evidence_id]))
+    reply["gaps"][0]["evidence_ids"] = [handle[str(answer_id)]]
+    world.stub.replies.append(json.dumps(reply))
+    requested = await world.gapplan.request(account, ref)
+    await world.gapplan.draft(account, requested.id)
+
+    plan = await world.gapplan.get(account, requested.id)
+    assert plan.summary.status is PlanStatus.READY, plan.summary.error_message
+    assert f"answered in [{handle[str(answer_id)]}]" in world.stub.calls[-1].user
+    org = next(g for g in plan.gaps if g.key == ORG_KEY)
+    assert [e.id for e in org.evidence] == [str(answer_id)]
+    assert "Payments built on my ledger RFC." in org.evidence[0].fact
+
+
 async def test_another_user_cannot_read_the_plan(
     world: World, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:
@@ -425,3 +509,43 @@ async def test_another_user_cannot_read_the_plan(
     with pytest.raises(NotFoundError):
         await world.gapplan.get(other_account, requested.id)
     assert (await world.gapplan.history(other_account)).items == ()
+
+
+async def test_advisor_jobs_are_listed_and_cancelled_by_their_owner_only(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """ADR 0042: a running plan and question set are listed for their owner,
+    cancelled only by them, and only while they run."""
+    ref = await _own_posting(world, account)
+    plan = await world.gapplan.request(account, ref)
+    questions = await world.gapfill.request(account, ref)
+
+    running = {
+        (job.kind, job.id)
+        for job in (
+            *await world.gapplan.running_jobs(account),
+            *await world.gapfill.running_jobs(account),
+        )
+    }
+    assert running == {("gap_plan", str(plan.id)), ("questions", str(questions.id))}
+    assert await world.gapplan.running_jobs(other_account) == ()
+    assert await world.gapfill.running_jobs(other_account) == ()
+    with pytest.raises(NotFoundError):
+        await world.gapplan.cancel(other_account, plan.id)
+    with pytest.raises(NotFoundError):
+        await world.gapfill.cancel(other_account, questions.id)
+
+    await world.gapplan.cancel(account, plan.id)
+    await world.gapfill.cancel(account, questions.id)
+    calls = len(world.stub.calls)
+    await world.gapplan.draft(account, plan.id)
+
+    # Cancelled before its call: the job makes none.
+    assert len(world.stub.calls) == calls
+    assert (await world.gapplan.history(account)).items == ()
+    assert await world.gapfill.current(account, ref) is None
+    with pytest.raises(ConflictError):
+        await world.gapplan.cancel(account, plan.id)
+    # The posting's own evaluation is over, so it cannot be cancelled either.
+    with pytest.raises(ConflictError):
+        await world.target.cancel_evaluation(account, uuid.UUID(ref.private_job_posting_id or ""))

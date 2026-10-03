@@ -19,10 +19,12 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from advisor.resume.domain.custom_template import CustomTemplate
 from advisor.resume.domain.events import ResumeEvent
-from advisor.resume.domain.export import Export
+from advisor.resume.domain.export import Export, ExportStatus
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.tailored_resume import ResumeVersion, TailoredResume
+from advisor.resume.domain.template_reading import TemplateReading
 
 
 class Repository[Entity, Filter](Protocol):
@@ -45,7 +47,8 @@ class Repository[Entity, Filter](Protocol):
 
 @dataclass(frozen=True, slots=True)
 class TailoredResumeFilter:
-    """Nothing to filter on yet: a user's résumés are listed whole."""
+    # The résumés set in one of the user's own templates (ADR 0040).
+    custom_template_id: uuid.UUID | None = None
 
 
 class TailoredResumeRepository(Repository[TailoredResume, TailoredResumeFilter], Protocol): ...
@@ -74,9 +77,27 @@ class RevisionRepository(Repository[Revision, RevisionFilter], Protocol): ...
 @dataclass(frozen=True, slots=True)
 class ExportFilter:
     version_id: uuid.UUID | None = None
+    trim: bool | None = None
+    status: ExportStatus | None = None
 
 
 class ExportRepository(Repository[Export, ExportFilter], Protocol): ...
+
+
+@dataclass(frozen=True, slots=True)
+class CustomTemplateFilter:
+    """Nothing to filter on: a user's templates are few, listed whole."""
+
+
+class CustomTemplateRepository(Repository[CustomTemplate, CustomTemplateFilter], Protocol): ...
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateReadingFilter:
+    """Nothing to filter on: a reading is fetched by id."""
+
+
+class TemplateReadingRepository(Repository[TemplateReading, TemplateReadingFilter], Protocol): ...
 
 
 class OwnerResumes(Protocol):
@@ -84,6 +105,8 @@ class OwnerResumes(Protocol):
     versions: ResumeVersionRepository
     revisions: RevisionRepository
     exports: ExportRepository
+    templates: CustomTemplateRepository
+    readings: TemplateReadingRepository
 
     def record(self, event: ResumeEvent) -> None: ...
 

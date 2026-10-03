@@ -66,7 +66,6 @@ export type TargetRef = Schemas["TargetRefBody"];
 export type QuestionSet = Schemas["QuestionSet"];
 export type GapQuestion = Schemas["GapQuestion"];
 /** What submitting costs: the plan and résumé written again, if they exist. */
-export type SubmitEstimate = Schemas["SubmitEstimate"];
 export type Submitted = Schemas["Submitted"];
 
 // Gap plan
@@ -80,9 +79,20 @@ export type PlanEstimate = Schemas["TargetEstimate"];
 
 // Tailored résumé
 export type ResumeTemplate = Schemas["TailoredResume"]["template"];
+/** How a template looks, as the PDF renderer draws it (ADR 0038). */
+export type ResumeTemplateLook = Schemas["ResumeTemplate"];
+export type ResumeTemplatePage = Schemas["ResumeTemplatePage"];
+export type ResumeTemplateSpec = Schemas["TemplateSpecBody"];
+export type ResumeTemplateLimits = Schemas["ResumeTemplateLimits"];
+export type TemplateReading = Schemas["TemplateReading"];
+export type TemplateField = TemplateReading["read"][number];
 export type ResumeOptions = Schemas["ResumeOptions"];
 export type ResumeBullet = Schemas["ResumeBullet"];
 export type ResumeContent = Schemas["ResumeContent"];
+export type ResumeSection = Schemas["ResumeSection"];
+export type ResumeEntry = Schemas["ResumeEntry"];
+export type ResumeSectionSlot = Schemas["ResumeSectionSlot"];
+export type SectionKind = ResumeSection["kind"];
 export type ResumeSummary = Schemas["ResumeSummary"];
 export type ResumeVersion = Schemas["ResumeVersion"];
 export type TailoredResume = Schemas["TailoredResume"];

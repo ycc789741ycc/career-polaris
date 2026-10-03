@@ -80,28 +80,50 @@ and the role-map build are described step by step in
 [strength-analysis.md](strength-analysis.md) and
 [role-map-build.md](role-map-build.md).
 
-### Example: submitting gap answers
+### Example: regenerating a résumé the user was told is outdated
 
 ```mermaid
 sequenceDiagram
-    participant API as API / gap-fill service
+    participant UI as Browser
+    participant API as API / résumé service
     participant DB as PostgreSQL
-    participant D as Outbox dispatcher
     participant Q as Procrastinate queue
     participant W as Worker
 
-    API->>DB: Commit answers and GapAnswersSubmitted event
-    D->>DB: Read pending event
-    D->>Q: Enqueue gapplan.regenerate
-    D->>Q: Enqueue resume.regenerate
-    D->>DB: Mark event dispatched
-    W->>Q: Pick up tasks
-    W->>DB: Save regenerated plan and résumé through component services
+    UI->>API: GET /tailored-resumes/cost-estimate
+    UI->>API: POST /tailored-resumes/{id}/regenerate
+    API->>DB: Record the résumé as drafting
+    API->>Q: Enqueue resume.generate
+    W->>Q: Pick up the task
+    W->>DB: Save the next version with what it read
+    UI->>API: Poll GET /tailored-resumes/{id}
 ```
 
-The two tasks run independently; the diagram does not require them to finish
-in order. Each regeneration only produces work if the user already has the
-corresponding plan or résumé for the target.
+Submitting gap answers queues nothing. `GapAnswersSubmitted` is recorded and
+dispatched without a task: the Target's plan and résumé read as outdated by
+the new evidence, and the user regenerates either at a price they confirm
+([ADR 0035](../decisions/0035-regenerate-the-plan-and-resume-only-when-asked.md)).
+
+## Advisor jobs in the background
+
+The Advisor's short AI jobs — `gapfill.write`, `gapplan.draft`,
+`resume.generate`, `resume.fill_section` and `target.evaluate_own_posting` —
+each record their `stage` and `progress` on their row as they pass them
+([ADR 0042](../decisions/0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md)).
+While the model writes, the gateway streams the reply and reports its share
+of the template's expected output, at most every two seconds. `GET /activity`
+lists every running one as `advisor_jobs`, and the shell polls it while any
+runs.
+
+A job is cancelled by marking its row (`POST .../cancel`). The task is not
+removed from the queue: it reads the mark before each model call, while a
+call streams, and before it saves, and stops there with `JobCancelledError`,
+which is never recorded as a failure. A call already sent is still charged.
+
+`target.evaluate_own_posting` takes an optional `then_write_questions_for`.
+When "Set as target" was confirmed with the questions, the task writes them
+once the posting is scored ready (`wiring.queue.queue_questions`), so
+`target` never reaches `gapfill`.
 
 ## Completion and failure
 

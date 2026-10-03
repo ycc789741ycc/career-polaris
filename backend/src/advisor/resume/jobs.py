@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from advisor.target import TargetRef
+from advisor.resume.service import SectionSlot
 from kernel.logging import get_logger
 
 log = get_logger(__name__)
@@ -20,21 +20,25 @@ async def generate(deps: Any, *, owner_id: str, resume_id: str) -> None:
     log.info("resume.generate_finished", resume_id=resume_id)
 
 
-async def regenerate(
-    deps: Any,
-    *,
-    owner_id: str,
-    role_id: str | None,
-    job_posting_id: str | None,
-    private_job_posting_id: str | None = None,
+async def fill_section(
+    deps: Any, *, owner_id: str, resume_id: str, kind: str, title: str | None = None
 ) -> None:
-    """Write the Target's résumé again after answers were submitted."""
-    written = await deps.resume.regenerate(
-        uuid.UUID(owner_id), TargetRef(role_id, job_posting_id, private_job_posting_id)
-    )
-    log.info("resume.regenerate_finished", resume_id=str(written) if written else None)
+    """Write one added section from the sources (ADR 0039)."""
+    slot = SectionSlot.from_dict({"kind": kind, "title": title})
+    await deps.resume.fill_section(uuid.UUID(owner_id), uuid.UUID(resume_id), slot)
+    log.info("resume.fill_section_finished", resume_id=resume_id, kind=kind)
 
 
 async def export(deps: Any, *, owner_id: str, export_id: str) -> None:
     await deps.resume.export(uuid.UUID(owner_id), uuid.UUID(export_id))
     log.info("resume.export_finished", export_id=export_id)
+
+
+async def read_template(deps: Any, *, owner_id: str, template_reading_id: str) -> None:
+    """Read an uploaded PDF's style into a draft template (ADR 0041)."""
+    await deps.resume.read_template(uuid.UUID(owner_id), uuid.UUID(template_reading_id))
+
+
+async def forget_template_reading(deps: Any, *, owner_id: str, template_reading_id: str) -> None:
+    """A day after the upload: the draft goes, saved as a template or not."""
+    await deps.resume.forget_template_reading(uuid.UUID(owner_id), uuid.UUID(template_reading_id))

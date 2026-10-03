@@ -40,6 +40,14 @@ new record that supersedes the old one.
 | [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md) | Work out every opening's fit locally from its role's, and rank a role's openings by it | Accepted |
 | [0033](0033-keep-a-posting-of-your-own-in-target.md) | Keep a posting of your own in Target, and score it with the role map's fit kit | Accepted |
 | [0034](0034-add-a-role-of-your-own-without-evaluating-it.md) | Add a role of your own without spending anything, and evaluate it when it is set as the target | Accepted |
+| [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted |
+| [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted |
+| [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
+| [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
+| [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
+| [0040](0040-keep-resume-templates-as-checked-specs.md) | A résumé template is a checked spec, and a user can keep their own | Accepted |
+| [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
+| [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

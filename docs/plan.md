@@ -1533,6 +1533,18 @@ nothing. "Set as target" is priced, then queues the evaluation, then opens
 Fill the gap.
 
 ## Regenerate the plan and résumé only when asked
+**Done** (ADR 0035, migration 0033). Where the build differs from the plan
+below:
+
+* Outdated is decided in one place, `TargetService.get_outdated_reasons`,
+  which both `gapplan` and `resume` call with the basis they recorded and the
+  profile version now. A Target that cannot be resolved counts as changed.
+* The digest ignores the order the requirements come in, as the tests asked,
+  so it hashes them sorted rather than "in order".
+* Regenerating a résumé already being written answers 409.
+* `latest_for` went with the submit estimate, its only caller.
+* The migration has no test of its own, as none before it does.
+
 Since ADR 0023, submitting answers in Fill the gap records them as evidence
 and emits `GapAnswersSubmitted`. The dispatcher then queues
 `gapplan.regenerate` and `resume.regenerate`, and each rewrites the Target's
@@ -1659,6 +1671,13 @@ Open questions:
   would cost nothing to show.
 
 ## A plan cites what you answered
+**Done** (ADR 0036). As planned, with these details:
+
+* `get_answers` sorts by when each question was answered and leaves out an
+  answer whose evidence the profile no longer holds.
+* `answers_by_gap` is checked in handles, before they are resolved to ids,
+  since that is what the model cites.
+
 Fill the gap asks about the Target's gaps, and each answer is stored as
 `user_answer` evidence. `GapQuestion` keeps the gap it asked about
 (`gap_key`) and the evidence its answer became (`evidence_id`). A plan drafted
@@ -1770,6 +1789,19 @@ Open questions:
   its own ADR.
 
 ## Read each fact with its date
+**Done** (ADR 0037). As planned, with these details:
+
+* The date label is a domain rule, `get_date_label`, beside `get_shown_date`
+  (the date a fact is shown and ordered by); `get_evidence_line` composes it.
+* `EvidenceView` carries `stated_on`, a résumé line's upload date, on the
+  Sources list too, not only in the snapshot.
+* `gap_plan` is v3, after step 4's v2.
+* Found while building it: the evidence mapper never saved
+  `resume_file_id` on an update, so a line a newer upload restated stayed
+  tied to the older file in the database (only the in-memory fake moved it).
+  Deleting the older résumé took such lines away. Fixed, with an integration
+  test.
+
 Today every fact carries a date, `Evidence.observed_on`:
 * an `item` (one commit, one issue): when that work happened;
 * a `summary` ("40 commits authored in x"): only the latest of the items it
@@ -1899,6 +1931,21 @@ Open questions:
   facts.
 
 ## Export what you previewed
+**Done** (ADR 0038, migration 0034). Where the build differs from the plan
+below:
+
+* The looks live in the domain (`template_look.py`, `constants.py`), not in
+  the renderer, so the service can serve them without reaching into infra.
+* The TTFs are the SPA's WOFF2 files converted, with their name tables fixed:
+  the web subsets name Figtree "Figtree Light", which fontconfig would not
+  match to "Figtree". `backend/assets/fonts/README.md` says how.
+* The page end is a thin solid line, drawn by a repeating background, not a
+  dashed one.
+* The download is named with an em dash ("Maya Chen — Staff Engineer.pdf");
+  ruff refuses the en dash as ambiguous.
+* The source notes are shown under "Show where each line came from", off by
+  default, so the page lays out as it prints.
+
 The Résumé tab shows a preview, and Export as PDF renders the saved version
 on the worker's `docs` queue (ADR 0007). The two are separate renderings
 that share only three colours, and those are copied by hand:
@@ -2040,6 +2087,23 @@ Open questions:
   ones, but nothing removes what is already stored.
 
 ## Sections you choose
+**Done** (ADR 0039, migration 0035). Where the build differs from the plan
+below:
+
+* A new résumé starts with summary, experience and skills only. Nothing
+  writes positions to the timeline, so "GitHub work outside every position"
+  is every repository; side projects are added by the user.
+* Every saved version sets the plan to its own sections, so a move or a
+  removal is simply a version; there is no separate plan route.
+* A section being filled puts the résumé in a `filling` status, which the
+  page polls; a failure leaves it `ready` with the error.
+* An empty section prints nothing. The preview says so and offers "+ Add to
+  …", which starts it with a line to edit.
+* Removing a section with lines asks inline ("Remove its lines too") rather
+  than in a dialog.
+* The migration's JSON rewrite is tested both ways against Postgres on a
+  literal value (`tests/integration/migrations`).
+
 A tailored résumé always has the same three sections, in the same order:
 summary, experience and skills. `ResumeContent` has a field for each, and
 the write prompt, the revise prompt, the renderer and the preview all assume
@@ -2206,6 +2270,21 @@ Open questions:
   its date").
 
 ## Templates of your own
+**Done** (ADR 0040, migration 0036). Where the build differs from the plan
+below:
+* The spec lives in `resume/domain/template_spec.py`, with the built-in specs
+  beside it (`BUILT_IN_TEMPLATES`). The sizes are `name_pt`, `heading_pt` and
+  `body_pt`, with one range constant each.
+* The spec has a fourth colour, `rule_color`, because Plain's rule and
+  bullets were never the same colour.
+* The serif and the monospace are DejaVu Serif and DejaVu Sans Mono, already
+  in the worker image; the SPA hosts Latin subsets of the same files.
+* `GET /resume-templates/limits` gives the editor its lists and ranges. A
+  résumé's template travels as one id: a built-in name or the uuid of the
+  user's own.
+* `wiring.models.OWNER_ZONE_TABLES` is listed referencing tables first, so a
+  user's rows are purged without tripping the new foreign key.
+
 After "Export what you previewed", a template is data: `_LOOKS` is served by
 `GET /resume-templates`, and the preview and the PDF both draw from it. But
 there are still two templates, a closed `Template` enum, and a check
@@ -2316,6 +2395,19 @@ Open questions:
   systems drop it.
 
 ## Start a template from a file
+**Done** (ADR 0041, migration 0037). Where the build differs from the plan
+below:
+* The rule lives in its own concept module, `resume/domain/template_reading.py`,
+  beside `TemplateReading`. Headings are short runs in capitals or a bold face,
+  and only without those the sizes between body and name. The accent is the
+  list markers' colour first.
+* Lines and backgrounds are not read, so `rule` always defaults, and a sidebar
+  starts with skills, flagged.
+* The polled route is `GET /resume-template-readings/{id}`. The day-old
+  clean-up is `resume.forget_template_reading`, scheduled at upload.
+* `kernel.documents.open_pdf` is the shared guard: it opens a PDF under its
+  page limit for the résumé parser, postings of your own and this reader.
+
 With "Templates of your own" built, a user can design a template, but often
 what they have is an example: someone else's résumé whose look they like.
 Copying that design exactly is not possible, and not wanted:
@@ -2419,6 +2511,20 @@ Open questions:
   spend.
 
 ## Advisor jobs run in the background
+**Done** (ADR 0042, migration 0038). Where the build differs from the plan
+below:
+* Each component lists its own jobs (`running_jobs`) in the kernel's
+  `RunningJobView`, which `advisor.activity` re-exports for the schemas; a
+  posting's evaluation reports stages only, since its calls go through the
+  role map's kit.
+* A question set supersedes the Target's earlier ones when it is written,
+  not when it is requested, so a cancelled one leaves them current.
+* One job of a kind per Target at a time: a second request is a 409.
+* "Set as target" prices the questions as a ceiling until the posting is
+  scored (`gapfill.estimate_ceiling`), and the worker writes them after
+  scoring (`wiring.queue.queue_questions`).
+* A failed job shows its error on its tab as before, not in the card.
+
 The prototype was updated on 3 October 2026 (evening): `GapsBuilding`,
 `PlanBuilding`, `ResumeBuilding` and `PlanWhileResume` in
 `prototype/screens/`, and the domain spec's §6.4 and §7. It calls writing
@@ -2556,6 +2662,19 @@ Open questions:
   while the new one is written.
 
 ## The Advisor as prototyped
+**Done** (no ADR: presentation only). Where the build differs from the plan
+below:
+* `EvidenceDisclosure` collapses the gap plan's gaps and the résumé's
+  requirements panel. The résumé's per-line source notes stay behind "Show
+  where each line came from", which already shows them only on demand.
+* The gap bar replaces the "you vs the bar" chart on a skill gap, as the
+  prototype draws it. `lift_scale` is `get_lift_scale`, in the gap plan's
+  domain.
+* The header's answer count is `answer_count` on the plan view: the answers
+  given before the plan was drafted, read through `GapFillService.get_answers`.
+* "Regenerate résumé" is priced up front, through the same cost estimate,
+  so the line beneath it shows the cost in dollars.
+
 The same prototype update changes what the Advisor's pages look like, beyond
 the jobs. Matched against the SPA today:
 

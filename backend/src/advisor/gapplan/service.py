@@ -7,6 +7,11 @@ poll it and say plainly when drafting failed and why (ADR 0006).
 Plans are never overwritten. Regenerating adds the next version for the same
 Target and carries finished tasks into it; the history is every Target's latest
 version, newest first.
+
+A plan is drafted only when the user asks. Each records what it read — the
+profile version and the Target's digest — and the latest version says it is
+outdated once either has moved on (ADR 0035); regenerating it is a new request
+the user prices and confirms.
 """
 
 from __future__ import annotations
@@ -14,15 +19,18 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapAnswerView, GapFillService
 from advisor.gapplan.domain import (
     MAX_MILESTONES,
     MAX_PROJECTS,
     MAX_TASKS_PER_MILESTONE,
+    PLAN_STAGE_SHARES,
     SHOWN_GAPS,
     DraftMilestone,
     DraftProject,
@@ -36,12 +44,14 @@ from advisor.gapplan.domain import (
     OwnerGapPlans,
     PlanDrafted,
     PlanError,
+    PlanStage,
     PlanStatus,
     RoleOption,
     Task,
     TaskFilter,
     assert_draft_valid,
     carried_done,
+    get_lift_scale,
     progress,
     stepping_stones,
 )
@@ -51,19 +61,24 @@ from advisor.profile import (
     ProfileService,
     ProfileSnapshot,
     assert_citations_exist,
+    get_evidence_line,
 )
 from advisor.rolemap import RoleMapService
 from advisor.target import (
     DimensionGap,
+    DraftBasis,
+    OutdatedReason,
     TargetRef,
     TargetService,
     TargetSnapshot,
+    get_target_digest,
     requirements_block,
 )
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.errors import (
+    ConflictError,
     DomainError,
     EvidenceNotOwnedError,
     NotFoundError,
@@ -72,6 +87,7 @@ from kernel.errors import (
 )
 from kernel.logging import get_logger
 from kernel.paging import Page, paginate
+from kernel.progress import JobCancelledError, Progress, RunningJobView, get_stage_progress
 
 __all__ = [
     "EvidenceCite",
@@ -87,7 +103,7 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_TEMPLATE = ("gap_plan", "v1")
+_TEMPLATE = ("gap_plan", "v3")
 _UNTRUSTED = frozenset({"requirements", "evidence", "dimensions"})
 
 
@@ -203,6 +219,19 @@ class PlanView:
     # Every version for this Target, newest first.
     versions: tuple[PlanSummaryView, ...]
     template_version: str | None
+    # Why the Target's latest plan no longer matches what it was drafted from
+    # (ADR 0035); empty when it does, for an older version, and for a plan
+    # drafted before that was recorded.
+    outdated_by: tuple[OutdatedReason, ...] = ()
+    # The fit points the gap bars are drawn out of: 10, or the largest lift.
+    lift_scale: int = 10
+    # Answers from Fill the gap given before the plan was drafted: the ones
+    # its draft read (ADR 0036).
+    answer_count: int = 0
+
+    @property
+    def is_outdated(self) -> bool:
+        return bool(self.outdated_by)
 
 
 # --- service ---------------------------------------------------------------
@@ -217,6 +246,7 @@ class GapPlanService:
         profile: ProfileService,
         assessment: AssessmentService,
         rolemap: RoleMapService,
+        gapfill: GapFillService,
         gateway: AiGateway,
     ) -> None:
         self._uow = uow
@@ -224,6 +254,7 @@ class GapPlanService:
         self._profile = profile
         self._assessment = assessment
         self._rolemap = rolemap
+        self._gapfill = gapfill
         self._gateway = gateway
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
@@ -237,6 +268,7 @@ class GapPlanService:
             snapshot=preview.snapshot,
             profile=profile,
             handles=CitationHandles(e.id for e in profile.evidence),
+            answers=await self._gapfill.get_answers(owner_id, ref),
         )
         estimate = await self._gateway.estimate(
             owner_id,
@@ -261,6 +293,8 @@ class GapPlanService:
         preview = await self._target.preview(owner_id, ref)
         async with self._uow.for_owner(owner_id) as mine:
             earlier = await mine.plans.get_list(_same_target(ref), page_size=1)
+            if earlier and earlier[0].is_drafting:
+                raise ConflictError("a plan for this target is already being drafted")
             plan = await mine.plans.create(
                 GapPlan.requested(
                     owner_id=owner_id,
@@ -275,23 +309,6 @@ class GapPlanService:
             )
         return _summary(plan, progress_percent=0)
 
-    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> PlanSummaryView | None:
-        """The Target's latest plan version, if it has one."""
-        async with self._uow.for_owner(owner_id) as mine:
-            found = await mine.plans.get_list(_same_target(ref), page_size=1)
-        return _summary(found[0], progress_percent=0) if found else None
-
-    async def regenerate(self, owner_id: uuid.UUID, ref: TargetRef) -> uuid.UUID | None:
-        """The worker job after answers are submitted in Fill the gap: draft the
-        Target's next plan version from the updated evidence. Finished tasks
-        carry over as for any new version. Nothing happens for a Target with
-        no plan."""
-        if await self.latest_for(owner_id, ref) is None:
-            return None
-        requested = await self.request(owner_id, ref)
-        await self.draft(owner_id, requested.id)
-        return requested.id
-
     async def draft(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
         """The worker job. Any expected failure is recorded on the plan, with
         its stable code, and not retried: a retry would spend the key again."""
@@ -304,7 +321,10 @@ class GapPlanService:
         ref = _ref_of(plan)
 
         try:
+            await self._advance(owner_id, plan_id, PlanStage.READING)
             await self._draft(owner_id, plan_id, ref)
+        except JobCancelledError:
+            log.info("gapplan.draft_cancelled", plan_id=str(plan_id))
         except DomainError as exc:
             log.warning("gapplan.draft_failed", plan_id=str(plan_id), code=str(exc.code))
             await self._fail(owner_id, plan_id, code=str(exc.code), message=exc.message)
@@ -322,7 +342,9 @@ class GapPlanService:
             plan = await mine.plans.get(plan_id)
             if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
-            same_target = await mine.plans.get_list(_same_target(_ref_of(plan)))
+            same_target = [
+                p for p in await mine.plans.get_list(_same_target(_ref_of(plan))) if p.is_shown
+            ]
             milestones = sorted(
                 await mine.milestones.get_list(MilestoneFilter(plan_id=plan_id)),
                 key=lambda m: m.position,
@@ -344,6 +366,17 @@ class GapPlanService:
             for index, task in enumerate(own)
         }
         progress_by_plan = _progress_by_plan(tasks)
+        is_latest = bool(same_target) and same_target[0].id == plan.id
+        outdated_by = (
+            await self._target.get_outdated_reasons(
+                owner_id,
+                _ref_of(plan),
+                recorded=_basis_of(plan),
+                profile_version=await self._profile.version(owner_id),
+            )
+            if is_latest and plan.status is PlanStatus.READY
+            else ()
+        )
 
         return PlanView(
             summary=_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)),
@@ -365,6 +398,9 @@ class GapPlanService:
                 _summary(p, progress_percent=progress_by_plan.get(p.id, 0)) for p in same_target
             ),
             template_version=plan.template_version,
+            outdated_by=outdated_by,
+            lift_scale=get_lift_scale(g["lift"] for g in plan.gaps),
+            answer_count=await self._answer_count(owner_id, plan),
         )
 
     async def history(
@@ -383,11 +419,49 @@ class GapPlanService:
         latest: list[PlanSummaryView] = []
         for plan in plans:
             ref = _ref_of(plan)
-            if ref in seen:
+            if ref in seen or not plan.is_shown:
                 continue
             seen.add(ref)
             latest.append(_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)))
         return paginate(latest, page, page_size)
+
+    async def cancel(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
+        """Stop a plan being drafted, before its next call or its save (ADR
+        0042). A call already sent is still charged; the version before it
+        stays current."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+            if plan is None:
+                raise NotFoundError("plan not found", plan_id=str(plan_id))
+            try:
+                plan.update_cancelled()
+            except PlanError as exc:
+                raise ConflictError(str(exc), plan_id=str(plan_id)) from exc
+            await mine.plans.update(plan)
+        log.info("gapplan.cancel_requested", plan_id=str(plan_id))
+
+    async def running_jobs(self, owner_id: uuid.UUID) -> tuple[RunningJobView, ...]:
+        """Every plan still being drafted, for ``GET /activity`` (ADR 0042)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plans = await mine.plans.get_list(GapPlanFilter())
+        return tuple(
+            RunningJobView(
+                kind="gap_plan",
+                id=str(plan.id),
+                role_id=str(plan.role_id) if plan.role_id else None,
+                job_posting_id=str(plan.job_posting_id) if plan.job_posting_id else None,
+                private_job_posting_id=(
+                    str(plan.private_job_posting_id) if plan.private_job_posting_id else None
+                ),
+                label=plan.target_label,
+                stage=str(plan.stage) if plan.stage else None,
+                progress=plan.progress,
+                started_at=plan.created_at,
+                estimated_cost_usd=plan.estimated_cost_usd,
+            )
+            for plan in plans
+            if plan.is_drafting
+        )
 
     async def set_task_done(self, owner_id: uuid.UUID, task_id: uuid.UUID, done: bool) -> None:
         async with self._uow.for_owner(owner_id) as mine:
@@ -409,6 +483,17 @@ class GapPlanService:
 
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
+        answers = await self._gapfill.get_answers(owner_id, ref)
+
+        async def drafting(progress: Progress) -> None:
+            await self._advance(
+                owner_id,
+                plan_id,
+                PlanStage.DRAFTING,
+                fraction=progress.fraction,
+                cost=progress.estimated_cost_usd,
+            )
+
         result = await self._gateway.run(
             owner_id,
             task="gapplan.draft",
@@ -420,10 +505,13 @@ class GapPlanService:
                 snapshot=snapshot,
                 profile=profile,
                 handles=handles,
+                answers=answers,
             ),
             output_schema=_Plan,
             untrusted=_UNTRUSTED,
+            on_progress=drafting,
         )
+        await self._advance(owner_id, plan_id, PlanStage.CHECKING)
         draft = result.value
         readings = [GapReading(g.key, g.why, tuple(g.evidence_ids)) for g in draft.gaps]
         milestones = [
@@ -444,6 +532,9 @@ class GapPlanService:
                 projects=projects,
                 shown_keys=shown_keys,
                 dimension_keys=[g.key for g in shown if isinstance(g, DimensionGap)],
+                answers_by_gap={
+                    key: frozenset(ids) for key, ids in _answer_handles(answers, handles).items()
+                },
             )
         except PlanError as exc:
             raise PlanInvalidError(f"the drafted plan was rejected: {exc}") from exc
@@ -492,10 +583,14 @@ class GapPlanService:
         ]
 
         stones = await self._stepping_stones(owner_id, snapshot)
+        await self._advance(owner_id, plan_id, PlanStage.SAVING)
         async with self._uow.for_owner(owner_id) as mine:
             plan = await mine.plans.get(plan_id)
             if plan is None:
                 raise NotFoundError("plan not found", plan_id=str(plan_id))
+            if not plan.is_drafting:
+                # Cancelled at the last moment: nothing of it is saved.
+                raise JobCancelledError
             previous_done = await _previous_done(mine, plan)
 
             new_tasks: list[Task] = []
@@ -545,6 +640,8 @@ class GapPlanService:
                 ),
                 model_id=result.model_id,
                 template_version=result.template_version,
+                profile_version=profile.version,
+                target_digest=get_target_digest(snapshot),
                 at=now,
             )
             await mine.plans.update(plan)
@@ -566,23 +663,28 @@ class GapPlanService:
         snapshot: TargetSnapshot | None,
         profile: ProfileSnapshot,
         handles: CitationHandles,
+        answers: tuple[GapAnswerView, ...],
     ) -> dict[str, str]:
         assessment = await self._assessment.latest(owner_id)
         if snapshot is None:
             gaps = "(worked out once the job description has been scored)"
         else:
+            answered = _answer_handles(answers, handles)
             lines = []
             for gap in snapshot.open_gaps[:SHOWN_GAPS]:
                 if isinstance(gap, DimensionGap):
-                    lines.append(
+                    line = (
                         f"- {gap.key} — {gap.name}: scored {gap.user_score}, the job expects "
-                        f"{gap.target_score} (worth {gap.lift} fit points)"
+                        f"{gap.target_score} (worth {gap.lift} fit points"
                     )
                 else:
-                    lines.append(
+                    line = (
                         f"- {gap.key} — no evidence at all for: {gap.statement} "
-                        f"(worth {gap.lift} fit points)"
+                        f"(worth {gap.lift} fit points"
                     )
+                if gap.key in answered:
+                    line += "; answered in " + ", ".join(f"[{h}]" for h in answered[gap.key])
+                lines.append(line + ")")
             gaps = "\n".join(lines) or "(none)"
         return {
             "target": label,
@@ -594,8 +696,7 @@ class GapPlanService:
             )
             or "(no analysis yet)",
             "evidence": "\n".join(
-                f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}"
-                for e in profile.evidence
+                get_evidence_line(e, handles.handle(e.id)) for e in profile.evidence
             )
             or "(no evidence)",
         }
@@ -617,6 +718,35 @@ class GapPlanService:
         return stepping_stones(
             target_role_id=snapshot.role_id, target_fit=snapshot.fit_score, roles=roles
         )
+
+    async def _answer_count(self, owner_id: uuid.UUID, plan: GapPlan) -> int:
+        """The answers its draft read: those given before it was drafted."""
+        if plan.drafted_at is None:
+            return 0
+        answers = await self._gapfill.get_answers(owner_id, _ref_of(plan))
+        return sum(1 for a in answers if a.answered_at <= plan.drafted_at)
+
+    async def _advance(
+        self,
+        owner_id: uuid.UUID,
+        plan_id: uuid.UUID,
+        stage: PlanStage,
+        *,
+        fraction: float = 0.0,
+        cost: Decimal | None = None,
+    ) -> None:
+        """Record the stage the plan has reached, unless it was cancelled, which
+        stops the job here: before a call, or while one streams."""
+        async with self._uow.for_owner(owner_id) as mine:
+            plan = await mine.plans.get(plan_id)
+            if plan is None or not plan.is_drafting:
+                raise JobCancelledError
+            plan.update_stage(
+                stage,
+                progress=get_stage_progress(PLAN_STAGE_SHARES, str(stage), fraction),
+                cost=cost,
+            )
+            await mine.plans.update(plan)
 
     async def _fail(
         self, owner_id: uuid.UUID, plan_id: uuid.UUID, *, code: str, message: str
@@ -640,6 +770,24 @@ def _same_target(ref: TargetRef) -> GapPlanFilter:
 
 def _ref_of(plan: GapPlan) -> TargetRef:
     return TargetRef.of(plan.role_id, plan.job_posting_id, plan.private_job_posting_id)
+
+
+def _answer_handles(
+    answers: tuple[GapAnswerView, ...], handles: CitationHandles
+) -> dict[str, list[str]]:
+    """Each gap's answers from Fill the gap, under the handles the prompt shows
+    them by, newest first (ADR 0036)."""
+    by_gap: dict[str, list[str]] = {}
+    for answer in answers:
+        by_gap.setdefault(answer.gap_key, []).append(handles.handle(answer.evidence_id))
+    return by_gap
+
+
+def _basis_of(plan: GapPlan) -> DraftBasis | None:
+    """What the plan was drafted from; None for one drafted before it was kept."""
+    if plan.profile_version is None or plan.target_digest is None:
+        return None
+    return DraftBasis(profile_version=plan.profile_version, target_digest=plan.target_digest)
 
 
 async def _tasks_by_plan(mine: OwnerGapPlans) -> dict[uuid.UUID, list[Task]]:

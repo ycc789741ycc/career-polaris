@@ -88,3 +88,18 @@ async def test_the_deleted_file_is_gone_from_object_storage(
     assert await profile.base_resume_text(account) is None
     with pytest.raises(ClientError):
         store.get(object_key(account, "resumes", str(resume_id)))
+
+
+async def test_a_line_a_newer_upload_restates_survives_deleting_the_older(
+    profile: ProfileService, account: uuid.UUID
+) -> None:
+    """The newer upload takes the line over in the database, not only in memory."""
+    older = await _upload_and_parse(profile, account)
+    newer = await _upload_and_parse(profile, account)
+    count = len((await profile.snapshot(account)).evidence)
+
+    await profile.delete_resume(account, older)
+    assert len((await profile.snapshot(account)).evidence) == count
+
+    await profile.delete_resume(account, newer)
+    assert (await profile.snapshot(account)).evidence == ()

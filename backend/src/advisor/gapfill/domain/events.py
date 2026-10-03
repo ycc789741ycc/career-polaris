@@ -11,8 +11,9 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class GapAnswersSubmitted:
-    """The user submitted answers for one Target. The dispatcher regenerates
-    that Target's gap plan and résumé, each only if the user has one."""
+    """The user submitted answers for one Target. Nothing is queued for it:
+    the Target's gap plan and résumé read as outdated until the user
+    regenerates them (ADR 0035)."""
 
     owner_id: uuid.UUID
     set_id: uuid.UUID

@@ -42,10 +42,13 @@ SCHEMAS = (
 # know which users a market change affects), and the dispatcher has to read
 # every row to fan them out. Tenancy there is enforced by the grants instead —
 # the crawler role may only INSERT and SELECT on it.
+#
+# Listed referencing tables first, so deleting a user's rows in this order never
+# trips a foreign key (``resume.resume`` names ``resume.custom_template``).
 OWNER_ZONE_TABLES = tuple(
-    name
-    for name, table in sorted(Base.metadata.tables.items())
-    if "owner_id" in table.columns and not name.startswith("outbox.")
+    table.fullname
+    for table in reversed(Base.metadata.sorted_tables)
+    if "owner_id" in table.columns and not table.fullname.startswith("outbox.")
 )
 
 # Shared zone: no owner_id, reachable by the crawler role.

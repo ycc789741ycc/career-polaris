@@ -1,94 +1,145 @@
-"""Résumé export: content to HTML to PDF (ADR 0007).
+"""Résumé export: content to HTML to PDF (ADR 0007, ADR 0038, ADR 0040).
 
-Export is presentation, not a domain rule (section 2.9): the template picks a
-rule and a name colour, the page is white, and that is all. Every value is
-escaped and nothing external is referenced — no fonts, images or stylesheets
-are fetched — so a résumé's text can never make the renderer reach the
-network. The grey source notes stay in the app; a résumé sent to a company does
-not carry them.
+Export is presentation, not a domain rule (section 2.9). How a résumé looks is
+its template's ``TemplateSpec``, which the SPA's preview reads too, so the PDF
+is the page the user previewed. The CSS is built only from the spec's checked
+values — enums, numbers in their ranges, ``#rrggbb`` colours and fonts from a
+fixed list — so nothing a user writes reaches it. Type is set in fonts
+installed in the image, found by fontconfig, with DejaVu for anything outside
+them. Every value of the content is escaped and nothing external is
+referenced, so a résumé's text can never make the renderer reach the network.
+The grey source notes stay in the app; a résumé sent to a company does not
+carry them.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from html import escape
 
-from advisor.resume.domain import Options, ResumeContent, Template
+from advisor.resume.domain import (
+    TRIMMED_BULLETS,
+    TRIMMED_SKILLS,
+    Bullet,
+    BulletStyle,
+    HeadingCase,
+    Layout,
+    Options,
+    ResumeContent,
+    Section,
+    SectionShape,
+    TemplateSpec,
+)
+from advisor.resume.domain.constants import (
+    FALLBACK_FONT,
+    PAGE_MARGIN_SIDE_MM,
+    PAGE_MARGIN_TOP_MM,
+)
 
-# One page is what "trim" means; these keep a résumé on it.
-_TRIMMED_BULLETS = 3
-_TRIMMED_SKILLS = 12
+# The en dash as a CSS escape; the two spaces leave one after it.
+_MARKERS = {BulletStyle.DOT: "disc", BulletStyle.DASH: '"\\2013  "', BulletStyle.NONE: "none"}
 
 
-@dataclass(frozen=True, slots=True)
-class _Look:
-    rule: str
-    name_color: str
-    dot: str
-
-
-# The prototype's two templates: Organic and Plain.
-_LOOKS = {
-    Template.ORGANIC: _Look(rule="3px solid #c67139", name_color="#8a4a20", dot="#c67139"),
-    Template.PLAIN: _Look(rule="1px solid #cfcac5", name_color="#201e1d", dot="#9b9691"),
-}
-
-
-def render_html(content: ResumeContent, *, template: Template, options: Options) -> str:
-    look = _LOOKS[template]
-    skills = content.skills[:_TRIMMED_SKILLS] if options.trim else content.skills
-
-    positions = []
-    for position in content.experience:
-        bullets = position.bullets[:_TRIMMED_BULLETS] if options.trim else position.bullets
-        items = "".join(f"<li>{escape(b.text)}</li>" for b in bullets)
-        positions.append(
-            '<section class="job">'
-            '<div class="job-head">'
-            f'<span class="job-title">{escape(position.title)} — {escape(position.org)}</span>'
-            f'<span class="job-when">{escape(position.when)}</span>'
-            "</div>"
-            f"<ul>{items}</ul>"
-            "</section>"
+def render_html(content: ResumeContent, *, spec: TemplateSpec, options: Options) -> str:
+    heading = f'"{spec.heading_font}", "{FALLBACK_FONT}", serif'
+    body = f'"{spec.body_font}", "{FALLBACK_FONT}", sans-serif'
+    title_pt, contact_pt, small_pt = spec.get_derived_pt()
+    contact = escape(" · ".join(p for p in (content.headline, content.contact) if p))
+    main = [s for s in content.sections if not spec.is_in_sidebar(s.kind)]
+    side = [s for s in content.sections if spec.is_in_sidebar(s.kind)]
+    main_html = "".join(_section(s, trim=options.trim) for s in main)
+    if spec.layout.has_sidebar:
+        side_html = f'<div class="contact">{contact}</div>' + "".join(
+            _section(s, trim=options.trim) for s in side
         )
-
-    skill_items = "".join(f'<span class="skill">{escape(s)}</span>' for s in skills)
+        columns = (
+            (side_html, main_html) if spec.layout is Layout.SIDEBAR_LEFT else (main_html, side_html)
+        )
+        classes = ("side", "main") if spec.layout is Layout.SIDEBAR_LEFT else ("main", "side")
+        body_html = (
+            f"<header><h1>{escape(content.name)}</h1></header>"
+            '<div class="columns">'
+            + "".join(
+                f'<div class="{cls}">{html}</div>'
+                for cls, html in zip(classes, columns, strict=True)
+            )
+            + "</div>"
+        )
+    else:
+        band = ' class="band"' if spec.layout is Layout.HEADER_BAND else ""
+        body_html = (
+            f"<header{band}><h1>{escape(content.name)}</h1>"
+            f'<div class="contact">{contact}</div></header>{main_html}'
+        )
+    marker = _MARKERS[spec.bullet]
+    transform = "uppercase" if spec.heading_case is HeadingCase.UPPER else "none"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{escape(content.name)}</title>
 <style>
-@page {{ size: A4; margin: 18mm 17mm; }}
-body {{ font-family: "DejaVu Sans", sans-serif; font-size: 10pt; color: #201e1d;
+@page {{ size: A4; margin: {PAGE_MARGIN_TOP_MM}mm {PAGE_MARGIN_SIDE_MM}mm; }}
+body {{ font-family: {body}; font-size: {spec.body_pt}pt; color: {spec.text_color};
        background: #ffffff; line-height: 1.5; margin: 0; }}
-header {{ border-bottom: {look.rule}; padding-bottom: 10pt; margin-bottom: 14pt; }}
-h1 {{ font-family: "DejaVu Serif", serif; font-size: 22pt; line-height: 1.1;
-     color: {look.name_color}; margin: 0; font-weight: normal; }}
-.contact {{ font-size: 9.5pt; color: #5a5550; margin-top: 4pt; }}
-h2 {{ font-size: 8.5pt; letter-spacing: 0.1em; text-transform: uppercase;
-     font-weight: bold; color: {look.name_color}; margin: 14pt 0 6pt; }}
+header {{ border-bottom: {spec.get_rule_css()}; padding-bottom: 10pt; margin-bottom: 14pt; }}
+header.band {{ background: {spec.get_band_color()}; padding: 10pt 12pt; }}
+h1 {{ font-family: {heading}; font-size: {spec.name_pt}pt; line-height: 1.1;
+     color: {spec.name_color}; margin: 0; font-weight: 400; }}
+.contact {{ font-size: {contact_pt}pt; color: #5a5550; margin-top: 4pt; }}
+h2 {{ font-size: {spec.heading_pt}pt; letter-spacing: 0.1em; text-transform: {transform};
+     font-weight: 800; color: {spec.name_color}; margin: 14pt 0 6pt; }}
+.columns {{ display: flex; gap: 14pt; }}
+.side {{ width: 30%; flex: 0 0 auto; }}
+.main {{ flex: 1; min-width: 0; }}
 .summary {{ margin: 0; }}
 .job {{ margin-bottom: 10pt; page-break-inside: avoid; }}
 .job-head {{ display: flex; justify-content: space-between; gap: 12pt; }}
-.job-title {{ font-family: "DejaVu Serif", serif; font-size: 11pt; }}
-.job-when {{ font-size: 9pt; color: #6b6560; white-space: nowrap; }}
-ul {{ margin: 4pt 0 0; padding-left: 12pt; }}
+.job-title {{ font-family: {heading}; font-size: {title_pt}pt; }}
+.job-when {{ font-size: {small_pt}pt; color: #6b6560; white-space: nowrap; }}
+.job-link {{ font-size: {small_pt}pt; color: #6b6560; }}
+ul {{ margin: 4pt 0 0; padding-left: 12pt; list-style: {marker}; }}
 li {{ margin-bottom: 3pt; }}
-li::marker {{ color: {look.dot}; }}
+li::marker {{ color: {spec.accent_color}; }}
 .skills {{ display: flex; flex-wrap: wrap; gap: 5pt; }}
-.skill {{ font-size: 9pt; padding: 2pt 8pt; border-radius: 999px;
+.skill {{ font-size: {small_pt}pt; padding: 2pt 8pt; border-radius: 999px;
          background: #f3f1ee; color: #3d3a36; }}
 </style></head>
 <body>
-<header>
-<h1>{escape(content.name)}</h1>
-<div class="contact">{escape(" · ".join(p for p in (content.headline, content.contact) if p))}</div>
-</header>
-<h2>Summary</h2>
-<p class="summary">{escape(content.summary)}</p>
-<h2>Experience</h2>
-{"".join(positions)}
-<h2>Skills</h2>
-<div class="skills">{skill_items}</div>
+{body_html}
 </body></html>"""
+
+
+def _section(section: Section, *, trim: bool) -> str:
+    """One section, by its shape. An empty one prints nothing at all."""
+    if section.is_empty:
+        return ""
+    title = f"<h2>{escape(section.heading)}</h2>"
+    if section.shape is SectionShape.TEXT:
+        return f'{title}<p class="summary">{escape(section.text)}</p>'
+    if section.shape is SectionShape.LIST:
+        items = section.items[:TRIMMED_SKILLS] if trim else section.items
+        chips = "".join(f'<span class="skill">{escape(i)}</span>' for i in items)
+        return f'{title}<div class="skills">{chips}</div>'
+    if section.shape is SectionShape.BULLETS:
+        return f"{title}{_lines(section.bullets, trim=trim)}"
+    entries = []
+    for entry in section.entries:
+        name = " — ".join(escape(part) for part in (entry.title, entry.org) if part)
+        link = f'<div class="job-link">{escape(entry.link)}</div>' if entry.link else ""
+        entries.append(
+            '<section class="job">'
+            '<div class="job-head">'
+            f'<span class="job-title">{name}</span>'
+            f'<span class="job-when">{escape(entry.when)}</span>'
+            "</div>"
+            f"{link}{_lines(entry.bullets, trim=trim)}"
+            "</section>"
+        )
+    return title + "".join(entries)
+
+
+def _lines(bullets: tuple[Bullet, ...], *, trim: bool) -> str:
+    shown = bullets[:TRIMMED_BULLETS] if trim else bullets
+    if not shown:
+        return ""
+    return "<ul>" + "".join(f"<li>{escape(b.text)}</li>" for b in shown) + "</ul>"
 
 
 def render_pdf(html: str) -> bytes:

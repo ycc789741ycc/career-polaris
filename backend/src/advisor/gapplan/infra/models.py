@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -33,7 +36,7 @@ from kernel.db.base import Base, OwnedMixin, new_id
 class GapPlan(Base, OwnedMixin):
     __tablename__ = "plan"
     __table_args__ = (
-        CheckConstraint("status IN ('drafting', 'ready', 'failed')", name="status"),
+        CheckConstraint("status IN ('drafting', 'ready', 'failed', 'cancelled')", name="status"),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_plan_owner_created", "owner_id", "created_at"),
         {"schema": "gapplan"},
@@ -70,6 +73,14 @@ class GapPlan(Base, OwnedMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # What the draft read (ADR 0035): the profile version and the Target's
+    # digest. None on plans drafted before they were recorded, or not yet drafted.
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Where drafting it has got (ADR 0042).
+    stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
 
 
 class Milestone(Base, OwnedMixin):

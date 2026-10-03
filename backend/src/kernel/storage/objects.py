@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
@@ -109,14 +110,24 @@ class ObjectStore:
         response = self._client.get_object(Bucket=self._bucket, Key=key)
         return bytes(response["Body"].read())
 
-    def signed_url(self, key: str) -> str:
+    def signed_url(self, key: str, *, download_name: str | None = None) -> str:
+        """A short-lived link to one object. With ``download_name`` the
+        response says to save it as that file, so following the link downloads
+        it instead of opening it (ADR 0038)."""
+        params: dict[str, str] = {"Bucket": self._bucket, "Key": key}
+        if download_name is not None:
+            params["ResponseContentDisposition"] = attachment_disposition(download_name)
         return str(
-            self._signer.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self._bucket, "Key": key},
-                ExpiresIn=self._ttl,
-            )
+            self._signer.generate_presigned_url("get_object", Params=params, ExpiresIn=self._ttl)
         )
 
     def delete(self, key: str) -> None:
         self._client.delete_object(Bucket=self._bucket, Key=key)
+
+
+def attachment_disposition(filename: str) -> str:
+    """``Content-Disposition`` for a download saved as ``filename``: an ASCII
+    name every browser reads, and the exact one in UTF-8 (RFC 6266, RFC 5987)."""
+    ascii_name = filename.encode("ascii", "ignore").decode("ascii").replace('"', "")
+    ascii_name = ascii_name.replace("\\", "").strip() or "download"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}"

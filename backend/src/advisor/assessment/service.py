@@ -53,6 +53,7 @@ from advisor.profile import (
     CitationHandles,
     ProfileService,
     assert_citations_exist,
+    get_evidence_line,
 )
 from advisor.rolemap import (
     MAX_ROLE_TITLE,
@@ -208,7 +209,7 @@ class AssessmentService:
         estimate = await self._gateway.estimate(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v3"),
+            template=load_template("skill_assessment", "v4"),
             inputs=_assessment_inputs(
                 snapshot,
                 CitationHandles(e.id for e in snapshot.evidence),
@@ -328,7 +329,7 @@ class AssessmentService:
         result = await self._gateway.run(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v3"),
+            template=load_template("skill_assessment", "v4"),
             inputs=_assessment_inputs(
                 snapshot,
                 handles,
@@ -616,9 +617,7 @@ def _timeline_block(snapshot: Any) -> str:
 
 
 def _evidence_block(snapshot: Any, handles: CitationHandles) -> str:
-    return "\n".join(
-        f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}" for e in snapshot.evidence
-    )
+    return "\n".join(get_evidence_line(e, handles.handle(e.id)) for e in snapshot.evidence)
 
 
 def _run_view(run: AnalysisRun) -> AnalysisRunView:

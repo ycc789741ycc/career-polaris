@@ -654,41 +654,143 @@ select.input { appearance: auto; }
   flex: 0 0 auto;
 }
 .template-thumb span { height: 2px; background: var(--color-neutral-300); border-radius: 2px; }
+.template-color { padding: 2px; width: 64px; cursor: pointer; }
 
-/* The page itself is white: what gets exported, not the app's ground. */
+/* The page itself is white: what gets exported, not the app's ground.
+ * It is laid out as the PDF's A4 page (ADR 0038): every size is in points of
+ * a 595.28pt-wide page, scaled to the width the page is given, so lines break
+ * where the PDF's do. The sizes, margins and look come from GET
+ * /resume-templates as custom properties; a thin line marks each page end. */
+.resume-sheet { container-type: inline-size; }
 .resume-page {
-  background: #ffffff;
-  color: #201e1d;
-  border-radius: var(--radius-lg);
-  padding: 40px 42px;
+  --pt: calc(100cqw / 595.28);
+  --page: calc(100cqw * var(--page-ratio, 1.4143));
+  position: relative;
+  background-color: #ffffff;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--page) - 1px),
+    #d9d0c3 calc(var(--page) - 1px),
+    #d9d0c3 var(--page)
+  );
+  color: var(--text-color, #201e1d);
+  font-family: var(--body-font), "DejaVu Sans", sans-serif;
+  font-size: calc(var(--pt) * var(--body-pt));
+  line-height: 1.5;
+  padding: var(--margin-top) var(--margin-side);
+  min-height: var(--page);
+  box-sizing: border-box;
   box-shadow: var(--shadow-md);
-  min-height: 640px;
 }
-.resume-page [contenteditable]:hover { background: color-mix(in srgb, #c67139 10%, transparent); border-radius: 8px; }
-.resume-page [contenteditable]:focus { outline: 2px solid var(--color-accent); outline-offset: 3px; border-radius: 8px; }
-.resume-name { font-family: var(--font-heading); font-size: 29px; line-height: 1.1; }
-.resume-contact { font-size: 13.5px; margin-top: 6px; color: #5a5550; }
+.resume-page [contenteditable]:hover { background: color-mix(in srgb, #c67139 10%, transparent); border-radius: 4px; }
+.resume-page [contenteditable]:focus { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+.resume-page header {
+  border-bottom: var(--rule);
+  padding-bottom: calc(var(--pt) * 10);
+  margin-bottom: calc(var(--pt) * 14);
+}
+.resume-page header.band {
+  background: var(--band-color);
+  padding: calc(var(--pt) * 10) calc(var(--pt) * 12);
+}
+/* A sidebar layout's two columns, as the renderer draws them. */
+.resume-columns { display: flex; gap: calc(var(--pt) * 14); }
+.resume-side { width: 30%; flex: 0 0 auto; }
+.resume-main { flex: 1; min-width: 0; }
+.resume-name {
+  font-family: var(--heading-font), "DejaVu Sans", serif;
+  font-size: calc(var(--pt) * var(--name-pt));
+  line-height: 1.1;
+  color: var(--name-color);
+}
+.resume-contact {
+  font-size: calc(var(--pt) * var(--contact-pt));
+  margin-top: calc(var(--pt) * 4);
+  color: #5a5550;
+}
 .resume-section {
-  font-size: 11.5px;
+  font-size: calc(var(--pt) * var(--heading-pt));
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: var(--heading-case, uppercase);
   font-weight: 800;
+  color: var(--name-color);
+  margin: calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
 }
-.resume-job-title { font-family: var(--font-heading); font-size: 16px; }
-.resume-when { font-size: 12.5px; color: #6b6560; white-space: nowrap; }
-.resume-bullet { display: flex; gap: 10px; margin-top: 8px; }
-.resume-bullet-dot { width: 6px; height: 6px; border-radius: 999px; margin-top: 8px; flex: 0 0 auto; }
-.resume-bullet-text { font-size: 13.5px; line-height: 1.6; }
+.resume-summary { margin: 0; }
+.resume-job { margin-bottom: calc(var(--pt) * 10); }
+.resume-job-head { display: flex; justify-content: space-between; gap: calc(var(--pt) * 12); }
+.resume-job-title {
+  font-family: var(--heading-font), "DejaVu Sans", serif;
+  font-size: calc(var(--pt) * var(--title-pt));
+}
+.resume-when { font-size: calc(var(--pt) * var(--small-pt)); color: #6b6560; white-space: nowrap; }
+.resume-bullets { margin: calc(var(--pt) * 4) 0 0; padding-left: calc(var(--pt) * 12); list-style: var(--bullet, disc); }
+.resume-bullets li { margin-bottom: calc(var(--pt) * 3); }
+.resume-bullets li::marker { color: var(--dot-color); }
 .resume-bullet-text[data-rewritten="true"] { background: color-mix(in srgb, #c67139 18%, transparent); }
-.resume-cite { font-size: 11.5px; color: #8a847e; margin-top: 3px; }
+.resume-skills { display: flex; flex-wrap: wrap; gap: calc(var(--pt) * 5); }
 .resume-skill {
-  font-size: 12.5px;
-  padding: 5px 12px;
+  font-size: calc(var(--pt) * var(--small-pt));
+  padding: calc(var(--pt) * 2) calc(var(--pt) * 8);
   border-radius: 999px;
   background: #f3f1ee;
   color: #3d3a36;
 }
 .resume-skill[data-lead="true"] { background: #f2e3d7; color: #8a4a20; }
+/* App annotations, never part of the PDF: shown only on request, and set
+ * apart so they read as the app's, not the page's. */
+.resume-cite {
+  font-family: var(--font);
+  font-size: 11.5px;
+  color: #8a847e;
+  margin: 2px 0 4px;
+  padding-left: 8px;
+  border-left: 2px dashed #d9d0c3;
+}
+/* The Sections panel: the résumé's sections, dragged or arrowed into order. */
+.section-list { list-style: none; margin: 0; padding: 0; }
+.section-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--color-neutral-100, #f5ead8);
+  margin-top: 6px;
+}
+.section-handle {
+  all: unset;
+  width: 24px;
+  height: 28px;
+  cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  fill: #8a847e;
+}
+.section-handle:focus-visible { outline: 2px solid var(--color-accent); border-radius: 6px; }
+.section-name { flex: 1; font-size: 13.5px; font-weight: 600; }
+.chip-add {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px dashed rgba(32, 30, 29, 0.3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.chip-add:disabled { opacity: 0.5; cursor: default; }
+.chip-add:focus-visible { outline: 2px solid var(--color-accent); }
+.resume-add-line {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--color-accent);
+  margin: 2px 0 6px;
+}
+.resume-annotation { font-size: 12.5px; color: var(--color-neutral-700); margin: 0 0 10px; }
 
 .chat-log {
   flex: 1;
@@ -1268,4 +1370,104 @@ select.input { appearance: auto; }
   gap: 12px;
   padding: 14px 0;
   border-top: 1px solid color-mix(in srgb, #201e1d 10%, transparent);
+}
+
+/* Advisor jobs (ADR 0042): the slim card a tab shows while its job runs,
+ * the spinner beside a tab's name, and the notice in the corner. */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-top-color: var(--color-accent);
+  animation: spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+.advisor-job { max-width: 620px; }
+.step-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--color-neutral-800);
+}
+.advisor-job-notice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  font-size: 13.5px;
+}
+
+/* Evidence, collapsed until opened (domain spec §7). */
+.evidence-disclosure { margin-top: 8px; }
+.evidence-disclosure summary {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-accent-700);
+  cursor: pointer;
+}
+.evidence-item {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.evidence-reference {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--color-secondary-800, #3d472b);
+}
+.evidence-fact { font-size: 13px; line-height: 1.5; margin-top: 2px; }
+.evidence-empty { font-size: 13px; color: var(--color-neutral-800); margin: 8px 0 0; }
+
+/* A gap's fit points, as a bar out of the plan's scale. */
+.lift-bar {
+  height: 10px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--color-neutral-300);
+  overflow: hidden;
+}
+.lift-bar-fill { height: 100%; border-radius: 999px; background: var(--color-accent); }
+
+/* The Résumé as prototyped: tools on the left, the page in the middle, the
+ * requirements on the right; stacked page first when narrow. */
+.resume-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(240px, 300px);
+  grid-template-areas: "tools page requirements";
+  align-items: start;
+}
+/* Each column keeps to its track. A side column is a .stack, a grid whose one
+ * auto column would otherwise grow to its widest line — a long saved-résumé
+ * name — and run under the page. */
+.resume-col-tools,
+.resume-col-requirements {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.resume-col-tools { grid-area: tools; }
+.resume-col-page { grid-area: page; min-width: 0; }
+.resume-col-requirements { grid-area: requirements; }
+@media (max-width: 1100px) {
+  .resume-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "page" "tools" "requirements";
+  }
 }

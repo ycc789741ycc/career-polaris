@@ -260,8 +260,11 @@ In: the gap plan — plan a route to a Target (a role, and optionally one openin
 in it; ADR 0022), with gaps ranked by the fit points each is worth, milestones,
 tasks and projects drafted on the user's key, versions per Target with finished
 work carried forward, and plan history. `target` resolves what a plan aims at
-(ADR 0005); since ADR 0033 it also keeps the postings of the user's own. Drafting is a job whose row the page polls
-(ADR 0006).
+(ADR 0005); since ADR 0033 it also keeps the postings of the user's own. Drafting is a job
+whose row records its stage (ADR 0006); since ADR 0042 it runs in the background
+— the shell lists it in `GET /activity`, the tab shows a card with Cancel, and
+the other tabs stay usable — so a drafting plan is no longer a page the user
+waits on.
 
 And the Resume Advisor: a résumé written for a Target from cited evidence, over
 the uploaded résumé when there is one, with requirement coverage decided by
@@ -346,8 +349,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   questions per gap of the Target on the user's key, polled while `writing`.
   One submit checks the whole batch, records every answer through
   `profile.record_answers` as `user_answer` evidence, and emits
-  `GapAnswersSubmitted`; the dispatcher queues `gapplan.regenerate` and
-  `resume.regenerate`, each a no-op without a plan or résumé. The old
+  `GapAnswersSubmitted`, for which the dispatcher queues nothing since ADR
+  0035 (Phase 9): answering spends nothing. The old
   follow-up questions, `/questions` and their tables are gone. The Advisor
   opens on `#/advisor/gaps`.
 - **Profile confidence on Strengths.** `assessment` returns
@@ -509,7 +512,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
 ## Phase 9 scope
 
 A posting of the user's own belongs to Target (ADR 0033), one branch per step
-under `epic/no-ticket/own-posting-target`:
+under `epic/no-ticket/own-posting-target`; the rest of the phase
+(`docs/plan.md`) one branch per step under `epic/no-ticket/phase-9`:
 
 - **Target owns it end to end.** The `target` schema holds
   `private_job_posting` (the JD, moved from `market_user`, ids kept),
@@ -545,3 +549,86 @@ under `epic/no-ticket/own-posting-target`:
 - **`market` has no pasted JDs.** `PrivateJobPosting`, the paste methods and
   `GET /job-descriptions` are gone. Migration 0030 moved the data; 0015, 0025
   and 0028 are guarded so a fresh database still builds.
+- **Regenerated only when asked** (ADR 0035). Submitting answers in Fill the
+  gap spends nothing and queues nothing. A gap plan and a résumé record what
+  they were drafted from — `profile_version` and `target_digest`
+  (`target.get_target_digest`, a `DraftBasis`; migration 0033) — and
+  `TargetService.get_outdated_reasons` tells the latest ready one it is
+  outdated by `evidence`, `target` or both (`is_outdated`, `outdated_by`). The
+  Advisor shows a banner with Regenerate, priced first: a plan's next version
+  through `POST /gap-plans`, a résumé's through
+  `POST /tailored-resumes/{id}/regenerate`. A manual edit keeps the basis.
+- **A plan cites what you answered** (ADR 0036). `gapfill.get_answers` lists
+  each answered question's evidence under its gap; `gap_plan` v2 shows them
+  beside their gaps ("answered in [E2]"), and an uncovered requirement may
+  cite its own answers and nothing else, which `assert_draft_valid` checks
+  (`answers_by_gap`). `gapplan`'s factory takes the `GapFillService`.
+- **Each fact with its date** (ADR 0037). `profile.get_evidence_line` is the
+  one way a prompt shows a fact: `[E3] (github, 2026-08-14) …`, with
+  `latest …` for a tally, `from a résumé uploaded …` for a résumé line (its
+  file's upload, `EvidenceView.stated_on`), `answered …` or `undated`
+  (`get_date_label`). The snapshot is newest first, undated last. Every prompt
+  that reads evidence has rules on time — `skill_assessment` v4, `gap_plan` v3,
+  `gap_questions` v2, `resume_write` and `resume_revise` v2: the newer fact
+  wins, and a stated date never makes the work recent.
+- **Export what you previewed** (ADR 0038). A template's spec and the page
+  constants in `resume/domain` are the one look: `render_html` reads them and
+  `GET /resume-templates` serves them to the preview, which is laid out as the
+  A4 page in points and trims what the PDF trims. The worker image carries
+  Caprasimo and Figtree (`backend/assets/fonts`, fontconfig). A ready export's
+  link is signed as an attachment ("<name> — <role>.pdf") and the SPA
+  downloads it at once; an export records its `trim` (migration 0034), and an
+  unchanged one is reused.
+- **Sections you choose** (ADR 0039). `ResumeContent` is a header and
+  `sections` (`resume/domain/section.py`: `SectionKind`, one shape each —
+  text, entries, list, bullets); Experience always, every other kind once, up
+  to three custom ones. `Resume.section_plan` is what each version is written
+  to, and every saved version sets it. The Sections panel moves and removes
+  sections as edits saved as versions; adding one is priced
+  (`/sections/estimate`), sets the résumé `filling`, and `resume.fill_section`
+  writes that section only (`resume_section` v1). `resume_write` and
+  `resume_revise` are v3. Migration 0035 moved stored content into sections.
+- **Templates of your own** (ADR 0040). A template is a `TemplateSpec`
+  (`resume/domain/template_spec.py`): layout, two fonts from `TEMPLATE_FONTS`,
+  four `#rrggbb` colours (name and text at least 4.5:1 on white), sizes in
+  their ranges, sidebar list kinds, heading case and bullet; never markup.
+  Organic and Plain are `BUILT_IN_TEMPLATES`. `CustomTemplate`
+  (`resume.custom_template`, RLS) keeps a user's own, up to
+  `RESUME_TEMPLATE_MAX`; a résumé holds a built-in `template` or a
+  `custom_template_id`, exactly one (`ck_resume_look`), and the wire carries
+  either as one template id. `POST`/`PUT`/`DELETE /resume-templates` keep
+  them, `GET /resume-templates/limits` feeds the editor, and deleting one
+  moves its résumés to Organic. An export stores the `spec` it rendered and
+  reuse compares specs. The preview draws every layout; the SPA hosts DejaVu
+  Serif and Mono subsets. Migration 0036.
+- **A template from a file** (ADR 0041). "Start from a file" posts a PDF to
+  `POST /resume-templates/upload` (under `TEMPLATE_UPLOAD_MAX_BYTES` /
+  `_PAGES`); a `TemplateReading` (`resume.template_reading`, RLS) is polled at
+  `GET /resume-template-readings/{id}` while `resume.read_template` (queue
+  `docs`) walks the first page with pypdf (`infra/style_reader.py`) into
+  `StyleRun`s, with no text in them, and `get_template_spec_from_runs` makes
+  the draft, listing which values were read and which took Organic's. The file
+  is deleted once read or failed (`unreadable_file`); nothing of its text, name
+  or fonts is stored, and `resume.forget_template_reading` deletes the run a
+  day on. Saving it is ADR 0040's `POST /resume-templates`. Migration 0037.
+- **Advisor jobs in the background** (ADR 0042). Questions, a plan, a résumé
+  or a section, and scoring a posting of the user's own record `stage`,
+  `progress` and `estimated_cost_usd` on their rows (migration 0038);
+  `AiGateway.run(on_progress=)` streams the reply and reports its share of
+  `expected_output_tokens`, capped at 95% (`kernel.progress`). `POST
+  .../cancel` marks a running job `cancelled`; it stops before its next call,
+  mid-stream, or before its save (`JobCancelledError`), and a cancelled
+  version is never shown. One job of a kind per Target at a time. `GET
+  /activity` gathers every component's `running_jobs` as `advisor_jobs`; the
+  SPA shows `AdvisorJobCard` on the job's tab, a spinner on the step tabs and
+  `AdvisorJobNotice` in the corner. "Target this role" prices and starts the
+  questions; "Set as target" queues them after scoring
+  (`wiring.queue.queue_questions`).
+- **The Advisor as prototyped** (no ADR). Evidence is collapsed everywhere
+  (`EvidenceDisclosure`: "Show evidence (n)", "Evidence ▾"). Each gap of a
+  plan has a bar of its fit points out of `lift_scale` (10, or the plan's
+  largest lift), and the plan's header names the `answer_count` its draft
+  read. The Résumé has three columns — Saved résumés, Template + Export,
+  Sections and Revise with AI on the left; the page with "Save as vN" in the
+  middle; the requirements on the right — stacking page first when narrow,
+  and "Regenerate résumé" with its last-generated line on the Write-for card.

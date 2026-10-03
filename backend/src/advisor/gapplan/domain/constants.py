@@ -8,6 +8,14 @@ from __future__ import annotations
 
 # --- plan --------------------------------------------------------------------
 
+# Each stage's share of drafting a plan, (start, end) of 0 to 1 (ADR 0042).
+PLAN_STAGE_SHARES = {
+    "reading": (0.0, 0.1),
+    "drafting": (0.1, 0.85),
+    "checking": (0.85, 0.95),
+    "saving": (0.95, 1.0),
+}
+
 MIN_MILESTONES = 2
 
 MAX_MILESTONES = 5
@@ -21,6 +29,10 @@ MAX_PROJECTS = 4
 # The prototype's "The four things between you and …": enough to act on, few
 # enough that the first one is obviously first.
 SHOWN_GAPS = 4
+
+# A gap's bar is drawn out of this many fit points, or out of the plan's
+# largest lift when one is larger.
+LIFT_SCALE_FLOOR = 10
 
 # Two tasks are the same piece of work when they close a common gap and share
 # this much of their wording. Regenerating rewords tasks; it should not make

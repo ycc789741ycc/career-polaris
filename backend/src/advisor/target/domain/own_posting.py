@@ -191,6 +191,19 @@ class PostingEvaluationStatus(StrEnum):
     RUNNING = "running"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user (ADR 0042): never shown; the run before it stands.
+    CANCELLED = "cancelled"
+
+
+class EvaluationStage(StrEnum):
+    """Where evaluating a posting has got, recorded as it passes (ADR 0042).
+    Its calls go through the role map's kit, so there is no streamed share
+    within a stage."""
+
+    READING_FILE = "reading_file"
+    READING_REQUIREMENTS = "reading_requirements"
+    SCORING = "scoring"
+    WORKING_OUT_FIT = "working_out_fit"
 
 
 @dataclass(slots=True)
@@ -208,6 +221,9 @@ class PostingEvaluation:
     finished_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
+    stage: EvaluationStage | None = None
+    # 0 to 1, never going backwards.
+    progress: float = 0.0
 
     @classmethod
     def requested(
@@ -239,4 +255,14 @@ class PostingEvaluation:
         self.status = PostingEvaluationStatus.FAILED
         self.error_code = code
         self.error_message = message
+        self.finished_at = at
+
+    def update_stage(self, stage: EvaluationStage, *, progress: float) -> None:
+        self.stage = stage
+        self.progress = max(self.progress, progress)
+
+    def update_cancelled(self, at: datetime) -> None:
+        if not self.is_running:
+            raise OwnPostingError("only a posting still being scored can be cancelled")
+        self.status = PostingEvaluationStatus.CANCELLED
         self.finished_at = at

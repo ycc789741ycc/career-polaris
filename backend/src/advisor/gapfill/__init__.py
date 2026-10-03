@@ -14,6 +14,7 @@ from advisor.gapfill import jobs
 from advisor.gapfill.factory import create_gapfill_service
 from advisor.gapfill.service import (
     Answer,
+    GapAnswerView,
     GapFillService,
     GapView,
     QuestionSetView,
@@ -23,6 +24,7 @@ from advisor.gapfill.service import (
 
 __all__ = [
     "Answer",
+    "GapAnswerView",
     "GapFillService",
     "GapView",
     "QuestionSetView",

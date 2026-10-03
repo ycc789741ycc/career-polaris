@@ -8,14 +8,20 @@ from __future__ import annotations
 from typing import Any
 
 from advisor.resume.domain import (
+    CustomTemplate,
     Export,
     ExportStatus,
     Options,
+    ReadingStatus,
+    ResumeStage,
     ResumeStatus,
     ResumeVersion,
     Revision,
+    SectionSlot,
     TailoredResume,
     Template,
+    TemplateReading,
+    TemplateSpec,
     VersionSource,
 )
 from advisor.resume.infra import models
@@ -41,7 +47,7 @@ def resume(row: models.Resume) -> TailoredResume:
         job_posting_id=row.job_posting_id,
         private_job_posting_id=row.private_job_posting_id,
         target_label=row.target_label,
-        template=Template(row.template),
+        template=Template(row.template) if row.template else None,
         options=options_of(row.options),
         status=ResumeStatus(row.status),
         created_at=row.created_at,
@@ -50,6 +56,13 @@ def resume(row: models.Resume) -> TailoredResume:
         coverage=tuple(row.coverage),
         error_code=row.error_code,
         error_message=row.error_message,
+        profile_version=row.profile_version,
+        target_digest=row.target_digest,
+        section_plan=tuple(SectionSlot.from_dict(slot) for slot in row.section_plan),
+        custom_template_id=row.custom_template_id,
+        stage=ResumeStage(row.stage) if row.stage else None,
+        progress=row.progress,
+        estimated_cost_usd=row.estimated_cost_usd,
     )
 
 
@@ -68,7 +81,7 @@ def resume_row(entity: TailoredResume) -> models.Resume:
 
 def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.target_label = entity.target_label
-    row.template = str(entity.template)
+    row.template = str(entity.template) if entity.template else None
     row.options = options_dict(entity.options)
     row.status = str(entity.status)
     row.snapshot = entity.snapshot
@@ -76,6 +89,13 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.error_code = entity.error_code
     row.error_message = entity.error_message
     row.updated_at = entity.updated_at
+    row.profile_version = entity.profile_version
+    row.target_digest = entity.target_digest
+    row.section_plan = [slot.to_dict() for slot in entity.section_plan]
+    row.custom_template_id = entity.custom_template_id
+    row.stage = str(entity.stage) if entity.stage else None
+    row.progress = entity.progress
+    row.estimated_cost_usd = entity.estimated_cost_usd
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:
@@ -153,9 +173,11 @@ def export(row: models.Export) -> Export:
         id=row.id,
         owner_id=row.owner_id,
         version_id=row.version_id,
-        template=Template(row.template),
+        template=Template(row.template) if row.template else None,
         status=ExportStatus(row.status),
         created_at=row.created_at,
+        trim=row.trim,
+        spec=dict(row.spec) if row.spec is not None else None,
         storage_key=row.storage_key,
         error_code=row.error_code,
         error_message=row.error_message,
@@ -175,9 +197,71 @@ def export_row(entity: Export) -> models.Export:
 
 
 def apply_export(row: models.Export, entity: Export) -> None:
-    row.template = str(entity.template)
+    row.template = str(entity.template) if entity.template else None
+    row.trim = entity.trim
+    row.spec = entity.spec
     row.status = str(entity.status)
     row.storage_key = entity.storage_key
+    row.error_code = entity.error_code
+    row.error_message = entity.error_message
+    row.finished_at = entity.finished_at
+
+
+def custom_template(row: models.CustomTemplate) -> CustomTemplate:
+    return CustomTemplate(
+        id=row.id,
+        owner_id=row.owner_id,
+        name=row.name,
+        spec=TemplateSpec.from_dict(row.spec),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def custom_template_row(entity: CustomTemplate) -> models.CustomTemplate:
+    row = models.CustomTemplate(
+        id=entity.id, owner_id=entity.owner_id, created_at=entity.created_at
+    )
+    apply_custom_template(row, entity)
+    return row
+
+
+def apply_custom_template(row: models.CustomTemplate, entity: CustomTemplate) -> None:
+    row.name = entity.name
+    row.spec = entity.spec.to_dict()
+    row.updated_at = entity.updated_at
+
+
+def template_reading(row: models.TemplateReading) -> TemplateReading:
+    return TemplateReading(
+        id=row.id,
+        owner_id=row.owner_id,
+        status=ReadingStatus(row.status),
+        created_at=row.created_at,
+        storage_key=row.storage_key,
+        spec=dict(row.spec) if row.spec is not None else None,
+        read=tuple(row.read_fields),
+        defaulted=tuple(row.defaulted_fields),
+        error_code=row.error_code,
+        error_message=row.error_message,
+        finished_at=row.finished_at,
+    )
+
+
+def template_reading_row(entity: TemplateReading) -> models.TemplateReading:
+    row = models.TemplateReading(
+        id=entity.id, owner_id=entity.owner_id, created_at=entity.created_at
+    )
+    apply_template_reading(row, entity)
+    return row
+
+
+def apply_template_reading(row: models.TemplateReading, entity: TemplateReading) -> None:
+    row.status = str(entity.status)
+    row.storage_key = entity.storage_key
+    row.spec = entity.spec
+    row.read_fields = list(entity.read)
+    row.defaulted_fields = list(entity.defaulted)
     row.error_code = entity.error_code
     row.error_message = entity.error_message
     row.finished_at = entity.finished_at

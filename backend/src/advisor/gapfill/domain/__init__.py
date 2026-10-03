@@ -4,6 +4,7 @@ from advisor.gapfill.domain.constants import (
     MAX_CHOICES,
     MAX_QUESTIONS_PER_GAP,
     MIN_CHOICES,
+    QUESTION_STAGE_SHARES,
 )
 from advisor.gapfill.domain.events import GapAnswersSubmitted, GapFillEvent
 from advisor.gapfill.domain.questions import (
@@ -16,6 +17,7 @@ from advisor.gapfill.domain.questions import (
     GapStatus,
     QuestionSet,
     QuestionSetStatus,
+    QuestionStage,
     answer_fact,
     assert_questions_valid,
 )
@@ -35,6 +37,7 @@ __all__ = [
     "MAX_CHOICES",
     "MAX_QUESTIONS_PER_GAP",
     "MIN_CHOICES",
+    "QUESTION_STAGE_SHARES",
     "Answer",
     "AnswerType",
     "AskedGap",
@@ -52,6 +55,7 @@ __all__ = [
     "QuestionSetFilter",
     "QuestionSetRepository",
     "QuestionSetStatus",
+    "QuestionStage",
     "Repository",
     "answer_fact",
     "assert_questions_valid",

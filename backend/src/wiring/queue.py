@@ -14,6 +14,7 @@ from typing import Any
 from procrastinate import App
 
 from advisor.rolemap import BuildRequestView, MarketWait
+from advisor.target import TargetRef
 from kernel.config import get_settings
 from kernel.jobs import Queue, build_app
 from kernel.logging import get_logger
@@ -53,6 +54,20 @@ async def queue_build(owner_id: uuid.UUID, requested: BuildRequestView) -> None:
             owner_id=str(owner_id),
             build_id=build_id,
         )
+
+
+async def queue_questions(owner_id: uuid.UUID, ref: TargetRef) -> None:
+    """Write the Target's questions, unless it has a set being written or one
+    still to answer: the step "Target this role" and "Set as target" start,
+    at the price the user confirmed (ADR 0042)."""
+    deps = container()
+    current = await deps.gapfill.current(owner_id, ref)
+    if current is not None and (
+        current.status == "writing" or (current.status == "ready" and current.submitted_at is None)
+    ):
+        return
+    found = await deps.gapfill.request(owner_id, ref)
+    await enqueue("gapfill.write", owner_id=str(owner_id), set_id=str(found.id))
 
 
 def _register(app: App) -> None:
@@ -103,53 +118,54 @@ def _register(app: App) -> None:
         await rolemap_jobs.compute_fits(deps(), owner_id=owner_id)
 
     @app.task(name="target.evaluate_own_posting", queue=str(Queue.AI))
-    async def evaluate_own_posting(owner_id: str, evaluation_id: str) -> None:
+    async def evaluate_own_posting(
+        owner_id: str, evaluation_id: str, then_write_questions_for: str | None = None
+    ) -> None:
         await target_jobs.evaluate_own_posting(
             deps(), owner_id=owner_id, evaluation_id=evaluation_id
         )
+        # "Set as target" confirmed the questions with the scoring: they are
+        # written once it is scored, and only then (ADR 0042).
+        if then_write_questions_for is not None:
+            owner = uuid.UUID(owner_id)
+            posting = await deps().target.own_posting(owner, uuid.UUID(then_write_questions_for))
+            if posting.status == "ready":
+                await queue_questions(
+                    owner, TargetRef(private_job_posting_id=then_write_questions_for)
+                )
 
     @app.task(name="gapplan.draft", queue=str(Queue.AI))
     async def draft_plan(owner_id: str, plan_id: str) -> None:
         await gapplan_jobs.draft(deps(), owner_id=owner_id, plan_id=plan_id)
 
-    @app.task(name="gapplan.regenerate", queue=str(Queue.AI))
-    async def regenerate_plan(
-        owner_id: str,
-        role_id: str | None,
-        job_posting_id: str | None,
-        private_job_posting_id: str | None = None,
-    ) -> None:
-        await gapplan_jobs.regenerate(
-            deps(),
-            owner_id=owner_id,
-            role_id=role_id,
-            job_posting_id=job_posting_id,
-            private_job_posting_id=private_job_posting_id,
-        )
-
     @app.task(name="gapfill.write", queue=str(Queue.AI))
     async def write_questions(owner_id: str, set_id: str) -> None:
         await gapfill_jobs.write(deps(), owner_id=owner_id, set_id=set_id)
-
-    @app.task(name="resume.regenerate", queue=str(Queue.AI))
-    async def regenerate_resume(
-        owner_id: str,
-        role_id: str | None,
-        job_posting_id: str | None,
-        private_job_posting_id: str | None = None,
-    ) -> None:
-        await resume_jobs.regenerate(
-            deps(),
-            owner_id=owner_id,
-            role_id=role_id,
-            job_posting_id=job_posting_id,
-            private_job_posting_id=private_job_posting_id,
-        )
 
     @app.task(name="resume.generate", queue=str(Queue.AI))
     async def generate_resume(owner_id: str, resume_id: str) -> None:
         await resume_jobs.generate(deps(), owner_id=owner_id, resume_id=resume_id)
 
+    @app.task(name="resume.fill_section", queue=str(Queue.AI))
+    async def fill_resume_section(
+        owner_id: str, resume_id: str, kind: str, title: str | None = None
+    ) -> None:
+        await resume_jobs.fill_section(
+            deps(), owner_id=owner_id, resume_id=resume_id, kind=kind, title=title
+        )
+
     @app.task(name="resume.export", queue=str(Queue.DOCS))
     async def export_resume(owner_id: str, export_id: str) -> None:
         await resume_jobs.export(deps(), owner_id=owner_id, export_id=export_id)
+
+    @app.task(name="resume.read_template", queue=str(Queue.DOCS))
+    async def read_template(owner_id: str, template_reading_id: str) -> None:
+        await resume_jobs.read_template(
+            deps(), owner_id=owner_id, template_reading_id=template_reading_id
+        )
+
+    @app.task(name="resume.forget_template_reading", queue=str(Queue.DOCS))
+    async def forget_template_reading(owner_id: str, template_reading_id: str) -> None:
+        await resume_jobs.forget_template_reading(
+            deps(), owner_id=owner_id, template_reading_id=template_reading_id
+        )

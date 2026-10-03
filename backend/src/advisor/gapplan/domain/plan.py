@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
 from advisor.gapplan.domain.constants import (
+    LIFT_SCALE_FLOOR,
     MAX_MILESTONES,
     MAX_PROJECTS,
     MAX_STEPPING_STONES,
@@ -40,6 +42,18 @@ class PlanStatus(StrEnum):
     DRAFTING = "drafting"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user while it was drafted (ADR 0042): never shown, and
+    # the version before it stays current.
+    CANCELLED = "cancelled"
+
+
+class PlanStage(StrEnum):
+    """Where drafting a plan has got, recorded as it passes (ADR 0042)."""
+
+    READING = "reading"
+    DRAFTING = "drafting"
+    CHECKING = "checking"
+    SAVING = "saving"
 
 
 class PlanError(ValueError):
@@ -86,12 +100,17 @@ def assert_draft_valid(
     projects: Sequence[DraftProject],
     shown_keys: Sequence[str],
     dimension_keys: Iterable[str],
+    answers_by_gap: Mapping[str, frozenset[str]] | None = None,
 ) -> None:
     """Every shown gap is explained, and every task closes one of them.
 
     A dimension gap must cite evidence — it is a claim about the user's work.
-    An uncovered requirement has, by definition, nothing to cite.
+    An uncovered requirement has no evidence behind it, except what the user
+    answered about it in Fill the gap: it may cite those answers
+    (``answers_by_gap``, the evidence ids answered for each gap) and nothing
+    else (ADR 0036).
     """
+    answered = answers_by_gap or {}
     shown = set(shown_keys)
     dimensional = set(dimension_keys)
 
@@ -107,6 +126,13 @@ def assert_draft_valid(
             raise PlanError(f"gap {reading.key} has no explanation")
         if reading.key in dimensional and not reading.evidence_ids:
             raise PlanError(f"gap {reading.key} cites no evidence")
+        if reading.key not in dimensional and (
+            other := set(reading.evidence_ids) - answered.get(reading.key, frozenset())
+        ):
+            raise PlanError(
+                f"gap {reading.key} has no evidence but its own answers to cite, "
+                f"and cites {sorted(other)}"
+            )
 
     if not MIN_MILESTONES <= len(milestones) <= MAX_MILESTONES:
         raise PlanError(
@@ -219,6 +245,15 @@ class GapPlan:
     template_version: str | None = None
     drafted_at: datetime | None = None
     private_job_posting_id: uuid.UUID | None = None
+    # What the draft read (ADR 0035): the profile version and the Target's
+    # digest, set when it is drafted. None before, and on plans drafted
+    # before they were recorded.
+    profile_version: int | None = None
+    target_digest: str | None = None
+    stage: PlanStage | None = None
+    # 0 to 1, never going backwards.
+    progress: float = 0.0
+    estimated_cost_usd: Decimal | None = None
 
     @classmethod
     def requested(
@@ -254,9 +289,13 @@ class GapPlan:
         stepping_stones: tuple[dict[str, Any], ...],
         model_id: str,
         template_version: str,
+        profile_version: int,
+        target_digest: str,
         at: datetime,
     ) -> None:
         self.snapshot = snapshot
+        self.profile_version = profile_version
+        self.target_digest = target_digest
         self.target_label = label[:400]
         self.gaps = gaps
         self.projects = projects
@@ -270,6 +309,28 @@ class GapPlan:
         self.status = PlanStatus.FAILED
         self.error_code = code
         self.error_message = message
+
+    @property
+    def is_drafting(self) -> bool:
+        return self.status is PlanStatus.DRAFTING
+
+    @property
+    def is_shown(self) -> bool:
+        """A cancelled plan is in no list and no history."""
+        return self.status is not PlanStatus.CANCELLED
+
+    def update_stage(
+        self, stage: PlanStage, *, progress: float, cost: Decimal | None = None
+    ) -> None:
+        self.stage = stage
+        self.progress = max(self.progress, progress)
+        if cost is not None:
+            self.estimated_cost_usd = cost
+
+    def update_cancelled(self) -> None:
+        if not self.is_drafting:
+            raise PlanError("only a plan still being drafted can be cancelled")
+        self.status = PlanStatus.CANCELLED
 
 
 @dataclass(slots=True)
@@ -298,3 +359,9 @@ class Task:
     def mark(self, done: bool, *, at: datetime) -> None:
         """Ticking an already-done task keeps when it was first done."""
         self.done_at = (self.done_at or at) if done else None
+
+
+def get_lift_scale(lifts: Iterable[int]) -> int:
+    """The fit points a plan's gap bars are drawn out of: 10, or the largest
+    lift when one is larger, so no bar overflows. Pure."""
+    return max(LIFT_SCALE_FLOOR, *lifts, 0)

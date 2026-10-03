@@ -6,7 +6,7 @@ own, as three columns.
 
 from __future__ import annotations
 
-from advisor.gapplan.domain import GapPlan, Milestone, PlanStatus, Task
+from advisor.gapplan.domain import GapPlan, Milestone, PlanStage, PlanStatus, Task
 from advisor.gapplan.infra import models
 
 
@@ -30,6 +30,11 @@ def plan(row: models.GapPlan) -> GapPlan:
         model_id=row.model_id,
         template_version=row.template_version,
         drafted_at=row.drafted_at,
+        profile_version=row.profile_version,
+        target_digest=row.target_digest,
+        stage=PlanStage(row.stage) if row.stage else None,
+        progress=row.progress,
+        estimated_cost_usd=row.estimated_cost_usd,
     )
 
 
@@ -59,6 +64,11 @@ def apply_plan(row: models.GapPlan, entity: GapPlan) -> None:
     row.model_id = entity.model_id
     row.template_version = entity.template_version
     row.drafted_at = entity.drafted_at
+    row.profile_version = entity.profile_version
+    row.target_digest = entity.target_digest
+    row.stage = str(entity.stage) if entity.stage else None
+    row.progress = entity.progress
+    row.estimated_cost_usd = entity.estimated_cost_usd
 
 
 def milestone(row: models.Milestone) -> Milestone:

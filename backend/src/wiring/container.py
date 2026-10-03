@@ -193,6 +193,7 @@ def build(settings: Settings | None = None) -> Container:
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        gapfill=gapfill,
         gateway=gateway,
     )
     resume = create_resume_service(
@@ -202,6 +203,9 @@ def build(settings: Settings | None = None) -> Container:
         assessment=assessment,
         gateway=gateway,
         object_store=object_store,
+        template_max=settings.resume_template_max,
+        template_upload_max_bytes=settings.template_upload_max_bytes,
+        template_upload_max_pages=settings.template_upload_max_pages,
     )
 
     activity = ActivityService(

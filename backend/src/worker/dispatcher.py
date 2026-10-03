@@ -88,18 +88,10 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
             await queue_build(owner_id, requested)
         return
 
-    if name == EventName.GAP_ANSWERS_SUBMITTED and owner_id:
-        # The Target's plan and résumé are written again from the new
-        # evidence, each only if the user has one. Two jobs, so gapplan and
-        # resume never import each other (ADR 0023).
-        target = {
-            "owner_id": str(owner_id),
-            "role_id": event.payload.get("role_id"),
-            "job_posting_id": event.payload.get("job_posting_id"),
-            "private_job_posting_id": event.payload.get("private_job_posting_id"),
-        }
-        await enqueue("gapplan.regenerate", **target)
-        await enqueue("resume.regenerate", **target)
+    if name == EventName.GAP_ANSWERS_SUBMITTED:
+        # Rewrites nothing: answering spends nothing (ADR 0035). The Target's
+        # plan and résumé say they are outdated by the new evidence, and the
+        # user regenerates either at a price they confirm.
         return
 
     if name == EventName.TARGET_LOCATIONS_CHANGED:

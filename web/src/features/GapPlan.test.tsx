@@ -115,6 +115,10 @@ const readyPlan: Plan = {
     { role_id: "r2", name: "Platform Engineer", fit: 84, openings: 9 },
   ],
   versions: [summary],
+  is_outdated: false,
+  lift_scale: 25,
+  answer_count: 3,
+  outdated_by: [],
 };
 
 type Route = (method: string, url: string, body: unknown) => unknown;
@@ -232,19 +236,64 @@ describe("gap plan screen", () => {
     renderPlan([summary]);
 
     expect(
-      await screen.findByText("01 · Demonstrated org-level influence"),
+      await screen.findByText("1 · Demonstrated org-level influence"),
     ).toBeInTheDocument();
     expect(screen.getByText("+25 fit pts")).toBeInTheDocument();
     expect(screen.getByText("No evidence at all")).toBeInTheDocument();
+    // Each gap's fit points, as a bar out of the plan's largest lift.
+    const bar = screen.getByRole("img", {
+      name: "Closing this gap adds 10 of 25 possible fit points",
+    });
+    expect(bar.firstElementChild).toHaveStyle({ width: "40%" });
     expect(
-      screen.getByRole("img", {
-        name: "Technical leadership: you 70, the bar is 90",
-      }),
+      screen.getByText(/The bar shows the fit points out of 25/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("GitHub · payments-svc — 38 merged PRs"),
+      screen.getByText(/uses your 3 answers from Fill the gap/),
     ).toBeInTheDocument();
+    // Evidence is collapsed until opened; a gap with none says so.
+    const shown = screen.getByText("Show evidence (1)").closest("details")!;
+    expect(shown).not.toHaveAttribute("open");
+    expect(within(shown).getByText("38 merged PRs")).toBeInTheDocument();
+    expect(screen.getByText("Show evidence (none found)")).toBeInTheDocument();
     expect(screen.getByText("Platform Engineer")).toBeInTheDocument();
+  });
+
+  it("says an outdated plan is outdated and prices regenerating it", async () => {
+    const calls = serve((_method, url) => {
+      if (url === "/gap-plans/plan-1")
+        return {
+          ...readyPlan,
+          is_outdated: true,
+          outdated_by: ["evidence", "target"],
+        };
+      if (url.startsWith("/gap-plans/cost-estimate"))
+        return { cost_usd: "0.04", model_id: "claude-opus-5" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderPlan([summary]);
+
+    const banner = await screen.findByRole("status", { name: "Outdated" });
+    expect(banner).toHaveTextContent(
+      "Outdated: your evidence changed and the target changed",
+    );
+    await user.click(
+      within(banner).getByRole("button", { name: "Regenerate" }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: "Cost estimate" }),
+    ).toHaveTextContent("$0.04");
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("shows no banner on a plan that still matches what it read", async () => {
+    serve((_method, url) => (url === "/gap-plans/plan-1" ? readyPlan : null));
+    renderPlan([summary]);
+
+    await screen.findByText("1 · Demonstrated org-level influence");
+    expect(screen.queryByRole("status", { name: "Outdated" })).toBeNull();
   });
 
   it("ticks a task and counts one finished in another plan", async () => {

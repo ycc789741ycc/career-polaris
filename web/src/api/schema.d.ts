@@ -13,8 +13,13 @@ export interface paths {
         };
         /**
          * Activity
-         * @description Syncs and parses still running, and the newest analysis and role-map
-         *     build. The shell polls this while any of it is busy.
+         * @description Syncs and parses still running, the newest analysis and role-map build,
+         *     and the Advisor's jobs still running. The shell polls this while any of it
+         *     is busy.
+         *
+         *     ``activity`` sits beside ``gapplan`` and ``resume`` and cannot read them,
+         *     so the Advisor's jobs are gathered here, from each component's public API
+         *     (ADR 0042).
          */
         get: operations["activity_api_v1_activity_get"];
         put?: never;
@@ -495,6 +500,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gap-plans/{plan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Plan
+         * @description Stops drafting the plan before its next call or its save (ADR 0042).
+         *     A call already sent is still charged; the version before stays current.
+         */
+        post: operations["cancel_plan_api_v1_gap_plans__plan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gap-question-sets": {
         parameters: {
             query?: never;
@@ -583,8 +609,9 @@ export interface paths {
         put?: never;
         /**
          * Submit
-         * @description Every answer at once: checked as a batch, stored as ``user_answer``
-         *     evidence, then the Target's plan and résumé are written again.
+         * @description Every answer at once: checked as a batch and stored as ``user_answer``
+         *     evidence. Spends nothing and rewrites nothing: the Target's plan and résumé
+         *     then read as outdated, and the user regenerates them (ADR 0035).
          */
         post: operations["submit_api_v1_gap_question_sets__set_id__answers_post"];
         delete?: never;
@@ -593,21 +620,21 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/gap-question-sets/{set_id}/submit-estimate": {
+    "/api/v1/gap-question-sets/{set_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * Submit Estimate
-         * @description Submitting writes the Target's plan and résumé again, each only if the
-         *     user has one; that is what it costs.
-         */
-        get: operations["submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Cancel Set
+         * @description Stops writing the questions before the next call or the save (ADR
+         *     0042). A call already sent is still charged.
+         */
+        post: operations["cancel_set_api_v1_gap_question_sets__set_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -743,6 +770,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/own-postings/{private_job_posting_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Evaluation
+         * @description Stops scoring it before its next call (ADR 0042). A call already sent
+         *     is still charged.
+         */
+        post: operations["cancel_evaluation_api_v1_own_postings__private_job_posting_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/own-postings/{private_job_posting_id}/target": {
         parameters: {
             query?: never;
@@ -756,7 +804,8 @@ export interface paths {
          * Set As Target
          * @description Make it ready to aim the Advisor at, at the cost the user confirmed:
          *     queue reading and scoring it, unless its fit is current or a run is
-         *     already going. Poll ``GET /own-postings``.
+         *     already going. Poll ``GET /own-postings``. ``write_questions`` then writes
+         *     Fill the gap's questions, once it is scored (ADR 0042).
          */
         post: operations["set_as_target_api_v1_own_postings__private_job_posting_id__target_post"];
         delete?: never;
@@ -776,7 +825,9 @@ export interface paths {
          * Target Estimate
          * @description What setting it as the target costs: nothing when its fit is current,
          *     otherwise reading what it asks for if that is not read yet, and scoring
-         *     the fit. An unread file is priced as a ceiling.
+         *     the fit. An unread file is priced as a ceiling. ``with_questions`` adds
+         *     writing Fill the gap's questions, which follows (ADR 0042): priced as a
+         *     ceiling until the posting is scored.
          */
         get: operations["target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get"];
         put?: never;
@@ -816,6 +867,111 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-template-readings/{template_reading_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Template Reading */
+        get: operations["template_reading_api_v1_resume_template_readings__template_reading_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Templates
+         * @description Every template the user can choose, the built-in ones first, as the PDF
+         *     renderer draws it, for the preview (ADR 0038, ADR 0040).
+         */
+        get: operations["templates_api_v1_resume_templates_get"];
+        put?: never;
+        /**
+         * Create Template
+         * @description Keeps a template of the user's own: checked values, never markup.
+         */
+        post: operations["create_template_api_v1_resume_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Template Limits
+         * @description What a template of the user's own may set.
+         */
+        get: operations["template_limits_api_v1_resume_templates_limits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Template File
+         * @description Starts a template from a PDF: stores it and queues reading its style;
+         *     poll ``GET /resume-template-readings/{id}``. Only the style is read, and
+         *     the file is deleted once it is (ADR 0041). Spends nothing.
+         */
+        post: operations["upload_template_file_api_v1_resume_templates_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Template */
+        put: operations["update_template_api_v1_resume_templates__template_id__put"];
+        post?: never;
+        /**
+         * Delete Template
+         * @description Résumés set in it go back to Organic.
+         */
+        delete: operations["delete_template_api_v1_resume_templates__template_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1048,6 +1204,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tailored-resumes/{resume_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Resume
+         * @description Stops writing the résumé, or filling a section, before its next call
+         *     or its save (ADR 0042). A call already sent is still charged.
+         */
+        post: operations["cancel_resume_api_v1_tailored_resumes__resume_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tailored-resumes/{resume_id}/exports": {
         parameters: {
             query?: never;
@@ -1059,9 +1236,33 @@ export interface paths {
         put?: never;
         /**
          * Request Export
-         * @description Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``.
+         * @description Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``,
+         *     whose link downloads the file once it is ready. An unchanged export is
+         *     reused and nothing is queued (ADR 0038).
          */
         post: operations["request_export_api_v1_tailored_resumes__resume_id__exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tailored-resumes/{resume_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Resume
+         * @description Writes the résumé again as its next version, priced first by
+         *     ``/tailored-resumes/cost-estimate``; poll ``GET /tailored-resumes/{id}``
+         *     (ADR 0035).
+         */
+        post: operations["regenerate_resume_api_v1_tailored_resumes__resume_id__regenerate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1103,6 +1304,48 @@ export interface paths {
          * @description An accepted chat edit becomes a new version.
          */
         post: operations["apply_revision_api_v1_tailored_resumes__resume_id__revisions__revision_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tailored-resumes/{resume_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Section
+         * @description Adds the section and fills it from the sources; poll
+         *     ``GET /tailored-resumes/{id}`` while it is ``filling`` (ADR 0039).
+         */
+        post: operations["add_section_api_v1_tailored_resumes__resume_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tailored-resumes/{resume_id}/sections/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Section Estimate
+         * @description Filling a section from the sources runs on the user's key, so it is
+         *     priced first (ADR 0039).
+         */
+        get: operations["section_estimate_api_v1_tailored_resumes__resume_id__sections_estimate_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1229,12 +1472,40 @@ export interface components {
          *     is busy (ADR 0006, ADR 0018).
          */
         Activity: {
+            /** Advisor Jobs */
+            advisor_jobs: components["schemas"]["AdvisorJob"][];
             analysis: components["schemas"]["RunStatus"] | null;
             /** Parsing */
             parsing: components["schemas"]["PendingWork"][];
             role_map: components["schemas"]["RunStatus"] | null;
             /** Syncing */
             syncing: components["schemas"]["PendingWork"][];
+        };
+        /**
+         * AdvisorJob
+         * @description One short AI job of the Advisor still running (ADR 0042): its Target,
+         *     the stage it has reached and how far it is, 0 to 1, never going backwards.
+         *     ``estimated_cost_usd`` is set once its call is priced, before it is sent.
+         */
+        AdvisorJob: {
+            /** Estimated Cost Usd */
+            estimated_cost_usd: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "questions" | "gap_plan" | "resume" | "section" | "own_posting_evaluation";
+            /** Label */
+            label: string;
+            /** Progress */
+            progress: number;
+            /** Stage */
+            stage: string | null;
+            /** Started At */
+            started_at: string;
+            target: components["schemas"]["TargetRefBody"];
         };
         /**
          * AnalysisEstimate
@@ -1329,6 +1600,11 @@ export interface components {
         };
         /** Body_upload_resume_api_v1_resumes_post */
         Body_upload_resume_api_v1_resumes_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_upload_template_file_api_v1_resume_templates_upload_post */
+        Body_upload_template_file_api_v1_resume_templates_upload_post: {
             /** File */
             file: string;
         };
@@ -1822,6 +2098,8 @@ export interface components {
         };
         /** Plan */
         Plan: {
+            /** Answer Count */
+            answer_count: number;
             /** Created At */
             created_at: string;
             /** Drafted At */
@@ -1834,12 +2112,18 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Is Outdated */
+            is_outdated: boolean;
             /** Label */
             label: string;
+            /** Lift Scale */
+            lift_scale: number;
             /** Milestones */
             milestones: components["schemas"]["Milestone"][];
             /** Model Id */
             model_id: string | null;
+            /** Outdated By */
+            outdated_by: ("evidence" | "target")[];
             /** Progress */
             progress: number;
             /** Projects */
@@ -2077,16 +2361,28 @@ export interface components {
         ResumeContent: {
             /** Contact */
             contact: string;
-            /** Experience */
-            experience: components["schemas"]["ResumePosition"][];
             /** Headline */
             headline: string;
             /** Name */
             name: string;
-            /** Skills */
-            skills: string[];
-            /** Summary */
-            summary: string;
+            /** Sections */
+            sections: components["schemas"]["ResumeSection"][];
+        };
+        /**
+         * ResumeEntry
+         * @description A position, project, school or talk.
+         */
+        ResumeEntry: {
+            /** Bullets */
+            bullets: components["schemas"]["ResumeBullet"][];
+            /** Link */
+            link: string;
+            /** Org */
+            org: string;
+            /** Title */
+            title: string;
+            /** When */
+            when: string;
         };
         /** ResumeExport */
         ResumeExport: {
@@ -2103,11 +2399,8 @@ export interface components {
              * @enum {string}
              */
             status: "rendering" | "ready" | "failed";
-            /**
-             * Template
-             * @enum {string}
-             */
-            template: "organic" | "plain";
+            /** Template */
+            template: ("organic" | "plain") | null;
             /**
              * Version Id
              * Format: uuid
@@ -2150,17 +2443,6 @@ export interface components {
             /** Trim */
             trim: boolean;
         };
-        /** ResumePosition */
-        ResumePosition: {
-            /** Bullets */
-            bullets: components["schemas"]["ResumeBullet"][];
-            /** Org */
-            org: string;
-            /** Title */
-            title: string;
-            /** When */
-            when: string;
-        };
         /** ResumeRequest */
         ResumeRequest: {
             /** Job Posting Id */
@@ -2170,8 +2452,44 @@ export interface components {
             private_job_posting_id?: string | null;
             /** Role Id */
             role_id?: string | null;
-            /** @default organic */
-            template: components["schemas"]["Template"];
+            /**
+             * Template
+             * @default organic
+             */
+            template: string;
+        };
+        /**
+         * ResumeSection
+         * @description One section. Its kind's shape decides which field it uses: ``text`` for
+         *     the summary, ``entries`` for experience and the other entry kinds,
+         *     ``items`` for skills and certifications, ``bullets`` for a custom one.
+         */
+        ResumeSection: {
+            /** Bullets */
+            bullets: components["schemas"]["ResumeBullet"][];
+            /** Entries */
+            entries: components["schemas"]["ResumeEntry"][];
+            /** Items */
+            items: string[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+            /** Text */
+            text: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ResumeSectionSlot */
+        ResumeSectionSlot: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+            /** Title */
+            title: string | null;
         };
         /** ResumeSnapshot */
         ResumeSnapshot: {
@@ -2207,7 +2525,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "drafting" | "ready" | "failed";
+            status: "drafting" | "ready" | "failed" | "filling";
             target: components["schemas"]["TargetRefBody"];
             /** Updated At */
             updated_at: string;
@@ -2216,6 +2534,87 @@ export interface components {
         ResumeSummaryPage: {
             /** Items */
             items: components["schemas"]["ResumeSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ResumeTemplate
+         * @description One template as the PDF renderer draws it, for the picker and the
+         *     preview to draw the same page (ADR 0038, ADR 0040). Sizes in points, the
+         *     page in millimetres.
+         */
+        ResumeTemplate: {
+            /** Band Color */
+            band_color: string;
+            /** Contact Pt */
+            contact_pt: number;
+            /** Id */
+            id: string;
+            /** Is Built In */
+            is_built_in: boolean;
+            /** Margin Side Mm */
+            margin_side_mm: number;
+            /** Margin Top Mm */
+            margin_top_mm: number;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+            /** Page Height Mm */
+            page_height_mm: number;
+            /** Page Width Mm */
+            page_width_mm: number;
+            /** Rule */
+            rule: string;
+            /** Small Pt */
+            small_pt: number;
+            spec: components["schemas"]["TemplateSpecBody"];
+            /** Title Pt */
+            title_pt: number;
+            /** Trimmed Bullets */
+            trimmed_bullets: number;
+            /** Trimmed Skills */
+            trimmed_skills: number;
+        };
+        /**
+         * ResumeTemplateLimits
+         * @description What a template of the user's own may set, for the editor.
+         */
+        ResumeTemplateLimits: {
+            /** Body Pt Range */
+            body_pt_range: [
+                number,
+                number
+            ];
+            /** Fonts */
+            fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono")[];
+            /** Heading Pt Range */
+            heading_pt_range: [
+                number,
+                number
+            ];
+            /** Max Name */
+            max_name: number;
+            /** Max Templates */
+            max_templates: number;
+            /** Min Contrast */
+            min_contrast: number;
+            /** Name Pt Range */
+            name_pt_range: [
+                number,
+                number
+            ];
+            /** Upload Max Bytes */
+            upload_max_bytes: number;
+        };
+        /** ResumeTemplatePage */
+        ResumeTemplatePage: {
+            /** Items */
+            items: components["schemas"]["ResumeTemplate"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -2258,7 +2657,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "generated" | "manual" | "chat";
+            source: "generated" | "manual" | "chat" | "answers";
         };
         /** Revision */
         Revision: {
@@ -2451,6 +2850,20 @@ export interface components {
             sample_size: number;
         };
         /**
+         * SectionKind
+         * @enum {string}
+         */
+        SectionKind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+        /**
+         * SectionRequest
+         * @description A section to add to the résumé, filled from the sources (ADR 0039).
+         */
+        SectionRequest: {
+            kind: components["schemas"]["SectionKind"];
+            /** Title */
+            title?: string | null;
+        };
+        /**
          * SessionResponse
          * @description What the client keeps.
          *
@@ -2471,7 +2884,8 @@ export interface components {
         /** SettingsRequest */
         SettingsRequest: {
             options: components["schemas"]["OptionsBody"];
-            template: components["schemas"]["Template"];
+            /** Template */
+            template: string;
         };
         /** SignInMethods */
         SignInMethods: {
@@ -2512,21 +2926,6 @@ export interface components {
             /** Total */
             total: number;
         };
-        /**
-         * SubmitEstimate
-         * @description What submitting costs: the Target's plan and résumé are written again
-         *     from the new evidence, each only if the user has one.
-         */
-        SubmitEstimate: {
-            /** Cost Usd */
-            cost_usd: string;
-            /** Model Id */
-            model_id: string | null;
-            /** Regenerates Plan */
-            regenerates_plan: boolean;
-            /** Regenerates Resume */
-            regenerates_resume: boolean;
-        };
         /** Submitted */
         Submitted: {
             /** Answered */
@@ -2556,25 +2955,28 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Is Outdated */
+            is_outdated: boolean;
             /** Label */
             label: string;
             /** Latest Version */
             latest_version: number | null;
             options: components["schemas"]["ResumeOptions"];
+            /** Outdated By */
+            outdated_by: ("evidence" | "target")[];
             /** Revisions */
             revisions: components["schemas"]["Revision"][];
+            /** Section Plan */
+            section_plan: components["schemas"]["ResumeSectionSlot"][];
             snapshot: components["schemas"]["ResumeSnapshot"] | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "drafting" | "ready" | "failed";
+            status: "drafting" | "ready" | "failed" | "filling";
             target: components["schemas"]["TargetRefBody"];
-            /**
-             * Template
-             * @enum {string}
-             */
-            template: "organic" | "plain";
+            /** Template */
+            template: string;
             /** Updated At */
             updated_at: string;
             version: components["schemas"]["ResumeVersion"] | null;
@@ -2665,12 +3067,145 @@ export interface components {
             done: boolean;
         };
         /**
-         * Template
-         * @description Visual layout for export: rendering only, never a domain rule. The
-         *     prototype's two: Organic (rounded, terracotta rule) and Plain.
-         * @enum {string}
+         * TemplateDesign
+         * @description A template's look as checked values, never markup (ADR 0040). Sizes in
+         *     points. The server checks every value again, contrast included.
          */
-        Template: "organic" | "plain";
+        TemplateDesign: {
+            /** Accent Color */
+            accent_color: string;
+            /**
+             * Body Font
+             * @default Figtree
+             * @enum {string}
+             */
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Body Pt */
+            body_pt: number;
+            /**
+             * Bullet
+             * @default dot
+             * @enum {string}
+             */
+            bullet: "dot" | "dash" | "none";
+            /**
+             * Heading Case
+             * @default upper
+             * @enum {string}
+             */
+            heading_case: "upper" | "as_written";
+            /**
+             * Heading Font
+             * @default Caprasimo
+             * @enum {string}
+             */
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Heading Pt */
+            heading_pt: number;
+            /**
+             * Layout
+             * @default single_column
+             * @enum {string}
+             */
+            layout: "single_column" | "sidebar_left" | "sidebar_right" | "header_band";
+            /** Name Color */
+            name_color: string;
+            /** Name Pt */
+            name_pt: number;
+            /**
+             * Rule
+             * @default thick
+             * @enum {string}
+             */
+            rule: "none" | "thin" | "thick";
+            /** Rule Color */
+            rule_color: string;
+            /** Sidebar Kinds */
+            sidebar_kinds?: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
+            /** Text Color */
+            text_color: string;
+        };
+        /**
+         * TemplateReading
+         * @description A PDF being read for its style (ADR 0041). Once ready, a draft spec the
+         *     editor opens on, with which values were read from the file and which took
+         *     Organic's. Nothing of the file's text is kept.
+         */
+        TemplateReading: {
+            /** Created At */
+            created_at: string;
+            /** Defaulted */
+            defaulted: ("layout" | "heading_font" | "body_font" | "accent_color" | "name_color" | "text_color" | "rule_color" | "rule" | "name_pt" | "heading_pt" | "body_pt" | "sidebar_kinds" | "heading_case" | "bullet")[];
+            error: components["schemas"]["JobError"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Read */
+            read: ("layout" | "heading_font" | "body_font" | "accent_color" | "name_color" | "text_color" | "rule_color" | "rule" | "name_pt" | "heading_pt" | "body_pt" | "sidebar_kinds" | "heading_case" | "bullet")[];
+            spec: components["schemas"]["TemplateSpecBody"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "reading" | "ready" | "failed";
+        };
+        /** TemplateRequest */
+        TemplateRequest: {
+            /** Name */
+            name: string;
+            spec: components["schemas"]["TemplateDesign"];
+        };
+        /** TemplateSpecBody */
+        TemplateSpecBody: {
+            /** Accent Color */
+            accent_color: string;
+            /**
+             * Body Font
+             * @enum {string}
+             */
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Body Pt */
+            body_pt: number;
+            /**
+             * Bullet
+             * @enum {string}
+             */
+            bullet: "dot" | "dash" | "none";
+            /**
+             * Heading Case
+             * @enum {string}
+             */
+            heading_case: "upper" | "as_written";
+            /**
+             * Heading Font
+             * @enum {string}
+             */
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            /** Heading Pt */
+            heading_pt: number;
+            /**
+             * Layout
+             * @enum {string}
+             */
+            layout: "single_column" | "sidebar_left" | "sidebar_right" | "header_band";
+            /** Name Color */
+            name_color: string;
+            /** Name Pt */
+            name_pt: number;
+            /**
+             * Rule
+             * @enum {string}
+             */
+            rule: "none" | "thin" | "thick";
+            /** Rule Color */
+            rule_color: string;
+            /** Sidebar Kinds */
+            sidebar_kinds: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
+            /** Text Color */
+            text_color: string;
+        };
         /** UncoveredRequirement */
         UncoveredRequirement: {
             /** Statement */
@@ -4167,6 +4702,53 @@ export interface operations {
             };
         };
     };
+    cancel_plan_api_v1_gap_plans__plan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     request_set_api_v1_gap_question_sets_post: {
         parameters: {
             query?: never;
@@ -4422,7 +5004,7 @@ export interface operations {
             };
         };
     };
-    submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get: {
+    cancel_set_api_v1_gap_question_sets__set_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4434,13 +5016,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["SubmitEstimate"];
-                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {
@@ -4820,9 +5400,58 @@ export interface operations {
             };
         };
     };
-    set_as_target_api_v1_own_postings__private_job_posting_id__target_post: {
+    cancel_evaluation_api_v1_own_postings__private_job_posting_id__cancel_post: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                private_job_posting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_as_target_api_v1_own_postings__private_job_posting_id__target_post: {
+        parameters: {
+            query?: {
+                write_questions?: boolean;
+            };
             header?: never;
             path: {
                 private_job_posting_id: string;
@@ -4871,7 +5500,9 @@ export interface operations {
     };
     target_estimate_api_v1_own_postings__private_job_posting_id__target_estimate_get: {
         parameters: {
-            query?: never;
+            query?: {
+                with_questions?: boolean;
+            };
             header?: never;
             path: {
                 private_job_posting_id: string;
@@ -4984,6 +5615,356 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResumeExport"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    template_reading_api_v1_resume_template_readings__template_reading_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_reading_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateReading"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    templates_api_v1_resume_templates_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplatePage"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_resume_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    template_limits_api_v1_resume_templates_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplateLimits"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    upload_template_file_api_v1_resume_templates_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_template_file_api_v1_resume_templates_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateReading"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_template_api_v1_resume_templates__template_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplate"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_template_api_v1_resume_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {
@@ -5663,6 +6644,53 @@ export interface operations {
             };
         };
     };
+    cancel_resume_api_v1_tailored_resumes__resume_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     request_export_api_v1_tailored_resumes__resume_id__exports_post: {
         parameters: {
             query?: never;
@@ -5685,6 +6713,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeExport"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    regenerate_resume_api_v1_tailored_resumes__resume_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeSummary"];
                 };
             };
             /** @description The request could not be read. */
@@ -5788,6 +6865,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersion"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_section_api_v1_tailored_resumes__resume_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeSummary"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    section_estimate_api_v1_tailored_resumes__resume_id__sections_estimate_get: {
+        parameters: {
+            query: {
+                kind: components["schemas"]["SectionKind"];
+                title?: string | null;
+            };
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetEstimate"];
                 };
             };
             /** @description The request could not be read. */

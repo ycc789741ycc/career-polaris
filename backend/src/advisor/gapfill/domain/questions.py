@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from advisor.gapfill.domain.constants import (
@@ -142,6 +143,16 @@ class QuestionSetStatus(StrEnum):
     READY = "ready"
     FAILED = "failed"
     SUPERSEDED = "superseded"
+    # Stopped by the user while it was written (ADR 0042); never shown.
+    CANCELLED = "cancelled"
+
+
+class QuestionStage(StrEnum):
+    """Where writing a set has got, recorded as it passes (ADR 0042)."""
+
+    READING = "reading"
+    WRITING = "writing"
+    CHECKING = "checking"
 
 
 @dataclass(slots=True)
@@ -165,6 +176,10 @@ class QuestionSet:
     written_at: datetime | None = None
     submitted_at: datetime | None = None
     private_job_posting_id: uuid.UUID | None = None
+    stage: QuestionStage | None = None
+    # 0 to 1, never going backwards.
+    progress: float = 0.0
+    estimated_cost_usd: Decimal | None = None
 
     @classmethod
     def requested(
@@ -211,6 +226,23 @@ class QuestionSet:
 
     def supersede(self) -> None:
         self.status = QuestionSetStatus.SUPERSEDED
+
+    @property
+    def is_writing(self) -> bool:
+        return self.status is QuestionSetStatus.WRITING
+
+    def update_stage(
+        self, stage: QuestionStage, *, progress: float, cost: Decimal | None = None
+    ) -> None:
+        self.stage = stage
+        self.progress = max(self.progress, progress)
+        if cost is not None:
+            self.estimated_cost_usd = cost
+
+    def update_cancelled(self) -> None:
+        if not self.is_writing:
+            raise GapFillError("only questions still being written can be cancelled")
+        self.status = QuestionSetStatus.CANCELLED
 
     def submitted(self, at: datetime) -> None:
         self.submitted_at = at
