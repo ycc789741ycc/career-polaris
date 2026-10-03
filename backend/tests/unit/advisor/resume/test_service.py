@@ -5,13 +5,16 @@ no model."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from advisor.profile import CitationHandles, EvidenceSource, EvidenceView
+from advisor.profile.domain import EvidenceGranularity
 from advisor.resume import Options, ResumeService, Template
+from advisor.resume import service as resume_service
 from advisor.resume.domain import (
     Bullet,
     Position,
@@ -273,3 +276,34 @@ async def test_a_manual_edit_keeps_what_the_resume_was_written_from() -> None:
     stored = uow.store.resumes[resume_id]
     assert (stored.profile_version, stored.target_digest) == (1, "d1")
     assert (await service.get(OWNER, resume_id)).outdated_by == ()
+
+
+# --- what the writing prompts read (ADR 0037) ---------------------------------
+
+
+def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
+    fact = EvidenceView(
+        id=uuid.uuid4(),
+        source=EvidenceSource.JIRA,
+        reference="Jira · PAY",
+        fact="40 issues done in PAY",
+        observed_on=date(2026, 8, 14),
+        granularity=EvidenceGranularity.SUMMARY,
+        tally=40,
+        subject="PAY",
+    )
+    profile = SimpleNamespace(positions=(), evidence=(fact,))
+
+    inputs = resume_service._write_inputs(
+        profile,  # type: ignore[arg-type]
+        CitationHandles([fact.id]),
+        label="Staff Engineer · Northwind",
+        requirements="- Own reliability",
+        coverage_rows=(),
+        options=Options(),
+        base_resume="(none uploaded)",
+    )
+
+    assert inputs["evidence"] == "[E1] (jira, latest 2026-08-14) Jira · PAY: 40 issues done in PAY"
+    assert resume_service._WRITE == ("resume_write", "v2")
+    assert resume_service._REVISE == ("resume_revise", "v2")

@@ -57,6 +57,7 @@ from advisor.profile import (
     ProfileService,
     ProfileSnapshot,
     assert_citations_exist,
+    get_evidence_line,
 )
 from advisor.rolemap import RoleMapService
 from advisor.target import (
@@ -96,7 +97,7 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_TEMPLATE = ("gap_plan", "v2")
+_TEMPLATE = ("gap_plan", "v3")
 _UNTRUSTED = frozenset({"requirements", "evidence", "dimensions"})
 
 
@@ -621,8 +622,7 @@ class GapPlanService:
             )
             or "(no analysis yet)",
             "evidence": "\n".join(
-                f"[{handles.handle(e.id)}] ({e.source}) {e.reference}: {e.fact}"
-                for e in profile.evidence
+                get_evidence_line(e, handles.handle(e.id)) for e in profile.evidence
             )
             or "(no evidence)",
         }

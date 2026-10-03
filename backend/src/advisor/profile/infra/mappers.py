@@ -135,6 +135,8 @@ def apply_evidence(row: models.Evidence, entity: Evidence) -> None:
     row.granularity = str(entity.granularity)
     row.tally = entity.tally
     row.subject = entity.subject
+    # A newer upload that restates a line takes it over (found_in_resume).
+    row.resume_file_id = entity.resume_file_id
 
 
 # --- career timeline and version -------------------------------------------

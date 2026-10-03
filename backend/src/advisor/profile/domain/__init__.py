@@ -7,6 +7,8 @@ from advisor.profile.domain.evidence import (
     EvidenceGranularity,
     EvidenceSource,
     assert_citations_exist,
+    get_date_label,
+    get_shown_date,
 )
 from advisor.profile.domain.profile_version import ProfileVersion
 from advisor.profile.domain.repositories import (
@@ -57,5 +59,7 @@ __all__ = [
     "SourceConnectionRepository",
     "SourceSynced",
     "assert_citations_exist",
+    "get_date_label",
+    "get_shown_date",
     "total_experience_months",
 ]

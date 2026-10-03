@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +20,8 @@ from advisor.assessment.domain import (
     DimensionScore,
     LineageKind,
 )
+from advisor.profile import EvidenceSource
+from advisor.profile.domain import EvidenceGranularity
 from kernel.errors import (
     BudgetExceededError,
     NotFoundError,
@@ -33,9 +36,12 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 @dataclass(frozen=True)
 class _Evidence:
     id: str
-    source: str
+    source: EvidenceSource
     reference: str
     fact: str
+    observed_on: date | None = None
+    granularity: EvidenceGranularity = EvidenceGranularity.ITEM
+    stated_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -53,7 +59,8 @@ class FakeProfile:
         return self.current_version
 
     async def snapshot(self, owner_id: uuid.UUID) -> _Snapshot:
-        return _Snapshot(evidence=(_Evidence("e1", "github", "GitHub · api", "12 merged PRs"),))
+        fact = _Evidence("e1", EvidenceSource.GITHUB, "GitHub · api", "12 merged PRs")
+        return _Snapshot(evidence=(fact,))
 
     async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
         return {"e1"}
@@ -460,6 +467,8 @@ async def test_the_analysis_asks_for_the_configured_number_of_roles() -> None:
 
     gateway: Any = service._gateway
     assert gateway.calls[0]["candidate_count"] == "3"
+    # Each fact reaches the model with what its date means (ADR 0037).
+    assert "[E1] (github, undated) GitHub · api: 12 merged PRs" in gateway.calls[0]["evidence"]
     [(_, candidates)] = rolemap.handed
     assert len(candidates) == 3
 

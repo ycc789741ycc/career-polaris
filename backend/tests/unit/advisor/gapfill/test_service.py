@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 
 from advisor.gapfill import Answer, GapFillService
 from advisor.gapfill.domain import GapAnswersSubmitted, QuestionSetStatus
-from advisor.profile import AnswerRecord
+from advisor.profile import AnswerRecord, EvidenceSource
+from advisor.profile.domain import EvidenceGranularity
 from advisor.target import DimensionGap, TargetRef, TargetSnapshot, UncoveredGap
 from advisor.target.domain import Requirement, RequirementBasis
 from kernel.errors import BudgetExceededError, TargetUnusableError, ValidationError
@@ -51,9 +52,12 @@ class FakeTarget:
 @dataclass(frozen=True)
 class _Evidence:
     id: uuid.UUID
-    source: str
+    source: EvidenceSource
     reference: str
     fact: str
+    observed_on: date | None = None
+    granularity: EvidenceGranularity = EvidenceGranularity.ITEM
+    stated_on: date | None = None
 
 
 @dataclass
@@ -70,12 +74,15 @@ class FakeProfile:
         return type(
             "Snapshot",
             (),
-            {"evidence": (_Evidence(uuid.uuid4(), "github", "api", "Wrote the RFC"),)},
+            {"evidence": (_Evidence(uuid.uuid4(), EvidenceSource.GITHUB, "api", "Wrote the RFC"),)},
         )()
 
     async def record_answers(self, owner_id: uuid.UUID, answers: list[AnswerRecord]) -> Any:
         self.recorded.append(list(answers))
-        stored = [_Evidence(uuid.uuid4(), "user_answer", "Your answer", a.fact) for a in answers]
+        stored = [
+            _Evidence(uuid.uuid4(), EvidenceSource.USER_ANSWER, "Your answer", a.fact)
+            for a in answers
+        ]
         self.stored += [str(e.id) for e in stored]
         return stored
 
@@ -165,6 +172,7 @@ async def test_questions_are_asked_about_the_targets_costliest_gaps_first() -> N
         "req:multi-region-capacity",
     ]
     assert "worth up to 9 fit points" in gateway.inputs[0]["gaps"]
+    assert "- (github, undated) api: Wrote the RFC" in gateway.inputs[0]["evidence"]
     assert (await service.current(OWNER, REF)) == written
 
 

@@ -352,7 +352,7 @@ async def test_a_posting_of_your_own_is_planned_for_with_gaps_ranked_by_worth(
     ]
     assert plan.summary.progress == 0
     assert plan.summary.model_id == "claude-opus-5"
-    assert plan.template_version == "gap_plan@v2"
+    assert plan.template_version == "gap_plan@v3"
     # Only the draft runs on the key: the build already read the JD and
     # scored the role (ADR 0022).
     assert len(world.stub.calls) == calls_before + 1

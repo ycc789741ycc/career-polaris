@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 
-from advisor.profile import AnswerRecord, EvidenceSource, ProfileService
+from advisor.profile import AnswerRecord, EvidenceSource, ProfileService, get_evidence_line
 from advisor.profile.domain import (
     CareerPosition,
     ConnectionStatus,
@@ -552,9 +552,12 @@ async def test_an_empty_answer_is_rejected() -> None:
         )
 
 
-async def test_the_snapshot_groups_evidence_by_source_and_totals_the_timeline() -> None:
+async def test_the_snapshot_lists_facts_newest_first_and_totals_the_timeline() -> None:
+    """Newest first by the date each is shown with, undated last (ADR 0037),
+    so a prompt that keeps only the first so many drops the oldest."""
+    undated = replace(_draft("pr/2", "Reviewed the RFC"), observed_on=None)
     uow = FakeProfileUnitOfWork()
-    profile = _service(uow, connector=FakeConnector([_draft("pr/1")]))
+    profile = _service(uow, connector=FakeConnector([undated, _draft("pr/1")]))
     await profile.store_connection(
         OWNER, kind="github", access_token="t", refresh_token=None, scopes=(), expires_at=None
     )
@@ -574,12 +577,31 @@ async def test_the_snapshot_groups_evidence_by_source_and_totals_the_timeline() 
 
     snapshot = await profile.snapshot(OWNER)
 
-    assert [e.source for e in snapshot.evidence] == [
-        EvidenceSource.GITHUB,
-        EvidenceSource.USER_ANSWER,
+    # The answer is dated today, the PR 2026-09-01, the review not at all.
+    assert [(e.source, e.fact) for e in snapshot.evidence] == [
+        (EvidenceSource.USER_ANSWER, "Q? — A."),
+        (EvidenceSource.GITHUB, "Shipped the thing"),
+        (EvidenceSource.GITHUB, "Reviewed the RFC"),
     ]
     assert snapshot.version == 2
     assert snapshot.total_experience_months == 24
+
+
+async def test_a_resume_line_is_dated_by_the_upload_it_was_last_found_in() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile, _ = _service_with_store(uow)
+    older = await _upload_and_parse(profile)
+    uow.store.resumes[older].created_at = datetime(2025, 5, 2, tzinfo=UTC)
+    lines = (await profile.snapshot(OWNER)).evidence
+    assert {e.stated_on for e in lines} == {date(2025, 5, 2)}
+    assert {get_evidence_line(e).split(") ")[0] for e in lines} == {
+        "(resume, from a résumé uploaded 2025-05-02"
+    }
+
+    newer = await _upload_and_parse(profile)
+    uow.store.resumes[newer].created_at = datetime(2026, 9, 30, tzinfo=UTC)
+
+    assert {e.stated_on for e in (await profile.snapshot(OWNER)).evidence} == {date(2026, 9, 30)}
 
 
 # --- what is still running (ADR 0018) --------------------------------------

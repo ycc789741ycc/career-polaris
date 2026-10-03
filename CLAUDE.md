@@ -560,3 +560,11 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   beside their gaps ("answered in [E2]"), and an uncovered requirement may
   cite its own answers and nothing else, which `assert_draft_valid` checks
   (`answers_by_gap`). `gapplan`'s factory takes the `GapFillService`.
+- **Each fact with its date** (ADR 0037). `profile.get_evidence_line` is the
+  one way a prompt shows a fact: `[E3] (github, 2026-08-14) …`, with
+  `latest …` for a tally, `from a résumé uploaded …` for a résumé line (its
+  file's upload, `EvidenceView.stated_on`), `answered …` or `undated`
+  (`get_date_label`). The snapshot is newest first, undated last. Every prompt
+  that reads evidence has rules on time — `skill_assessment` v4, `gap_plan` v3,
+  `gap_questions` v2, `resume_write` and `resume_revise` v2: the newer fact
+  wins, and a stated date never makes the work recent.

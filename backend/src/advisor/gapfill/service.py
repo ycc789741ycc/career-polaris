@@ -40,7 +40,7 @@ from advisor.gapfill.domain import (
     answer_fact,
     assert_questions_valid,
 )
-from advisor.profile import AnswerRecord, ProfileService
+from advisor.profile import AnswerRecord, ProfileService, get_evidence_line
 from advisor.target import DimensionGap, TargetRef, TargetService, TargetSnapshot
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
@@ -60,7 +60,7 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_TEMPLATE = ("gap_questions", "v1")
+_TEMPLATE = ("gap_questions", "v2")
 _UNTRUSTED = frozenset({"gaps", "evidence"})
 # The evidence shown to the model, so a large profile stays one predictable call.
 MAX_EVIDENCE_LINES = 60
@@ -404,9 +404,8 @@ class GapFillService:
                 f"- {gap.key} — {gap.label} ({gap.status}, worth up to {gap.lift} fit "
                 f"points): {detail}"
             )
-        evidence = [
-            f"- ({e.source}) {e.reference}: {e.fact}" for e in profile.evidence[:MAX_EVIDENCE_LINES]
-        ]
+        # Newest first (ADR 0037), so the facts left out are the oldest.
+        evidence = [f"- {get_evidence_line(e)}" for e in profile.evidence[:MAX_EVIDENCE_LINES]]
         return {
             "target": snapshot.label,
             "gaps": "\n".join(lines),

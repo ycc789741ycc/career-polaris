@@ -137,6 +137,46 @@ def _check_tally(granularity: EvidenceGranularity, tally: int | None) -> None:
         raise ValueError("a tally cannot be negative")
 
 
+def get_shown_date(
+    *, source: EvidenceSource, observed_on: date | None, stated_on: date | None
+) -> date | None:
+    """The date a fact is shown and ordered by (ADR 0037).
+
+    When the work happened, for a commit or an issue; the day it was stated,
+    for a résumé line (its file's upload) or an answer. None when there is
+    neither.
+    """
+    if source is EvidenceSource.RESUME:
+        return stated_on
+    return observed_on
+
+
+def get_date_label(
+    *,
+    source: EvidenceSource,
+    granularity: EvidenceGranularity,
+    observed_on: date | None,
+    stated_on: date | None,
+) -> str:
+    """What a fact's date means, written beside it for the model (ADR 0037).
+
+    A date says when the work happened, or when the fact was stated, and the
+    label says which: ``2026-08-14`` for one piece of work, ``latest
+    2026-08-14`` for a tally whose date is only its newest item, ``from a
+    résumé uploaded 2026-05-02``, ``answered 2026-09-30``, or ``undated``.
+    """
+    shown = get_shown_date(source=source, observed_on=observed_on, stated_on=stated_on)
+    if shown is None:
+        return "undated"
+    if source is EvidenceSource.RESUME:
+        return f"from a résumé uploaded {shown.isoformat()}"
+    if source is EvidenceSource.USER_ANSWER:
+        return f"answered {shown.isoformat()}"
+    if granularity is EvidenceGranularity.SUMMARY:
+        return f"latest {shown.isoformat()}"
+    return shown.isoformat()
+
+
 class CitationError(Exception):
     """The model cited evidence that is not in this user's profile."""
 
