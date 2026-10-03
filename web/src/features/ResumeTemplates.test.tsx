@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResumeTemplateLimits, ResumeTemplateSpec } from "../api/types";
-import { getContrast, specProblem } from "./ResumeTemplates";
+import { describeReading, getContrast, specProblem } from "./ResumeTemplates";
 
 const spec: ResumeTemplateSpec = {
   layout: "single_column",
@@ -27,6 +27,7 @@ const limits: ResumeTemplateLimits = {
   min_contrast: 4.5,
   max_name: 60,
   max_templates: 10,
+  upload_max_bytes: 5_242_880,
 };
 
 describe("a template's checks, before the server's", () => {
@@ -44,5 +45,17 @@ describe("a template's checks, before the server's", () => {
     expect(specProblem("Mine", { ...spec, body_pt: 14 }, limits)).toBe(
       "Body size is from 8.5 to 11.5pt.",
     );
+  });
+});
+
+describe("what a file's reading says it found", () => {
+  it("names what was read and only that", () => {
+    expect(
+      describeReading({ ...spec, layout: "sidebar_left" }, [
+        "layout",
+        "accent_color",
+      ]),
+    ).toBe("We read: a left sidebar and its accent colour.");
+    expect(describeReading(spec, [])).toBe("We could read little from it.");
   });
 });

@@ -12,12 +12,14 @@ from advisor.resume.domain import (
     Export,
     ExportStatus,
     Options,
+    ReadingStatus,
     ResumeStatus,
     ResumeVersion,
     Revision,
     SectionSlot,
     TailoredResume,
     Template,
+    TemplateReading,
     TemplateSpec,
     VersionSource,
 )
@@ -221,3 +223,38 @@ def apply_custom_template(row: models.CustomTemplate, entity: CustomTemplate) ->
     row.name = entity.name
     row.spec = entity.spec.to_dict()
     row.updated_at = entity.updated_at
+
+
+def template_reading(row: models.TemplateReading) -> TemplateReading:
+    return TemplateReading(
+        id=row.id,
+        owner_id=row.owner_id,
+        status=ReadingStatus(row.status),
+        created_at=row.created_at,
+        storage_key=row.storage_key,
+        spec=dict(row.spec) if row.spec is not None else None,
+        read=tuple(row.read_fields),
+        defaulted=tuple(row.defaulted_fields),
+        error_code=row.error_code,
+        error_message=row.error_message,
+        finished_at=row.finished_at,
+    )
+
+
+def template_reading_row(entity: TemplateReading) -> models.TemplateReading:
+    row = models.TemplateReading(
+        id=entity.id, owner_id=entity.owner_id, created_at=entity.created_at
+    )
+    apply_template_reading(row, entity)
+    return row
+
+
+def apply_template_reading(row: models.TemplateReading, entity: TemplateReading) -> None:
+    row.status = str(entity.status)
+    row.storage_key = entity.storage_key
+    row.spec = entity.spec
+    row.read_fields = list(entity.read)
+    row.defaulted_fields = list(entity.defaulted)
+    row.error_code = entity.error_code
+    row.error_message = entity.error_message
+    row.finished_at = entity.finished_at

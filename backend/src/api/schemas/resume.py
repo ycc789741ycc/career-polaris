@@ -17,6 +17,7 @@ from advisor.resume import (
     SectionKind,
     SectionSlot,
     TemplateLimitsView,
+    TemplateReadingView,
     TemplateView,
     VersionView,
 )
@@ -480,6 +481,8 @@ class ResumeTemplateLimits(ApiModel):
     max_name: int
     # How many templates of their own a user may keep.
     max_templates: int
+    # The largest PDF a template may start from (ADR 0041).
+    upload_max_bytes: int
 
     @classmethod
     def from_view(cls, limits: TemplateLimitsView) -> ResumeTemplateLimits:
@@ -493,6 +496,54 @@ class ResumeTemplateLimits(ApiModel):
                 "min_contrast": limits.min_contrast,
                 "max_name": limits.max_name,
                 "max_templates": limits.max_templates,
+                "upload_max_bytes": limits.upload_max_bytes,
+            }
+        )
+
+
+TemplateField = Literal[
+    "layout",
+    "heading_font",
+    "body_font",
+    "accent_color",
+    "name_color",
+    "text_color",
+    "rule_color",
+    "rule",
+    "name_pt",
+    "heading_pt",
+    "body_pt",
+    "sidebar_kinds",
+    "heading_case",
+    "bullet",
+]
+
+
+class TemplateReading(ApiModel):
+    """A PDF being read for its style (ADR 0041). Once ready, a draft spec the
+    editor opens on, with which values were read from the file and which took
+    Organic's. Nothing of the file's text is kept."""
+
+    id: uuid.UUID
+    # reading -> ready | failed
+    status: Literal["reading", "ready", "failed"]
+    error: JobError | None
+    spec: TemplateSpecBody | None
+    read: list[TemplateField]
+    defaulted: list[TemplateField]
+    created_at: Timestamp
+
+    @classmethod
+    def from_view(cls, reading: TemplateReadingView) -> TemplateReading:
+        return cls.model_validate(
+            {
+                "id": reading.id,
+                "status": reading.status,
+                "error": JobError.of(reading.error_code, reading.error_message),
+                "spec": reading.spec.to_dict() if reading.spec else None,
+                "read": list(reading.read),
+                "defaulted": list(reading.defaulted),
+                "created_at": reading.created_at,
             }
         )
 

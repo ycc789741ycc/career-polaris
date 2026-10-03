@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../api/client";
 import type {
   ResumeTemplateLimits,
   ResumeTemplateLook,
   ResumeTemplateSpec,
+  TemplateField,
+  TemplateReading,
 } from "../api/types";
 import {
   Button,
@@ -42,6 +44,42 @@ const SIZES: { key: SizeKey; label: string; range: RangeKey }[] = [
   { key: "heading_pt", label: "Headings", range: "heading_pt_range" },
   { key: "body_pt", label: "Body", range: "body_pt_range" },
 ];
+
+const POLL_MS = 1500;
+
+const LAYOUT_PHRASES: Record<ResumeTemplateSpec["layout"], string> = {
+  single_column: "one column",
+  header_band: "one column under a tinted header",
+  sidebar_left: "a left sidebar",
+  sidebar_right: "a right sidebar",
+};
+
+const FONT_PHRASES: Record<ResumeTemplateSpec["heading_font"], string> = {
+  Caprasimo: "a display",
+  Figtree: "a sans-serif",
+  "DejaVu Serif": "a serif",
+  "DejaVu Sans Mono": "a monospaced",
+};
+
+/** What a reading found, in a sentence: "We read: a left sidebar, a serif
+ * heading, its accent colour and its type sizes." Pure. */
+export function describeReading(
+  spec: ResumeTemplateSpec,
+  read: TemplateField[],
+): string {
+  const has = (field: TemplateField) => read.includes(field);
+  const parts = [
+    has("layout") ? LAYOUT_PHRASES[spec.layout] : null,
+    has("heading_font") ? `${FONT_PHRASES[spec.heading_font]} name` : null,
+    has("body_font") ? `${FONT_PHRASES[spec.body_font]} text face` : null,
+    has("accent_color") ? "its accent colour" : null,
+    has("name_pt") || has("body_pt") ? "its type sizes" : null,
+    has("bullet") ? "its bullets" : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) return "We could read little from it.";
+  const last = parts.pop()!;
+  return `We read: ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
+}
 
 type ColorKey = "accent_color" | "name_color" | "text_color" | "rule_color";
 type SizeKey = "name_pt" | "heading_pt" | "body_pt";
@@ -145,7 +183,54 @@ export function TemplateEditor({
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What a file's reading found, once the editor opens on its draft.
+  const [fromFile, setFromFile] = useState<TemplateReading | null>(null);
+  const [reading, setReading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const problem = specProblem(name, spec, limits);
+  /** A label, marked when the value was read from the file or defaulted. */
+  const marked = (label: string, ...fields: TemplateField[]) => {
+    if (!fromFile) return label;
+    if (fields.some((f) => fromFile.defaulted.includes(f)))
+      return `${label} — not read; Organic's, check it`;
+    return `${label} — read from the file`;
+  };
+
+  async function startFromFile(file: File | null) {
+    if (!file) return;
+    setError(null);
+    if (file.size > limits.upload_max_bytes) {
+      setError(
+        `That file is over ${Math.round(limits.upload_max_bytes / 1_048_576)} MB.`,
+      );
+      return;
+    }
+    setReading(true);
+    try {
+      let job = await api.upload<TemplateReading>(
+        "/resume-templates/upload",
+        file,
+      );
+      while (job.status === "reading") {
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        job = await api.get<TemplateReading>(
+          `/resume-template-readings/${job.id}`,
+        );
+      }
+      if (job.status === "failed" || !job.spec) {
+        setError(job.error?.message ?? "That file could not be read.");
+        return;
+      }
+      setFromFile(job);
+      setName("From a file");
+      change(job.spec);
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setReading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
   const hasSidebar =
     spec.layout === "sidebar_left" || spec.layout === "sidebar_right";
 
@@ -196,6 +281,39 @@ export function TemplateEditor({
       <Eyebrow style={{ marginBottom: 12 }}>
         {editing ? "Change your template" : "Make your own"}
       </Eyebrow>
+      {!editing && (
+        <div className="stack" style={{ gap: 8, marginBottom: 14 }}>
+          <p className="subcopy" style={{ fontSize: 12.5, margin: 0 }}>
+            Start from a PDF of a résumé whose look you like. We read its style
+            only — layout, fonts, colours, sizes — never its words, and delete
+            the file once it is read. A very designed page, with photos, icons
+            or three columns, comes out as the nearest of four layouts.
+          </p>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/pdf"
+            aria-label="Résumé PDF to start from"
+            style={{ display: "none" }}
+            onChange={(event) =>
+              void startFromFile(event.target.files?.[0] ?? null)
+            }
+          />
+          <Button
+            variant="secondary"
+            busy={reading}
+            onClick={() => fileInput.current?.click()}
+          >
+            {reading ? "Reading its style…" : "Start from a file"}
+          </Button>
+          {fromFile?.spec && (
+            <p className="resume-annotation" role="status">
+              {describeReading(fromFile.spec, fromFile.read)} Anything marked
+              “not read” is Organic’s — check it before you save.
+            </p>
+          )}
+        </div>
+      )}
       <Field label="Name">
         <input
           className="input"
@@ -204,7 +322,7 @@ export function TemplateEditor({
           onChange={(event) => setName(event.target.value)}
         />
       </Field>
-      <Field label="Layout">
+      <Field label={marked("Layout", "layout")}>
         <select
           className="input"
           value={spec.layout}
@@ -248,7 +366,10 @@ export function TemplateEditor({
       {(["heading_font", "body_font"] as const).map((key) => (
         <Field
           key={key}
-          label={key === "heading_font" ? "Name and titles in" : "Text in"}
+          label={marked(
+            key === "heading_font" ? "Name and titles in" : "Text in",
+            key,
+          )}
         >
           <select
             className="input"
@@ -268,7 +389,7 @@ export function TemplateEditor({
         </Field>
       ))}
       {COLORS.map(({ key, label }) => (
-        <Field key={key} label={label}>
+        <Field key={key} label={marked(label, key)}>
           <input
             className="input template-color"
             type="color"
@@ -277,7 +398,7 @@ export function TemplateEditor({
           />
         </Field>
       ))}
-      <Field label="Line under the header">
+      <Field label={marked("Line under the header", "rule")}>
         <select
           className="input"
           value={spec.rule}
@@ -291,7 +412,7 @@ export function TemplateEditor({
         </select>
       </Field>
       {SIZES.map(({ key, label, range }) => (
-        <Field key={key} label={`${label} size — ${spec[key]}pt`}>
+        <Field key={key} label={marked(`${label} size — ${spec[key]}pt`, key)}>
           <input
             type="range"
             style={{ width: "100%" }}
@@ -303,7 +424,7 @@ export function TemplateEditor({
           />
         </Field>
       ))}
-      <Field label="Headings">
+      <Field label={marked("Headings", "heading_case")}>
         <select
           className="input"
           value={spec.heading_case}
@@ -318,7 +439,7 @@ export function TemplateEditor({
           <option value="as_written">As written</option>
         </select>
       </Field>
-      <Field label="Bullets">
+      <Field label={marked("Bullets", "bullet")}>
         <select
           className="input"
           value={spec.bullet}

@@ -12,10 +12,10 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, File, Query, UploadFile
 from sse_starlette.sse import EventSourceResponse
 
-from advisor.resume import Options, SectionKind
+from advisor.resume import TEMPLATE_READING_KEEP_SECONDS, Options, SectionKind
 from api.dependencies import CurrentUser, Deps, Paging, TargetQuery
 from api.schemas.common import TargetEstimate
 from api.schemas.resume import (
@@ -32,11 +32,12 @@ from api.schemas.resume import (
     SectionRequest,
     SettingsRequest,
     TailoredResume,
+    TemplateReading,
     TemplateRequest,
     VersionRequest,
     revision_event,
 )
-from wiring.queue import enqueue
+from wiring.queue import enqueue, enqueue_later
 
 router = APIRouter(tags=["resume"])
 
@@ -184,6 +185,33 @@ async def create_template(body: TemplateRequest, user: CurrentUser, deps: Deps) 
     """Keeps a template of the user's own: checked values, never markup."""
     template = await deps.resume.create_template(user, name=body.name, spec=body.spec.model_dump())
     return ResumeTemplate.from_view(template)
+
+
+@router.post("/resume-templates/upload", status_code=202)
+async def upload_template_file(
+    user: CurrentUser, deps: Deps, file: Annotated[UploadFile, File()]
+) -> TemplateReading:
+    """Starts a template from a PDF: stores it and queues reading its style;
+    poll ``GET /resume-template-readings/{id}``. Only the style is read, and
+    the file is deleted once it is (ADR 0041). Spends nothing."""
+    reading = await deps.resume.upload_template_file(
+        user,
+        content_type=file.content_type or "application/octet-stream",
+        content=await file.read(),
+    )
+    ids = {"owner_id": str(user), "template_reading_id": str(reading.id)}
+    await enqueue("resume.read_template", **ids)
+    await enqueue_later(
+        "resume.forget_template_reading", seconds=TEMPLATE_READING_KEEP_SECONDS, **ids
+    )
+    return TemplateReading.from_view(reading)
+
+
+@router.get("/resume-template-readings/{template_reading_id}")
+async def template_reading(
+    template_reading_id: uuid.UUID, user: CurrentUser, deps: Deps
+) -> TemplateReading:
+    return TemplateReading.from_view(await deps.resume.template_reading(user, template_reading_id))
 
 
 @router.put("/resume-templates/{template_id}")

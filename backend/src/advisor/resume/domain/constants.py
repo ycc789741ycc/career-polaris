@@ -90,3 +90,14 @@ BODY_PT_RANGE = (8.5, 11.5)
 MIN_CONTRAST = 4.5
 
 MAX_TEMPLATE_NAME = 60
+
+# --- template_reading ----------------------------------------------------------
+
+# A column is a share of the page's runs starting at one x: at least this.
+SIDEBAR_MIN_SHARE = 0.15
+
+# Two columns' starts at least this share of the page's width apart.
+SIDEBAR_MIN_GAP = 0.25
+
+# A reading never saved as a template is forgotten after a day (ADR 0041).
+TEMPLATE_READING_KEEP_SECONDS = 86_400

@@ -204,6 +204,8 @@ def build(settings: Settings | None = None) -> Container:
         gateway=gateway,
         object_store=object_store,
         template_max=settings.resume_template_max,
+        template_upload_max_bytes=settings.template_upload_max_bytes,
+        template_upload_max_pages=settings.template_upload_max_pages,
     )
 
     activity = ActivityService(

@@ -29,6 +29,7 @@ from advisor.resume import (
     SectionKind,
     SectionSlot,
     Template,
+    TemplateReadingView,
 )
 from advisor.resume.domain import Bullet
 from advisor.target import TargetRef
@@ -42,6 +43,7 @@ from tests.unit.advisor.resume.fakes import FakeResumeUnitOfWork
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
 EXPORT_ID = uuid.uuid4()
+READING_ID = uuid.uuid4()
 
 
 class FakeResumes:
@@ -83,6 +85,20 @@ class FakeResumes:
             object_store=None,  # type: ignore[arg-type]
         )
         return await service.templates(owner_id, page=page, page_size=page_size)
+
+    async def upload_template_file(
+        self, owner_id: uuid.UUID, *, content_type: str, content: bytes
+    ) -> TemplateReadingView:
+        return TemplateReadingView(
+            id=READING_ID,
+            status="reading",
+            error_code=None,
+            error_message=None,
+            spec=None,
+            read=(),
+            defaulted=(),
+            created_at=datetime(2026, 10, 10, tzinfo=UTC),
+        )
 
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
@@ -157,7 +173,11 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     async def enqueue(name: str, **kwargs: Any) -> None:
         calls.append({"name": name, **kwargs})
 
+    async def enqueue_later(name: str, *, seconds: int, **kwargs: Any) -> None:
+        calls.append({"name": name, "seconds": seconds, **kwargs})
+
     monkeypatch.setattr(resume_api, "enqueue", enqueue)
+    monkeypatch.setattr(resume_api, "enqueue_later", enqueue_later)
     return calls
 
 
@@ -374,3 +394,18 @@ def test_an_unknown_kind_of_section_is_refused(client: TestClient) -> None:
     response = client.post(f"/tailored-resumes/{RESUME_ID}/sections", json={"kind": "photo"})
 
     assert response.status_code == 422
+
+
+def test_a_template_file_is_read_now_and_forgotten_a_day_later(
+    client: TestClient, queued: list[dict[str, Any]]
+) -> None:
+    files = {"file": ("someone.pdf", b"%PDF-1.4", "application/pdf")}
+    response = client.post("/resume-templates/upload", files=files)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "reading"
+    assert [(c["name"], c.get("seconds")) for c in queued] == [
+        ("resume.read_template", None),
+        ("resume.forget_template_reading", 86_400),
+    ]
+    assert {c["template_reading_id"] for c in queued} == {str(READING_ID)}

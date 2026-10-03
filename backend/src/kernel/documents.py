@@ -10,8 +10,12 @@ parser and postings of the user's own; what the text means is theirs.
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING
 
 from kernel.errors import ValidationError
+
+if TYPE_CHECKING:
+    from pypdf import PdfReader
 
 PDF_TYPE = "application/pdf"
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -32,19 +36,28 @@ def read_document_text(content: bytes, *, content_type: str, max_pages: int) -> 
     raise ValidationError(f"{content_type} is not a format we can read", content_type=content_type)
 
 
-def _read_pdf(content: bytes, *, max_pages: int) -> tuple[str, int]:
+def open_pdf(content: bytes, *, max_pages: int) -> PdfReader:
+    """A PDF opened for reading, under the page limit. Raises
+    ``ValidationError`` for a file that will not open, has no pages, or is
+    longer than ``max_pages``."""
     from pypdf import PdfReader
 
     try:
         reader = PdfReader(io.BytesIO(content))
+        pages = len(reader.pages)
     except Exception as exc:
         raise ValidationError("this PDF could not be opened") from exc
-
-    if len(reader.pages) > max_pages:
+    if pages == 0:
+        raise ValidationError("this PDF has no pages")
+    if pages > max_pages:
         raise ValidationError(
-            f"a document of more than {max_pages} pages is not accepted",
-            pages=len(reader.pages),
+            f"a document of more than {max_pages} pages is not accepted", pages=pages
         )
+    return reader
+
+
+def _read_pdf(content: bytes, *, max_pages: int) -> tuple[str, int]:
+    reader = open_pdf(content, max_pages=max_pages)
     pages = [page.extract_text() or "" for page in reader.pages]
     return "\n".join(pages), len(pages)
 

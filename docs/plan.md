@@ -2395,6 +2395,19 @@ Open questions:
   systems drop it.
 
 ## Start a template from a file
+**Done** (ADR 0041, migration 0037). Where the build differs from the plan
+below:
+* The rule lives in its own concept module, `resume/domain/template_reading.py`,
+  beside `TemplateReading`. Headings are short runs in capitals or a bold face,
+  and only without those the sizes between body and name. The accent is the
+  list markers' colour first.
+* Lines and backgrounds are not read, so `rule` always defaults, and a sidebar
+  starts with skills, flagged.
+* The polled route is `GET /resume-template-readings/{id}`. The day-old
+  clean-up is `resume.forget_template_reading`, scheduled at upload.
+* `kernel.documents.open_pdf` is the shared guard: it opens a PDF under its
+  page limit for the résumé parser, postings of your own and this reader.
+
 With "Templates of your own" built, a user can design a template, but often
 what they have is an example: someone else's résumé whose look they like.
 Copying that design exactly is not possible, and not wanted:

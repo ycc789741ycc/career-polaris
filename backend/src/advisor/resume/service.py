@@ -16,6 +16,8 @@
   Target has moved on (ADR 0035).
 * A résumé is set in a built-in template or in one of the user's own: a name
   and a checked ``TemplateSpec``, never markup (ADR 0040).
+* A template can start from a PDF: the worker reads its style locally into a
+  draft spec, deletes the file, and keeps nothing of its text (ADR 0041).
 
 Every line the model writes must cite Evidence the user owns; a reply that
 does not is rejected as a whole. Coverage of the Target's requirements is
@@ -60,6 +62,7 @@ from advisor.resume.domain import (
     Options,
     Origin,
     OwnerResumes,
+    ReadingStatus,
     ResumeContent,
     ResumeError,
     ResumeStatus,
@@ -76,6 +79,8 @@ from advisor.resume.domain import (
     TailoredResume,
     TailoredResumeFilter,
     Template,
+    TemplateReading,
+    TemplateReadingError,
     TemplateSpec,
     TemplateSpecError,
     VersionSource,
@@ -85,6 +90,7 @@ from advisor.resume.domain import (
     coverage,
     get_download_name,
     get_planned,
+    get_template_spec_from_runs,
     mark_edits,
     settle_revision,
 )
@@ -103,8 +109,10 @@ from advisor.resume.domain.constants import (
     PAGE_MARGIN_TOP_MM,
     PAGE_WIDTH_MM,
     TEMPLATE_FONTS,
+    TEMPLATE_READING_KEEP_SECONDS,
 )
 from advisor.resume.infra.render import render_html, render_pdf
+from advisor.resume.infra.style_reader import read_style_runs
 from advisor.target import (
     DraftBasis,
     OutdatedReason,
@@ -117,6 +125,7 @@ from advisor.target import (
 from kernel.ai_gateway import AiGateway, StreamResult, StreamText
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
+from kernel.documents import PDF_TYPE
 from kernel.errors import (
     ConflictError,
     DomainError,
@@ -130,6 +139,7 @@ from kernel.paging import Page, paginate
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
+    "TEMPLATE_READING_KEEP_SECONDS",
     "CoverageView",
     "ExportView",
     "Options",
@@ -144,6 +154,7 @@ __all__ = [
     "SectionSlot",
     "Template",
     "TemplateLimitsView",
+    "TemplateReadingView",
     "TemplateView",
     "VersionView",
 ]
@@ -316,6 +327,21 @@ class TemplateView:
 
 
 @dataclass(frozen=True, slots=True)
+class TemplateReadingView:
+    """A file being read for its style (ADR 0041): once ready, a draft spec
+    and which of its values were read from the file and which defaulted."""
+
+    id: uuid.UUID
+    status: str
+    error_code: str | None
+    error_message: str | None
+    spec: TemplateSpec | None
+    read: tuple[str, ...]
+    defaulted: tuple[str, ...]
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class TemplateLimitsView:
     """What a template of the user's own may set, for the editor."""
 
@@ -326,6 +352,8 @@ class TemplateLimitsView:
     min_contrast: float
     max_name: int
     max_templates: int
+    # A PDF a template may start from.
+    upload_max_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,9 +392,13 @@ class ResumeService:
         gateway: AiGateway,
         object_store: ObjectStore,
         template_max: int = 10,
+        template_upload_max_bytes: int = 5_242_880,
+        template_upload_max_pages: int = 3,
     ) -> None:
         self._uow = uow
         self._template_max = template_max
+        self._upload_max_bytes = template_upload_max_bytes
+        self._upload_max_pages = template_upload_max_pages
         self._target = target
         self._profile = profile
         self._assessment = assessment
@@ -809,6 +841,7 @@ class ResumeService:
             min_contrast=MIN_CONTRAST,
             max_name=MAX_TEMPLATE_NAME,
             max_templates=self._template_max,
+            upload_max_bytes=self._upload_max_bytes,
         )
 
     async def create_template(
@@ -855,6 +888,82 @@ class ResumeService:
                 resume.restyle(template=Template.ORGANIC, options=resume.options, at=utcnow())
                 await mine.resumes.update(resume)
             await mine.templates.delete(template.id)
+
+    # -- a template from a file (ADR 0041) -------------------------------------
+
+    async def upload_template_file(
+        self, owner_id: uuid.UUID, *, content_type: str, content: bytes
+    ) -> TemplateReadingView:
+        """Store a PDF to read a template's style from, and record the reading;
+        the caller queues ``read_template``. Nothing is read here. A Word file
+        has no fixed layout to read, so only a PDF is taken."""
+        if len(content) > self._upload_max_bytes:
+            raise ValidationError(
+                "this file is larger than we accept", limit_bytes=self._upload_max_bytes
+            )
+        if content_type != PDF_TYPE:
+            raise ValidationError("a template can start only from a PDF", content_type=content_type)
+        if not content.strip():
+            raise ValidationError("this file is empty")
+        key = object_key(owner_id, "templatefiles", str(uuid.uuid4()))
+        reading = TemplateReading.create(owner_id=owner_id, storage_key=key, at=utcnow())
+        self._store.put(key, content, content_type)
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.readings.create(reading)
+        log.info("resume.template_file_uploaded", template_reading_id=str(reading.id))
+        return _reading_view(reading)
+
+    async def read_template(self, owner_id: uuid.UUID, reading_id: uuid.UUID) -> None:
+        """The worker ``docs`` job: read the file's style into a draft, then
+        delete the file whether that worked or not. A file with no style to
+        read is recorded as ``unreadable_file``."""
+        async with self._uow.for_owner(owner_id) as mine:
+            reading = await mine.readings.get(reading_id)
+        if reading is None or reading.status is not ReadingStatus.READING:
+            return
+        key = reading.storage_key
+        try:
+            if key is None:
+                raise TemplateReadingError("the file is gone")
+            runs, width = read_style_runs(self._store.get(key), max_pages=self._upload_max_pages)
+            reading.update_read(get_template_spec_from_runs(runs, page_width=width), at=utcnow())
+        except (TemplateReadingError, ValidationError) as exc:
+            reading.update_failed(code="unreadable_file", message=str(exc), at=utcnow())
+        except Exception:
+            reading.update_failed(
+                code="internal", message="Reading stopped unexpectedly.", at=utcnow()
+            )
+            raise
+        finally:
+            if key is not None:
+                self._store.delete(key)
+            async with self._uow.for_owner(owner_id) as mine:
+                await mine.readings.update(reading)
+        log.info(
+            "resume.template_file_read",
+            template_reading_id=str(reading_id),
+            status=str(reading.status),
+        )
+
+    async def template_reading(
+        self, owner_id: uuid.UUID, reading_id: uuid.UUID
+    ) -> TemplateReadingView:
+        async with self._uow.for_owner(owner_id) as mine:
+            reading = await mine.readings.get(reading_id)
+        if reading is None:
+            raise NotFoundError("template reading not found", template_reading_id=str(reading_id))
+        return _reading_view(reading)
+
+    async def forget_template_reading(self, owner_id: uuid.UUID, reading_id: uuid.UUID) -> None:
+        """The draft a day on: deleted, with the file if it is somehow still
+        there. Saving it as a template never needed the reading."""
+        async with self._uow.for_owner(owner_id) as mine:
+            reading = await mine.readings.get(reading_id)
+            if reading is None:
+                return
+            if reading.storage_key is not None:
+                self._store.delete(reading.storage_key)
+            await mine.readings.delete(reading.id)
 
     # -- export -------------------------------------------------------------
 
@@ -1439,6 +1548,19 @@ def _built_in_view(template: BuiltInTemplate) -> TemplateView:
 def _own_view(template: CustomTemplate) -> TemplateView:
     return _template_view(
         str(template.id), name=template.name, note="", is_built_in=False, spec=template.spec
+    )
+
+
+def _reading_view(reading: TemplateReading) -> TemplateReadingView:
+    return TemplateReadingView(
+        id=reading.id,
+        status=str(reading.status),
+        error_code=reading.error_code,
+        error_message=reading.error_message,
+        spec=TemplateSpec.from_dict(reading.spec) if reading.spec is not None else None,
+        read=reading.read,
+        defaulted=reading.defaulted,
+        created_at=reading.created_at,
     )
 
 

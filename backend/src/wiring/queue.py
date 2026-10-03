@@ -131,3 +131,15 @@ def _register(app: App) -> None:
     @app.task(name="resume.export", queue=str(Queue.DOCS))
     async def export_resume(owner_id: str, export_id: str) -> None:
         await resume_jobs.export(deps(), owner_id=owner_id, export_id=export_id)
+
+    @app.task(name="resume.read_template", queue=str(Queue.DOCS))
+    async def read_template(owner_id: str, template_reading_id: str) -> None:
+        await resume_jobs.read_template(
+            deps(), owner_id=owner_id, template_reading_id=template_reading_id
+        )
+
+    @app.task(name="resume.forget_template_reading", queue=str(Queue.DOCS))
+    async def forget_template_reading(owner_id: str, template_reading_id: str) -> None:
+        await resume_jobs.forget_template_reading(
+            deps(), owner_id=owner_id, template_reading_id=template_reading_id
+        )

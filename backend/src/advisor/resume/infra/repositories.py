@@ -29,6 +29,9 @@ from advisor.resume.domain import (
     TailoredResume,
     TailoredResumeFilter,
     TailoredResumeRepository,
+    TemplateReading,
+    TemplateReadingFilter,
+    TemplateReadingRepository,
 )
 from advisor.resume.infra import mappers, models
 from kernel.db.repository import SqlAlchemyRepository
@@ -186,4 +189,32 @@ class SqlAlchemyCustomTemplateRepository(
         return entity.id
 
     def conditions(self, filter: CustomTemplateFilter) -> list[ColumnElement[bool]]:
+        return []
+
+
+class SqlAlchemyTemplateReadingRepository(
+    SqlAlchemyRepository[TemplateReading, models.TemplateReading, TemplateReadingFilter],
+    TemplateReadingRepository,
+):
+    model = models.TemplateReading
+    id_column = models.TemplateReading.id
+    created_column = models.TemplateReading.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
+        models.TemplateReading.owner_id
+    )
+    noun = "template reading"
+
+    def to_entity(self, row: models.TemplateReading) -> TemplateReading:
+        return mappers.template_reading(row)
+
+    def to_row(self, entity: TemplateReading) -> models.TemplateReading:
+        return mappers.template_reading_row(entity)
+
+    def apply(self, row: models.TemplateReading, entity: TemplateReading) -> None:
+        mappers.apply_template_reading(row, entity)
+
+    def id_of(self, entity: TemplateReading) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: TemplateReadingFilter) -> list[ColumnElement[bool]]:
         return []
