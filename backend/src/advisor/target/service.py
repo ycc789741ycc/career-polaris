@@ -36,9 +36,11 @@ from advisor.rolemap import (
     get_projection_digest,
 )
 from advisor.target.domain import (
+    EVALUATION_STAGE_SHARES,
     MAX_JOB_DESCRIPTION,
     DimensionGap,
     DraftBasis,
+    EvaluationStage,
     OutdatedReason,
     OwnerTarget,
     OwnPostingError,
@@ -46,6 +48,7 @@ from advisor.target.domain import (
     OwnPostingFitFilter,
     PostingEvaluation,
     PostingEvaluationFilter,
+    PostingEvaluationStatus,
     PostingRequirement,
     PostingRequirementFilter,
     PostingRequirementFit,
@@ -63,8 +66,15 @@ from advisor.target.domain import (
 )
 from kernel.clock import utcnow
 from kernel.documents import ACCEPTED_TYPES, read_document_text
-from kernel.errors import DomainError, NotFoundError, TargetUnusableError, ValidationError
+from kernel.errors import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    TargetUnusableError,
+    ValidationError,
+)
 from kernel.logging import get_logger
+from kernel.progress import JobCancelledError, RunningJobView, get_stage_progress
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
@@ -385,12 +395,19 @@ class TargetService:
         try:
             posting = await self._posting(owner_id, run.private_job_posting_id)
             if posting.is_waiting_for_its_file:
+                await self._advance(owner_id, evaluation_id, EvaluationStage.READING_FILE)
                 posting = await self._read_file(owner_id, posting)
             if run.reads_requirements:
+                await self._advance(owner_id, evaluation_id, EvaluationStage.READING_REQUIREMENTS)
                 await self._extract_requirements(owner_id, posting)
+            await self._advance(owner_id, evaluation_id, EvaluationStage.SCORING)
             strengths = await self._require_strengths(owner_id)
             source = await self._project(owner_id, strengths, posting)
+            await self._advance(owner_id, evaluation_id, EvaluationStage.WORKING_OUT_FIT)
             await self._create_fit(owner_id, strengths, source)
+        except JobCancelledError:
+            log.info("target.own_posting_cancelled", evaluation_id=str(evaluation_id))
+            return
         except DomainError as exc:
             log.warning("target.own_posting_failed", code=str(exc.code))
             await self._finish_evaluation(
@@ -420,7 +437,9 @@ class TargetService:
         latest_assessment = strengths.assessment_id if strengths is not None else None
         latest_run: dict[uuid.UUID, PostingEvaluation] = {}
         for run in runs:
-            latest_run.setdefault(run.private_job_posting_id, run)
+            # A cancelled run is never shown: the one before it stands.
+            if run.status is not PostingEvaluationStatus.CANCELLED:
+                latest_run.setdefault(run.private_job_posting_id, run)
         latest_fit: dict[uuid.UUID, OwnPostingFit] = {}
         for fit in fits:
             latest_fit.setdefault(fit.private_job_posting_id, fit)
@@ -433,6 +452,51 @@ class TargetService:
             )
             for posting in postings
         ]
+
+    async def cancel_evaluation(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> None:
+        """Stop scoring a posting of the user's own before its next call (ADR
+        0042). A call already sent is still charged; the run before it, if
+        any, stands."""
+        async with self._uow.for_owner(owner_id) as mine:
+            runs = await mine.evaluations.get_list(
+                PostingEvaluationFilter(private_job_posting_id=private_job_posting_id),
+                page_size=1,
+            )
+            if not runs:
+                raise NotFoundError(
+                    "posting not found", private_job_posting_id=str(private_job_posting_id)
+                )
+            try:
+                runs[0].update_cancelled(utcnow())
+            except OwnPostingError as exc:
+                raise ConflictError(str(exc)) from exc
+            await mine.evaluations.update(runs[0])
+        log.info("target.cancel_requested", private_job_posting_id=str(private_job_posting_id))
+
+    async def running_jobs(self, owner_id: uuid.UUID) -> tuple[RunningJobView, ...]:
+        """Every posting of the user's own being scored, for ``GET /activity``
+        (ADR 0042)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            runs = await mine.evaluations.get_list(PostingEvaluationFilter())
+            postings = {p.id: p for p in await mine.postings.get_list(PrivateJobPostingFilter())}
+        return tuple(
+            RunningJobView(
+                kind="own_posting_evaluation",
+                id=str(run.id),
+                role_id=None,
+                job_posting_id=None,
+                private_job_posting_id=str(run.private_job_posting_id),
+                label=_posting_label(postings.get(run.private_job_posting_id)),
+                stage=str(run.stage) if run.stage else None,
+                progress=run.progress,
+                started_at=run.requested_at,
+                estimated_cost_usd=None,
+            )
+            for run in runs
+            if run.is_running
+        )
 
     async def own_posting(
         self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
@@ -635,6 +699,20 @@ class TargetService:
                 )
             )
 
+    async def _advance(
+        self, owner_id: uuid.UUID, evaluation_id: uuid.UUID, stage: EvaluationStage
+    ) -> None:
+        """Record the stage the run has reached, unless it was cancelled, which
+        stops it before the next call."""
+        async with self._uow.for_owner(owner_id) as mine:
+            run = await mine.evaluations.get(evaluation_id)
+            if run is None or not run.is_running:
+                raise JobCancelledError
+            run.update_stage(
+                stage, progress=get_stage_progress(EVALUATION_STAGE_SHARES, str(stage))
+            )
+            await mine.evaluations.update(run)
+
     async def _finish_evaluation(
         self,
         owner_id: uuid.UUID,
@@ -793,3 +871,9 @@ def _own_posting_view(
         is_stale=fit is not None and fit.is_stale(latest_assessment),
         scored_at=fit.created_at if fit is not None else None,
     )
+
+
+def _posting_label(posting: PrivateJobPosting | None) -> str:
+    if posting is None:
+        return "Your own role"
+    return " · ".join(part for part in (posting.title, posting.company_name) if part)

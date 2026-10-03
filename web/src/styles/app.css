@@ -1371,3 +1371,42 @@ select.input { appearance: auto; }
   padding: 14px 0;
   border-top: 1px solid color-mix(in srgb, #201e1d 10%, transparent);
 }
+
+/* Advisor jobs (ADR 0042): the slim card a tab shows while its job runs,
+ * the spinner beside a tab's name, and the notice in the corner. */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-top-color: var(--color-accent);
+  animation: spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+.advisor-job { max-width: 620px; }
+.step-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--color-neutral-800);
+}
+.advisor-job-notice {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  font-size: 13.5px;
+}

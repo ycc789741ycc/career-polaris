@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from advisor.gapfill import GapAnswerView
-from advisor.gapplan import GapPlanService, PlanStatus
+from advisor.gapplan import GapPlanService, PlanStatus, PlanSummaryView
 from advisor.gapplan.domain import Milestone, Task
 from advisor.profile import EvidenceSource, EvidenceView
 from advisor.profile.domain import EvidenceGranularity
@@ -25,7 +25,7 @@ from advisor.target import (
     UncoveredGap,
 )
 from advisor.target.domain import Requirement, RequirementBasis
-from kernel.errors import NotFoundError
+from kernel.errors import ConflictError, NotFoundError
 from tests.unit.advisor.gapplan.fakes import FakeGapPlanUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -152,12 +152,19 @@ async def _with_tasks(uow: FakeGapPlanUnitOfWork, plan_id: uuid.UUID, *texts: st
         ]
 
 
+def _settled(uow: FakeGapPlanUnitOfWork, plan: PlanSummaryView) -> PlanSummaryView:
+    """The plan's job over, so another may be asked for: one job of a kind per
+    Target at a time (ADR 0042)."""
+    uow.store.plans[plan.id].status = PlanStatus.READY
+    return plan
+
+
 async def test_requesting_again_for_a_target_adds_the_next_version() -> None:
     uow = FakeGapPlanUnitOfWork()
     plans = _service(uow)
     ref, other = _ref(), _ref()
 
-    first = await plans.request(OWNER, ref)
+    first = _settled(uow, await plans.request(OWNER, ref))
     second = await plans.request(OWNER, ref)
     elsewhere = await plans.request(OWNER, other)
 
@@ -172,7 +179,7 @@ async def test_a_role_and_an_opening_in_it_are_versioned_apart() -> None:
     plans = _service(uow)
     role = str(uuid.uuid4())
 
-    for_role = await plans.request(OWNER, TargetRef(role))
+    for_role = _settled(uow, await plans.request(OWNER, TargetRef(role)))
     for_opening = await plans.request(OWNER, TargetRef(role, str(uuid.uuid4())))
     for_role_again = await plans.request(OWNER, TargetRef(role))
 
@@ -183,9 +190,10 @@ async def test_a_role_and_an_opening_in_it_are_versioned_apart() -> None:
 async def test_history_is_paged_after_each_target_keeps_only_its_latest() -> None:
     """Three plans, two Targets: paging the raw rows would count the
     superseded version and show it on page two."""
-    plans = _service(FakeGapPlanUnitOfWork())
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow)
     ref, other = _ref(), _ref()
-    await plans.request(OWNER, ref)
+    _settled(uow, await plans.request(OWNER, ref))
     latest = await plans.request(OWNER, ref)
     elsewhere = await plans.request(OWNER, other)
 
@@ -201,7 +209,7 @@ async def test_a_plan_shows_every_version_and_its_progress() -> None:
     uow = FakeGapPlanUnitOfWork()
     plans = _service(uow)
     ref = _ref()
-    first = await plans.request(OWNER, ref)
+    first = _settled(uow, await plans.request(OWNER, ref))
     second = await plans.request(OWNER, ref)
     done, _open = await _with_tasks(uow, second.id, "Build an API", "Write docs")
 
@@ -457,3 +465,45 @@ async def test_a_requirement_citing_anything_but_its_own_answers_is_rejected(
     failed = await plans.get(OWNER, plan.id)
     assert failed.summary.status is PlanStatus.FAILED
     assert failed.summary.error_code == "plan_invalid"
+
+
+# -- a job in the background (ADR 0042) -------------------------------------------
+
+
+async def test_a_cancelled_version_is_in_no_history_and_the_one_before_stays_current() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow)
+    ref = _ref()
+    first = _settled(uow, await plans.request(OWNER, ref))
+    second = await plans.request(OWNER, ref)
+
+    await plans.cancel(OWNER, second.id)
+
+    assert [h.id for h in (await plans.history(OWNER)).items] == [first.id]
+    assert await plans.running_jobs(OWNER) == ()
+    with pytest.raises(ConflictError):
+        await plans.cancel(OWNER, first.id)
+
+
+async def test_a_plan_cancelled_before_its_call_makes_none() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    gateway = PlanGateway(org=[])
+    plans = _service(uow, gateway=gateway)
+    requested = await plans.request(OWNER, _ref())
+    [job] = await plans.running_jobs(OWNER)
+    assert (job.kind, job.id) == ("gap_plan", str(requested.id))
+
+    await plans.cancel(OWNER, requested.id)
+    await plans.draft(OWNER, requested.id)
+
+    assert gateway.inputs == []
+    assert uow.store.plans[requested.id].status is PlanStatus.CANCELLED
+
+
+async def test_a_second_plan_waits_for_the_first() -> None:
+    plans = _service(FakeGapPlanUnitOfWork())
+    ref = _ref()
+    await plans.request(OWNER, ref)
+
+    with pytest.raises(ConflictError):
+        await plans.request(OWNER, ref)

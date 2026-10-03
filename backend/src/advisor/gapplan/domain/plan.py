@@ -16,6 +16,7 @@ import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -40,6 +41,18 @@ class PlanStatus(StrEnum):
     DRAFTING = "drafting"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user while it was drafted (ADR 0042): never shown, and
+    # the version before it stays current.
+    CANCELLED = "cancelled"
+
+
+class PlanStage(StrEnum):
+    """Where drafting a plan has got, recorded as it passes (ADR 0042)."""
+
+    READING = "reading"
+    DRAFTING = "drafting"
+    CHECKING = "checking"
+    SAVING = "saving"
 
 
 class PlanError(ValueError):
@@ -236,6 +249,10 @@ class GapPlan:
     # before they were recorded.
     profile_version: int | None = None
     target_digest: str | None = None
+    stage: PlanStage | None = None
+    # 0 to 1, never going backwards.
+    progress: float = 0.0
+    estimated_cost_usd: Decimal | None = None
 
     @classmethod
     def requested(
@@ -291,6 +308,28 @@ class GapPlan:
         self.status = PlanStatus.FAILED
         self.error_code = code
         self.error_message = message
+
+    @property
+    def is_drafting(self) -> bool:
+        return self.status is PlanStatus.DRAFTING
+
+    @property
+    def is_shown(self) -> bool:
+        """A cancelled plan is in no list and no history."""
+        return self.status is not PlanStatus.CANCELLED
+
+    def update_stage(
+        self, stage: PlanStage, *, progress: float, cost: Decimal | None = None
+    ) -> None:
+        self.stage = stage
+        self.progress = max(self.progress, progress)
+        if cost is not None:
+            self.estimated_cost_usd = cost
+
+    def update_cancelled(self) -> None:
+        if not self.is_drafting:
+            raise PlanError("only a plan still being drafted can be cancelled")
+        self.status = PlanStatus.CANCELLED
 
 
 @dataclass(slots=True)

@@ -31,6 +31,7 @@ import {
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
+import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { startDownload } from "./download";
@@ -101,6 +102,8 @@ export function Resume({
 }) {
   const { status, navigate } = useShell();
   const flash = useToast();
+  // A job just started: the shell polls it, and the tab shows its card.
+  const { refresh: refreshActivity } = useActivity();
   const model = modelName(status.credential);
   const ref: Ref = target.ref;
 
@@ -321,6 +324,7 @@ export function Resume({
         ]);
         setEstimate(null);
         setReloads((n) => n + 1);
+        void refreshActivity();
         return;
       }
       if (estimate.regenerates) {
@@ -331,6 +335,7 @@ export function Resume({
         setEstimate(null);
         setReloads((n) => n + 1);
         onChanged();
+        void refreshActivity();
         return;
       }
       const created = await api.post<ResumeSummary>("/tailored-resumes", {
@@ -344,6 +349,7 @@ export function Resume({
       setExchanges([]);
       setResumeId(created.id);
       onChanged();
+      void refreshActivity();
     } catch (caught) {
       setError(messageOf(caught));
     } finally {

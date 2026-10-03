@@ -14,6 +14,7 @@ from typing import Any
 from procrastinate import App
 
 from advisor.rolemap import BuildRequestView, MarketWait
+from advisor.target import TargetRef
 from kernel.config import get_settings
 from kernel.jobs import Queue, build_app
 from kernel.logging import get_logger
@@ -53,6 +54,20 @@ async def queue_build(owner_id: uuid.UUID, requested: BuildRequestView) -> None:
             owner_id=str(owner_id),
             build_id=build_id,
         )
+
+
+async def queue_questions(owner_id: uuid.UUID, ref: TargetRef) -> None:
+    """Write the Target's questions, unless it has a set being written or one
+    still to answer: the step "Target this role" and "Set as target" start,
+    at the price the user confirmed (ADR 0042)."""
+    deps = container()
+    current = await deps.gapfill.current(owner_id, ref)
+    if current is not None and (
+        current.status == "writing" or (current.status == "ready" and current.submitted_at is None)
+    ):
+        return
+    found = await deps.gapfill.request(owner_id, ref)
+    await enqueue("gapfill.write", owner_id=str(owner_id), set_id=str(found.id))
 
 
 def _register(app: App) -> None:
@@ -103,10 +118,21 @@ def _register(app: App) -> None:
         await rolemap_jobs.compute_fits(deps(), owner_id=owner_id)
 
     @app.task(name="target.evaluate_own_posting", queue=str(Queue.AI))
-    async def evaluate_own_posting(owner_id: str, evaluation_id: str) -> None:
+    async def evaluate_own_posting(
+        owner_id: str, evaluation_id: str, then_write_questions_for: str | None = None
+    ) -> None:
         await target_jobs.evaluate_own_posting(
             deps(), owner_id=owner_id, evaluation_id=evaluation_id
         )
+        # "Set as target" confirmed the questions with the scoring: they are
+        # written once it is scored, and only then (ADR 0042).
+        if then_write_questions_for is not None:
+            owner = uuid.UUID(owner_id)
+            posting = await deps().target.own_posting(owner, uuid.UUID(then_write_questions_for))
+            if posting.status == "ready":
+                await queue_questions(
+                    owner, TargetRef(private_job_posting_id=then_write_questions_for)
+                )
 
     @app.task(name="gapplan.draft", queue=str(Queue.AI))
     async def draft_plan(owner_id: str, plan_id: str) -> None:

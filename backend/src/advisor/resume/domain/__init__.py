@@ -56,7 +56,12 @@ from advisor.resume.domain.section import (
     SectionSlot,
     assert_plan_valid,
 )
-from advisor.resume.domain.tailored_resume import ResumeStatus, ResumeVersion, TailoredResume
+from advisor.resume.domain.tailored_resume import (
+    ResumeStage,
+    ResumeStatus,
+    ResumeVersion,
+    TailoredResume,
+)
 from advisor.resume.domain.template_reading import (
     FontKind,
     ReadingStatus,
@@ -116,6 +121,7 @@ __all__ = [
     "ResumeContent",
     "ResumeError",
     "ResumeEvent",
+    "ResumeStage",
     "ResumeStatus",
     "ResumeTailored",
     "ResumeUnitOfWork",

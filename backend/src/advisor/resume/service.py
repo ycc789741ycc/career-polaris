@@ -28,9 +28,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -65,6 +66,7 @@ from advisor.resume.domain import (
     ReadingStatus,
     ResumeContent,
     ResumeError,
+    ResumeStage,
     ResumeStatus,
     ResumeTailored,
     ResumeUnitOfWork,
@@ -108,6 +110,7 @@ from advisor.resume.domain.constants import (
     PAGE_MARGIN_SIDE_MM,
     PAGE_MARGIN_TOP_MM,
     PAGE_WIDTH_MM,
+    RESUME_STAGE_SHARES,
     TEMPLATE_FONTS,
     TEMPLATE_READING_KEEP_SECONDS,
 )
@@ -136,6 +139,7 @@ from kernel.errors import (
 )
 from kernel.logging import get_logger
 from kernel.paging import Page, paginate
+from kernel.progress import JobCancelledError, Progress, RunningJobView, get_stage_progress
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
@@ -440,6 +444,11 @@ class ResumeService:
         """Record the résumé as drafting; the caller queues ``generate``."""
         preview = await self._target.preview(owner_id, ref)
         async with self._uow.for_owner(owner_id) as mine:
+            if any(
+                r.is_busy and _ref_of(r) == ref
+                for r in await mine.resumes.get_list(TailoredResumeFilter())
+            ):
+                raise ConflictError("a résumé for this target is already being written")
             built_in, own = await _resolve_template(mine, template)
             resume = await mine.resumes.create(
                 TailoredResume.requested(
@@ -483,7 +492,10 @@ class ResumeService:
         options = resume.options
 
         try:
+            await self._advance(owner_id, resume_id, ResumeStage.READING)
             await self._generate(owner_id, resume_id, ref, options)
+        except JobCancelledError:
+            log.info("resume.generate_cancelled", resume_id=str(resume_id))
         except DomainError as exc:
             log.warning("resume.generate_failed", resume_id=str(resume_id), code=str(exc.code))
             await self._fail(owner_id, resume_id, code=str(exc.code), message=exc.message)
@@ -552,7 +564,10 @@ class ResumeService:
         if resume.status is not ResumeStatus.FILLING:
             return
         try:
+            await self._advance(owner_id, resume_id, ResumeStage.READING)
             await self._fill_section(owner_id, resume_id, slot)
+        except JobCancelledError:
+            log.info("resume.fill_section_cancelled", resume_id=str(resume_id))
         except DomainError as exc:
             log.warning("resume.fill_section_failed", resume_id=str(resume_id), code=str(exc.code))
             await self._fill_failed(owner_id, resume_id, code=str(exc.code), message=exc.message)
@@ -564,6 +579,50 @@ class ResumeService:
                 message="Filling the section stopped unexpectedly. Try again in a moment.",
             )
             raise
+
+    async def cancel(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
+        """Stop the résumé being written, or a section being filled, before its
+        next call or its save (ADR 0042). A call already sent is still
+        charged. A résumé with a saved version stays on it; a first draft is
+        cancelled and no longer listed."""
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            latest = await _latest_version(mine, resume_id)
+            try:
+                resume.update_cancelled(
+                    latest_plan=(
+                        ResumeContent.from_dict(latest.content).get_plan() if latest else None
+                    ),
+                    at=utcnow(),
+                )
+            except ValueError as exc:
+                raise ConflictError(str(exc), resume_id=str(resume_id)) from exc
+            await mine.resumes.update(resume)
+        log.info("resume.cancel_requested", resume_id=str(resume_id))
+
+    async def running_jobs(self, owner_id: uuid.UUID) -> tuple[RunningJobView, ...]:
+        """Every résumé being written or having a section filled, for
+        ``GET /activity`` (ADR 0042)."""
+        async with self._uow.for_owner(owner_id) as mine:
+            resumes = await mine.resumes.get_list(TailoredResumeFilter())
+        return tuple(
+            RunningJobView(
+                kind="section" if r.status is ResumeStatus.FILLING else "resume",
+                id=str(r.id),
+                role_id=str(r.role_id) if r.role_id else None,
+                job_posting_id=str(r.job_posting_id) if r.job_posting_id else None,
+                private_job_posting_id=(
+                    str(r.private_job_posting_id) if r.private_job_posting_id else None
+                ),
+                label=r.target_label,
+                stage=str(r.stage) if r.stage else None,
+                progress=r.progress,
+                started_at=r.updated_at,
+                estimated_cost_usd=r.estimated_cost_usd,
+            )
+            for r in resumes
+            if r.is_busy
+        )
 
     # -- reading ------------------------------------------------------------
 
@@ -579,6 +638,7 @@ class ResumeService:
         views = [
             _summary(r, latest_version=numbers.get(r.id))
             for r in sorted(resumes, key=lambda r: (r.updated_at, r.id), reverse=True)
+            if r.is_shown
         ]
         return paginate(views, page, page_size)
 
@@ -1100,6 +1160,7 @@ class ResumeService:
             plan = (await _owned(mine, resume_id)).section_plan
         result = await self._gateway.run(
             owner_id,
+            on_progress=self._writing(owner_id, resume_id),
             task="resume.generate",
             template=load_template(*_WRITE),
             inputs=_write_inputs(
@@ -1115,6 +1176,7 @@ class ResumeService:
             output_schema=_Resume,
             untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
         )
+        await self._advance(owner_id, resume_id, ResumeStage.CHECKING)
         message = "the résumé cited evidence that is not yours"
         try:
             # Written to the plan: its sections, in its order, and no others.
@@ -1127,9 +1189,13 @@ class ResumeService:
         except ResumeError as exc:
             raise OutputInvalidError(f"the written résumé was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
+        await self._advance(owner_id, resume_id, ResumeStage.SAVING)
 
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
+            if resume.status is not ResumeStatus.DRAFTING:
+                # Cancelled at the last moment: nothing of it is saved.
+                raise JobCancelledError
             resume.written(
                 snapshot=snapshot.to_dict(),
                 label=snapshot.label,
@@ -1189,6 +1255,7 @@ class ResumeService:
         handles = CitationHandles(e.id for e in profile.evidence)
         result = await self._gateway.run(
             owner_id,
+            on_progress=self._writing(owner_id, resume_id),
             task="resume.fill_section",
             template=load_template(*_SECTION),
             inputs=_section_inputs(
@@ -1201,6 +1268,7 @@ class ResumeService:
             output_schema=_SectionReply,
             untrusted=_SECTION_UNTRUSTED,
         )
+        await self._advance(owner_id, resume_id, ResumeStage.CHECKING)
         message = "the section cited evidence that is not yours"
         written = _section_of(result.value.section)
         if written.kind is not slot.kind:
@@ -1222,11 +1290,13 @@ class ResumeService:
         except ResumeError as exc:
             raise OutputInvalidError(f"the written section was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
+        await self._advance(owner_id, resume_id, ResumeStage.SAVING)
         await self._add_version(
             owner_id,
             resume_id,
             content=content,
             source=VersionSource.GENERATED,
+            while_busy=True,
             label=f"{resume.target_label} — {written.heading} added"[:200],
             model_id=result.model_id,
             template_version=result.template_version,
@@ -1235,6 +1305,42 @@ class ResumeService:
             stored = await _owned(mine, resume_id)
             stored.update_filled(at=utcnow())
             await mine.resumes.update(stored)
+
+    def _writing(
+        self, owner_id: uuid.UUID, resume_id: uuid.UUID
+    ) -> Callable[[Progress], Awaitable[None]]:
+        async def report(progress: Progress) -> None:
+            await self._advance(
+                owner_id,
+                resume_id,
+                ResumeStage.WRITING,
+                fraction=progress.fraction,
+                cost=progress.estimated_cost_usd,
+            )
+
+        return report
+
+    async def _advance(
+        self,
+        owner_id: uuid.UUID,
+        resume_id: uuid.UUID,
+        stage: ResumeStage,
+        *,
+        fraction: float = 0.0,
+        cost: Decimal | None = None,
+    ) -> None:
+        """Record the stage the job on the résumé has reached, unless it was
+        cancelled, which stops it here: before a call, or while one streams."""
+        async with self._uow.for_owner(owner_id) as mine:
+            resume = await _owned(mine, resume_id)
+            if not resume.is_busy:
+                raise JobCancelledError
+            resume.update_stage(
+                stage,
+                progress=get_stage_progress(RESUME_STAGE_SHARES, str(stage), fraction),
+                cost=cost,
+            )
+            await mine.resumes.update(resume)
 
     async def _fill_failed(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, code: str, message: str
@@ -1290,10 +1396,15 @@ class ResumeService:
         label: str,
         model_id: str | None,
         template_version: str | None,
+        while_busy: bool = False,
     ) -> VersionView:
+        """Save the next version. ``while_busy`` is a job's save: one whose
+        job was cancelled meanwhile saves nothing."""
         now = utcnow()
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
+            if while_busy and not resume.is_busy:
+                raise JobCancelledError
             latest = await _latest_version(mine, resume_id)
             version = await mine.versions.create(
                 ResumeVersion(

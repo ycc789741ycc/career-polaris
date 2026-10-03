@@ -110,6 +110,13 @@ async def saved(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeSummaryP
     return ResumeSummaryPage.of(found, ResumeSummary.from_view)
 
 
+@router.post("/tailored-resumes/{resume_id}/cancel", status_code=204)
+async def cancel_resume(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stops writing the résumé, or filling a section, before its next call
+    or its save (ADR 0042). A call already sent is still charged."""
+    await deps.resume.cancel(user, resume_id)
+
+
 @router.get("/tailored-resumes/{resume_id}")
 async def get_resume(
     resume_id: uuid.UUID,

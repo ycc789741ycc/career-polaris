@@ -40,6 +40,13 @@ async def get_plan(plan_id: uuid.UUID, user: CurrentUser, deps: Deps) -> Plan:
     return Plan.from_plan(await deps.gapplan.get(user, plan_id))
 
 
+@router.post("/gap-plans/{plan_id}/cancel", status_code=204)
+async def cancel_plan(plan_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stops drafting the plan before its next call or its save (ADR 0042).
+    A call already sent is still charged; the version before stays current."""
+    await deps.gapplan.cancel(user, plan_id)
+
+
 @router.put("/gap-plan-tasks/{task_id}", status_code=204)
 async def set_task_done(
     task_id: uuid.UUID, body: TaskDoneRequest, user: CurrentUser, deps: Deps

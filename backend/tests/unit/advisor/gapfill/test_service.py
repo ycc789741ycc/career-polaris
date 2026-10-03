@@ -6,6 +6,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -16,11 +17,18 @@ from advisor.profile import AnswerRecord, EvidenceSource
 from advisor.profile.domain import EvidenceGranularity
 from advisor.target import DimensionGap, TargetRef, TargetSnapshot, UncoveredGap
 from advisor.target.domain import Requirement, RequirementBasis
-from kernel.errors import BudgetExceededError, TargetUnusableError, ValidationError
+from kernel.errors import (
+    BudgetExceededError,
+    ConflictError,
+    TargetUnusableError,
+    ValidationError,
+)
+from kernel.progress import Progress
 from tests.unit.advisor.gapfill.fakes import FakeGapFillUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 REF = TargetRef("00000000-0000-0000-0000-0000000000aa")
+OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 def _snapshot(*, cleared: bool = False) -> TargetSnapshot:
@@ -101,7 +109,14 @@ class FakeGateway:
         self.inputs: list[dict[str, str]] = []
 
     async def run(self, owner_id: uuid.UUID, *, inputs: dict[str, str], **kwargs: Any) -> _Result:
+        # As the real gateway does with a callback: report before the call,
+        # then part way through the reply (ADR 0042).
+        report = kwargs.get("on_progress")
+        if report is not None:
+            await report(Progress(fraction=0.0, estimated_cost_usd=Decimal("0.02")))
         self.inputs.append(inputs)
+        if report is not None:
+            await report(Progress(fraction=0.5, estimated_cost_usd=Decimal("0.02")))
         if self.error is not None:
             raise self.error
         return _Result(value=kwargs["output_schema"].model_validate(self.reply))
@@ -183,13 +198,15 @@ async def test_a_target_with_nothing_to_ask_is_refused_up_front() -> None:
         await service.request(OWNER, REF)
 
 
-async def test_a_new_set_supersedes_the_targets_earlier_one() -> None:
+async def test_a_new_set_supersedes_the_targets_earlier_one_once_written() -> None:
     uow = FakeGapFillUnitOfWork()
     service = _service(uow)
     first = await _written(service)
 
-    second = await service.request(OWNER, REF)
+    second = await _written(service)
 
+    # Superseded only once the new set is written, so cancelling it would
+    # have left the first current (ADR 0042).
     assert uow.store.sets[first.id].status is QuestionSetStatus.SUPERSEDED
     current = await service.current(OWNER, REF)
     assert current is not None and current.id == second.id
@@ -332,3 +349,94 @@ async def test_unanswered_questions_are_not_answers() -> None:
     await _written(service)
 
     assert await service.get_answers(OWNER, REF) == ()
+
+
+# -- a job in the background (ADR 0042) -------------------------------------------
+
+
+class RecordingSets:
+    """Every stage and progress the set passes, as each write stores it."""
+
+    def __init__(self, uow: FakeGapFillUnitOfWork) -> None:
+        self.seen: list[tuple[str | None, float]] = []
+        original = uow.store.sets.__class__.__setitem__
+        store = uow.store.sets
+        seen = self.seen
+
+        class Watching(dict):  # type: ignore[type-arg]
+            def __setitem__(self, key: Any, value: Any) -> None:
+                seen.append((str(value.stage) if value.stage else None, value.progress))
+                original(self, key, value)
+
+        uow.store.sets = Watching(store)
+
+
+async def test_writing_passes_its_stages_in_order_and_never_goes_back() -> None:
+    uow = FakeGapFillUnitOfWork()
+    watching = RecordingSets(uow)
+    service = _service(uow)
+
+    written = await _written(service)
+
+    assert written.status == "ready"
+    stages = [stage for stage, _ in watching.seen if stage is not None]
+    assert stages[0] == "reading" and stages[-1] == "checking"
+    assert stages.index("writing") < stages.index("checking")
+    progress = [value for _, value in watching.seen]
+    assert progress == sorted(progress)
+    assert uow.store.sets[written.id].estimated_cost_usd == Decimal("0.02")
+
+
+async def test_a_set_cancelled_before_its_call_makes_none() -> None:
+    uow = FakeGapFillUnitOfWork()
+    gateway = FakeGateway()
+    service = _service(uow, gateway=gateway)
+    requested = await service.request(OWNER, REF)
+
+    await service.cancel(OWNER, requested.id)
+    await service.write(OWNER, requested.id)
+
+    assert gateway.inputs == []
+    assert uow.store.sets[requested.id].status is QuestionSetStatus.CANCELLED
+    assert await service.current(OWNER, REF) is None
+
+
+async def test_a_set_cancelled_while_written_saves_nothing_and_the_earlier_stays() -> None:
+    uow = FakeGapFillUnitOfWork()
+    service = _service(uow)
+    first = await _written(service)
+    second = await service.request(OWNER, REF)
+
+    class CancelMidway(FakeGateway):
+        async def run(self, owner_id: uuid.UUID, **kwargs: Any) -> _Result:
+            await service.cancel(OWNER, second.id)
+            return await super().run(owner_id, **kwargs)
+
+    service._gateway = CancelMidway()  # type: ignore[assignment]
+    await service.write(OWNER, second.id)
+
+    assert uow.store.sets[second.id].status is QuestionSetStatus.CANCELLED
+    assert [q for q in uow.store.questions.values() if q.set_id == second.id] == []
+    current = await service.current(OWNER, REF)
+    assert current is not None and current.id == first.id
+
+
+async def test_only_a_set_being_written_can_be_cancelled_and_one_at_a_time() -> None:
+    service = _service(FakeGapFillUnitOfWork())
+    written = await _written(service)
+    with pytest.raises(ConflictError):
+        await service.cancel(OWNER, written.id)
+
+    await service.request(OWNER, REF)
+    with pytest.raises(ConflictError):
+        await service.request(OWNER, REF)
+
+
+async def test_a_set_being_written_is_listed_as_a_running_job() -> None:
+    service = _service(FakeGapFillUnitOfWork())
+    requested = await service.request(OWNER, REF)
+
+    [job] = await service.running_jobs(OWNER)
+
+    assert (job.kind, job.id, job.role_id) == ("questions", str(requested.id), REF.role_id)
+    assert await service.running_jobs(OTHER) == ()

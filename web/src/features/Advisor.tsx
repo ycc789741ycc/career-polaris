@@ -1,4 +1,13 @@
 import { useEffect } from "react";
+import { useActivity } from "../shell/activity";
+import {
+  AdvisorJobCard,
+  AdvisorJobNotice,
+  jobsFor,
+  jobTab,
+  jobWord,
+  Spinner,
+} from "./AdvisorJobs";
 import { api } from "../api/client";
 import type {
   Fit,
@@ -243,6 +252,33 @@ function Aimed({
   onRevisit: (ref: TargetRef) => void;
 }) {
   const { navigate, setTarget } = useShell();
+  const { activity, refresh, settled } = useActivity();
+  // The Advisor's jobs for this Target, from the one poll the shell runs
+  // (ADR 0042): a tab whose job runs shows its card, every tab its spinner.
+  const jobs = jobsFor(activity, target.ref);
+  const jobOn = (which: AdvisorTab) =>
+    jobs.find((j) => jobTab(j.kind) === which);
+  const running = tab === "own" ? undefined : jobOn(tab);
+  const elsewhere = jobs.filter((j) => jobTab(j.kind) !== tab);
+
+  // A job that ended changed a plan or a résumé: the lists read it again.
+  useEffect(() => {
+    if (settled.advisor === 0) return;
+    onPlansChanged();
+    onResumesChanged();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settled.advisor]);
+
+  const stepLabel = (which: AdvisorTab, name: string) => {
+    const job = jobOn(which);
+    return job ? (
+      <span className="step-busy">
+        {name} <Spinner /> {jobWord(job.kind)}
+      </span>
+    ) : (
+      name
+    );
+  };
 
   // The header's chip names the Target both tabs are aimed at.
   useEffect(() => {
@@ -271,7 +307,7 @@ function Aimed({
           pressed={tab === "gaps"}
           onClick={() => navigate("advisor", { tab: "gaps" })}
         >
-          Fill the gap
+          {stepLabel("gaps", "Fill the gap")}
         </PillToggle>
         <span className="muted" aria-hidden="true">
           →
@@ -281,16 +317,30 @@ function Aimed({
           pressed={tab === "plan"}
           onClick={() => navigate("advisor", { tab: "plan" })}
         >
-          Gap plan
+          {stepLabel("plan", "Gap plan")}
         </PillToggle>
         <PillToggle
           pressed={tab === "resume"}
           onClick={() => navigate("advisor", { tab: "resume" })}
         >
-          Résumé
+          {stepLabel("resume", "Résumé")}
         </PillToggle>
       </div>
-      {tab === "gaps" ? (
+      {elsewhere[0] && (
+        <AdvisorJobNotice
+          job={elsewhere[0]}
+          onView={() =>
+            navigate("advisor", { tab: jobTab(elsewhere[0]!.kind) })
+          }
+        />
+      )}
+      {running ? (
+        <AdvisorJobCard
+          job={running}
+          onSwitch={(next) => navigate("advisor", { tab: next })}
+          onCancelled={() => void refresh()}
+        />
+      ) : tab === "gaps" ? (
         <FillTheGap
           target={target}
           onSubmitted={() => {

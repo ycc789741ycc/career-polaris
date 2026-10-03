@@ -58,7 +58,9 @@ class StubProvider(Provider):
         )
 
     async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
-        yield ""
+        # A job's call streams (ADR 0042): the queued reply, in one chunk.
+        self.calls.append(request)
+        yield self.replies.pop(0) if self.replies else "{}"
 
 
 @dataclass

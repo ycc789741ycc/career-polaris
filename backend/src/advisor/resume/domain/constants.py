@@ -91,6 +91,17 @@ MIN_CONTRAST = 4.5
 
 MAX_TEMPLATE_NAME = 60
 
+# --- tailored_resume -----------------------------------------------------------
+
+# Each stage's share of writing a résumé or a section, (start, end) of 0 to 1
+# (ADR 0042).
+RESUME_STAGE_SHARES = {
+    "reading": (0.0, 0.1),
+    "writing": (0.1, 0.85),
+    "checking": (0.85, 0.95),
+    "saving": (0.95, 1.0),
+}
+
 # --- template_reading ----------------------------------------------------------
 
 # A column is a share of the page's runs starting at one x: at least this.

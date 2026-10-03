@@ -88,6 +88,7 @@ describe("sidebar while work runs", () => {
         value={{
           activity: {
             syncing: [],
+            advisor_jobs: [],
             parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
             analysis: null,
             role_map: {
@@ -98,7 +99,7 @@ describe("sidebar while work runs", () => {
             },
           },
           refresh: async () => {},
-          settled: { sources: 0, analysis: 0, roleMap: 0 },
+          settled: { sources: 0, analysis: 0, roleMap: 0, advisor: 0 },
         }}
       >
         <Sidebar current="sources" status={status()} onNavigate={() => {}} />

@@ -16,6 +16,7 @@ const running = {
 function activity(overrides: Partial<Activity>): Activity {
   return {
     syncing: [],
+    advisor_jobs: [],
     parsing: [],
     analysis: null,
     role_map: null,
