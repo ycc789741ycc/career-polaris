@@ -24,6 +24,8 @@ from api.schemas.resume import (
     ResumeRequest,
     ResumeSummary,
     ResumeSummaryPage,
+    ResumeTemplate,
+    ResumeTemplatePage,
     ResumeVersion,
     RevisionRequest,
     SettingsRequest,
@@ -128,13 +130,23 @@ async def apply_revision(
     return ResumeVersion.from_view(await deps.resume.apply_revision(user, resume_id, revision_id))
 
 
+@router.get("/resume-templates")
+async def templates(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeTemplatePage:
+    """Every template as the PDF renderer draws it, for the preview (ADR 0038)."""
+    found = deps.resume.templates(page=paging.page, page_size=paging.page_size)
+    return ResumeTemplatePage.of(found, ResumeTemplate.from_view)
+
+
 @router.post("/tailored-resumes/{resume_id}/exports", status_code=202)
 async def request_export(
     resume_id: uuid.UUID, body: ExportRequest, user: CurrentUser, deps: Deps
 ) -> ResumeExport:
-    """Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``."""
+    """Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``,
+    whose link downloads the file once it is ready. An unchanged export is
+    reused and nothing is queued (ADR 0038)."""
     export = await deps.resume.request_export(user, resume_id, number=body.version)
-    await enqueue("resume.export", owner_id=str(user), export_id=str(export.id))
+    if export.status == "rendering":
+        await enqueue("resume.export", owner_id=str(user), export_id=str(export.id))
     return ResumeExport.from_view(export)
 
 

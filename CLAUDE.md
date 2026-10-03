@@ -568,3 +568,11 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   that reads evidence has rules on time — `skill_assessment` v4, `gap_plan` v3,
   `gap_questions` v2, `resume_write` and `resume_revise` v2: the newer fact
   wins, and a stated date never makes the work recent.
+- **Export what you previewed** (ADR 0038). `TEMPLATE_LOOKS` and the page
+  constants in `resume/domain` are the one look: `render_html` reads them and
+  `GET /resume-templates` serves them to the preview, which is laid out as the
+  A4 page in points and trims what the PDF trims. The worker image carries
+  Caprasimo and Figtree (`backend/assets/fonts`, fontconfig). A ready export's
+  link is signed as an attachment ("<name> — <role>.pdf") and the SPA
+  downloads it at once; an export records its `trim` (migration 0034), and an
+  unchanged one is reused.

@@ -2,11 +2,18 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResumeSummary, TailoredResume } from "../api/types";
+import type {
+  ResumeSummary,
+  ResumeTemplateLook,
+  TailoredResume,
+} from "../api/types";
 import type { AdvisorTarget } from "./target";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { citeLine, Resume } from "./Resume";
+import { startDownload } from "./download";
+import { citeLine, pageStyle, Resume, trimmedNote } from "./Resume";
+
+vi.mock("./download", () => ({ startDownload: vi.fn() }));
 
 const matched: AdvisorTarget = {
   ref: { role_id: "r1", job_posting_id: "p1" },
@@ -120,6 +127,46 @@ function sse(events: [string, unknown][]): Response {
   );
 }
 
+const organic: ResumeTemplateLook = {
+  id: "organic",
+  name: "Organic",
+  note: "Rounded, terracotta rule.",
+  rule: "3px solid #c67139",
+  swatch: "#c67139",
+  name_color: "#8a4a20",
+  dot_color: "#c67139",
+  heading_font: "Caprasimo",
+  body_font: "Figtree",
+  page_width_mm: 210,
+  page_height_mm: 297,
+  margin_top_mm: 18,
+  margin_side_mm: 17,
+  name_pt: 22,
+  title_pt: 11,
+  body_pt: 10,
+  contact_pt: 9.5,
+  small_pt: 9,
+  heading_pt: 8.5,
+  trimmed_bullets: 3,
+  trimmed_skills: 12,
+};
+
+const templates = {
+  items: [
+    organic,
+    {
+      ...organic,
+      id: "plain",
+      name: "Plain",
+      note: "One page, evidence first.",
+      rule: "1px solid #cfcac5",
+    },
+  ],
+  page: 1,
+  page_size: null,
+  total: 2,
+};
+
 type Call = { method: string; url: string; body: unknown };
 
 function serve(route: (call: Call) => Response | unknown) {
@@ -133,7 +180,10 @@ function serve(route: (call: Call) => Response | unknown) {
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       };
       calls.push(call);
-      const result = route(call);
+      // The templates, as the renderer draws them: every screen reads them.
+      const result = call.url.startsWith("/resume-templates")
+        ? templates
+        : route(call);
       return result instanceof Response ? result : json(result);
     }),
   );
@@ -190,15 +240,21 @@ describe("résumé screen", () => {
 
   it("opens the latest résumé with cited lines and coverage", async () => {
     serve(defaults);
+    const user = userEvent.setup();
     renderResume();
 
     const page = await screen.findByRole("article", { name: "Résumé" });
     expect(within(page).getByText("Maya Lin Chen")).toBeInTheDocument();
-    expect(
-      within(page).getByText(
-        "GitHub · 38 PRs — answers “Own a high-throughput payments service”",
-      ),
-    ).toBeInTheDocument();
+    const note = within(page).getByText(
+      "GitHub · 38 PRs — answers “Own a high-throughput payments service”",
+    );
+    // Where a line came from is the app's note, not the page's: hidden until
+    // asked for, so the page lays out as it prints.
+    expect(note).not.toBeVisible();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Show where each line came from" }),
+    );
+    expect(note).toBeVisible();
     expect(screen.getByText("Covered")).toBeInTheDocument();
     expect(screen.getByText("Gap")).toBeInTheDocument();
     expect(
@@ -417,5 +473,121 @@ describe("the grey note under a line", () => {
         evidence,
       ),
     ).toBe("Your edit — no source cited");
+  });
+});
+
+describe("the page as it prints (ADR 0038)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(startDownload).mockClear();
+  });
+
+  it("draws the template the renderer serves, in its picker and on the page", async () => {
+    serve(defaults);
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    expect(page.style.getPropertyValue("--rule")).toBe("3px solid #c67139");
+    expect(page.style.getPropertyValue("--name-pt")).toBe("22");
+    expect(screen.getByRole("button", { name: /Plain/ })).toBeInTheDocument();
+  });
+
+  it("drops from the page what Trim to one page drops from the PDF", async () => {
+    const long = {
+      ...resume,
+      options: { ...resume.options, trim: true },
+      content: {
+        ...resume.content!,
+        experience: [
+          {
+            ...resume.content!.experience[0]!,
+            bullets: Array.from({ length: 5 }, (_, i) => ({
+              text: `Line ${i}`,
+              evidence_ids: ["e1"],
+              origin: "written" as const,
+              answers: null,
+            })),
+          },
+        ],
+      },
+    };
+    serve((call) => (call.url === "/tailored-resumes/res-1" ? long : null));
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    expect(within(page).getByText("Line 2")).toBeInTheDocument();
+    expect(within(page).queryByText("Line 3")).toBeNull();
+    expect(
+      screen.getByText("Trimmed to one page: 2 lines left out of the PDF."),
+    ).toBeInTheDocument();
+  });
+
+  it("downloads the PDF as soon as it is rendered, with no link to click", async () => {
+    let polls = 0;
+    serve((call) => {
+      if (call.url === "/tailored-resumes/res-1/exports")
+        return {
+          id: "x1",
+          version_id: "v1",
+          template: "organic",
+          status: "rendering",
+          error: null,
+          download_url: null,
+        };
+      if (call.url === "/resume-exports/x1") {
+        polls += 1;
+        return {
+          id: "x1",
+          version_id: "v1",
+          template: "organic",
+          status: "ready",
+          error: null,
+          download_url: "https://objects.test/x1.pdf?signed",
+        };
+      }
+      return defaults(call);
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderResume();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Export as PDF" }),
+    );
+    await vi.advanceTimersByTimeAsync(2500);
+    vi.useRealTimers();
+
+    await vi.waitFor(() =>
+      expect(startDownload).toHaveBeenCalledWith(
+        "https://objects.test/x1.pdf?signed",
+      ),
+    );
+    expect(polls).toBe(1);
+    expect(screen.queryByRole("link", { name: /Download/ })).toBeNull();
+  });
+});
+
+describe("the page's measures", () => {
+  it("sets margins as a share of the page's width", () => {
+    const style = pageStyle(organic);
+    expect(style["--margin-side"]).toBe(`${(17 / 210) * 100}cqw`);
+    expect(style["--page-ratio"]).toBe(String(297 / 210));
+  });
+
+  it("says what trimming leaves out, or that it leaves nothing", () => {
+    const content = resume.content!;
+    expect(
+      trimmedNote(content, { ...resume.options, trim: false }, organic),
+    ).toBe("As it will print, A4.");
+    expect(
+      trimmedNote(
+        { ...content, skills: Array.from({ length: 14 }, (_, i) => `S${i}`) },
+        { ...resume.options, trim: true },
+        organic,
+      ),
+    ).toBe("Trimmed to one page: 2 skills left out of the PDF.");
   });
 });

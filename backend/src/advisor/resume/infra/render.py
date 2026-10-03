@@ -1,51 +1,56 @@
-"""Résumé export: content to HTML to PDF (ADR 0007).
+"""Résumé export: content to HTML to PDF (ADR 0007, ADR 0038).
 
-Export is presentation, not a domain rule (section 2.9): the template picks a
-rule and a name colour, the page is white, and that is all. Every value is
-escaped and nothing external is referenced — no fonts, images or stylesheets
-are fetched — so a résumé's text can never make the renderer reach the
-network. The grey source notes stay in the app; a résumé sent to a company does
-not carry them.
+Export is presentation, not a domain rule (section 2.9). How each template
+looks is the domain's ``TEMPLATE_LOOKS``, which the SPA's preview reads too,
+and the page's sizes are the domain's constants, so the PDF is the page the
+user previewed. Type is set in the design system's Caprasimo and Figtree,
+installed in the image where fontconfig finds them, with DejaVu for anything
+outside their Latin subset. Every value is escaped and nothing external is
+referenced — no fonts, images or stylesheets are fetched — so a résumé's text
+can never make the renderer reach the network. The grey source notes stay in
+the app; a résumé sent to a company does not carry them.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from html import escape
 
-from advisor.resume.domain import Options, ResumeContent, Template
-
-# One page is what "trim" means; these keep a résumé on it.
-_TRIMMED_BULLETS = 3
-_TRIMMED_SKILLS = 12
-
-
-@dataclass(frozen=True, slots=True)
-class _Look:
-    rule: str
-    name_color: str
-    dot: str
-
-
-# The prototype's two templates: Organic and Plain.
-_LOOKS = {
-    Template.ORGANIC: _Look(rule="3px solid #c67139", name_color="#8a4a20", dot="#c67139"),
-    Template.PLAIN: _Look(rule="1px solid #cfcac5", name_color="#201e1d", dot="#9b9691"),
-}
+from advisor.resume.domain import (
+    TRIMMED_BULLETS,
+    TRIMMED_SKILLS,
+    Options,
+    ResumeContent,
+    Template,
+    get_template_look,
+)
+from advisor.resume.domain.constants import (
+    BODY_PT,
+    CONTACT_PT,
+    FALLBACK_FONT,
+    HEADING_PT,
+    NAME_PT,
+    PAGE_MARGIN_SIDE_MM,
+    PAGE_MARGIN_TOP_MM,
+    SMALL_PT,
+    TITLE_PT,
+)
 
 
 def render_html(content: ResumeContent, *, template: Template, options: Options) -> str:
-    look = _LOOKS[template]
-    skills = content.skills[:_TRIMMED_SKILLS] if options.trim else content.skills
+    look = get_template_look(template)
+    heading = f'"{look.heading_font}", "{FALLBACK_FONT}", serif'
+    body = f'"{look.body_font}", "{FALLBACK_FONT}", sans-serif'
+    skills = content.skills[:TRIMMED_SKILLS] if options.trim else content.skills
 
     positions = []
     for position in content.experience:
-        bullets = position.bullets[:_TRIMMED_BULLETS] if options.trim else position.bullets
+        bullets = position.bullets[:TRIMMED_BULLETS] if options.trim else position.bullets
         items = "".join(f"<li>{escape(b.text)}</li>" for b in bullets)
+        title = " — ".join(escape(part) for part in (position.title, position.org) if part)
         positions.append(
             '<section class="job">'
             '<div class="job-head">'
-            f'<span class="job-title">{escape(position.title)} — {escape(position.org)}</span>'
+            f'<span class="job-title">{title}</span>'
             f'<span class="job-when">{escape(position.when)}</span>'
             "</div>"
             f"<ul>{items}</ul>"
@@ -56,25 +61,25 @@ def render_html(content: ResumeContent, *, template: Template, options: Options)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>{escape(content.name)}</title>
 <style>
-@page {{ size: A4; margin: 18mm 17mm; }}
-body {{ font-family: "DejaVu Sans", sans-serif; font-size: 10pt; color: #201e1d;
+@page {{ size: A4; margin: {PAGE_MARGIN_TOP_MM}mm {PAGE_MARGIN_SIDE_MM}mm; }}
+body {{ font-family: {body}; font-size: {BODY_PT}pt; color: #201e1d;
        background: #ffffff; line-height: 1.5; margin: 0; }}
 header {{ border-bottom: {look.rule}; padding-bottom: 10pt; margin-bottom: 14pt; }}
-h1 {{ font-family: "DejaVu Serif", serif; font-size: 22pt; line-height: 1.1;
-     color: {look.name_color}; margin: 0; font-weight: normal; }}
-.contact {{ font-size: 9.5pt; color: #5a5550; margin-top: 4pt; }}
-h2 {{ font-size: 8.5pt; letter-spacing: 0.1em; text-transform: uppercase;
-     font-weight: bold; color: {look.name_color}; margin: 14pt 0 6pt; }}
+h1 {{ font-family: {heading}; font-size: {NAME_PT}pt; line-height: 1.1;
+     color: {look.name_color}; margin: 0; font-weight: 400; }}
+.contact {{ font-size: {CONTACT_PT}pt; color: #5a5550; margin-top: 4pt; }}
+h2 {{ font-size: {HEADING_PT}pt; letter-spacing: 0.1em; text-transform: uppercase;
+     font-weight: 800; color: {look.name_color}; margin: 14pt 0 6pt; }}
 .summary {{ margin: 0; }}
 .job {{ margin-bottom: 10pt; page-break-inside: avoid; }}
 .job-head {{ display: flex; justify-content: space-between; gap: 12pt; }}
-.job-title {{ font-family: "DejaVu Serif", serif; font-size: 11pt; }}
-.job-when {{ font-size: 9pt; color: #6b6560; white-space: nowrap; }}
+.job-title {{ font-family: {heading}; font-size: {TITLE_PT}pt; }}
+.job-when {{ font-size: {SMALL_PT}pt; color: #6b6560; white-space: nowrap; }}
 ul {{ margin: 4pt 0 0; padding-left: 12pt; }}
 li {{ margin-bottom: 3pt; }}
-li::marker {{ color: {look.dot}; }}
+li::marker {{ color: {look.dot_color}; }}
 .skills {{ display: flex; flex-wrap: wrap; gap: 5pt; }}
-.skill {{ font-size: 9pt; padding: 2pt 8pt; border-radius: 999px;
+.skill {{ font-size: {SMALL_PT}pt; padding: 2pt 8pt; border-radius: 999px;
          background: #f3f1ee; color: #3d3a36; }}
 </style></head>
 <body>

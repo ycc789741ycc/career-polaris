@@ -78,7 +78,12 @@ class FakeExports(FakeRepository[Export, ExportFilter], ExportRepository):
     noun = "export"
 
     def matches(self, entity: Export, filter: ExportFilter) -> bool:
-        return filter.version_id is None or entity.version_id == filter.version_id
+        return (
+            (filter.version_id is None or entity.version_id == filter.version_id)
+            and (filter.template is None or entity.template == filter.template)
+            and (filter.trim is None or entity.trim == filter.trim)
+            and (filter.status is None or entity.status == filter.status)
+        )
 
 
 class FakeOwner(OwnerResumes):
@@ -111,5 +116,6 @@ class FakeObjectStore:
     def put(self, key: str, content: bytes, content_type: str) -> None:
         self.objects[key] = content
 
-    def signed_url(self, key: str) -> str:
-        return f"https://objects.test/{key}"
+    def signed_url(self, key: str, *, download_name: str | None = None) -> str:
+        saved_as = f"?as={download_name}" if download_name is not None else ""
+        return f"https://objects.test/{key}{saved_as}"

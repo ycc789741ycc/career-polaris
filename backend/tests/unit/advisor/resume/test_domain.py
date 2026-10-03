@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import io
+from dataclasses import replace
+from typing import Any
+
 import pytest
+from pypdf import PdfReader
 
 from advisor.resume.domain import (
+    TRIMMED_SKILLS,
     Bullet,
     Options,
     Origin,
@@ -16,6 +22,8 @@ from advisor.resume.domain import (
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_download_name,
+    get_template_look,
     mark_edits,
     settle_revision,
 )
@@ -184,3 +192,61 @@ def test_an_export_that_tries_to_fetch_something_is_refused() -> None:
     # render_html never emits a URL; this is the guard behind that.
     with pytest.raises(ValueError, match="does not fetch"):
         render_pdf('<img src="http://169.254.169.254/latest/meta-data">')
+
+
+# -- one look, read by the PDF and the preview (ADR 0038) ----------------------
+
+
+def test_the_export_sets_type_in_the_design_systems_fonts_with_a_fallback() -> None:
+    html = render_html(content(CITED), template=Template.ORGANIC, options=Options())
+
+    assert '"Caprasimo", "DejaVu Sans", serif' in html
+    assert '"Figtree", "DejaVu Sans", sans-serif' in html
+
+
+@pytest.mark.parametrize("template", list(Template))
+def test_each_template_is_drawn_from_its_look(template: Template) -> None:
+    look = get_template_look(template)
+    html = render_html(content(CITED), template=template, options=Options())
+
+    assert f"border-bottom: {look.rule}" in html
+    assert f"color: {look.name_color}" in html
+    assert f"li::marker {{ color: {look.dot_color}; }}" in html
+
+
+def test_trim_cuts_skills_by_the_shared_limit_too() -> None:
+    many = replace(content(CITED), skills=tuple(f"Skill {i}" for i in range(20)))
+    html = render_html(many, template=Template.PLAIN, options=Options(trim=True))
+
+    assert f"Skill {TRIMMED_SKILLS - 1}<" in html and f"Skill {TRIMMED_SKILLS}<" not in html
+
+
+def test_the_pdf_embeds_the_bundled_fonts() -> None:
+    """The fonts are installed in the image this runs in, as in the worker's,
+    and fontconfig matches them by the family names the CSS asks for."""
+    pdf = render_pdf(render_html(content(CITED), template=Template.ORGANIC, options=Options()))
+
+    embedded: set[str] = set()
+    for page in PdfReader(io.BytesIO(pdf)).pages:
+        resources: Any = page["/Resources"]
+        for font in resources["/Font"].values():
+            embedded.add(str(font.get_object()["/BaseFont"]).split("+")[-1])
+    # The headings' 800 weight embeds as a second Figtree face.
+    assert {"Caprasimo", "Figtree"} <= embedded
+    assert any(font.startswith("Figtree-") for font in embedded)
+    assert not any(font.startswith("DejaVu") for font in embedded)
+
+
+@pytest.mark.parametrize(
+    ("name", "label", "saved_as"),
+    [
+        ("Maya Chen", "Staff Engineer · Northwind", "Maya Chen — Staff Engineer · Northwind.pdf"),
+        ("", "Staff Engineer", "Staff Engineer.pdf"),
+        ('A/B "C"', "", "A B C.pdf"),
+        ("", "", "Résumé.pdf"),
+    ],
+)
+def test_a_download_is_named_for_the_person_and_the_role(
+    name: str, label: str, saved_as: str
+) -> None:
+    assert get_download_name(name, label) == saved_as

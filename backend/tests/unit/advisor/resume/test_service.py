@@ -192,11 +192,88 @@ async def test_an_export_renders_is_stored_and_links_once_ready() -> None:
 
     done = await service.get_export(OWNER, requested.id)
     assert done.status == "ready"
-    assert done.download_url is not None and done.download_url.endswith(".pdf")
+    assert done.download_url is not None and ".pdf" in done.download_url
     [pdf] = store.objects.values()
     assert pdf.startswith(b"%PDF")
     with pytest.raises(NotFoundError):
         await service.request_export(OWNER, resume_id, number=2)
+
+
+async def test_an_unchanged_export_is_reused_and_a_changed_one_rendered_again() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    first = await service.request_export(OWNER, resume_id, number=1)
+    await service.export(OWNER, first.id)
+
+    again = await service.request_export(OWNER, resume_id, number=1)
+    assert (again.id, again.status) == (first.id, "ready")
+
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(trim=True)
+    )
+    trimmed = await service.request_export(OWNER, resume_id, number=1)
+    await service.update_settings(
+        OWNER, resume_id, template=Template.PLAIN, options=Options(trim=True)
+    )
+    plain = await service.request_export(OWNER, resume_id, number=1)
+
+    assert len({first.id, trimmed.id, plain.id}) == 3
+    assert trimmed.status == plain.status == "rendering"
+
+
+async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(trim=True)
+    )
+    requested = await service.request_export(OWNER, resume_id, number=1)
+    # Changed between the click and the render: the click's settings win.
+    await service.update_settings(
+        OWNER, resume_id, template=Template.PLAIN, options=Options(trim=False)
+    )
+    rendered: list[tuple[Template, Options]] = []
+
+    def render_html(content: Any, *, template: Template, options: Options) -> str:
+        rendered.append((template, options))
+        return "<p>page</p>"
+
+    monkeypatch.setattr(resume_service, "render_html", render_html)
+    await service.export(OWNER, requested.id)
+
+    [(template, options)] = rendered
+    assert template is Template.ORGANIC and options.trim is True
+
+
+async def test_a_ready_export_downloads_under_the_persons_name_and_the_role() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    requested = await service.request_export(OWNER, resume_id, number=1)
+    await service.export(OWNER, requested.id)
+
+    done = await service.get_export(OWNER, requested.id)
+
+    label = uow.store.resumes[resume_id].target_label
+    assert done.download_url is not None
+    assert done.download_url.endswith(f"?as=Maya Lin Chen — {label}.pdf")
+
+
+def test_every_template_is_listed_as_the_renderer_draws_it() -> None:
+    listed = _service(FakeResumeUnitOfWork()).templates()
+
+    assert [t.look.template for t in listed.items] == [Template.ORGANIC, Template.PLAIN]
+    organic = listed.items[0]
+    assert (organic.look.rule, organic.look.heading_font) == ("3px solid #c67139", "Caprasimo")
+    assert (organic.trimmed_bullets, organic.trimmed_skills) == (3, 12)
+    assert (organic.page_width_mm, organic.page_height_mm) == (210, 297)
 
 
 async def test_a_failure_is_recorded_on_the_resume_and_generation_skips_it() -> None:

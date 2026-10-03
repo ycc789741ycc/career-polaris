@@ -11,14 +11,16 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from advisor.resume import (
+    ExportView,
     Options,
+    ResumeService,
     ResumeSummaryView,
     RevisionDone,
     RevisionFailed,
@@ -34,11 +36,13 @@ from kernel.errors import ConflictError, TargetUnusableError
 
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
+EXPORT_ID = uuid.uuid4()
 
 
 class FakeResumes:
     def __init__(self) -> None:
         self.refuse = False
+        self.export_status = "rendering"
         self.requested: list[tuple[TargetRef, Template, Options]] = []
         self.fail_revision = False
 
@@ -58,6 +62,23 @@ class FakeResumes:
             latest_version=None,
             created_at=datetime(2026, 9, 23, tzinfo=UTC),
             updated_at=datetime(2026, 9, 23, tzinfo=UTC),
+        )
+
+    def templates(self, *, page: int = 1, page_size: int | None = None) -> Any:
+        # The real catalogue: it reads nothing but the domain's looks.
+        return ResumeService.templates(cast(ResumeService, self), page=page, page_size=page_size)
+
+    async def request_export(
+        self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
+    ) -> ExportView:
+        return ExportView(
+            id=EXPORT_ID,
+            version_id=uuid.uuid4(),
+            template=Template.ORGANIC,
+            status=self.export_status,
+            error_code=None,
+            error_message=None,
+            download_url=None,
         )
 
     async def redraft(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> ResumeSummaryView:
@@ -238,3 +259,34 @@ def test_regenerating_while_it_is_written_is_refused_before_queueing(
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "conflict"
     assert queued == []
+
+
+def test_every_template_is_served_as_the_renderer_draws_it(client: TestClient) -> None:
+    body = client.get("/resume-templates").json()
+
+    assert body["total"] == 2 and body["page"] == 1
+    organic, plain = body["items"]
+    assert (organic["id"], organic["heading_font"], organic["body_font"]) == (
+        "organic",
+        "Caprasimo",
+        "Figtree",
+    )
+    assert (organic["trimmed_bullets"], organic["trimmed_skills"]) == (3, 12)
+    assert plain["rule"] == "1px solid #cfcac5"
+
+
+@pytest.mark.parametrize(
+    ("status", "queued_names"), [("rendering", ["resume.export"]), ("ready", [])]
+)
+def test_an_export_is_queued_only_when_it_has_to_be_rendered(
+    client: TestClient,
+    resumes: FakeResumes,
+    queued: list[dict[str, Any]],
+    status: str,
+    queued_names: list[str],
+) -> None:
+    resumes.export_status = status
+    response = client.post(f"/tailored-resumes/{RESUME_ID}/exports", json={"version": 1})
+
+    assert response.status_code == 202 and response.json()["status"] == status
+    assert [job["name"] for job in queued] == queued_names

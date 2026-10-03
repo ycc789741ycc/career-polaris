@@ -801,6 +801,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resume-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Templates
+         * @description Every template as the PDF renderer draws it, for the preview (ADR 0038).
+         */
+        get: operations["templates_api_v1_resume_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resumes": {
         parameters: {
             query?: never;
@@ -1039,7 +1059,9 @@ export interface paths {
         put?: never;
         /**
          * Request Export
-         * @description Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``.
+         * @description Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``,
+         *     whose link downloads the file once it is ready. An unchanged export is
+         *     reused and nothing is queued (ADR 0038).
          */
         post: operations["request_export_api_v1_tailored_resumes__resume_id__exports_post"];
         delete?: never;
@@ -2222,6 +2244,70 @@ export interface components {
         ResumeSummaryPage: {
             /** Items */
             items: components["schemas"]["ResumeSummary"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number | null;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ResumeTemplate
+         * @description One template as the PDF renderer draws it, for the picker and the
+         *     preview to draw the same page (ADR 0038). Sizes in points, the page in
+         *     millimetres.
+         */
+        ResumeTemplate: {
+            /** Body Font */
+            body_font: string;
+            /** Body Pt */
+            body_pt: number;
+            /** Contact Pt */
+            contact_pt: number;
+            /** Dot Color */
+            dot_color: string;
+            /** Heading Font */
+            heading_font: string;
+            /** Heading Pt */
+            heading_pt: number;
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "organic" | "plain";
+            /** Margin Side Mm */
+            margin_side_mm: number;
+            /** Margin Top Mm */
+            margin_top_mm: number;
+            /** Name */
+            name: string;
+            /** Name Color */
+            name_color: string;
+            /** Name Pt */
+            name_pt: number;
+            /** Note */
+            note: string;
+            /** Page Height Mm */
+            page_height_mm: number;
+            /** Page Width Mm */
+            page_width_mm: number;
+            /** Rule */
+            rule: string;
+            /** Small Pt */
+            small_pt: number;
+            /** Swatch */
+            swatch: string;
+            /** Title Pt */
+            title_pt: number;
+            /** Trimmed Bullets */
+            trimmed_bullets: number;
+            /** Trimmed Skills */
+            trimmed_skills: number;
+        };
+        /** ResumeTemplatePage */
+        ResumeTemplatePage: {
+            /** Items */
+            items: components["schemas"]["ResumeTemplate"][];
             /** Page */
             page: number;
             /** Page Size */
@@ -4929,6 +5015,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeExport"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    templates_api_v1_resume_templates_get: {
+        parameters: {
+            query?: {
+                /** @description 1-based. */
+                page?: number;
+                /** @description Omit it for the whole list, on page 1. */
+                page_size?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeTemplatePage"];
                 };
             };
             /** @description The request could not be read. */

@@ -79,6 +79,9 @@ export type PlanEstimate = Schemas["TargetEstimate"];
 
 // Tailored résumé
 export type ResumeTemplate = Schemas["TailoredResume"]["template"];
+/** How a template looks, as the PDF renderer draws it (ADR 0038). */
+export type ResumeTemplateLook = Schemas["ResumeTemplate"];
+export type ResumeTemplatePage = Schemas["ResumeTemplatePage"];
 export type ResumeOptions = Schemas["ResumeOptions"];
 export type ResumeBullet = Schemas["ResumeBullet"];
 export type ResumeContent = Schemas["ResumeContent"];

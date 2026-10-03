@@ -37,9 +37,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Internal. `test` builds on it, and `prod` at the end of the file re-tags it.
 FROM python:3.12.14-slim-bookworm AS base
 
-# WeasyPrint renders résumé PDFs through Pango (ADR 0007), and the templates set
-# type in DejaVu. Pinned to what bookworm ships; their own dependencies follow
-# Debian's security updates.
+# WeasyPrint renders résumé PDFs through Pango (ADR 0007). The templates set
+# type in the design system's Caprasimo and Figtree, installed below, with
+# DejaVu as the fallback for letters outside their Latin subset (ADR 0038).
+# Pinned to what bookworm ships; their own dependencies follow Debian's
+# security updates.
 # libexpat1 2.5.0-1+deb12u3, as the base ships it, carries six HIGH CVEs
 # (CVE-2026-93990 among them). The fix is pinned here until a python
 # slim-bookworm tag ships deb12u4 or later; then this line goes, and
@@ -52,6 +54,13 @@ RUN apt-get update \
       fonts-dejavu-core=2.37-6 \
       libexpat1=2.5.0-1+deb12u4 \
  && rm -rf /var/lib/apt/lists/*
+
+# The résumé fonts, SIL OFL 1.1 with their licences beside them, where
+# fontconfig finds them: Pango loads them by family name, so the renderer still
+# fetches nothing (ADR 0038). The TTFs are the SPA's self-hosted WOFF2 files,
+# converted, so the preview and the PDF set the same type.
+COPY assets/fonts/ /usr/local/share/fonts/jsa/
+RUN fc-cache -f /usr/local/share/fonts/jsa
 
 # Source lives under src/ (package by component, docs/decisions/0009); every
 # entrypoint, gate and test imports from there.
