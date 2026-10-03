@@ -1477,10 +1477,12 @@ key unless the user asks for that spend.
   the answer was about, including a requirement nothing else covers.
 * Every prompt reads a fact with its date, so recent work counts for more
   than old work, and a newer fact wins over an older one it contradicts.
+* The exported PDF looks like the résumé previewed, and Export downloads it
+  with no link to click.
 
-Five branches, in this order. The first two were built under
+Six branches, in this order. The first two were built under
 `epic/no-ticket/own-posting-target`, which is already in mainline. The
-other three are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+other four are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
 
 1. "A posting of your own belongs to Target": done (ADR 0033).
 2. "Uploaded or filled in, evaluated when set as the target": done
@@ -1491,6 +1493,8 @@ other three are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
    that answer, including a requirement with no other evidence.
 5. "Read each fact with its date": every prompt that reads evidence sees
    when each fact is from, and is told what to do when facts conflict.
+6. "Export what you previewed": the PDF and the preview share fonts, sizes,
+   trimming and colours, and Export downloads the file itself.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -1871,3 +1875,144 @@ Open questions:
 * Whether Strengths should show how old each dimension's newest cited fact
   is. That needs no AI call: it is worked out from the dates of the cited
   facts.
+
+## Export what you previewed
+The Résumé tab shows a preview, and Export as PDF renders the saved version
+on the worker's `docs` queue (ADR 0007). The two are separate renderings
+that share only three colours, and those are copied by hand:
+`ResumePage` in `web/src/features/Resume.tsx`, styled by `app.css`, and
+`render_html` in `advisor/resume/infra/render.py`. What a user downloads is
+therefore not what they saw:
+* **Fonts.** The preview sets the name and job titles in Caprasimo and the
+  text in Figtree, the Organic design system's fonts, which the SPA hosts
+  itself (`web/src/styles/fonts/`). The PDF uses DejaVu Serif and DejaVu
+  Sans, the only fonts in the worker image. The renderer fetches nothing,
+  so it cannot load the web fonts. This is the difference most people see.
+* **Trimming.** "Trim to one page" cuts the PDF to 3 bullets per position
+  and 12 skills (`_TRIMMED_BULLETS`, `_TRIMMED_SKILLS`). The preview always
+  shows everything.
+* **Size.** The preview is a card of whatever width the screen gives it,
+  sized in pixels (name 29px, text 13.5px). The PDF is A4 with 18/17mm
+  margins, sized in points (name 22pt, text 10pt). Lines break in
+  different places, and the preview never shows where a page ends.
+* **Details.** The bullets are drawn differently: the preview draws its own
+  dot, the PDF uses a list's `::marker`. The preview's skills heading
+  says "ordered for this role" and the PDF's does not.
+* **The colours are written twice:** in `_LOOKS` and in the SPA's
+  `TEMPLATES`. Nothing keeps them equal.
+
+The preview's grey source notes, the highlight on rewritten bullets and the
+editing hint stay out of the PDF on purpose: a résumé sent to a company does
+not carry them. Wording is not a difference: Export is disabled while there
+are unsaved edits, so the PDF is the saved version on screen.
+
+Export is also two steps. The SPA polls the export until it is `ready`, then
+shows a "Download the PDF" link. That link is signed for
+`SIGNED_URL_TTL_SECONDS` (300) and is not signed again after polling stops,
+so it can expire before it is clicked. Every click on Export renders and
+stores another PDF, even for a version already exported.
+
+Its own branch, `feature/<ticket>/export-as-previewed`. It does not depend
+on the steps before it.
+
+1. **The PDF renderer is the source of the look, and the PDF uses the
+   design system's fonts.**
+   * Caprasimo and Figtree go into the worker image as local TTF files
+     (`backend/assets/fonts/`, with their SIL OFL 1.1 licences), installed
+     where fontconfig finds them. `render_html` names them by family, as
+     the preview does. The renderer still fetches nothing: Pango finds them
+     through fontconfig, not through a URL.
+   * The weights are the ones the preview uses: Caprasimo 400, Figtree 400
+     and 800.
+   * DejaVu stays as the fallback, for letters outside the fonts' Latin
+     subset.
+2. **One definition of each template.**
+   * `GET /resume-templates` answers `ResumeTemplatePage` (ADR 0014),
+     built from `_LOOKS`: id, name, note, rule, name colour, dot colour, the
+     fonts, and the trim limits.
+   * The SPA's `TEMPLATES` list is deleted and the template picker and the
+     preview read the endpoint.
+   * A new template is then one entry in `Template` and one in `_LOOKS`.
+3. **The preview is laid out as the page is.**
+   * The white page is A4 in proportion. It uses `render_html`'s sizes in
+     `pt`, its margins and its bullet markers, scaled to the width it is
+     given, so lines break where the PDF's do.
+   * A dashed line marks where each A4 page ends.
+   * With "Trim to one page" on, the preview drops what the PDF drops, by
+     the limits the endpoint gives. The SPA names how many bullets and
+     skills were left out, outside the page.
+   * The notes that are never exported (source notes, the rewritten
+     highlight, "ordered for this role", the editing hint) are drawn so they
+     plainly belong to the app: in the margin or outside the page, not as
+     part of its layout.
+4. **Export downloads the file.**
+   * Clicking Export still records an export and queues it on `docs`;
+     rendering stays off the request (ADR 0007). The button shows
+     "Rendering…" while the SPA polls.
+   * When the export is `ready`, `GET /resume-exports/{id}` signs the URL
+     with `ResponseContentDisposition: attachment` and a filename
+     ("<name> – <role>.pdf": ASCII with a UTF-8 `filename*`).
+     `ObjectStore.signed_url` gains an optional `download_name`.
+   * The SPA sends the browser to that URL at once, and the file downloads
+     with the page left as it is. No link is shown. The URL is used the
+     moment it is signed, so it cannot expire first.
+   * A failed export still shows its error beside the button.
+5. **An unchanged export is reused.**
+   * An export records what it rendered: the version, the template, and
+     `trim`, the one option the renderer reads.
+   * Export on a version, template and trim that already have a `ready`
+     export returns that export, and the file downloads at once with
+     nothing rendered.
+   * The template and the options are read when Export is clicked, not
+     when the worker renders, so a change in between cannot mix the two.
+   * Migration 0034 adds `trim` to `resume.export`. Rows from before it
+     are never reused.
+6. **An ADR** (0038): the PDF renderer is the source of a résumé's look,
+   the fonts are bundled in the worker image, and Export downloads
+   directly. Update the index and `CLAUDE.md`'s Resume Advisor paragraph.
+
+Tests:
+* Unit, `render_html`:
+  * it names Caprasimo and Figtree, with DejaVu as the fallback;
+  * trim drops bullets and skills past the limits;
+  * each template's look matches its `_LOOKS` entry.
+* Unit, render with the worker's fonts: the PDF embeds Caprasimo and
+  Figtree, not DejaVu. This runs in the `test` image, which has the fonts.
+* Unit, the service:
+  * a second export of an unchanged version, template and trim returns the
+    first and queues nothing;
+  * a change to any of the three renders again;
+  * the export keeps the trim it was requested with.
+* Integration:
+  * `GET /resume-templates` answers every template, with the trim limits;
+  * a ready export's URL carries `attachment` and the filename;
+  * migration 0034 upgrades and downgrades.
+* SPA:
+  * the template picker and the preview read `/resume-templates`;
+  * with trim on, the preview shows only what the PDF keeps;
+  * Export sends the browser to the signed URL when the export is ready,
+    and no download link is rendered.
+
+What gets harder:
+* Close, not identical. The browser and Pango lay out text with different
+  engines, so a line can still break one word apart. The page markers are
+  where A4 pages end, not a promise of where the PDF breaks.
+* Font files in the image: a few hundred KB. A new weight or a fuller
+  character set is a change to the image, not to CSS.
+* The fonts' Latin subset means a name or a bullet in another script is
+  set in DejaVu, or in nothing if DejaVu lacks it (Chinese or Japanese, for
+  example), in the PDF as in the preview.
+* A browser that blocks a download started after a wait would leave the
+  user with nothing to click. Major browsers allow a navigation to an
+  attachment, but this needs checking in Safari and Firefox.
+* The SPA needs one more request before it can show the template picker.
+
+Open questions:
+* Whether to offer "Preview the PDF": open the real file, rendered with
+  `inline` rather than `attachment`, for anyone who wants to check the
+  exact page before sending it.
+* Whether to add fonts with CJK coverage (for example Noto Sans CJK) to the
+  image, for résumés written in Chinese or Japanese. It would add tens of
+  megabytes.
+* Whether old exports should be deleted after a while. Reuse stops most new
+  ones, but nothing removes what is already stored.
