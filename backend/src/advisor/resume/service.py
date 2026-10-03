@@ -10,6 +10,9 @@
   ``AiGateway.stream_structured``).
 * Export renders a version to PDF on the worker's ``docs`` queue and hands back
   a short-lived signed link.
+* A résumé is written again only when the user asks. It records what its latest
+  generated version read, and says it is outdated once the evidence or the
+  Target has moved on (ADR 0035).
 
 Every line the model writes must cite Evidence the user owns; a reply that
 does not is rejected as a whole. Coverage of the Target's requirements is
@@ -67,15 +70,19 @@ from advisor.resume.domain import (
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.target import (
+    DraftBasis,
+    OutdatedReason,
     TargetRef,
     TargetService,
     TargetSnapshot,
+    get_target_digest,
     requirements_block,
 )
 from kernel.ai_gateway import AiGateway, StreamResult, StreamText
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
 from kernel.errors import (
+    ConflictError,
     DomainError,
     EvidenceNotOwnedError,
     NotFoundError,
@@ -207,6 +214,14 @@ class ResumeView:
     evidence: dict[str, EvidenceNote]
     versions: tuple[VersionView, ...]
     revisions: tuple[RevisionView, ...]
+    # Why the résumé no longer matches what it was last written from (ADR
+    # 0035); empty when it does, while it is not ready, and for one written
+    # before that was recorded.
+    outdated_by: tuple[OutdatedReason, ...] = ()
+
+    @property
+    def is_outdated(self) -> bool:
+        return bool(self.outdated_by)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,39 +326,23 @@ class ResumeService:
             )
         return _summary(resume, latest_version=None)
 
-    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> ResumeSummaryView | None:
-        """The most recently changed résumé for this Target, if there is one."""
+    async def redraft(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> ResumeSummaryView:
+        """Record the résumé as drafting again; the caller queues ``generate``,
+        which saves the result as its next version. Asked for by the user, at a
+        price they confirmed (ADR 0035). A résumé still being written is left
+        as it is."""
         async with self._uow.for_owner(owner_id) as mine:
-            resumes = [
-                r for r in await mine.resumes.get_list(TailoredResumeFilter()) if _ref_of(r) == ref
-            ]
-            if not resumes:
-                return None
-            newest = max(resumes, key=lambda r: (r.updated_at, r.id))
-            numbers = await mine.versions.latest_numbers()
-        return _summary(newest, latest_version=numbers.get(newest.id))
-
-    async def regenerate(self, owner_id: uuid.UUID, ref: TargetRef) -> uuid.UUID | None:
-        """The worker job after answers are submitted in Fill the gap: write the
-        Target's latest résumé again, as a new version from the updated
-        evidence. Nothing happens for a Target with no résumé."""
-        latest = await self.latest_for(owner_id, ref)
-        if latest is None:
-            return None
-        async with self._uow.for_owner(owner_id) as mine:
-            resume = await _owned(mine, latest.id)
+            resume = await _owned(mine, resume_id)
+            if resume.status is ResumeStatus.DRAFTING:
+                raise ConflictError(
+                    "this résumé is already being written", resume_id=str(resume_id)
+                )
             resume.redraft(utcnow())
             await mine.resumes.update(resume)
-        await self.generate(owner_id, latest.id, source=VersionSource.ANSWERS)
-        return latest.id
+            numbers = await mine.versions.latest_numbers()
+        return _summary(resume, latest_version=numbers.get(resume_id))
 
-    async def generate(
-        self,
-        owner_id: uuid.UUID,
-        resume_id: uuid.UUID,
-        *,
-        source: VersionSource = VersionSource.GENERATED,
-    ) -> None:
+    async def generate(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> None:
         """The worker job. An expected failure is recorded on the résumé, with
         its stable code, and not retried on the user's key."""
         async with self._uow.for_owner(owner_id) as mine:
@@ -354,7 +353,7 @@ class ResumeService:
         options = resume.options
 
         try:
-            await self._generate(owner_id, resume_id, ref, options, source=source)
+            await self._generate(owner_id, resume_id, ref, options)
         except DomainError as exc:
             log.warning("resume.generate_failed", resume_id=str(resume_id), code=str(exc.code))
             await self._fail(owner_id, resume_id, code=str(exc.code), message=exc.message)
@@ -408,6 +407,16 @@ class ResumeService:
             raise NotFoundError("version not found", number=number)
         content = ResumeContent.from_dict(chosen.content) if chosen else None
         notes = await self._notes(owner_id, content.cited() if content else set())
+        outdated_by = (
+            await self._target.get_outdated_reasons(
+                owner_id,
+                _ref_of(resume),
+                recorded=_basis_of(resume),
+                profile_version=await self._profile.version(owner_id),
+            )
+            if resume.status is ResumeStatus.READY
+            else ()
+        )
         return ResumeView(
             summary=_summary(resume, latest_version=versions[0].number if versions else None),
             snapshot=TargetSnapshot.from_dict(resume.snapshot) if resume.snapshot else None,
@@ -419,6 +428,7 @@ class ResumeService:
             evidence=notes,
             versions=tuple(_version_view(v) for v in versions),
             revisions=tuple(_revision_view(r) for r in revisions),
+            outdated_by=outdated_by,
         )
 
     # -- editing ------------------------------------------------------------
@@ -687,8 +697,6 @@ class ResumeService:
         resume_id: uuid.UUID,
         ref: TargetRef,
         options: Options,
-        *,
-        source: VersionSource,
     ) -> None:
         snapshot = await self._target.snapshot(owner_id, ref)
         coverage_rows = await self._coverage(owner_id, snapshot)
@@ -729,6 +737,8 @@ class ResumeService:
                 snapshot=snapshot.to_dict(),
                 label=snapshot.label,
                 coverage=tuple(_coverage_dict(c) for c in coverage_rows),
+                profile_version=profile.version,
+                target_digest=get_target_digest(snapshot),
                 at=utcnow(),
             )
             await mine.resumes.update(resume)
@@ -737,7 +747,7 @@ class ResumeService:
             owner_id,
             resume_id,
             content=content,
-            source=source,
+            source=VersionSource.GENERATED,
             label=label,
             model_id=result.model_id,
             template_version=result.template_version,
@@ -887,6 +897,14 @@ def _content_of(model: _Resume) -> ResumeContent:
 
 def _ref_of(resume: TailoredResume) -> TargetRef:
     return TargetRef.of(resume.role_id, resume.job_posting_id, resume.private_job_posting_id)
+
+
+def _basis_of(resume: TailoredResume) -> DraftBasis | None:
+    """What the latest generated version read; None for a résumé written
+    before it was kept."""
+    if resume.profile_version is None or resume.target_digest is None:
+        return None
+    return DraftBasis(profile_version=resume.profile_version, target_digest=resume.target_digest)
 
 
 def _write_inputs(

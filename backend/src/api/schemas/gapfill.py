@@ -4,7 +4,6 @@ submit that turns the answers into evidence (ADR 0023)."""
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field
@@ -100,33 +99,6 @@ class AnswersRequest(RequestModel):
     """Every answer at once; a question left out stays a gap."""
 
     answers: list[AnswerBody] = Field(min_length=1, max_length=MAX_ANSWERS)
-
-
-class SubmitEstimate(ApiModel):
-    """What submitting costs: the Target's plan and résumé are written again
-    from the new evidence, each only if the user has one."""
-
-    cost_usd: str
-    model_id: str | None
-    regenerates_plan: bool
-    regenerates_resume: bool
-
-    @classmethod
-    def of(
-        cls,
-        *,
-        plan: dict[str, object] | None,
-        resume: dict[str, object] | None,
-    ) -> SubmitEstimate:
-        parts = [p for p in (plan, resume) if p is not None]
-        total = sum((Decimal(str(p["cost_usd"])) for p in parts), Decimal(0))
-        model = next((str(p["model_id"]) for p in parts if p.get("model_id")), None)
-        return cls(
-            cost_usd=str(total),
-            model_id=model,
-            regenerates_plan=plan is not None,
-            regenerates_resume=resume is not None,
-        )
 
 
 class Submitted(ApiModel):

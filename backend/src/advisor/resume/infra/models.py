@@ -63,6 +63,10 @@ class Resume(Base, OwnedMixin):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # What the latest generated version read (ADR 0035). None before the
+    # first write, and on résumés written before they were recorded.
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class ResumeVersion(Base, OwnedMixin):

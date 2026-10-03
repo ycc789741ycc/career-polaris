@@ -112,6 +112,8 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
             stepping_stones=(),
             model_id="m",
             template_version="v1",
+            profile_version=7,
+            target_digest="a" * 64,
             at=AT,
         )
         await mine.plans.update(plan)
@@ -121,6 +123,7 @@ async def test_a_drafted_plan_its_tasks_and_its_event(
         loaded = await mine.plans.get(plan.id)
         assert loaded is not None and loaded.status is PlanStatus.READY
         assert loaded.gaps == ({"key": "dim:api", "lift": 5},)
+        assert (loaded.profile_version, loaded.target_digest) == (7, "a" * 64)
         assert await mine.tasks.get_list(TaskFilter(plan_ids=(plan.id,), is_done=True)) == [task]
 
     async with database.shared() as session:

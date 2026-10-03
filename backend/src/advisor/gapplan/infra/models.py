@@ -70,6 +70,10 @@ class GapPlan(Base, OwnedMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     drafted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # What the draft read (ADR 0035): the profile version and the Target's
+    # digest. None on plans drafted before they were recorded, or not yet drafted.
+    profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Milestone(Base, OwnedMixin):

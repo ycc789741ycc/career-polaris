@@ -346,8 +346,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   questions per gap of the Target on the user's key, polled while `writing`.
   One submit checks the whole batch, records every answer through
   `profile.record_answers` as `user_answer` evidence, and emits
-  `GapAnswersSubmitted`; the dispatcher queues `gapplan.regenerate` and
-  `resume.regenerate`, each a no-op without a plan or résumé. The old
+  `GapAnswersSubmitted`, for which the dispatcher queues nothing since ADR
+  0035 (Phase 9): answering spends nothing. The old
   follow-up questions, `/questions` and their tables are gone. The Advisor
   opens on `#/advisor/gaps`.
 - **Profile confidence on Strengths.** `assessment` returns
@@ -509,7 +509,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
 ## Phase 9 scope
 
 A posting of the user's own belongs to Target (ADR 0033), one branch per step
-under `epic/no-ticket/own-posting-target`:
+under `epic/no-ticket/own-posting-target`; the rest of the phase
+(`docs/plan.md`) one branch per step under `epic/no-ticket/phase-9`:
 
 - **Target owns it end to end.** The `target` schema holds
   `private_job_posting` (the JD, moved from `market_user`, ids kept),
@@ -545,3 +546,12 @@ under `epic/no-ticket/own-posting-target`:
 - **`market` has no pasted JDs.** `PrivateJobPosting`, the paste methods and
   `GET /job-descriptions` are gone. Migration 0030 moved the data; 0015, 0025
   and 0028 are guarded so a fresh database still builds.
+- **Regenerated only when asked** (ADR 0035). Submitting answers in Fill the
+  gap spends nothing and queues nothing. A gap plan and a résumé record what
+  they were drafted from — `profile_version` and `target_digest`
+  (`target.get_target_digest`, a `DraftBasis`; migration 0033) — and
+  `TargetService.get_outdated_reasons` tells the latest ready one it is
+  outdated by `evidence`, `target` or both (`is_outdated`, `outdated_by`). The
+  Advisor shows a banner with Regenerate, priced first: a plan's next version
+  through `POST /gap-plans`, a résumé's through
+  `POST /tailored-resumes/{id}/regenerate`. A manual edit keeps the basis.

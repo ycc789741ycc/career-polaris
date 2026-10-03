@@ -112,39 +112,9 @@ def _register(app: App) -> None:
     async def draft_plan(owner_id: str, plan_id: str) -> None:
         await gapplan_jobs.draft(deps(), owner_id=owner_id, plan_id=plan_id)
 
-    @app.task(name="gapplan.regenerate", queue=str(Queue.AI))
-    async def regenerate_plan(
-        owner_id: str,
-        role_id: str | None,
-        job_posting_id: str | None,
-        private_job_posting_id: str | None = None,
-    ) -> None:
-        await gapplan_jobs.regenerate(
-            deps(),
-            owner_id=owner_id,
-            role_id=role_id,
-            job_posting_id=job_posting_id,
-            private_job_posting_id=private_job_posting_id,
-        )
-
     @app.task(name="gapfill.write", queue=str(Queue.AI))
     async def write_questions(owner_id: str, set_id: str) -> None:
         await gapfill_jobs.write(deps(), owner_id=owner_id, set_id=set_id)
-
-    @app.task(name="resume.regenerate", queue=str(Queue.AI))
-    async def regenerate_resume(
-        owner_id: str,
-        role_id: str | None,
-        job_posting_id: str | None,
-        private_job_posting_id: str | None = None,
-    ) -> None:
-        await resume_jobs.regenerate(
-            deps(),
-            owner_id=owner_id,
-            role_id=role_id,
-            job_posting_id=job_posting_id,
-            private_job_posting_id=private_job_posting_id,
-        )
 
     @app.task(name="resume.generate", queue=str(Queue.AI))
     async def generate_resume(owner_id: str, resume_id: str) -> None:

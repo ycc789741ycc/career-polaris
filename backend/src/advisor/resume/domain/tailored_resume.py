@@ -37,6 +37,12 @@ class TailoredResume:
     error_code: str | None = None
     error_message: str | None = None
     private_job_posting_id: uuid.UUID | None = None
+    # What the latest generated version read (ADR 0035): the profile version
+    # and the Target's digest. A manual edit or an applied revision reads
+    # neither and leaves them alone. None before the first write, and on
+    # résumés written before they were recorded.
+    profile_version: int | None = None
+    target_digest: str | None = None
 
     @classmethod
     def requested(
@@ -71,9 +77,13 @@ class TailoredResume:
         snapshot: dict[str, Any],
         label: str,
         coverage: tuple[dict[str, Any], ...],
+        profile_version: int,
+        target_digest: str,
         at: datetime,
     ) -> None:
         self.snapshot = snapshot
+        self.profile_version = profile_version
+        self.target_digest = target_digest
         self.target_label = label[:400]
         self.coverage = coverage
         self.status = ResumeStatus.READY

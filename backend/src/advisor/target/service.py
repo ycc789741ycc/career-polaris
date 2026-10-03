@@ -38,6 +38,8 @@ from advisor.rolemap import (
 from advisor.target.domain import (
     MAX_JOB_DESCRIPTION,
     DimensionGap,
+    DraftBasis,
+    OutdatedReason,
     OwnerTarget,
     OwnPostingError,
     OwnPostingFit,
@@ -57,6 +59,7 @@ from advisor.target.domain import (
     TargetSnapshot,
     TargetUnitOfWork,
     UncoveredGap,
+    get_target_digest,
 )
 from kernel.clock import utcnow
 from kernel.documents import ACCEPTED_TYPES, read_document_text
@@ -66,6 +69,8 @@ from kernel.storage import ObjectStore, object_key
 
 __all__ = [
     "DimensionGap",
+    "DraftBasis",
+    "OutdatedReason",
     "OwnPostingView",
     "TargetError",
     "TargetPreview",
@@ -73,6 +78,7 @@ __all__ = [
     "TargetService",
     "TargetSnapshot",
     "UncoveredGap",
+    "get_target_digest",
     "requirements_block",
 ]
 
@@ -182,6 +188,32 @@ class TargetService:
             company=posting.company_name or "",
             fit=fit,
             basis=RequirementBasis.POSTING,
+        )
+
+    async def get_outdated_reasons(
+        self,
+        owner_id: uuid.UUID,
+        ref: TargetRef,
+        *,
+        recorded: DraftBasis | None,
+        profile_version: int,
+    ) -> tuple[OutdatedReason, ...]:
+        """Why a draft aimed at ``ref`` no longer matches what it read (ADR 0035).
+
+        ``recorded`` is what the draft read; ``profile_version`` is the user's
+        evidence now. A draft from before bases were recorded is unknown, never
+        outdated. A Target that cannot be resolved at the moment — not scored
+        since a rebuild, or gone — counts as changed. Spends nothing.
+        """
+        if recorded is None:
+            return ()
+        try:
+            digest = get_target_digest(await self.snapshot(owner_id, ref))
+        except (TargetUnusableError, NotFoundError) as exc:
+            log.info("target.digest_unavailable", code=str(exc.code), **ref.to_dict())
+            digest = ""
+        return recorded.get_outdated_reasons(
+            DraftBasis(profile_version=profile_version, target_digest=digest)
         )
 
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetPreview:

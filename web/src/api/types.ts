@@ -66,7 +66,6 @@ export type TargetRef = Schemas["TargetRefBody"];
 export type QuestionSet = Schemas["QuestionSet"];
 export type GapQuestion = Schemas["GapQuestion"];
 /** What submitting costs: the plan and résumé written again, if they exist. */
-export type SubmitEstimate = Schemas["SubmitEstimate"];
 export type Submitted = Schemas["Submitted"];
 
 // Gap plan

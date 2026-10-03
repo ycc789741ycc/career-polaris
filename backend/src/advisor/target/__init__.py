@@ -20,6 +20,8 @@ from advisor.target.domain import (
 from advisor.target.factory import create_target_service
 from advisor.target.service import (
     DimensionGap,
+    DraftBasis,
+    OutdatedReason,
     OwnPostingView,
     TargetError,
     TargetPreview,
@@ -27,6 +29,7 @@ from advisor.target.service import (
     TargetService,
     TargetSnapshot,
     UncoveredGap,
+    get_target_digest,
     requirements_block,
 )
 
@@ -37,6 +40,8 @@ __all__ = [
     "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
     "DimensionGap",
+    "DraftBasis",
+    "OutdatedReason",
     "OwnPostingView",
     "TargetError",
     "TargetPreview",
@@ -45,6 +50,7 @@ __all__ = [
     "TargetSnapshot",
     "UncoveredGap",
     "create_target_service",
+    "get_target_digest",
     "jobs",
     "requirements_block",
 ]

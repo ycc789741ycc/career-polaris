@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuestionSet } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { FillTheGap, submitNote } from "./FillTheGap";
+import { FillTheGap } from "./FillTheGap";
 import type { AdvisorTarget } from "./target";
 
 const target: AdvisorTarget = {
@@ -172,13 +172,6 @@ describe("Fill the gap", () => {
     const onSubmitted = vi.fn();
     const calls = serve((call) => {
       if (call.url.startsWith("/gap-question-sets/current")) return ready;
-      if (call.url.endsWith("/submit-estimate"))
-        return {
-          cost_usd: "0.12",
-          model_id: "claude-sonnet-5",
-          regenerates_plan: true,
-          regenerates_resume: true,
-        };
       if (call.url === "/gap-question-sets/s1/answers")
         return { set_id: "s1", answered: 2, skipped: 1 };
       if (call.url === "/gap-question-sets/s1")
@@ -200,9 +193,7 @@ describe("Fill the gap", () => {
     );
     const bar = screen.getByRole("region", { name: "Submit answers" });
     expect(bar).toHaveTextContent("2 of 3 answered");
-    expect(
-      await within(bar).findByText(/updates the gap plan and the résumé/),
-    ).toHaveTextContent("about $0.12");
+    expect(bar).toHaveTextContent("It spends nothing.");
 
     await user.click(
       within(bar).getByRole("button", { name: "Submit answers" }),
@@ -216,23 +207,12 @@ describe("Fill the gap", () => {
         { question_id: "q2", choice: "Yes", text: "The Feb payment outage." },
       ],
     });
-    expect(await screen.findByText(/2 answers added/)).toBeInTheDocument();
-    expect(onSubmitted).toHaveBeenCalled();
-  });
-});
-
-describe("what submitting says it does", () => {
-  it("names only what will be written again", () => {
-    expect(submitNote(null)).toBe("Submitting adds your answers to Sources.");
     expect(
-      submitNote({
-        cost_usd: "0.05",
-        model_id: "m",
-        regenerates_plan: true,
-        regenerates_resume: false,
-      }),
-    ).toBe(
-      "Submitting adds your answers to Sources and updates the gap plan · about $0.05 on your key",
-    );
+      await screen.findByText(/2 answers added to your evidence/),
+    ).toHaveTextContent("use them once you regenerate them");
+    expect(onSubmitted).toHaveBeenCalled();
+    // Answering spends nothing: no price asked for, no rewrite requested.
+    expect(calls.some((c) => c.url.includes("estimate"))).toBe(false);
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
   });
 });

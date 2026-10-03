@@ -219,6 +219,11 @@ class GapPlan:
     template_version: str | None = None
     drafted_at: datetime | None = None
     private_job_posting_id: uuid.UUID | None = None
+    # What the draft read (ADR 0035): the profile version and the Target's
+    # digest, set when it is drafted. None before, and on plans drafted
+    # before they were recorded.
+    profile_version: int | None = None
+    target_digest: str | None = None
 
     @classmethod
     def requested(
@@ -254,9 +259,13 @@ class GapPlan:
         stepping_stones: tuple[dict[str, Any], ...],
         model_id: str,
         template_version: str,
+        profile_version: int,
+        target_digest: str,
         at: datetime,
     ) -> None:
         self.snapshot = snapshot
+        self.profile_version = profile_version
+        self.target_digest = target_digest
         self.target_label = label[:400]
         self.gaps = gaps
         self.projects = projects

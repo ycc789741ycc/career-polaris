@@ -1,5 +1,5 @@
-"""Fill the gap at the HTTP edge: requesting questions, the submit estimate, and
-the one submit (ADR 0023). Runs the real router in-process against stand-in
+"""Fill the gap at the HTTP edge: requesting questions and the one submit (ADR
+0023), which spends nothing (ADR 0035). Runs the real router in-process against stand-in
 services — no network, no infra, no queue."""
 
 from __future__ import annotations
@@ -71,17 +71,6 @@ class FakeGapFill:
         return SubmittedView(set_id=set_id, evidence_ids=(uuid.uuid4(),), skipped=0)
 
 
-class FakePlans:
-    def __init__(self, has_plan: bool) -> None:
-        self.has_plan = has_plan
-
-    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> object | None:
-        return object() if self.has_plan else None
-
-    async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
-        return {"cost_usd": "0.04", "model_id": "claude-opus-5"}
-
-
 @pytest.fixture
 def gapfill() -> FakeGapFill:
     return FakeGapFill()
@@ -98,14 +87,12 @@ def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return calls
 
 
-def _client(gapfill: FakeGapFill, *, plan: bool = True, resume: bool = False) -> TestClient:
+def _client(gapfill: FakeGapFill) -> TestClient:
     app = FastAPI()
     errors.install(app)
     app.include_router(gapfill_api.router)
     app.dependency_overrides[current_user] = lambda: uuid.uuid4()
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(
-        gapfill=gapfill, gapplan=FakePlans(plan), resume=FakePlans(resume)
-    )
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(gapfill=gapfill)
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -134,23 +121,16 @@ def test_there_is_no_current_set_before_any_was_written(gapfill: FakeGapFill) ->
     assert response.status_code == 200 and response.json() is None
 
 
-@pytest.mark.parametrize(
-    ("plan", "resume", "cost"), [(True, False, "0.04"), (True, True, "0.08"), (False, False, "0")]
-)
-def test_the_submit_estimate_prices_only_what_will_be_rewritten(
-    gapfill: FakeGapFill, plan: bool, resume: bool, cost: str
+def test_submitting_has_no_price_to_ask_for(gapfill: FakeGapFill) -> None:
+    """Answering spends nothing, so there is nothing to estimate (ADR 0035)."""
+    response = _client(gapfill).get(f"/gap-question-sets/{SET_ID}/submit-estimate")
+
+    assert response.status_code in (404, 405)
+
+
+def test_every_answer_arrives_in_one_submit_and_queues_nothing(
+    gapfill: FakeGapFill, queued: list[dict[str, Any]]
 ) -> None:
-    body = (
-        _client(gapfill, plan=plan, resume=resume)
-        .get(f"/gap-question-sets/{SET_ID}/submit-estimate")
-        .json()
-    )
-
-    assert body["cost_usd"] == cost
-    assert (body["regenerates_plan"], body["regenerates_resume"]) == (plan, resume)
-
-
-def test_every_answer_arrives_in_one_submit(gapfill: FakeGapFill) -> None:
     response = _client(gapfill).post(
         f"/gap-question-sets/{SET_ID}/answers",
         json={"answers": [{"question_id": str(QUESTION_ID), "choice": "Yes"}]},
@@ -159,6 +139,7 @@ def test_every_answer_arrives_in_one_submit(gapfill: FakeGapFill) -> None:
     assert response.status_code == 200
     assert response.json()["answered"] == 1
     assert gapfill.submitted == [[Answer(question_id=QUESTION_ID, choice="Yes", text=None)]]
+    assert queued == []
 
 
 def test_an_empty_submit_is_refused_in_the_envelope(gapfill: FakeGapFill) -> None:

@@ -583,31 +583,11 @@ export interface paths {
         put?: never;
         /**
          * Submit
-         * @description Every answer at once: checked as a batch, stored as ``user_answer``
-         *     evidence, then the Target's plan and résumé are written again.
+         * @description Every answer at once: checked as a batch and stored as ``user_answer``
+         *     evidence. Spends nothing and rewrites nothing: the Target's plan and résumé
+         *     then read as outdated, and the user regenerates them (ADR 0035).
          */
         post: operations["submit_api_v1_gap_question_sets__set_id__answers_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/gap-question-sets/{set_id}/submit-estimate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Submit Estimate
-         * @description Submitting writes the Target's plan and résumé again, each only if the
-         *     user has one; that is what it costs.
-         */
-        get: operations["submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1062,6 +1042,28 @@ export interface paths {
          * @description Renders on the worker's ``docs`` queue; poll ``GET /resume-exports/{id}``.
          */
         post: operations["request_export_api_v1_tailored_resumes__resume_id__exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tailored-resumes/{resume_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Resume
+         * @description Writes the résumé again as its next version, priced first by
+         *     ``/tailored-resumes/cost-estimate``; poll ``GET /tailored-resumes/{id}``
+         *     (ADR 0035).
+         */
+        post: operations["regenerate_resume_api_v1_tailored_resumes__resume_id__regenerate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1834,12 +1836,16 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Is Outdated */
+            is_outdated: boolean;
             /** Label */
             label: string;
             /** Milestones */
             milestones: components["schemas"]["Milestone"][];
             /** Model Id */
             model_id: string | null;
+            /** Outdated By */
+            outdated_by: ("evidence" | "target")[];
             /** Progress */
             progress: number;
             /** Projects */
@@ -2258,7 +2264,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "generated" | "manual" | "chat";
+            source: "generated" | "manual" | "chat" | "answers";
         };
         /** Revision */
         Revision: {
@@ -2512,21 +2518,6 @@ export interface components {
             /** Total */
             total: number;
         };
-        /**
-         * SubmitEstimate
-         * @description What submitting costs: the Target's plan and résumé are written again
-         *     from the new evidence, each only if the user has one.
-         */
-        SubmitEstimate: {
-            /** Cost Usd */
-            cost_usd: string;
-            /** Model Id */
-            model_id: string | null;
-            /** Regenerates Plan */
-            regenerates_plan: boolean;
-            /** Regenerates Resume */
-            regenerates_resume: boolean;
-        };
         /** Submitted */
         Submitted: {
             /** Answered */
@@ -2556,11 +2547,15 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Is Outdated */
+            is_outdated: boolean;
             /** Label */
             label: string;
             /** Latest Version */
             latest_version: number | null;
             options: components["schemas"]["ResumeOptions"];
+            /** Outdated By */
+            outdated_by: ("evidence" | "target")[];
             /** Revisions */
             revisions: components["schemas"]["Revision"][];
             snapshot: components["schemas"]["ResumeSnapshot"] | null;
@@ -4422,55 +4417,6 @@ export interface operations {
             };
         };
     };
-    submit_estimate_api_v1_gap_question_sets__set_id__submit_estimate_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                set_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubmitEstimate"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
     market_scope_api_v1_market_scope_get: {
         parameters: {
             query?: never;
@@ -5685,6 +5631,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeExport"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    regenerate_resume_api_v1_tailored_resumes__resume_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeSummary"];
                 };
             };
             /** @description The request could not be read. */

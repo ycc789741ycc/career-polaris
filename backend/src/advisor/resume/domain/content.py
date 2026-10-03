@@ -44,6 +44,7 @@ class VersionSource(StrEnum):
     MANUAL = "manual"
     CHAT = "chat"
     # Rewritten after the user submitted answers in Fill the gap (ADR 0023).
+    # Nothing writes it since ADR 0035; versions written before keep it.
     ANSWERS = "answers"
 
 

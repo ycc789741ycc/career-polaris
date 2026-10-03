@@ -214,11 +214,12 @@ v3 draws the answers going **straight from Questions to the Profile** ("Feedback
   - its gap and its text
   - an **"Asked because"** reason
   - an answer type: `choice` (with options), `free_text`, or both
-- **Answers are submitted once, together.** A single "Submit answers" button shows how many are answered ("4 of 5 answered") and a cost estimate. Nothing is saved per question, and nothing propagates until the user submits. An unanswered question stays a gap.
+- **Answers are submitted once, together.** A single "Submit answers" button shows how many are answered ("4 of 5 answered"). Submitting spends nothing. Nothing is saved per question, and nothing propagates until the user submits. An unanswered question stays a gap.
 - **On submit:**
   1. Each answer becomes Evidence with source `user_answer` (2.6). It appears on Sources under "Your answers" and in "What it found so far".
-  2. The Target's gap plan and résumé are regenerated as new versions, if they exist, from the updated evidence and on the user's key.
-  3. The plan's provenance says so: *"uses your 4 answers from Fill the gap"*.
+  2. The Target's gap plan and résumé are **not** rewritten. Each says it is outdated by the new evidence, and the user regenerates it at a price they confirm ([ADR 0035](decisions/0035-regenerate-the-plan-and-resume-only-when-asked.md); until then, ADR 0023 had them rewritten on submit).
+  3. A plan regenerated afterwards says so: *"uses your 4 answers from Fill the gap"*.
+- **Outdated.** A gap plan and a résumé each record what they were drafted from: the profile version and a digest of the Target. When either has moved on — answers, a sync, an upload, a re-analysis, a rebuild — the Advisor shows "Outdated: your evidence changed" or "Outdated: the target changed", and offers Regenerate.
 - A new Target, or a new analysis that changes the Target's gaps, gets a new QuestionSet. Evidence already submitted stays.
 - **Why per gap:** a question about a gap the user is actually trying to close is worth answering, and its answer counts directly toward the plan and the résumé. Questions from a low-confidence radar asked about dimensions the user might not care about, and cost a call on every sync (ADR 0012).
 - **What it costs:**
@@ -372,7 +373,7 @@ flowchart LR
 ```
 
 - **`Target`** is a value, not a table: a Role, an optional opening, or a posting of the user's own, and the frozen requirements snapshot. What the context stores is the postings of the user's own and their fits ([ADR 0033](decisions/0033-keep-a-posting-of-your-own-in-target.md)). It has its own context because the question set, the plan and the résumé all aim at one, and none of them may own it ([ADR 0005](decisions/0005-resolve-targets-in-their-own-module.md)).
-- **Gap fill** is its own context too. The plan and the résumé both regenerate from its answers, and its questions depend on the Target and the fit, not on either consumer.
+- **Gap fill** is its own context too. The plan and the résumé both read its answers when they are regenerated, and its questions depend on the Target and the fit, not on either consumer.
 - **`TargetLocation`** is shown in the profile but owned by Market, because what it decides is market scope.
 
 **Cardinality at a glance**
@@ -558,7 +559,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 24 | 2026-09-29 | When the role map is built | **After every analysis, confirmed with the analysis's cost estimate; market changes still rebuild it** — *amended by 31: only when asked* | 2.2 |
 | 25 | 2026-09-29 | Roles the recommendation misses | **The user adds a custom Role (title required; company and a private JD optional), searched on the market and placed beside the ten** — *Superseded by 34* | 2.4: `Role.origin`; the JD is the Role's requirement basis |
 | 26 | 2026-09-29 | What the Advisor aims at | **One Target: a Role (recommended or custom) and optionally an opening in it, chosen only on the role map** — *amended by 34* | 2.1: amends 16; the subscription and pasted-JD kinds are gone |
-| 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** | 2.8: Gap fill; the Analyzer no longer asks questions |
+| 27 | 2026-09-29 | Where follow-up questions come from | **Per gap of the Target, in the Advisor's first step, answered and submitted together; answers become `user_answer` Evidence and regenerate the plan and résumé** (since ADR 0035 they mark them outdated instead) | 2.8: Gap fill; the Analyzer no longer asks questions |
 | 28 | 2026-09-29 | Where profile confidence lives | **On the SkillAssessment, shown on 02 Strengths** | 2.7 |
 | 29 | 2026-09-30 | Where the recommended Roles come from | **The analysis recommends candidate roles from the strengths; the role map keeps the first ten the user's market has openings for, and fits are scored once per build** | 2.2: RoleCandidate, RoleSelection; supersedes 2 ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)) |
 | 30 | 2026-09-30 | How a candidate role's openings are found | **Its title is searched on a public job API (Himalayas) for the countries and remote work the user named, as ownerless demand sources; on-site work stays on company boards** | 2.5: CrawlSource as a search; remote work open worldwide is in every searchable target location ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) |

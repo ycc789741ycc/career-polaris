@@ -22,7 +22,7 @@ from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.gapplan import GapPlanService, PlanStatus, create_gapplan_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
-from advisor.profile import create_profile_service
+from advisor.profile import ProfileService, create_profile_service
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
@@ -74,6 +74,7 @@ class World:
     target: TargetService
     gapplan: GapPlanService
     evidence_id: str
+    profile: ProfileService
 
 
 @pytest_asyncio.fixture
@@ -175,6 +176,7 @@ async def world(
         target=target,
         gapplan=gapplan,
         evidence_id=str(evidence.id),
+        profile=profile,
     )
 
 
@@ -412,6 +414,31 @@ async def test_a_plan_that_leaves_a_gap_unexplained_is_rejected(
     assert plan.summary.status is PlanStatus.FAILED
     assert plan.summary.error_code == "plan_invalid"
     assert "unexplained" in (plan.summary.error_message or "")
+
+
+async def test_new_evidence_marks_the_latest_plan_outdated_and_rewrites_nothing(
+    world: World, account: uuid.UUID
+) -> None:
+    """Answering in Fill the gap records evidence and spends nothing: the plan
+    is left as it was and says it is outdated (ADR 0035)."""
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(_plan_reply(CITED))
+    requested = await world.gapplan.request(account, ref)
+    await world.gapplan.draft(account, requested.id)
+    drafted = await world.gapplan.get(account, requested.id)
+    assert drafted.summary.status is PlanStatus.READY, drafted.summary.error_message
+    assert drafted.outdated_by == ()
+    calls = len(world.stub.calls)
+
+    await world.profile.record_answer(
+        account, question_id="later", question="Did another team adopt it?", answer="Yes"
+    )
+
+    after = await world.gapplan.get(account, requested.id)
+    assert [str(r) for r in after.outdated_by] == ["evidence"]
+    assert [v.version for v in after.versions] == [1]
+    assert after.gaps == drafted.gaps
+    assert len(world.stub.calls) == calls
 
 
 async def test_another_user_cannot_read_the_plan(

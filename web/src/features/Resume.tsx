@@ -26,6 +26,7 @@ import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
+import { OutdatedBanner } from "./OutdatedBanner";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
 
@@ -119,7 +120,11 @@ export function Resume({
     ref: Ref;
     label: string;
     cost: PlanEstimate;
+    /** Set when the estimate is for writing this résumé again (ADR 0035). */
+    regenerates: string | null;
   } | null>(null);
+  // Bumped to re-read the open résumé after asking for it to be written again.
+  const [reloads, setReloads] = useState(0);
   const [template, setTemplate] = useState<ResumeTemplate>("organic");
   const [options, setOptions] = useState<ResumeOptions>({
     metrics: true,
@@ -171,7 +176,7 @@ export function Resume({
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resumeId]);
+  }, [resumeId, reloads]);
 
   function show(next: TailoredResume) {
     setResume(next);
@@ -191,7 +196,11 @@ export function Resume({
     );
   }
 
-  async function price(priced: Ref, label: string) {
+  async function price(
+    priced: Ref,
+    label: string,
+    regenerates: string | null = null,
+  ) {
     if (!status.credential) {
       flash("Writing runs on your model — add a key.");
       navigate("model");
@@ -203,7 +212,7 @@ export function Resume({
       const cost = await api.get<PlanEstimate>(
         `/tailored-resumes/cost-estimate?${targetQuery(priced)}`,
       );
-      setEstimate({ ref: priced, label, cost });
+      setEstimate({ ref: priced, label, cost, regenerates });
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -216,6 +225,16 @@ export function Resume({
     setBusy(true);
     setError(null);
     try {
+      if (estimate.regenerates) {
+        // The same résumé, written again as its next version.
+        await api.post<ResumeSummary>(
+          `/tailored-resumes/${estimate.regenerates}/regenerate`,
+        );
+        setEstimate(null);
+        setReloads((n) => n + 1);
+        onChanged();
+        return;
+      }
       const created = await api.post<ResumeSummary>("/tailored-resumes", {
         ...estimate.ref,
         template,
@@ -405,12 +424,25 @@ export function Resume({
           onConfirm={() => void write()}
           onCancel={() => setEstimate(null)}
         >
-          Writing a résumé for <strong>{estimate.label}</strong> costs about{" "}
+          {estimate.regenerates
+            ? "Writing the résumé again for"
+            : "Writing a résumé for"}{" "}
+          <strong>{estimate.label}</strong> costs about{" "}
           <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
           , charged to your own provider.
           {estimate.cost.rate_is_published === false &&
             " We have no published price for that model, so this is a deliberately high guess."}
         </CostConfirm>
+      )}
+
+      {resume?.status === "ready" && (
+        <OutdatedBanner
+          reasons={resume.outdated_by}
+          busy={busy}
+          onRegenerate={() =>
+            void price(resume.target, resume.label, resume.id)
+          }
+        />
       )}
 
       <AutoGrid col={320} gap={20}>

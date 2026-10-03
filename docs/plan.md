@@ -1533,6 +1533,18 @@ nothing. "Set as target" is priced, then queues the evaluation, then opens
 Fill the gap.
 
 ## Regenerate the plan and résumé only when asked
+**Done** (ADR 0035, migration 0033). Where the build differs from the plan
+below:
+
+* Outdated is decided in one place, `TargetService.get_outdated_reasons`,
+  which both `gapplan` and `resume` call with the basis they recorded and the
+  profile version now. A Target that cannot be resolved counts as changed.
+* The digest ignores the order the requirements come in, as the tests asked,
+  so it hashes them sorted rather than "in order".
+* Regenerating a résumé already being written answers 409.
+* `latest_for` went with the submit estimate, its only caller.
+* The migration has no test of its own, as none before it does.
+
 Since ADR 0023, submitting answers in Fill the gap records them as evidence
 and emits `GapAnswersSubmitted`. The dispatcher then queues
 `gapplan.regenerate` and `resume.regenerate`, and each rewrites the Target's

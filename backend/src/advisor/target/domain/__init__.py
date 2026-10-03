@@ -6,6 +6,11 @@ from advisor.target.domain.constants import (
     MAX_REQUIREMENT_LINES,
     MAX_TITLE,
 )
+from advisor.target.domain.draft_basis import (
+    DraftBasis,
+    OutdatedReason,
+    get_target_digest,
+)
 from advisor.target.domain.own_posting import (
     OwnPostingError,
     PostingEvaluation,
@@ -56,6 +61,8 @@ __all__ = [
     "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
     "DimensionGap",
+    "DraftBasis",
+    "OutdatedReason",
     "OwnPostingError",
     "OwnPostingFit",
     "OwnPostingFitFilter",
@@ -86,6 +93,7 @@ __all__ = [
     "gap_key_for_dimension",
     "gap_key_for_uncovered",
     "get_placeholder_title",
+    "get_target_digest",
     "parse_requirement_lines",
     "parse_title_and_company",
 ]

@@ -7,6 +7,11 @@ poll it and say plainly when drafting failed and why (ADR 0006).
 Plans are never overwritten. Regenerating adds the next version for the same
 Target and carries finished tasks into it; the history is every Target's latest
 version, newest first.
+
+A plan is drafted only when the user asks. Each records what it read — the
+profile version and the Target's digest — and the latest version says it is
+outdated once either has moved on (ADR 0035); regenerating it is a new request
+the user prices and confirms.
 """
 
 from __future__ import annotations
@@ -55,9 +60,12 @@ from advisor.profile import (
 from advisor.rolemap import RoleMapService
 from advisor.target import (
     DimensionGap,
+    DraftBasis,
+    OutdatedReason,
     TargetRef,
     TargetService,
     TargetSnapshot,
+    get_target_digest,
     requirements_block,
 )
 from kernel.ai_gateway import AiGateway
@@ -203,6 +211,14 @@ class PlanView:
     # Every version for this Target, newest first.
     versions: tuple[PlanSummaryView, ...]
     template_version: str | None
+    # Why the Target's latest plan no longer matches what it was drafted from
+    # (ADR 0035); empty when it does, for an older version, and for a plan
+    # drafted before that was recorded.
+    outdated_by: tuple[OutdatedReason, ...] = ()
+
+    @property
+    def is_outdated(self) -> bool:
+        return bool(self.outdated_by)
 
 
 # --- service ---------------------------------------------------------------
@@ -275,23 +291,6 @@ class GapPlanService:
             )
         return _summary(plan, progress_percent=0)
 
-    async def latest_for(self, owner_id: uuid.UUID, ref: TargetRef) -> PlanSummaryView | None:
-        """The Target's latest plan version, if it has one."""
-        async with self._uow.for_owner(owner_id) as mine:
-            found = await mine.plans.get_list(_same_target(ref), page_size=1)
-        return _summary(found[0], progress_percent=0) if found else None
-
-    async def regenerate(self, owner_id: uuid.UUID, ref: TargetRef) -> uuid.UUID | None:
-        """The worker job after answers are submitted in Fill the gap: draft the
-        Target's next plan version from the updated evidence. Finished tasks
-        carry over as for any new version. Nothing happens for a Target with
-        no plan."""
-        if await self.latest_for(owner_id, ref) is None:
-            return None
-        requested = await self.request(owner_id, ref)
-        await self.draft(owner_id, requested.id)
-        return requested.id
-
     async def draft(self, owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
         """The worker job. Any expected failure is recorded on the plan, with
         its stable code, and not retried: a retry would spend the key again."""
@@ -344,6 +343,17 @@ class GapPlanService:
             for index, task in enumerate(own)
         }
         progress_by_plan = _progress_by_plan(tasks)
+        is_latest = bool(same_target) and same_target[0].id == plan.id
+        outdated_by = (
+            await self._target.get_outdated_reasons(
+                owner_id,
+                _ref_of(plan),
+                recorded=_basis_of(plan),
+                profile_version=await self._profile.version(owner_id),
+            )
+            if is_latest and plan.status is PlanStatus.READY
+            else ()
+        )
 
         return PlanView(
             summary=_summary(plan, progress_percent=progress_by_plan.get(plan.id, 0)),
@@ -365,6 +375,7 @@ class GapPlanService:
                 _summary(p, progress_percent=progress_by_plan.get(p.id, 0)) for p in same_target
             ),
             template_version=plan.template_version,
+            outdated_by=outdated_by,
         )
 
     async def history(
@@ -545,6 +556,8 @@ class GapPlanService:
                 ),
                 model_id=result.model_id,
                 template_version=result.template_version,
+                profile_version=profile.version,
+                target_digest=get_target_digest(snapshot),
                 at=now,
             )
             await mine.plans.update(plan)
@@ -640,6 +653,13 @@ def _same_target(ref: TargetRef) -> GapPlanFilter:
 
 def _ref_of(plan: GapPlan) -> TargetRef:
     return TargetRef.of(plan.role_id, plan.job_posting_id, plan.private_job_posting_id)
+
+
+def _basis_of(plan: GapPlan) -> DraftBasis | None:
+    """What the plan was drafted from; None for one drafted before it was kept."""
+    if plan.profile_version is None or plan.target_digest is None:
+        return None
+    return DraftBasis(profile_version=plan.profile_version, target_digest=plan.target_digest)
 
 
 async def _tasks_by_plan(mine: OwnerGapPlans) -> dict[uuid.UUID, list[Task]]:

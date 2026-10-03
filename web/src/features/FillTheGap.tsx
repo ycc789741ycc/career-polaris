@@ -4,7 +4,6 @@ import type {
   GapQuestion,
   PlanEstimate,
   QuestionSet,
-  SubmitEstimate,
   Submitted,
 } from "../api/types";
 import {
@@ -32,15 +31,16 @@ type Draft = { choice: string | null; text: string };
  * submitted together.
  *
  * Nothing is saved per question. One submit records every answer as evidence
- * ("Your answers" on Sources) and has the gap plan and résumé written again,
- * if they exist. A question left blank stays a gap.
+ * ("Your answers" on Sources) and spends nothing: the gap plan and résumé then
+ * say they are outdated, and the user regenerates them (ADR 0035). A question
+ * left blank stays a gap.
  */
 export function FillTheGap({
   target,
   onSubmitted,
 }: {
   target: AdvisorTarget;
-  /** Answers were submitted: the plan and résumé are being written again. */
+  /** Answers were submitted: the plan and résumé now read as outdated. */
   onSubmitted: () => void;
 }) {
   const { status, navigate } = useShell();
@@ -49,7 +49,6 @@ export function FillTheGap({
   const [set, setSet] = useState<QuestionSet | null | undefined>(undefined);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [writeCost, setWriteCost] = useState<PlanEstimate | null>(null);
-  const [submitCost, setSubmitCost] = useState<SubmitEstimate | null>(null);
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,15 +93,6 @@ export function FillTheGap({
     target.ref.private_job_posting_id,
     set?.id,
   ]);
-
-  // What submitting will cost, once there is something to submit.
-  useEffect(() => {
-    if (!set || set.status !== "ready" || set.submitted_at) return;
-    api
-      .get<SubmitEstimate>(`/gap-question-sets/${set.id}/submit-estimate`)
-      .then(setSubmitCost)
-      .catch((caught: unknown) => setError(messageOf(caught)));
-  }, [set]);
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -293,7 +283,7 @@ export function FillTheGap({
           <div className="muted" style={{ fontSize: 12.5 }}>
             {isSubmitted
               ? "Your answers are on Sources as evidence."
-              : submitNote(submitCost)}
+              : "Submitting adds your answers to Sources. It spends nothing."}
           </div>
         </div>
         {isSubmitted ? (
@@ -313,11 +303,8 @@ export function FillTheGap({
       {submitted && (
         <Done>
           {submitted.answered} answer{submitted.answered === 1 ? "" : "s"} added
-          to your evidence
-          {submitCost?.regenerates_plan || submitCost?.regenerates_resume
-            ? "; your gap plan and résumé are being written again"
-            : ""}
-          .
+          to your evidence. Your gap plan and résumé use them once you
+          regenerate them.
         </Done>
       )}
       <ErrorNote error={error} />
@@ -394,16 +381,4 @@ function QuestionCard({
       </div>
     </div>
   );
-}
-
-/** "Submitting adds your answers to Sources and updates …". Pure. */
-export function submitNote(cost: SubmitEstimate | null): string {
-  const base = "Submitting adds your answers to Sources";
-  if (!cost) return `${base}.`;
-  const updates = [
-    cost.regenerates_plan ? "the gap plan" : null,
-    cost.regenerates_resume ? "the résumé" : null,
-  ].filter(Boolean);
-  if (updates.length === 0) return `${base}.`;
-  return `${base} and updates ${updates.join(" and ")} · about $${cost.cost_usd} on your key`;
 }
