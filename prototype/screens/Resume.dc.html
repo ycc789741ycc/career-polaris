@@ -14,7 +14,7 @@ body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:
 a{color:#8c491a}a:hover{color:#643312}
 </style>
 </helmet>
-<div style="width: 1440px; height: 1560px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<div style="width: 1440px; height: 1820px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
 <dc-import name="Sidebar" current="advisor" hint-size="246px,100%"></dc-import>
 <main style="flex-grow: 1; min-width: 0">
 <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
@@ -59,10 +59,16 @@ a{color:#8c491a}a:hover{color:#643312}
 </div>
 </nav>
 
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; gap: 22px">
+<div style="min-width: 0">
 <div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Write for</div>
 <div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 20px; margin-top: 4px">Staff Backend Engineer · Northwind Pay · 86% fit</div>
 <div style="font-size: 13px; color: #474238; margin-top: 4px">Drafted from your sources, including the 4 answers you gave in Fill the gap.</div>
+</div>
+<div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: 0 0 auto">
+<a href="ResumeBuilding.dc.html" style="padding: 11px 20px; border-radius: 999px; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; text-decoration: none">Regenerate résumé</a>
+<span style="font-size: 12.5px; color: #645c50">Last generated 27 Sep 2026 · about 4 calls on your key · saved as a new version</span>
+</div>
 </div>
 
 <div style="display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; gap: 20px; align-items: start">
@@ -78,6 +84,40 @@ a{color:#8c491a}a:hover{color:#643312}
 <label style="display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 16px; border: 2px solid transparent"><input type="radio" name="tpl"><span><b style="font-size: 14px">Plain</b><span style="display: block; font-size: 12.5px; color: #474238">One page, evidence first.</span></span></label>
 <button type="button" style="margin-top: 14px; width: 100%; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Export PDF</button>
 <p style="font-size: 12.5px; color: #474238; margin: 10px 0 0">The export is a white, printable page in the template you pick.</p>
+</div>
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Sections</div>
+<p style="font-size: 12.5px; color: #474238; margin: 4px 0 4px">Drag to reorder. Remove what you don't need.</p>
+<ul style="list-style: none; margin: 0; padding: 0">
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Summary" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Summary</span><button type="button" aria-label="Remove Summary" style="padding: 4px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Remove</button></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Experience" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Experience</span><span style="font-size: 11.5px; font-weight: 700; color: #645c50; padding: 4px 10px">Required</span></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Skills" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Skills</span><button type="button" aria-label="Remove Skills" style="padding: 4px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Remove</button></li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Side projects" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Side projects <span style="padding: 1px 7px; border-radius: 999px; background: #e1eecc; color: #3d472b; font-size: 11px; font-weight: 700">New</span></span><button type="button" aria-label="Remove Side projects" style="padding: 4px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Remove</button></li>
+</ul>
+<div style="font-size: 12px; font-weight: 700; color: #645c50; margin: 14px 0 6px">Add a section</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Education</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Talks &amp; writing</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Open source</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Certifications</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Custom…</button>
+</div>
+<p style="font-size: 12px; color: #645c50; margin: 10px 0 0">New sections are filled from your sources; add or edit lines in place.</p>
+</div>
+<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
+<div style="display: flex; gap: 10px; align-items: center">
+<span style="width: 32px; height: 32px; border-radius: 999px; background: #c67139; color: #f9f4ed; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">AI</span>
+<div><div style="font-size: 14px; font-weight: 700">Revise with claude-sonnet-5</div><div style="font-size: 12px; color: #645c50">Proposals apply only when you say so</div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin: 14px 0">
+<div style="align-self: flex-end; max-width: 85%; background: #ffe1d0; color: #643312; border-radius: 16px; padding: 10px 14px; font-size: 13.5px">Quantify every bullet</div>
+<div style="align-self: flex-start; max-width: 85%; background: #f5ead8; border-radius: 16px; padding: 10px 14px; font-size: 13.5px; line-height: 1.5">The idempotency bullet can cite the 412 commits in payments-api. The highlighted line shows the proposal.
+<span style="display: flex; gap: 8px; margin-top: 10px"><button type="button" style="padding: 7px 14px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 13px Figtree, sans-serif; cursor: pointer">Apply</button><button type="button" style="padding: 7px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 13px Figtree, sans-serif; cursor: pointer">Discard</button></span></div>
+</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
+<button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">Make the summary shorter</button>
+<button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">Answer their top requirement first</button>
+</div>
+<div style="display: flex; gap: 8px">
+<input aria-label="Ask for a change" placeholder="Ask for a change…" style="flex-grow: 1; min-width: 0; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+<button type="button" style="padding: 11px 16px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Send</button>
+</div>
 </div>
 </div>
 
@@ -99,6 +139,8 @@ a{color:#8c491a}a:hover{color:#643312}
 <span style="padding: 5px 12px; border-radius: 999px; background: #f4efe9; color: #474238; font-size: 12.5px; font-weight: 600">PostgreSQL</span>
 <span style="padding: 5px 12px; border-radius: 999px; background: #f4efe9; color: #474238; font-size: 12.5px; font-weight: 600">Terraform</span>
 </div>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #8c491a; margin-top: 18px">Side projects</div>
+<div style="display: flex; gap: 10px; margin-top: 8px"><span style="width: 6px; height: 6px; border-radius: 999px; margin-top: 8px; background: #c67139; flex: 0 0 auto"></span><div><div style="font-size: 13.5px; line-height: 1.6"><b>ledger-sim</b> · Open-source load generator for double-entry ledgers.</div><div style="font-size: 11.5px; color: #8a847e; margin-top: 3px">github.com/mayachen/ledger-sim</div></div></div>
 <div style="display: flex; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee">
 <button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Save as v4</button>
 <span style="font-size: 12.5px; color: #645c50; align-self: center">Click any line to edit it in place.</span>
@@ -108,37 +150,19 @@ a{color:#8c491a}a:hover{color:#643312}
 <div style="display: flex; flex-direction: column; gap: 18px">
 <div style="background: #e1eecc; border-radius: 28px; padding: 22px">
 <div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #3d472b">Their requirements → your evidence</div>
-<div style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><div style="display: flex; gap: 8px; align-items: baseline"><span style="padding: 2px 9px; border-radius: 999px; background: #56633f; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Covered</span><span style="font-size: 13.5px; font-weight: 700">Designs high-volume payment systems</span></div><div style="font-size: 12.5px; color: #272e1b; margin-top: 5px">payments-api#1284 — Led the idempotency-key rollout</div></div>
-<div style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><div style="display: flex; gap: 8px; align-items: baseline"><span style="padding: 2px 9px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Partial</span><span style="font-size: 13.5px; font-weight: 700">Owns production reliability</span></div><div style="font-size: 12.5px; color: #272e1b; margin-top: 5px">design-docs/pir-2025-11 — Wrote the post-incident review</div></div>
-<div style="padding: 12px 0"><div style="display: flex; gap: 8px; align-items: baseline"><span style="padding: 2px 9px; border-radius: 999px; background: #f9f4ed; color: #474238; font-size: 11.5px; font-weight: 700">Gap</span><span style="font-size: 13.5px; font-weight: 700">Multi-region capacity planning</span></div><div style="font-size: 12.5px; color: #272e1b; margin-top: 5px">Nothing in your sources speaks to this yet.</div></div>
+<div style="font-size: 12.5px; color: #272e1b; margin-top: 4px">Open a requirement to see the evidence behind it.</div>
+<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #56633f; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Covered</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Designs high-volume payment systems</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">payments-api#1284 — Led the idempotency-key rollout</div></details>
+<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Partial</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Owns production reliability</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">design-docs/pir-2025-11 — Wrote the post-incident review</div></details>
+<details style="padding: 12px 0"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #f9f4ed; color: #474238; font-size: 11.5px; font-weight: 700">Gap</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Multi-region capacity planning</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">Nothing in your sources speaks to this yet.</div></details>
 </div>
 
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
-<div style="display: flex; gap: 10px; align-items: center">
-<span style="width: 32px; height: 32px; border-radius: 999px; background: #c67139; color: #f9f4ed; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">AI</span>
-<div><div style="font-size: 14px; font-weight: 700">Revise with claude-sonnet-5</div><div style="font-size: 12px; color: #645c50">Proposals apply only when you say so</div></div>
-</div>
-<div style="display: flex; flex-direction: column; gap: 10px; margin: 14px 0">
-<div style="align-self: flex-end; max-width: 85%; background: #ffe1d0; color: #643312; border-radius: 16px; padding: 10px 14px; font-size: 13.5px">Quantify every bullet</div>
-<div style="align-self: flex-start; max-width: 85%; background: #f5ead8; border-radius: 16px; padding: 10px 14px; font-size: 13.5px; line-height: 1.5">The idempotency bullet can cite the 412 commits in payments-api. The highlighted line shows the proposal.
-<span style="display: flex; gap: 8px; margin-top: 10px"><button type="button" style="padding: 7px 14px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 13px Figtree, sans-serif; cursor: pointer">Apply</button><button type="button" style="padding: 7px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 13px Figtree, sans-serif; cursor: pointer">Discard</button></span></div>
-</div>
-<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px">
-<button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">Make the summary shorter</button>
-<button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">Answer their top requirement first</button>
-</div>
-<div style="display: flex; gap: 8px">
-<input aria-label="Ask for a change" placeholder="Ask for a change…" style="flex-grow: 1; min-width: 0; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
-<button type="button" style="padding: 11px 16px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Send</button>
-</div>
-</div>
 </div>
 </div>
 </div>
 </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1820}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }

@@ -1,6 +1,6 @@
 # Career Advisor — Domain Concepts & Design Decisions
 
-This summarizes the design review of the "Career Advisor — current layout" canvas (last updated 3 Oct 2026). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
+This summarizes the design review of the "Career Advisor — current layout" canvas (last updated 3 Oct 2026, evening). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
 
 ## 1. User journey (forward-only)
 
@@ -32,7 +32,8 @@ This summarizes the design review of the "Career Advisor — current layout" can
 | **Gap** | A requirement of the target role that the evidence doesn't fully cover | title, status: `partial` \| `no_evidence`, fit-point impact |
 | **Follow-up question** | Generated per gap to collect missing evidence | gap, question text, "asked because" reason, answer type (choice / free text), answer |
 | **Gap plan** | Plan to close the gaps to the target role | gaps ranked by fit impact, milestones & tasks, stepping-stone roles, projects |
-| **Résumé** | A tailored résumé for the target role | versions, template, requirement → evidence coverage (Covered / Partial / Gap) |
+| **Résumé** | A tailored résumé for the target role | versions, template, **sections** (ordered, removable; Experience required), requirement → evidence coverage (Covered / Partial / Gap) |
+| **Advisor job** | A short AI run inside the Advisor (questions, gap plan, résumé) | type, target role, progress %, cost estimate, status; runs in the background while the user keeps working |
 
 ## 3. 01 Sources (Profile)
 
@@ -97,19 +98,34 @@ The Advisor always works against **one target role**.
 
 ### 6.2 Gap plan
 
-- Gaps ranked by fit impact, each citing evidence; milestones & tasks with progress; stepping-stone roles; projects that prove it.
+- "Generate gap plan" / "regenerate" start a drafting job (cost shown; saved as a new version, older versions kept in Plan history).
+- Gaps ranked by fit impact. Each gap row: title, "+N fit pts" **and a bar** (points out of 10), a one-line reason, and a collapsed **"Show evidence (n)"**: cited evidence is hidden until expanded.
+- Milestones & tasks with progress; stepping-stone roles; projects that prove it.
 - Notes that it uses the answers from Fill the gap.
 
 ### 6.3 Résumé
 
-- Tailored to the target role; saved versions per company/role; templates; PDF export.
-- Requirements → evidence panel (Covered / Partial / Gap).
-- AI revise chat; proposals apply only on user confirmation.
+- "Write for" card with **"Regenerate résumé"** (cost shown; saved as a new version, older versions kept in Saved résumés).
+- Left column, top to bottom: Saved résumés → Template (+ Export PDF) → **Sections** → **Revise with AI**.
+- **Sections panel**: lists the résumé's blocks in order (Summary, Experience, Skills, Side projects…), each with a drag handle and Remove; Experience is required. "Add a section" offers Education, Talks & writing, Open source, Certifications, Custom… New sections are filled from the user's sources and editable in place.
+- Résumé preview in the middle; lines are edited in place; "Save as vN".
+- Right column: requirements → evidence panel. Each row shows only status (Covered / Partial / Gap) and the requirement; **evidence is collapsed** behind "Evidence ▾".
+- AI revise chat: proposals apply only on user confirmation.
+
+### 6.4 Advisor jobs (generating states)
+
+- Generating follow-up questions, a gap plan or a résumé are short jobs (under a minute) and **do not block the Advisor**.
+- While a job runs, its page keeps the target banner and step tabs; the content area shows a slim progress card (spinner, title, one status line, progress bar, cost, Cancel) with links to the other tabs.
+- The tab being generated shows a spinner and a word (preparing… / drafting… / writing…) until it is done, wherever the user is.
+- The user can switch tabs and keep working (e.g. edit the Gap plan while the résumé is written); a small notice in the corner shows the running job ("Writing your résumé · 50% · View").
+- Entry points: "Target this role" / "Set as target" → questions job; "Generate gap plan" / "regenerate" → plan job; "Regenerate résumé" → résumé job.
 
 ## 7. Cross-cutting rules
 
 - Every AI action shows a cost estimate on the user's own API key before running.
-- Long AI jobs (strength analysis, role map build) show a waiting screen with steps, progress, ETA, cost and Cancel; the user can leave and the job keeps running.
+- Long AI jobs (strength analysis, role map build) show a full waiting screen with steps, progress, ETA, cost and Cancel; the user can leave and the job keeps running.
+- Short Advisor jobs run in the background with an inline progress card and a spinner on their tab (§6.4).
+- Evidence is detail: show it collapsed, expanded on demand.
 - Every claim or score must be traceable to a Fact and its source ref.
 - "No evidence" is distinct from a low score.
 - The model in use (e.g. `claude-sonnet-5`) is shown and configured under System configuration → AI & model.
