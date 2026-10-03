@@ -1,11 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import type {
-  Assessment,
-  AnalysisEstimate,
-  Evidence,
-  EvidencePage,
-} from "../api/types";
+import type { Assessment, Evidence, EvidencePage } from "../api/types";
 import { SkillRadar } from "../charts/SkillRadar";
 import {
   AutoGrid,
@@ -17,9 +12,11 @@ import {
   ProgressBar,
 } from "../components/ui";
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
-import { modelName, useShell } from "../shell/ShellContext";
-import { CostConfirm } from "./CostConfirm";
-import { messageOf, useAsync } from "./useAsync";
+import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import { EmptyRadar, getAnalysisSteps, RunProgress } from "./RunProgress";
+import { dayLabel } from "./time";
+import { useStartAnalysis } from "./useStartAnalysis";
+import { useAsync } from "./useAsync";
 
 /**
  * The strength report.
@@ -37,15 +34,16 @@ import { messageOf, useAsync } from "./useAsync";
  * never changes an earlier one's result. So the report reads only the evidence
  * and the analysis: no fit, role or bar from the role map, which reclusters
  * and rescores as the market moves. Comparing against a role's bar is the role
- * map's job, where "How you fit each dimension" already does it.
+ * map's job, where "How you fit each skill" already does it.
  *
  * An analysis reads the evidence as it stands, so it cannot start while a
  * source is still syncing or a résumé still parsing (ADR 0018); the running
  * bar says what it waits for, and the report reloads when a run finishes.
+ * While one runs, the page is its waiting screen (`RunProgress`) instead.
  */
 export function Strengths() {
   const { status, navigate } = useShell();
-  const { activity, refresh: refreshActivity, settled } = useActivity();
+  const { activity, settled } = useActivity();
   const assessment = useAsync<Assessment | null>(
     () => api.get("/assessments/latest"),
     [settled.analysis],
@@ -54,39 +52,8 @@ export function Strengths() {
     () => api.items<EvidencePage>("/evidence"),
     [],
   );
-  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const start = useStartAnalysis();
   const [selected, setSelected] = useState<string | undefined>(undefined);
-
-  async function askForEstimate() {
-    setBusy(true);
-    setError(null);
-    try {
-      setEstimate(
-        await api.get<AnalysisEstimate>("/assessments/cost-estimate"),
-      );
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirm() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post("/assessments");
-      setEstimate(null);
-    } catch (caught) {
-      setError(messageOf(caught));
-    } finally {
-      setBusy(false);
-      // Refused or started, the running bar should say why.
-      await refreshActivity();
-    }
-  }
 
   const processing = sourcesBusy(activity);
   const analysing = isBusy(activity?.analysis);
@@ -103,52 +70,67 @@ export function Strengths() {
   const activeKey = selected ?? leastCertain[0]?.key;
   const active = dimensions.find((d) => d.key === activeKey);
   const byId = new Map((evidence.data ?? []).map((item) => [item.id, item]));
+  useHeading(analysing ? "Analysing your strengths" : null);
+
+  // While an analysis runs, its waiting screen is the page.
+  if (analysing) {
+    return (
+      <RunProgress
+        label="Strength analysis progress"
+        heading="Scoring what your evidence shows"
+        subline={`Reading ${
+          evidence.data ? `all ${evidence.data.length} facts` : "every fact"
+        } from your sources. Usually takes 1–2 minutes.`}
+        startedAt={activity?.analysis?.started_at ?? null}
+        steps={getAnalysisSteps(evidence.data, modelName(status.credential))}
+        previewTitle="Your skill radar will appear here"
+        preview={<EmptyRadar axes={dimensions.length} />}
+        previewNote="It is drawn once every dimension is scored."
+        leaveCopy="The analysis keeps running if you leave this page. When it finishes, your role map starts building automatically."
+        back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
+        costCopy={`Charged to your own key on ${modelName(
+          status.credential,
+        )}, at the estimate you confirmed before it started.`}
+      />
+    );
+  }
 
   return (
     <section>
       <div
-        className="row-between"
-        style={{
-          alignItems: "center",
-          flexWrap: "wrap",
-          justifyContent: "flex-end",
-          marginBottom: 18,
-        }}
+        className="row report-toolbar"
+        style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
       >
-        <div className="row">
-          {assessment.data && (
-            <span className="muted" style={{ fontSize: 12.5 }}>
-              Profile v{assessment.data.profile_version} ·{" "}
-              {assessment.data.model_id} ·{" "}
-              {new Date(assessment.data.created_at).toLocaleDateString()}
-            </span>
-          )}
-          {assessment.data?.profile_confidence != null && (
-            <ProfileConfidence value={assessment.data.profile_confidence} />
-          )}
-          <Button
-            variant={assessment.data ? "secondary" : "primary"}
-            onClick={askForEstimate}
-            busy={busy}
-            disabled={processing || analysing}
-          >
-            {analysing
-              ? "Analysing…"
-              : assessment.data
-                ? "Re-analyse"
-                : "Analyse with AI"}
-          </Button>
-        </div>
+        <Button
+          variant={assessment.data ? "secondary" : "primary"}
+          onClick={() => void start.ask()}
+          busy={start.busy}
+          disabled={processing}
+        >
+          {assessment.data ? "Re-analyse" : "Analyse with AI"}
+        </Button>
+        {assessment.data && (
+          <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
+            {analysedLine(
+              assessment.data.created_at,
+              assessment.data.model_id,
+              evidence.data?.length ?? null,
+            )}
+          </span>
+        )}
+        {assessment.data?.profile_confidence != null && (
+          <ProfileConfidence value={assessment.data.profile_confidence} />
+        )}
       </div>
 
-      <ErrorNote error={error} />
-      {processing && !analysing && (
+      <ErrorNote error={start.error} />
+      {processing && (
         <p role="status" className="subcopy" style={{ margin: "8px 0" }}>
           Waiting for your sources to finish syncing and parsing — the analysis
           reads every fact, so it starts once they are in.
         </p>
       )}
-      {lastRunFailed && !analysing && (
+      {lastRunFailed && (
         <div role="alert" className="note-warning" style={{ margin: "8px 0" }}>
           <span aria-hidden="true">⚠</span> The last analysis did not finish:{" "}
           {lastRun?.error?.message ?? "it stopped before finishing"}.
@@ -162,7 +144,7 @@ export function Strengths() {
           )}
         </div>
       )}
-      {assessment.data?.is_out_of_date && !analysing && (
+      {assessment.data?.is_out_of_date && (
         <p role="status" className="note-warning" style={{ margin: "8px 0" }}>
           {/* Never colour alone. */}
           <span aria-hidden="true">⚠</span> Out of date: your evidence has
@@ -170,30 +152,7 @@ export function Strengths() {
           Re-analyse to catch up.
         </p>
       )}
-      {estimate && (
-        <CostConfirm
-          busy={busy}
-          onConfirm={confirm}
-          onCancel={() => setEstimate(null)}
-        >
-          This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-          {estimate.model_id}, charged to your own provider: $
-          {estimate.analysis_cost_usd} for the analysis, at most $
-          {estimate.role_map_cost_usd} for the role map built after it
-          {estimate.max_roles > 0
-            ? `, up to ${estimate.max_roles} roles`
-            : ", which has no roles to name yet"}
-          , and at most ${estimate.fits_cost_usd} for scoring your fit against
-          them.
-          {estimate.rate_is_published === false && (
-            <>
-              {" "}
-              We have no published price for that model, so this is a
-              deliberately high guess.
-            </>
-          )}
-        </CostConfirm>
-      )}
+      {start.confirmation}
 
       {assessment.loading ? (
         <Loading what="your analysis" />
@@ -382,8 +341,10 @@ function factCount(count: number): string {
 function ProfileConfidence({ value }: { value: number }) {
   const percent = Math.round(value * 100);
   return (
-    <span className="row" style={{ gap: 8, alignItems: "center" }}>
-      <span className="eyebrow">Profile confidence</span>
+    <span className="confidence-pill">
+      <span className="eyebrow" style={{ fontSize: 11.5 }}>
+        Profile confidence
+      </span>
       <span
         className="progress"
         style={{ width: 140, height: 10 }}
@@ -394,11 +355,30 @@ function ProfileConfidence({ value }: { value: number }) {
         aria-valuenow={percent}
       >
         <span
-          className="progress-fill"
+          className="progress-fill progress-fill-positive"
           style={{ display: "block", width: `${percent}%`, height: "100%" }}
         />
       </span>
-      <strong>{percent}%</strong>
+      <span style={{ fontFamily: "var(--font-heading)", fontSize: 20 }}>
+        {percent}%
+      </span>
+      <span style={{ fontSize: 12.5, color: "var(--color-neutral-800)" }}>
+        how well the evidence backs these scores
+      </span>
     </span>
   );
+}
+
+/**
+ * "Analysed 26 Sep 2026 on claude-sonnet-5 · 158 facts read". The fact count
+ * is left out until the evidence has loaded. Pure.
+ */
+export function analysedLine(
+  createdAt: string,
+  modelId: string,
+  factsRead: number | null,
+): string {
+  const parts = [`Analysed ${dayLabel(createdAt)} on ${modelId}`];
+  if (factsRead !== null) parts.push(`${factCount(factsRead)} read`);
+  return parts.join(" · ");
 }

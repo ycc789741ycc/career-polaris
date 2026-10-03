@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, RunStatus } from "../api/types";
-import { ActivityBar } from "./ActivityBar";
+import { ActivityBar, withoutOwnRuns } from "./ActivityBar";
 import {
   ActivityProvider,
   describe as describeWork,
@@ -54,7 +54,7 @@ function renderShell() {
   render(
     <ToastProvider>
       <ActivityProvider>
-        <ActivityBar />
+        <ActivityBar screen="sources" />
         <Settled />
       </ActivityProvider>
     </ToastProvider>,
@@ -162,5 +162,41 @@ describe("the running bar", () => {
     expect(
       screen.queryByRole("status", { name: "Running now" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("the running bar on a screen with its own waiting screen", () => {
+  const activity = {
+    syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
+    parsing: [],
+    analysis: {
+      status: "running" as const,
+      started_at: "2026-09-28T09:00:00Z",
+      finished_at: null,
+      error: null,
+    },
+    role_map: {
+      status: "waiting" as const,
+      waiting_for: "analysis" as const,
+      started_at: "2026-09-28T09:00:00Z",
+      finished_at: null,
+      error: null,
+    },
+  };
+
+  it("leaves the analysis and the build to Strengths and the role map", () => {
+    for (const screen of ["strengths", "roles"] as const) {
+      expect(withoutOwnRuns(activity, screen)).toEqual({
+        ...activity,
+        analysis: null,
+        role_map: null,
+      });
+    }
+  });
+
+  it("reports everything elsewhere", () => {
+    expect(withoutOwnRuns(activity, "sources")).toBe(activity);
+    expect(withoutOwnRuns(activity, "advisor")).toBe(activity);
+    expect(withoutOwnRuns(null, "roles")).toBeNull();
   });
 });

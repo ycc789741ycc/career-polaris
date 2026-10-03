@@ -163,6 +163,7 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    setHeading: vi.fn(),
   };
   render(
     <ShellContext.Provider value={shell}>

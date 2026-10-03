@@ -7,11 +7,12 @@ user measures up into a ``TargetSnapshot``, which the plan or résumé stores.
 
 The role map picks a role and an opening. A posting of the user's own is
 Target's (ADR 0033): a job the role map does not show, brought to the Advisor
-by pasting its JD or uploading it as a file, which the worker reads before
-anything else. It is stored here, read and scored on the user's key when
-it is added, and rescored only when they ask; no build reads it. Its fit is
-scored with the role map's fit kit, so the fit rules stay in one place
-(ADR 0028). Resolving a Target spends nothing.
+by uploading its JD as a file, which the worker reads before anything else, or
+by filling the role in by hand (ADR 0034). It is stored here and adding it
+spends nothing: it is read and scored on the user's key when they set it as
+the Advisor's target, and again only when its fit is out of date. No build
+reads it. Its fit is scored with the role map's fit kit, so the fit rules stay
+in one place (ADR 0028). Resolving a Target spends nothing.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from advisor.market import PostingView
 from advisor.rolemap import (
     FitView,
     PostingFitView,
+    RequirementsReadView,
     RequirementView,
     RoleMapService,
     RoleView,
@@ -55,8 +57,6 @@ from advisor.target.domain import (
     TargetSnapshot,
     TargetUnitOfWork,
     UncoveredGap,
-    parse_own_posting,
-    parse_title_and_company,
 )
 from kernel.clock import utcnow
 from kernel.documents import ACCEPTED_TYPES, read_document_text
@@ -91,14 +91,18 @@ class TargetPreview:
 @dataclass(frozen=True, slots=True)
 class OwnPostingView:
     """A posting the user brought themselves, to aim the Advisor at (Phase 8):
-    the JD they pasted, where reading and scoring it stands, and its fit."""
+    how it came, where reading and scoring it stands, and its fit."""
 
     private_job_posting_id: uuid.UUID
     title: str
     company_name: str
-    # `pasted`, or `uploaded` with the file's name.
+    # `uploaded` with the file's name, `filled_in`, or `pasted` (no longer
+    # taken, ADR 0034).
     source: str
     filename: str | None
+    # Filled in with nothing listed: what it asks for is estimated.
+    has_estimated_requirements: bool
+    created_at: datetime | None
     # The latest run: `running`, `ready` or `failed`; none before any.
     status: str | None
     error_code: str | None
@@ -167,7 +171,7 @@ class TargetService:
         if fit is None:
             raise TargetUnusableError(
                 f"{posting.title} has not been scored against your profile yet; "
-                "it is scored when you add it",
+                "it is scored when you set it as your target",
                 private_job_posting_id=ref.private_job_posting_id,
             )
         return await self._freeze(
@@ -191,106 +195,45 @@ class TargetService:
 
     # -- postings of the user's own (Phase 8, ADR 0033) ----------------------
 
-    async def estimate_own_posting(
-        self,
-        owner_id: uuid.UUID,
-        *,
-        title: str,
-        company_name: str | None,
-        job_description: str,
-    ) -> dict[str, Any]:
-        """What adding this posting will cost, before it is added: reading its
-        JD's requirements, then scoring the fit. Nothing else on it calls the
-        AI."""
-        name, company, description = _own_posting(title, company_name, job_description)
-        extract = await self._rolemap.estimate_requirements(
-            owner_id, title=name, company_name=company, job_description=description
-        )
-        fit = await self._rolemap.estimate_projection(owner_id)
-        return {
-            "cost_usd": str(extract.cost_usd + fit.cost_usd),
-            "model_id": extract.model_id,
-            "rate_is_published": extract.rate_is_published and fit.rate_is_published,
-        }
-
-    async def estimate_upload(
-        self, owner_id: uuid.UUID, *, title: str, company_name: str | None
-    ) -> dict[str, Any]:
-        """What adding a posting from a file will cost, before it is read: a
-        ceiling, priced as if the file held the longest JD there may be."""
-        name, company = _title_and_company(title, company_name)
-        extract = await self._rolemap.estimate_requirements(
-            owner_id, title=name, company_name=company, job_description="x" * MAX_JOB_DESCRIPTION
-        )
-        fit = await self._rolemap.estimate_projection(owner_id)
-        return {
-            "cost_usd": str(extract.cost_usd + fit.cost_usd),
-            "model_id": extract.model_id,
-            "rate_is_published": extract.rate_is_published and fit.rate_is_published,
-        }
-
-    async def estimate_rescore(
-        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
-    ) -> dict[str, Any]:
-        """What rescoring a posting of the user's own costs: the fit only, since
-        its requirements are kept."""
-        await self._posting(owner_id, private_job_posting_id)
-        fit = await self._rolemap.estimate_projection(owner_id)
-        return {
-            "cost_usd": str(fit.cost_usd),
-            "model_id": fit.model_id,
-            "rate_is_published": fit.rate_is_published,
-        }
-
     async def add_own_posting(
         self,
         owner_id: uuid.UUID,
         *,
         title: str,
         company_name: str | None,
-        job_description: str,
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        """Store a posting the user brought, privately, and record the run that
-        reads and scores it, at the cost they confirmed. Returns the posting
-        and the run for the caller to queue. Its fit needs the user's
-        strengths, so an analysis comes first."""
+        requirements: tuple[str, ...],
+    ) -> OwnPostingView:
+        """Store a role the user filled in by hand, privately: a title, and
+        what it asks for if they listed it. Spends nothing and reads nothing;
+        that waits until it is set as the target (ADR 0034)."""
         try:
-            posting = PrivateJobPosting.added(
+            posting = PrivateJobPosting.filled_in(
                 owner_id=owner_id,
                 title=title,
                 company_name=company_name,
-                job_description=job_description,
+                requirements=requirements,
             )
         except OwnPostingError as exc:
             raise ValidationError(str(exc)) from exc
-        await self._require_strengths(owner_id)
         async with self._uow.for_owner(owner_id) as mine:
             await mine.postings.create(posting)
-            run = await mine.evaluations.create(
-                PostingEvaluation.requested(
-                    owner_id=owner_id,
-                    private_job_posting_id=posting.id,
-                    reads_requirements=True,
-                    at=utcnow(),
-                )
-            )
         log.info("target.own_posting_added", private_job_posting_id=str(posting.id))
-        return await self.own_posting(owner_id, posting.id), run.id
+        return await self.own_posting(owner_id, posting.id)
 
     async def upload_own_posting(
         self,
         owner_id: uuid.UUID,
         *,
-        title: str,
+        title: str | None,
         company_name: str | None,
         filename: str,
         content_type: str,
         content: bytes,
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        """Store a JD the user uploaded as a file, privately, and record the
-        run that reads it, then reads and scores its requirements, at the cost
-        they confirmed. The file is only stored here: reading it is the
-        worker's, never a request handler's."""
+    ) -> OwnPostingView:
+        """Store a JD the user uploaded as a file, privately. Without a title
+        it is named after its file until it is read. Spends nothing: the file
+        is only stored here, and read by the worker when the posting is set as
+        the target (ADR 0034), never by a request handler."""
         if len(content) > self._upload_max_bytes:
             raise ValidationError(
                 "this file is larger than we accept", limit_bytes=self._upload_max_bytes
@@ -315,33 +258,67 @@ class TargetService:
             )
         except OwnPostingError as exc:
             raise ValidationError(str(exc)) from exc
-        await self._require_strengths(owner_id)
         self._store.put(key, content, content_type)
         async with self._uow.for_owner(owner_id) as mine:
             await mine.postings.create(posting)
-            run = await mine.evaluations.create(
-                PostingEvaluation.requested(
-                    owner_id=owner_id,
-                    private_job_posting_id=posting.id,
-                    reads_requirements=True,
-                    at=utcnow(),
-                )
-            )
         log.info("target.own_posting_uploaded", private_job_posting_id=str(posting.id))
-        return await self.own_posting(owner_id, posting.id), run.id
+        return await self.own_posting(owner_id, posting.id)
 
-    async def rescore_own_posting(
+    async def estimate_target(
+        self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
+    ) -> dict[str, Any]:
+        """What setting a posting of the user's own as the target costs:
+        nothing when its fit is current; otherwise reading what it asks for,
+        if that has not been read yet, and scoring the fit. An unread file is
+        priced as if it held the longest JD there may be: a ceiling."""
+        posting = await self._posting(owner_id, private_job_posting_id)
+        if _is_fit_current(await self.own_posting(owner_id, private_job_posting_id)):
+            return {"cost_usd": "0", "model_id": None, "rate_is_published": True}
+        async with self._uow.for_owner(owner_id) as mine:
+            has_requirements = (
+                await mine.requirements.get_count(
+                    PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
+                )
+                > 0
+            )
+        fit = await self._rolemap.estimate_projection(owner_id)
+        if has_requirements:
+            return {
+                "cost_usd": str(fit.cost_usd),
+                "model_id": fit.model_id,
+                "rate_is_published": fit.rate_is_published,
+            }
+        if posting.has_estimated_requirements:
+            read = await self._rolemap.estimate_inferred_requirements(
+                owner_id, title=posting.title, company_name=posting.company_name
+            )
+        else:
+            read = await self._rolemap.estimate_requirements(
+                owner_id,
+                title=posting.title,
+                company_name=posting.company_name,
+                job_description=posting.job_description or "x" * MAX_JOB_DESCRIPTION,
+            )
+        return {
+            "cost_usd": str(read.cost_usd + fit.cost_usd),
+            "model_id": read.model_id,
+            "rate_is_published": read.rate_is_published and fit.rate_is_published,
+        }
+
+    async def set_as_target(
         self, owner_id: uuid.UUID, private_job_posting_id: uuid.UUID
     ) -> tuple[OwnPostingView, uuid.UUID | None]:
-        """Score a posting of the user's own again, against their latest
-        strengths. Only when they ask: never after an analysis by itself. A run
-        still going is returned as it is, with nothing to queue."""
+        """Make a posting of the user's own ready to aim the Advisor at, at the
+        cost they confirmed: record the run that reads what it asks for, if
+        that has not been read, and scores the fit against their latest
+        strengths. Returns the run for the caller to queue, or none when there
+        is nothing to do: its fit is current, or a run is already going."""
         await self._posting(owner_id, private_job_posting_id)
+        view = await self.own_posting(owner_id, private_job_posting_id)
+        if view.status == "running" or _is_fit_current(view):
+            return view, None
         await self._require_strengths(owner_id)
         async with self._uow.for_owner(owner_id) as mine:
-            latest = await _latest_evaluation(mine, private_job_posting_id)
-            if latest is not None and latest.is_running:
-                return await self.own_posting(owner_id, private_job_posting_id), None
             requirements = await mine.requirements.get_count(
                 PostingRequirementFilter(private_job_posting_id=private_job_posting_id)
             )
@@ -349,18 +326,19 @@ class TargetService:
                 PostingEvaluation.requested(
                     owner_id=owner_id,
                     private_job_posting_id=private_job_posting_id,
-                    # Requirements are read once; only a failed first read
-                    # reads them again.
+                    # Requirements are read once; a rescore keeps them.
                     reads_requirements=requirements == 0,
                     at=utcnow(),
                 )
             )
+        log.info("target.own_posting_targeted", private_job_posting_id=str(private_job_posting_id))
         return await self.own_posting(owner_id, private_job_posting_id), run.id
 
     async def evaluate_own_posting(self, owner_id: uuid.UUID, evaluation_id: uuid.UUID) -> None:
-        """The worker job for one recorded run: read the JD's requirements when
-        the run asks for it, score them against the user's strengths, and work
-        out the posting's fit from that locally.
+        """The worker job for one recorded run: read an uploaded file first,
+        read what the posting asks for when the run asks for it, score that
+        against the user's strengths, and work out the posting's fit from it
+        locally.
 
         An expected failure is recorded on the run and not raised: a retry
         would spend the key again. Anything else is recorded as ``internal``
@@ -374,7 +352,7 @@ class TargetService:
             return
         try:
             posting = await self._posting(owner_id, run.private_job_posting_id)
-            if not posting.is_read:
+            if posting.is_waiting_for_its_file:
                 posting = await self._read_file(owner_id, posting)
             if run.reads_requirements:
                 await self._extract_requirements(owner_id, posting)
@@ -516,15 +494,27 @@ class TargetService:
         return strengths
 
     async def _extract_requirements(self, owner_id: uuid.UUID, posting: PrivateJobPosting) -> None:
-        """What the JD asks for, on the user's key: one call. Replaces what an
-        earlier, failed run may have left."""
-        read = await self._rolemap.extract_requirements(
-            owner_id,
-            title=posting.title,
-            company_name=posting.company_name,
-            job_description=posting.job_description or "",
-        )
+        """What the posting asks for, on the user's key: one call, reading its
+        JD, or estimating from its title when the user listed nothing. An
+        upload named after its file takes the name of the job it describes.
+        Replaces what an earlier, failed run may have left."""
+        found: RequirementsReadView
+        if posting.has_estimated_requirements:
+            found = await self._rolemap.infer_requirements(
+                owner_id, title=posting.title, company_name=posting.company_name
+            )
+        else:
+            found = await self._rolemap.extract_requirements(
+                owner_id,
+                title=posting.title,
+                company_name=posting.company_name,
+                job_description=posting.job_description or "",
+            )
+        read = found.requirements
         async with self._uow.for_owner(owner_id) as mine:
+            if posting.has_placeholder_title:
+                posting.update_title(found.name)
+                await mine.postings.update(posting)
             for old in await mine.requirements.get_list(
                 PostingRequirementFilter(private_job_posting_id=posting.id)
             ):
@@ -716,22 +706,10 @@ def _uuid(value: str, ref: TargetRef) -> uuid.UUID:
         raise NotFoundError("target not found", **ref.to_dict()) from exc
 
 
-def _title_and_company(title: str, company_name: str | None) -> tuple[str, str | None]:
-    try:
-        return parse_title_and_company(title=title, company_name=company_name)
-    except OwnPostingError as exc:
-        raise ValidationError(str(exc)) from exc
-
-
-def _own_posting(
-    title: str, company_name: str | None, job_description: str
-) -> tuple[str, str | None, str]:
-    try:
-        return parse_own_posting(
-            title=title, company_name=company_name, job_description=job_description
-        )
-    except OwnPostingError as exc:
-        raise ValidationError(str(exc)) from exc
+def _is_fit_current(posting: OwnPostingView) -> bool:
+    """Whether a posting's fit can be planned against as it is: scored, and
+    against the user's latest strengths. Pure."""
+    return posting.fit is not None and not posting.is_stale
 
 
 async def _latest_evaluation(
@@ -774,6 +752,8 @@ def _own_posting_view(
         company_name=posting.company_name or "",
         source=str(posting.source),
         filename=posting.filename,
+        has_estimated_requirements=posting.has_estimated_requirements,
+        created_at=posting.created_at,
         status=str(run.status) if run is not None else None,
         error_code=run.error_code if run is not None else None,
         error_message=run.error_message if run is not None else None,

@@ -37,10 +37,13 @@ class PrivateJobPosting(Base, OwnedMixin):
 
     __tablename__ = "private_job_posting"
     __table_args__ = (
-        CheckConstraint("source IN ('pasted', 'uploaded')", name="source"),
-        # Only an uploaded file waits for its JD to be read.
+        CheckConstraint("source IN ('pasted', 'uploaded', 'filled_in')", name="source"),
+        # Only an uploaded file waits for its JD to be read, and only a role
+        # filled in by hand with nothing listed has none at all (ADR 0034).
         CheckConstraint(
-            "job_description IS NOT NULL OR (source = 'uploaded' AND storage_key IS NOT NULL)",
+            "job_description IS NOT NULL"
+            " OR (source = 'uploaded' AND storage_key IS NOT NULL)"
+            " OR (source = 'filled_in' AND has_estimated_requirements)",
             name="job_description",
         ),
         Index("ix_private_job_posting_owner_created", "owner_id", "created_at"),
@@ -57,6 +60,10 @@ class PrivateJobPosting(Base, OwnedMixin):
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # The uploaded file in object storage, until it has been read.
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Named after its file until the file is read (ADR 0034).
+    has_placeholder_title: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    # Filled in with nothing listed: what it asks for is estimated (ADR 0034).
+    has_estimated_requirements: Mapped[bool] = mapped_column(nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

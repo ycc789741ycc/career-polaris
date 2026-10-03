@@ -10,3 +10,25 @@ export function ago(iso: string, now: Date = new Date()): string {
   if (days < 14) return days === 1 ? "yesterday" : `${days} days ago`;
   return new Date(iso).toLocaleDateString();
 }
+
+/** "26 Sep 2026", the prototype's date form. Pure. */
+export function dayLabel(iso: string): string {
+  const day = new Date(iso);
+  return `${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}`;
+}
+
+// Spelled out rather than left to the locale, which writes September "Sept".
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];

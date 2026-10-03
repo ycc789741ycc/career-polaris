@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>03 Role map — building</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&amp;family=Figtree:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:#201e1d}
+a{color:#8c491a}a:hover{color:#643312}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1100px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<dc-import name="Sidebar" current="roles" hint-size="246px,100%"></dc-import>
+<main style="flex-grow: 1; min-width: 0">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
+<div>
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8c491a; font-weight: 700; margin-bottom: 7px">Report</div>
+<h1 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 38px; line-height: 1.1">Building your role map</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #e1eecc; color: #3d472b"><span style="width: 8px; height: 8px; border-radius: 999px; background: currentColor"></span>claude-sonnet-5</span>
+<button type="button" aria-label="Account maya.chen@example.com" style="width: 44px; height: 44px; border: 0; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-family: Caprasimo, system-ui, sans-serif; font-size: 14px; cursor: pointer">MC</button>
+</div>
+</header>
+
+<div style="padding: 4px 34px 64px; display: flex; flex-direction: column; gap: 20px">
+<section aria-label="Role map progress" style="background: #ebddc5; border-radius: 28px; padding: 26px 28px">
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 20px">
+<div>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #8c491a">Analysis running</div>
+<h2 style="margin: 6px 0 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 26px">Finding the roles that fit you best</h2>
+<p style="font-size: 14px; color: #474238; margin: 6px 0 0">Started automatically after your strength analysis. Usually takes 2–4 minutes.</p>
+</div>
+<div style="text-align: right; flex: 0 0 auto">
+<div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 34px; line-height: 1">60%</div>
+<div style="font-size: 12.5px; color: #645c50; margin-top: 4px">about 1 min left</div>
+</div>
+</div>
+<div role="progressbar" aria-label="Role map progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="60" style="height: 12px; border-radius: 999px; background: #dcd3c4; overflow: hidden; margin: 18px 0 20px"><div style="width: 60%; height: 100%; border-radius: 999px; background: #c67139"></div></div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; align-items: start">
+<ol aria-label="Steps" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px">
+<li style="display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; ">
+<span style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 999px; background: #56633f; color: #f9f4ed; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14.5px; font-weight: 700; color: #201e1d">Read your strength analysis</div><div style="font-size: 13px; color: #474238; margin-top: 3px">8 dimensions · profile confidence 72%</div></div>
+<span style="font-size: 12px; font-weight: 700; color: #3d472b">Done</span>
+</li>
+<li style="display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; ">
+<span style="width: 28px; height: 28px; flex: 0 0 auto; border-radius: 999px; background: #56633f; color: #f9f4ed; display: inline-flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14.5px; font-weight: 700; color: #201e1d">Searched open postings in your locations</div><div style="font-size: 13px; color: #474238; margin-top: 3px">Berlin and Remote EU · 1,284 postings found</div></div>
+<span style="font-size: 12px; font-weight: 700; color: #3d472b">Done</span>
+</li>
+<li style="display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; background: #f5ead8;">
+<span style="width: 28px; height: 28px; flex: 0 0 auto; box-sizing: border-box; border-radius: 999px; border: 3px solid #c67139; border-top-color: #f5ead8; display: inline-block"></span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14.5px; font-weight: 700; color: #201e1d">Scoring fit against your strengths</div><div style="font-size: 13px; color: #474238; margin-top: 3px">640 of 1,284 postings scored</div></div>
+<span style="font-size: 12px; font-weight: 700; color: #8c491a">Running</span>
+</li>
+<li style="display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; ">
+<span style="width: 28px; height: 28px; flex: 0 0 auto; box-sizing: border-box; border-radius: 999px; border: 2px dashed rgba(32,30,29,0.3); display: inline-block"></span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14.5px; font-weight: 700; color: #645c50">Picking your 10 best-fit roles</div><div style="font-size: 13px; color: #474238; margin-top: 3px">Grouped from the highest-fit postings</div></div>
+<span style="font-size: 12px; font-weight: 700; color: #645c50">Waiting</span>
+</li>
+<li style="display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; ">
+<span style="width: 28px; height: 28px; flex: 0 0 auto; box-sizing: border-box; border-radius: 999px; border: 2px dashed rgba(32,30,29,0.3); display: inline-block"></span>
+<div style="flex-grow: 1; min-width: 0"><div style="font-size: 14.5px; font-weight: 700; color: #645c50">Drawing the map</div><div style="font-size: 13px; color: #474238; margin-top: 3px">Salary, hiring bar and fit for each role</div></div>
+<span style="font-size: 12px; font-weight: 700; color: #645c50">Waiting</span>
+</li>
+</ol>
+<div style="background: #f5ead8; border-radius: 20px; padding: 18px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Your map will appear here</div>
+<svg viewBox="0 0 540 300" width="100%" role="img" aria-label="Empty map, waiting for scored roles" style="display: block; margin-top: 8px">
+<line x1="40" x2="530" y1="280" y2="280" stroke="rgba(32,30,29,0.3)"></line><line x1="40" x2="40" y1="10" y2="280" stroke="rgba(32,30,29,0.3)"></line>
+<circle cx="190" cy="240" r="30" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle><circle cx="400" cy="90" r="28" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle><circle cx="310" cy="145" r="24" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle><circle cx="250" cy="190" r="20" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle><circle cx="360" cy="175" r="16" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle><circle cx="480" cy="40" r="14" fill="rgba(32,30,29,0.06)" stroke="rgba(32,30,29,0.18)" stroke-width="1.5" stroke-dasharray="4 4"></circle>
+</svg>
+<p style="font-size: 12.5px; color: #474238; margin: 6px 0 0">Bubbles fill in as roles are scored.</p>
+</div>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start">
+<div style="background: #ebddc5; border-radius: 28px; padding: 22px 24px">
+<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 19px">You don't need to wait here</h3>
+<p style="font-size: 13.5px; line-height: 1.55; color: #474238; margin: 6px 0 14px">The search keeps running if you leave this page. We'll show a notice in the sidebar when your map is ready.</p>
+<a href="Strengths.dc.html" style="display: inline-block; padding: 11px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); color: #201e1d; font: 600 14px Figtree, sans-serif; text-decoration: none">Back to Strengths</a>
+</div>
+<div style="background: #ebddc5; border-radius: 28px; padding: 22px 24px">
+<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 19px">What this run costs</h3>
+<p style="font-size: 13.5px; line-height: 1.55; color: #474238; margin: 6px 0 14px">About 40 calls on your key with claude-sonnet-5. Searching only Berlin and Remote EU keeps this down.</p>
+<div style="display: flex; align-items: center; gap: 14px">
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 14px Figtree, sans-serif; cursor: pointer">Cancel run</button>
+<a href="Roles.dc.html" style="font-size: 13px; font-weight: 600">Preview the finished map</a>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

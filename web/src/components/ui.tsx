@@ -25,6 +25,7 @@ export function Button({
   disabled = false,
   block = false,
   type = "button",
+  "aria-label": ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -33,6 +34,8 @@ export function Button({
   disabled?: boolean;
   block?: boolean;
   type?: "button" | "submit";
+  /** When the visible text alone is ambiguous, e.g. one Remove per row. */
+  "aria-label"?: string | undefined;
 }) {
   const className = [
     "btn",
@@ -47,6 +50,7 @@ export function Button({
       className={className}
       onClick={onClick}
       disabled={disabled || busy}
+      aria-label={ariaLabel}
       aria-busy={busy || undefined}
     >
       {busy ? "Working…" : children}
@@ -166,7 +170,7 @@ export function StatTile({
 }: {
   label: string;
   value: string;
-  note?: string;
+  note?: string | undefined;
 }) {
   return (
     <div className="inset" style={{ padding: "12px 14px" }}>
@@ -321,6 +325,45 @@ export function YouVsBar({
     >
       <div className="you-vs-bar-fill" style={{ width: `${clamp(you)}%` }} />
       <div className="you-vs-bar-mark" style={{ left: `${clamp(bar)}%` }} />
+    </div>
+  );
+}
+
+/**
+ * One skill of a role's fit, as the role map's selected-role card draws it:
+ * your score as the fill — terracotta below what the role asks, green once it
+ * meets it — a hatched shortfall up to the target, and a tick at the target.
+ */
+export function SkillFitBar({
+  you,
+  asks,
+  label,
+}: {
+  you: number;
+  asks: number;
+  label: string;
+}) {
+  const clamp = (value: number) => Math.max(0, Math.min(100, value));
+  const mine = clamp(you);
+  const target = clamp(asks);
+  const clears = you >= asks;
+  return (
+    <div
+      className="skill-fit-bar"
+      role="img"
+      aria-label={`${label}: you ${you}, role asks ${asks}`}
+    >
+      <div
+        className={`skill-fit-bar-fill ${clears ? "skill-fit-bar-clear" : ""}`}
+        style={{ width: `${mine}%` }}
+      />
+      {!clears && (
+        <div
+          className="skill-fit-bar-shortfall"
+          style={{ left: `${mine}%`, width: `${target - mine}%` }}
+        />
+      )}
+      <div className="skill-fit-bar-target" style={{ left: `${target}%` }} />
     </div>
   );
 }

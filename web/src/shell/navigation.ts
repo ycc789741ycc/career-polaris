@@ -14,8 +14,11 @@
 
 export type Screen = "sources" | "strengths" | "roles" | "advisor" | "model";
 
-/** The Advisor's tabs: first Fill the gap, then either the plan or the résumé. */
-export type AdvisorTab = "gaps" | "plan" | "resume";
+/**
+ * The Advisor's tabs: first Fill the gap, then either the plan or the résumé;
+ * and "own", where the user brings a role of their own to aim at (ADR 0034).
+ */
+export type AdvisorTab = "gaps" | "plan" | "resume" | "own";
 
 /** What the role map has selected: a role, and optionally one opening in it. */
 export interface RoleFocus {
@@ -110,7 +113,9 @@ export function placeFromHash(hash: string): Place {
     ? (id as Screen)
     : DEFAULT_SCREEN;
   const tab: AdvisorTab =
-    tabPart === "plan" || tabPart === "resume" ? tabPart : DEFAULT_TAB;
+    tabPart === "plan" || tabPart === "resume" || tabPart === "own"
+      ? tabPart
+      : DEFAULT_TAB;
   const params = new URLSearchParams(query);
   const role = params.get("role");
   const opening = params.get("opening");

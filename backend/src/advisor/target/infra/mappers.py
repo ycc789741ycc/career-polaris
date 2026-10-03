@@ -25,6 +25,8 @@ def posting(row: models.PrivateJobPosting) -> PrivateJobPosting:
         filename=row.filename,
         content_type=row.content_type,
         storage_key=row.storage_key,
+        has_placeholder_title=row.has_placeholder_title,
+        has_estimated_requirements=row.has_estimated_requirements,
         created_at=row.created_at,
     )
 
@@ -43,6 +45,8 @@ def apply_posting(row: models.PrivateJobPosting, entity: PrivateJobPosting) -> N
     row.filename = entity.filename
     row.content_type = entity.content_type
     row.storage_key = entity.storage_key
+    row.has_placeholder_title = entity.has_placeholder_title
+    row.has_estimated_requirements = entity.has_estimated_requirements
 
 
 def evaluation(row: models.PostingEvaluation) -> PostingEvaluation:

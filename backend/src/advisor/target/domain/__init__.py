@@ -2,6 +2,8 @@ from advisor.target.domain.constants import (
     MAX_COMPANY_NAME,
     MAX_FILENAME,
     MAX_JOB_DESCRIPTION,
+    MAX_REQUIREMENT_LINE,
+    MAX_REQUIREMENT_LINES,
     MAX_TITLE,
 )
 from advisor.target.domain.own_posting import (
@@ -10,7 +12,8 @@ from advisor.target.domain.own_posting import (
     PostingEvaluationStatus,
     PostingSource,
     PrivateJobPosting,
-    parse_own_posting,
+    get_placeholder_title,
+    parse_requirement_lines,
     parse_title_and_company,
 )
 from advisor.target.domain.posting_fit import (
@@ -49,6 +52,8 @@ __all__ = [
     "MAX_COMPANY_NAME",
     "MAX_FILENAME",
     "MAX_JOB_DESCRIPTION",
+    "MAX_REQUIREMENT_LINE",
+    "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
     "DimensionGap",
     "OwnPostingError",
@@ -80,6 +85,7 @@ __all__ = [
     "UncoveredGap",
     "gap_key_for_dimension",
     "gap_key_for_uncovered",
-    "parse_own_posting",
+    "get_placeholder_title",
+    "parse_requirement_lines",
     "parse_title_and_company",
 ]

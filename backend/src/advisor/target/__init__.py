@@ -10,7 +10,13 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.target import jobs
-from advisor.target.domain import MAX_COMPANY_NAME, MAX_JOB_DESCRIPTION, MAX_TITLE
+from advisor.target.domain import (
+    MAX_COMPANY_NAME,
+    MAX_JOB_DESCRIPTION,
+    MAX_REQUIREMENT_LINE,
+    MAX_REQUIREMENT_LINES,
+    MAX_TITLE,
+)
 from advisor.target.factory import create_target_service
 from advisor.target.service import (
     DimensionGap,
@@ -27,6 +33,8 @@ from advisor.target.service import (
 __all__ = [
     "MAX_COMPANY_NAME",
     "MAX_JOB_DESCRIPTION",
+    "MAX_REQUIREMENT_LINE",
+    "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
     "DimensionGap",
     "OwnPostingView",

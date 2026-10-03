@@ -81,7 +81,7 @@ describe("screen navigation", () => {
 
 describe("the Advisor's tabs", () => {
   it("reads each tab back from the hash it wrote", () => {
-    for (const tab of ["gaps", "plan", "resume"] as const) {
+    for (const tab of ["gaps", "plan", "resume", "own"] as const) {
       expect(placeFromHash(hashFor({ screen: "advisor", tab })).tab).toBe(tab);
     }
   });

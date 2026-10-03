@@ -166,6 +166,7 @@ function renderPlan(
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    setHeading: vi.fn(),
     ...overrides,
   };
   render(

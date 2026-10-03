@@ -579,7 +579,23 @@ async def test_a_jds_requirements_are_read_weightiest_first_and_stored_nowhere()
 
     assert gateway.tasks == ["rolemap.extract"]
     assert "Own the ledger" in gateway.shown[0]["postings"]
-    assert [(r.statement, r.weight) for r in read] == [("skill 0.9", 0.9), ("skill 0.4", 0.4)]
+    assert [(r.statement, r.weight) for r in read.requirements] == [
+        ("skill 0.9", 0.9),
+        ("skill 0.4", 0.4),
+    ]
+    assert uow.store.roles == {} and uow.store.requirements == {}
+
+
+async def test_a_jobs_requirements_are_estimated_from_its_title_alone() -> None:
+    uow = FakeRoleMapUnitOfWork()
+    gateway = OwnPostingGateway()
+    rolemap = _service(uow, gateway=gateway)
+
+    read = await rolemap.infer_requirements(OWNER, title="Platform Lead", company_name=None)
+
+    assert gateway.tasks == ["rolemap.extract"]
+    assert gateway.shown[0] == {"job": "Platform Lead — company not stated"}
+    assert [r.statement for r in read.requirements] == ["skill 0.9", "skill 0.4"]
     assert uow.store.roles == {} and uow.store.requirements == {}
 
 
@@ -592,13 +608,13 @@ async def test_projecting_requirements_keeps_only_the_users_dimensions() -> None
     )
 
     projection = await rolemap.project_requirements(
-        OWNER, title="Staff Engineer", requirements=read
+        OWNER, title="Staff Engineer", requirements=read.requirements
     )
 
     assert projection.assessment_id == assessment_id
     assert projection.requirement_map == {"skill 0.9": "backend", "skill 0.4": None}
     assert projection.target_profile == {"backend": 80}
-    assert projection.requirements_digest == get_projection_digest(read)
+    assert projection.requirements_digest == get_projection_digest(read.requirements)
     result = get_posting_fit_result(
         requirements=projection.requirements,
         requirement_map=projection.requirement_map,
@@ -616,7 +632,9 @@ async def test_projecting_needs_an_analysis_and_some_requirements() -> None:
     )
 
     with pytest.raises(ValidationError):
-        await rolemap.project_requirements(OWNER, title="Staff Engineer", requirements=read)
+        await rolemap.project_requirements(
+            OWNER, title="Staff Engineer", requirements=read.requirements
+        )
     await _with_strengths(rolemap)
     with pytest.raises(ValidationError):
         await rolemap.project_requirements(OWNER, title="Staff Engineer", requirements=())

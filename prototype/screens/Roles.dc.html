@@ -14,7 +14,7 @@ body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:
 a{color:#8c491a}a:hover{color:#643312}
 </style>
 </helmet>
-<div style="width: 1440px; height: 1720px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<div style="width: 1440px; height: 1640px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
 <dc-import name="Sidebar" current="roles" hint-size="246px,100%"></dc-import>
 <main style="flex-grow: 1; min-width: 0; position: relative">
 <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
@@ -30,16 +30,20 @@ a{color:#8c491a}a:hover{color:#643312}
 
 <div style="padding: 4px 34px 120px; display: flex; flex-direction: column; gap: 20px">
 
+<div style="display: flex; align-items: center; gap: 14px">
+<a href="RolesBuilding.dc.html" style="padding: 11px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; text-decoration: none">Rebuild role map</a>
+<span style="font-size: 13px; color: #474238">Built 26 Sep 2026 on claude-sonnet-5 · 1,284 open postings in Berlin and Remote EU · about 40 calls on your key to rebuild</span>
+</div>
+
 <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start">
 <div style="background: #ebddc5; border-radius: 28px; padding: 24px">
 <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-bottom: 12px">
 <div>
 <h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Role market map</h3>
-<div style="font-size: 13px; color: #474238">Bubble size = fit. The 10 best-fit roles on the market, plus the ones you add.</div>
+<div style="font-size: 13px; color: #474238">Bubble size = fit. The 10 best-fit roles on the market in your locations.</div>
 </div>
-<span style="font-size: 12.5px; color: #645c50; text-align: right">Built after your strength analysis<br>26 Sep 2026 · 1,284 open postings in Berlin and Remote EU</span>
 </div>
-<svg viewBox="0 0 540 380" width="100%" role="img" aria-label="11 roles plotted by interview difficulty and salary, sized by how well they fit you: 10 recommended, 1 you added" style="display: block">
+<svg viewBox="0 0 540 380" width="100%" role="img" aria-label="10 roles plotted by interview difficulty and salary, sized by how well they fit you" style="display: block">
 <g stroke="rgba(32,30,29,0.14)">
 <line x1="60" x2="520" y1="20" y2="20"></line><line x1="60" x2="520" y1="97.5" y2="97.5"></line><line x1="60" x2="520" y1="175" y2="175"></line><line x1="60" x2="520" y1="252.5" y2="252.5"></line>
 </g>
@@ -62,7 +66,6 @@ a{color:#8c491a}a:hover{color:#643312}
 <circle cx="244" cy="190.5" r="24" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
 <circle cx="257" cy="66.5" r="12" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5" stroke-dasharray="4 3"></circle>
 <circle cx="388.6" cy="221.5" r="13" fill="rgba(198,113,57,0.24)" stroke="#b2622d" stroke-width="1.5"></circle>
-<circle cx="487" cy="35.5" r="16" fill="rgba(86,99,63,0.22)" stroke="#56633f" stroke-width="2.5"></circle>
 <g font-family="Figtree, sans-serif" font-size="11.5" font-weight="700" fill="#201e1d">
 <text x="191.4" y="292" text-anchor="middle">Backend Engineer II</text>
 <text x="440" y="84" text-anchor="start">Staff Backend</text>
@@ -72,30 +75,96 @@ a{color:#8c491a}a:hover{color:#643312}
 <text x="244" y="228" text-anchor="middle">Senior Backend</text>
 <text x="257" y="48" text-anchor="middle">Eng Manager</text>
 <text x="406" y="226" text-anchor="start">Solutions Architect</text>
-<text x="487" y="66" text-anchor="middle" fill="#3d472b">Principal · yours</text>
 </g>
 </svg>
-<p style="font-size: 12.5px; color: #474238; margin: 6px 0 0">Dashed outline: the hiring bar is an AI estimate, not yet reported. Green: a role you added.</p>
+<p style="font-size: 12.5px; color: #474238; margin: 6px 0 0">Dashed outline: the hiring bar is an AI estimate, not yet reported.</p>
 </div>
 
 <div style="background: #ebddc5; border-radius: 28px; padding: 24px; display: flex; flex-direction: column">
 <div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Selected role</div>
-<h3 style="margin: 8px 0 6px; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 27px">Staff Backend Engineer</h3>
-<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 16px">
-<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Fit</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">81%</div></div>
-<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Band</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">160–196k</div></div>
-<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #645c50">Openings</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px">38</div></div>
+<h3 style="margin: 8px 0 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 27px">Staff Backend Engineer</h3>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0 16px">
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: #645c50">Fit</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px; margin-top: 2px">81%</div><div style="font-size: 12px; color: #645c50; margin-top: 2px">across 38 postings</div></div>
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: #645c50">Annual pay</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px; margin-top: 2px">€160–196k</div><div style="font-size: 12px; color: #645c50; margin-top: 2px">Berlin · Remote EU</div></div>
+<div style="background: #f5ead8; border-radius: 16px; padding: 12px 14px"><div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: #645c50">Openings</div><div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 23px; margin-top: 2px">38</div><div style="font-size: 12px; color: #645c50; margin-top: 2px">in your locations</div></div>
 </div>
-<p style="font-size: 14.5px; line-height: 1.65; margin: 0 0 12px">Your ledger and payments work clears the systems bar outright. The distance is leadership across teams and incident ownership, which these postings screen for at staff level.</p>
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin: 6px 0">Where you clear it / where you don't</div>
-<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #8c491a"></span><span style="font-size: 13.5px; flex-grow: 1">Incident response</span><span style="font-size: 12.5px; font-weight: 700; color: #8c491a">−23</span></div>
-<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #8c491a"></span><span style="font-size: 13.5px; flex-grow: 1">Tech leadership</span><span style="font-size: 12.5px; font-weight: 700; color: #8c491a">−15</span></div>
-<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #56633f"></span><span style="font-size: 13.5px; flex-grow: 1">Distributed data</span><span style="font-size: 12.5px; font-weight: 700; color: #56633f">+8</span></div>
-<div style="display: flex; gap: 11px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(32,30,29,0.1)"><span style="width: 9px; height: 9px; border-radius: 999px; background: #56633f"></span><span style="font-size: 13.5px; flex-grow: 1">Backend systems</span><span style="font-size: 12.5px; font-weight: 700; color: #56633f">+14</span></div>
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin: 16px 0 6px">No evidence at all for these</div>
-<p style="font-size: 13px; color: #474238; margin: 0 0 6px">Different from a low score: nothing in your profile speaks to them either way.</p>
-<ul style="font-size: 13.5px; margin: 0; padding-left: 18px"><li>Capacity planning for multi-region deployments</li></ul>
-<details style="margin-top: 16px"><summary style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; cursor: pointer">What this role asks for</summary>
+<div style="background: #f5ead8; border-radius: 16px; padding: 14px 16px">
+<div style="font-size: 14.5px; font-weight: 700">You clear 3 of 6 skills this role screens for.</div>
+<p style="font-size: 13.5px; line-height: 1.6; margin: 4px 0 0; color: #474238">Your ledger and payments work clears the systems bar outright. The distance is incident ownership and leading designs across teams, which these postings weigh most at staff level.</p>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 20px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">How you fit each skill</div>
+<span style="font-size: 12px; color: #645c50">Biggest gap first</span>
+</div>
+<div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #474238; margin: 8px 0 2px">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 8px; border-radius: 999px; background: #b2622d"></span>You, below the bar</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 8px; border-radius: 999px; background: #56633f"></span>You, clear it</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 8px; border-radius: 2px; background: repeating-linear-gradient(135deg, rgba(178,98,45,0.5) 0 3px, transparent 3px 6px)"></span>Shortfall</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 3px; height: 14px; border-radius: 2px; background: #201e1d"></span>What the role asks</span>
+</div>
+<ul style="list-style: none; margin: 4px 0 0; padding: 0">
+<li style="padding: 11px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Incident response</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">42</b> · asks <b style="color: #201e1d">65</b><span style="padding: 2px 9px; border-radius: 999px; background: #ffe1d0; color: #643312; font-size: 12px; font-weight: 800">−23</span></span>
+</div>
+<div role="img" aria-label="Incident response: you 42, role asks 65" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 42%; border-radius: 999px; background: #b2622d"></div>
+<div style="position: absolute; left: 42%; width: 23%; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(178,98,45,0.35) 0 3px, transparent 3px 6px)"></div><div style="position: absolute; left: 65%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+<li style="padding: 11px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Tech leadership across teams</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">55</b> · asks <b style="color: #201e1d">70</b><span style="padding: 2px 9px; border-radius: 999px; background: #ffe1d0; color: #643312; font-size: 12px; font-weight: 800">−15</span></span>
+</div>
+<div role="img" aria-label="Tech leadership across teams: you 55, role asks 70" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 55%; border-radius: 999px; background: #b2622d"></div>
+<div style="position: absolute; left: 55%; width: 15%; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(178,98,45,0.35) 0 3px, transparent 3px 6px)"></div><div style="position: absolute; left: 70%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+<li style="padding: 11px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Reliability</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">72</b> · asks <b style="color: #201e1d">80</b><span style="padding: 2px 9px; border-radius: 999px; background: #ffe1d0; color: #643312; font-size: 12px; font-weight: 800">−8</span></span>
+</div>
+<div role="img" aria-label="Reliability: you 72, role asks 80" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 72%; border-radius: 999px; background: #b2622d"></div>
+<div style="position: absolute; left: 72%; width: 8%; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(178,98,45,0.35) 0 3px, transparent 3px 6px)"></div><div style="position: absolute; left: 80%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+<li style="padding: 11px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Distributed data</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">80</b> · asks <b style="color: #201e1d">72</b><span style="padding: 2px 9px; border-radius: 999px; background: #e1eecc; color: #3d472b; font-size: 12px; font-weight: 800">+8</span></span>
+</div>
+<div role="img" aria-label="Distributed data: you 80, role asks 72" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 80%; border-radius: 999px; background: #56633f"></div>
+<div style="position: absolute; left: 72%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+<li style="padding: 11px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Mentoring</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">70</b> · asks <b style="color: #201e1d">60</b><span style="padding: 2px 9px; border-radius: 999px; background: #e1eecc; color: #3d472b; font-size: 12px; font-weight: 800">+10</span></span>
+</div>
+<div role="img" aria-label="Mentoring: you 70, role asks 60" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 70%; border-radius: 999px; background: #56633f"></div>
+<div style="position: absolute; left: 60%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+<li style="padding: 11px 0;">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<span style="font-size: 14px; font-weight: 600">Backend systems</span>
+<span style="display: inline-flex; align-items: baseline; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: #474238">you <b style="color: #201e1d">92</b> · asks <b style="color: #201e1d">78</b><span style="padding: 2px 9px; border-radius: 999px; background: #e1eecc; color: #3d472b; font-size: 12px; font-weight: 800">+14</span></span>
+</div>
+<div role="img" aria-label="Backend systems: you 92, role asks 78" style="position: relative; height: 10px; margin-top: 8px; border-radius: 999px; background: #dcd3c4">
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 92%; border-radius: 999px; background: #56633f"></div>
+<div style="position: absolute; left: 78%; top: -4px; width: 3px; height: 18px; margin-left: -1px; border-radius: 2px; background: #201e1d"></div>
+</div>
+</li>
+</ul>
+<details style="margin-top: 14px"><summary style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; cursor: pointer">What this role asks for</summary>
 <ul style="font-size: 13.5px; margin: 8px 0 0; padding-left: 18px"><li>Designs systems spanning several teams <span style="color: #645c50">(expert)</span></li><li>Owns production reliability <span style="color: #645c50">(advanced)</span></li></ul></details>
 </div>
 </div>
@@ -120,27 +189,6 @@ a{color:#8c491a}a:hover{color:#643312}
 </div>
 </div>
 </div>
-
-<div style="background: #ebddc5; border-radius: 28px; padding: 24px">
-<h3 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Add a role of your own</h3>
-<div style="font-size: 13px; color: #474238; margin-top: 2px">Not seeing a role you want? Add it and it is analysed against your strengths, then placed on the map beside the recommended ones. A pasted JD stays private to you.</div>
-<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px">
-<div>
-<label for="role-title" style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px">Job title</label>
-<input id="role-title" required="" placeholder="e.g. Principal Engineer" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
-</div>
-<div>
-<label for="role-company" style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px">Company name <span style="font-weight: 500; color: #645c50">(optional)</span></label>
-<input id="role-company" placeholder="e.g. Halden Labs" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
-</div>
-</div>
-<label for="jd-paste" style="display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px">Job description <span style="font-weight: 500; color: #645c50">(optional, sharpens the analysis)</span></label>
-<textarea id="jd-paste" rows="4" placeholder="Paste the full posting…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif; resize: vertical"></textarea>
-<div style="display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap">
-<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Add to Role Map</button>
-<span style="font-size: 12.5px; color: #474238">On the map: <strong style="color: #3d472b">Principal Engineer · Halden Labs</strong></span>
-</div>
-</div>
 </div>
 
 <div role="region" aria-label="Advisor target" style="position: absolute; left: 34px; right: 34px; bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #ebddc5; border-radius: 28px; padding: 16px 22px; box-shadow: 0 12px 32px rgba(46,43,37,0.22)">
@@ -153,7 +201,7 @@ a{color:#8c491a}a:hover{color:#643312}
 </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1720}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1640}}'>
 class Component extends DCLogic {
   renderVals() { return {}; }
 }

@@ -17,19 +17,25 @@ import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
   AutoGrid,
   Button,
-  Done,
   EmptyState,
   ErrorNote,
   Eyebrow,
   FitBadge,
   Loading,
+  SkillFitBar,
   StatTile,
-  YouVsBar,
 } from "../components/ui";
-import { isBusy, useActivity } from "../shell/activity";
+import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
-import { useShell } from "../shell/ShellContext";
+import { modelName, useHeading, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
+import {
+  EmptyMap,
+  getBuildSteps,
+  isMapComing,
+  RunProgress,
+} from "./RunProgress";
+import { dayLabel } from "./time";
 import { messageOf, useAsync } from "./useAsync";
 
 /**
@@ -40,7 +46,7 @@ import { messageOf, useAsync } from "./useAsync";
  * and the trip to the Advisor and back.
  */
 export function Roles() {
-  const { navigate, focus: anyFocus, setFocus } = useShell();
+  const { navigate, focus: anyFocus, setFocus, status } = useShell();
   // A posting of your own is aimed at from the Advisor; the map selects roles.
   const focus = roleFocus(anyFocus);
   const { activity, refresh: refreshActivity, settled } = useActivity();
@@ -64,10 +70,14 @@ export function Roles() {
     [settled.roleMap],
   );
 
+  // What a rebuild would cost, for the toolbar's line. Pricing calls no model.
+  const rebuildCost = useAsync<RoleMapEstimate>(
+    () => api.get("/roles/cost-estimate"),
+    [settled.analysis, settled.roleMap],
+  );
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queued, setQueued] = useState<string | null>(null);
 
   const fitByRole = useMemo(
     () => new Map((fits.data ?? []).map((fit) => [fit.role_id, fit])),
@@ -147,15 +157,17 @@ export function Roles() {
         }
     : null;
 
-  const building = isBusy(activity?.role_map);
   const analysing = activity?.analysis?.status === "running";
+  // While a build runs or is about to, its waiting screen is the page.
+  const waiting = isMapComing(activity);
+  useHeading(waiting ? "Building your role map" : null);
 
-  async function act(label: string, run: () => Promise<unknown>) {
+  async function rebuild() {
     setBusy(true);
     setError(null);
     try {
-      await run();
-      setQueued(label);
+      await api.post("/roles/recluster");
+      setEstimate(null);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -176,26 +188,82 @@ export function Roles() {
     }
   }
 
+  if (waiting) {
+    const model = modelName(status.credential);
+    return (
+      <RunProgress
+        label="Role map progress"
+        heading="Finding the roles that fit you best"
+        subline={
+          analysing
+            ? "Starts automatically when your strength analysis finishes. Usually takes 2–4 minutes."
+            : "Usually takes 2–4 minutes."
+        }
+        startedAt={
+          activity?.role_map?.started_at ??
+          activity?.analysis?.started_at ??
+          null
+        }
+        steps={getBuildSteps({
+          activity,
+          assessment: assessment.data,
+          scope: scope.data ? scopeLine(scope.data).replace(/\.$/, "") : null,
+          maxRoles: rebuildCost.data?.max_roles ?? null,
+        })}
+        previewTitle="Your map will appear here"
+        preview={<EmptyMap />}
+        previewNote="It is drawn once the roles are picked and scored."
+        leaveCopy="The search keeps running if you leave this page. The running bar says when your map is ready."
+        back={{
+          label: "Back to Strengths",
+          onClick: () => navigate("strengths"),
+        }}
+        costCopy={`Charged to your own key on ${model}, at the estimate you confirmed before it started. Searching only ${
+          scope.data && scope.data.target_locations.length > 0
+            ? scope.data.target_locations.join(" and ")
+            : "your locations"
+        } keeps this down.`}
+      />
+    );
+  }
+
   return (
     <section>
+      <div
+        className="row report-toolbar"
+        style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
+      >
+        <Button variant="secondary" busy={busy} onClick={askForEstimate}>
+          Rebuild role map
+        </Button>
+        <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
+          {builtLine({
+            builtAt:
+              activity?.role_map?.status === "ready"
+                ? activity.role_map.finished_at
+                : (state.data?.market_data_at ?? null),
+            model: modelName(status.credential),
+            scope: scope.data ?? null,
+            rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
+          })}
+        </span>
+      </div>
+      {state.data?.locations_changed && (
+        <p
+          role="status"
+          className="note-warning"
+          style={{ margin: "0 0 14px" }}
+        >
+          <span aria-hidden="true">⚠</span> Your locations changed since this
+          map was built. Rebuild to search the new places.
+        </p>
+      )}
       <ErrorNote error={error} />
-      {queued && <Done>{queued}.</Done>}
       {estimate && (
         <CostConfirm
           busy={busy}
           onCancel={() => setEstimate(null)}
-          onConfirm={() =>
-            act(
-              // A build asked for during an analysis waits for it (ADR 0018).
-              analysing
-                ? "Role map queued — it starts when your analysis finishes"
-                : "Role map queued",
-              async () => {
-                await api.post("/roles/recluster");
-                setEstimate(null);
-              },
-            )
-          }
+          onConfirm={() => void rebuild()}
         >
           Your map covers up to {estimate.max_roles} of the roles your last
           analysis recommended. Naming them and scoring your fit against each
@@ -222,9 +290,8 @@ export function Roles() {
             <div style={{ marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Role market map</h3>
               <div className="subcopy">
-                Bubble size = fit. The 10 best-fit roles on the market, built
-                after your strength analysis.
-                {scope.data && ` ${scopeLine(scope.data)}`}
+                Bubble size = fit. The {bubbles.length} best-fit roles on the
+                market in your locations.
               </div>
             </div>
             <RoleMap
@@ -244,6 +311,7 @@ export function Roles() {
                 <StatTile
                   label="Fit"
                   value={activeFit ? `${activeFit.score}%` : "—"}
+                  note={`across ${postingCount(activeRole.opening_count)}`}
                 />
                 <StatTile
                   label="Annual pay"
@@ -256,93 +324,94 @@ export function Roles() {
                         )
                       : "—"
                   }
+                  note={scope.data?.target_locations.join(" · ") || undefined}
                 />
                 <StatTile
                   label="Openings"
                   value={String(activeRole.opening_count)}
+                  note="in your locations"
                 />
               </AutoGrid>
-              <p style={{ fontSize: 14.5, lineHeight: 1.65 }}>
+              {activeFit && activeFit.gaps.length > 0 && (
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                  You clear {getClearCount(activeFit.gaps)} of{" "}
+                  {activeFit.gaps.length} skills this role screens for.
+                </div>
+              )}
+              <p style={{ fontSize: 14.5, lineHeight: 1.65, marginTop: 0 }}>
                 {activeFit?.reasoning ??
                   activeRole.bar_reasoning ??
-                  "Not scored yet — run an analysis, then re-score fit."}
+                  "Not scored yet — run an analysis, then rebuild the map."}
               </p>
 
               {activeFit && activeFit.gaps.length > 0 && (
                 <>
-                  <Eyebrow style={{ margin: "6px 0" }}>
-                    How you fit each dimension
-                  </Eyebrow>
-                  {/* What the role asks most of comes first: the role's
-                      profile, with you laid over it. */}
-                  {activeFit.gaps
-                    .map((gap) => ({
-                      ...gap,
-                      name:
-                        dimensionNames.get(gap.dimension_key) ??
-                        gap.dimension_key,
-                    }))
-                    .sort(
-                      (a, b) =>
-                        b.target_score - a.target_score ||
-                        a.name.localeCompare(b.name),
-                    )
-                    .map((gap) => {
-                      const color =
-                        gap.user_score >= gap.target_score
-                          ? "var(--color-accent-2-700)"
-                          : "var(--color-accent-700)";
-                      return (
-                        <div
-                          key={gap.dimension_key}
+                  <div className="row-between" style={{ marginTop: 6 }}>
+                    <Eyebrow>How you fit each skill</Eyebrow>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      Biggest gap first
+                    </span>
+                  </div>
+                  <SkillFitLegend />
+                  <ul
+                    style={{ listStyle: "none", margin: "4px 0 0", padding: 0 }}
+                  >
+                    {getSkillFits(activeFit.gaps, dimensionNames).map(
+                      (skill) => (
+                        <li
+                          key={skill.key}
                           style={{
-                            padding: "8px 0 10px",
+                            padding: "11px 0",
                             borderBottom:
                               "1px solid color-mix(in srgb, #201e1d 10%, transparent)",
                           }}
                         >
                           <div
-                            className="row"
-                            style={{
-                              gap: 11,
-                              flexWrap: "nowrap",
-                              marginBottom: 7,
-                            }}
+                            className="row-between"
+                            style={{ alignItems: "baseline", gap: 12 }}
                           >
-                            <span style={{ fontSize: 13.5, flex: 1 }}>
-                              {gap.name}
+                            <span style={{ fontSize: 14, fontWeight: 600 }}>
+                              {skill.name}
                             </span>
                             <span
-                              style={{ fontSize: 12.5, fontWeight: 700, color }}
+                              className="row"
+                              style={{
+                                gap: 10,
+                                flex: "0 0 auto",
+                                fontSize: 12.5,
+                                color: "var(--color-neutral-800)",
+                                alignItems: "baseline",
+                              }}
                             >
-                              you {gap.user_score} · role asks{" "}
-                              {gap.target_score}
+                              <span>
+                                you{" "}
+                                <b style={{ color: "var(--color-text)" }}>
+                                  {skill.you}
+                                </b>{" "}
+                                · asks{" "}
+                                <b style={{ color: "var(--color-text)" }}>
+                                  {skill.asks}
+                                </b>
+                              </span>
+                              <span
+                                className={
+                                  skill.delta < 0
+                                    ? "delta-chip delta-chip-short"
+                                    : "delta-chip delta-chip-clear"
+                                }
+                              >
+                                {signed(skill.delta)}
+                              </span>
                             </span>
                           </div>
-                          <YouVsBar
-                            you={gap.user_score}
-                            bar={gap.target_score}
-                            label={gap.name}
+                          <SkillFitBar
+                            you={skill.you}
+                            asks={skill.asks}
+                            label={skill.name}
                           />
-                        </div>
-                      );
-                    })}
-                </>
-              )}
-
-              {activeFit && activeFit.uncovered.length > 0 && (
-                <>
-                  <Eyebrow style={{ margin: "16px 0 6px" }}>
-                    No evidence at all for these
-                  </Eyebrow>
-                  <p className="subcopy" style={{ marginBottom: 6 }}>
-                    Different from a low score: nothing in your profile speaks
-                    to them either way.
-                  </p>
-                  <ul style={{ fontSize: 13.5, margin: 0, paddingLeft: 18 }}>
-                    {activeFit.uncovered.map((item) => (
-                      <li key={item.statement}>{item.statement}</li>
-                    ))}
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </>
               )}
@@ -472,50 +541,6 @@ export function Roles() {
         </div>
       )}
 
-      <AutoGrid col={300} gap={20} style={{ marginTop: 20 }}>
-        <div className="panel">
-          <h3>Keep your map current</h3>
-          <p className="subcopy">
-            The map is built only when you ask: after an analysis, or a rebuild.
-            Each build searches the market for your recommended roles first,
-            reusing what was fetched recently. Rebuild it now, or re-score your
-            fit against the roles already on it.
-          </p>
-          {state.data?.market_data_at && (
-            <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
-              Market data as of{" "}
-              {new Date(state.data.market_data_at).toLocaleDateString()}.
-            </p>
-          )}
-          {state.data?.locations_changed && (
-            <p className="chip chip-warn" style={{ margin: "10px 0 0" }}>
-              Your locations changed since this map was built. Rebuild to search
-              the new places.
-            </p>
-          )}
-          <div className="row" style={{ marginTop: 14 }}>
-            <Button busy={busy} disabled={building} onClick={askForEstimate}>
-              {activity?.role_map?.status === "waiting"
-                ? activity.role_map.waiting_for === "market"
-                  ? "Searching the market…"
-                  : "Waiting for analysis…"
-                : building
-                  ? "Building…"
-                  : "Rebuild role map"}
-            </Button>
-            <Button
-              variant="secondary"
-              busy={busy}
-              onClick={() =>
-                act("Fits queued", () => api.post("/fits/compute"))
-              }
-            >
-              Re-score fit
-            </Button>
-          </div>
-        </div>
-      </AutoGrid>
-
       {aim && (
         <div
           className="panel panel-tight target-bar"
@@ -605,5 +630,110 @@ export function Credit({
         to
       )}
     </>
+  );
+}
+
+/** "38 postings". Pure. */
+function postingCount(count: number): string {
+  return `${count.toLocaleString("en")} ${count === 1 ? "posting" : "postings"}`;
+}
+
+/**
+ * The role map toolbar's line, laid out as Strengths' is: "Built 26 Sep 2026
+ * on claude-sonnet-5 · 1,284 open postings in Berlin and Remote EU · about
+ * $0.40 on your key to rebuild". Each part is left out until it is known. Pure.
+ */
+export function builtLine({
+  builtAt,
+  model,
+  scope,
+  rebuildCostUsd,
+}: {
+  builtAt: string | null;
+  model: string;
+  scope: MarketScope | null;
+  rebuildCostUsd: string | null;
+}): string {
+  const parts: string[] = [];
+  parts.push(
+    builtAt ? `Built ${dayLabel(builtAt)} on ${model}` : "Not built yet",
+  );
+  if (scope) parts.push(scopeLine(scope).replace(/\.$/, ""));
+  if (rebuildCostUsd !== null) {
+    parts.push(`about $${rebuildCostUsd} on your key to rebuild`);
+  }
+  return parts.join(" · ");
+}
+
+/** How many of a fit's skills the user already meets. Pure. */
+export function getClearCount(
+  gaps: readonly { user_score: number; target_score: number }[],
+): number {
+  return gaps.filter((gap) => gap.user_score >= gap.target_score).length;
+}
+
+export interface SkillFit {
+  key: string;
+  name: string;
+  you: number;
+  asks: number;
+  /** You minus what the role asks: negative is a shortfall. */
+  delta: number;
+}
+
+/**
+ * A fit's skills as the selected-role card lists them: by display name, never
+ * the dimension's key, biggest gap first. Pure.
+ */
+export function getSkillFits(
+  gaps: readonly {
+    dimension_key: string;
+    user_score: number;
+    target_score: number;
+  }[],
+  names: ReadonlyMap<string, string>,
+): SkillFit[] {
+  return gaps
+    .map((gap) => ({
+      key: gap.dimension_key,
+      name: names.get(gap.dimension_key) ?? humanizeKey(gap.dimension_key),
+      you: gap.user_score,
+      asks: gap.target_score,
+      delta: gap.user_score - gap.target_score,
+    }))
+    .sort((a, b) => a.delta - b.delta || a.name.localeCompare(b.name));
+}
+
+/** "backend-eng-python" → "Backend eng python", for a key with no name. Pure. */
+export function humanizeKey(key: string): string {
+  const words = key.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** "−23" or "+14", with a real minus sign. Pure. */
+export function signed(delta: number): string {
+  return delta < 0 ? `\u2212${Math.abs(delta)}` : `+${delta}`;
+}
+
+function SkillFitLegend() {
+  return (
+    <div className="skill-fit-legend" aria-hidden="true">
+      <span>
+        <span className="legend-swatch legend-short" />
+        You, below the bar
+      </span>
+      <span>
+        <span className="legend-swatch legend-clear" />
+        You, clear it
+      </span>
+      <span>
+        <span className="legend-swatch legend-shortfall" />
+        Shortfall
+      </span>
+      <span>
+        <span className="legend-swatch legend-target" />
+        What the role asks
+      </span>
+    </div>
   );
 }

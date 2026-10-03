@@ -25,6 +25,7 @@ import {
 import { sourcesBusy, useActivity } from "../shell/activity";
 import { useShell } from "../shell/ShellContext";
 import { TargetLocations } from "./TargetLocations";
+import { useStartAnalysis } from "./useStartAnalysis";
 import { messageOf, useAsync } from "./useAsync";
 
 const LABELS: Record<string, { name: string; kind: string; note: string }> = {
@@ -55,6 +56,11 @@ const LABELS: Record<string, { name: string; kind: string; note: string }> = {
 export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
   const { navigate } = useShell();
   const { activity, refresh: refreshActivity, settled } = useActivity();
+  // "Analyze with AI" prices the run, starts it on a yes, and opens Strengths
+  // on its waiting screen.
+  const analyse = useStartAnalysis({
+    onStarted: () => navigate("strengths"),
+  });
   // Refetched when a callback finishes, so a fresh connection shows as
   // connected without a reload, and when a sync or parse finishes, so what it
   // wrote shows without one either.
@@ -396,13 +402,16 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
                   Upload PDF / DOCX
                 </Button>
                 <Button
-                  onClick={() => navigate("strengths")}
+                  onClick={() => void analyse.ask()}
+                  busy={analyse.busy}
                   disabled={sourcesBusy(activity)}
                 >
                   Analyze with AI
                 </Button>
               </div>
             </div>
+            <ErrorNote error={analyse.error} />
+            {analyse.confirmation}
 
             {uploaded.length > 0 && (
               <ul className="stack" style={{ gap: 10, margin: 0, padding: 0 }}>

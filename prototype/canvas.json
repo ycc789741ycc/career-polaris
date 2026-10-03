@@ -35,7 +35,7 @@
       "y": 2180
     },
     "Roles.dc.html": {
-      "h": 1720,
+      "h": 1640,
       "is_interactive": true,
       "title": "03 Role map",
       "w": 1440,
@@ -64,6 +64,30 @@
       "w": 1440,
       "x": 0,
       "y": 2180
+    },
+    "RolesBuilding.dc.html": {
+      "h": 1100,
+      "is_interactive": true,
+      "title": "03 Role map — building",
+      "w": 1440,
+      "x": 5000,
+      "y": 0
+    },
+    "StrengthsBuilding.dc.html": {
+      "h": 1100,
+      "is_interactive": true,
+      "title": "02 Strengths — analysing",
+      "w": 1440,
+      "x": 6520,
+      "y": 0
+    },
+    "CustomTarget.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "title": "04 Advisor — Your own role",
+      "w": 1440,
+      "x": 6080,
+      "y": 2180
     }
   },
   "createdOnFiles": {
@@ -85,16 +109,16 @@
     },
     "row1": {
       "kind": "title1",
-      "maxW": 4480,
-      "text": "The journey — 01 Sources · 02 Strengths · 03 Role map",
+      "maxW": 7960,
+      "text": "The journey — 01 Sources · 02 Strengths · 03 Role map (+ waiting states, far right)",
       "w": 240,
       "x": 0,
       "y": -300
     },
     "row2": {
       "kind": "title1",
-      "maxW": 6000,
-      "text": "04 Advisor (Fill the gap · Gap plan · Résumé) · System configuration",
+      "maxW": 7520,
+      "text": "04 Advisor (Fill the gap · Gap plan · Résumé) · System configuration · Your own role (far right)",
       "w": 240,
       "x": 0,
       "y": 1880
@@ -102,7 +126,7 @@
     "rules": {
       "fill": "orange",
       "maxH": 520,
-      "text": "Rules the current build holds to\n\n• The journey only runs forward: a step reads the ones before it, never after. Strengths shows no role fit; comparing to a role is the role map's job.\n• Sources lists collected facts only. Follow-up questions live in the Advisor's Fill the gap step; each answer comes back to Sources as a Your answer fact.\n• The role map has exactly ONE control that aims the Advisor: the sticky \"Advisor target\" bar.\n• Every AI action shows a cost estimate on the user's own key first.\n• Light-only; Organic design system (Caprasimo + Figtree).",
+      "text": "Rules the current build holds to\n\n• The journey only runs forward: a step reads the ones before it, never after. Strengths shows no role fit; comparing to a role is the role map's job.\n• Sources lists collected facts only. Follow-up questions live in the Advisor's Fill the gap step; each answer comes back to Sources as a Your answer fact.\n• The Advisor target comes from one of two places: the role map's \"Target this role\" bar, or \"Use your own role\" in the Advisor (uploaded JD or filled in by hand). Own roles never appear on the role map.\n• Every AI action shows a cost estimate on the user's own key first.\n• Light-only; Organic design system (Caprasimo + Figtree).",
       "w": 360,
       "x": 4560,
       "y": 980
@@ -110,8 +134,11 @@
   },
   "order": [
     "Main.dc.html",
+    "StrengthsBuilding.dc.html",
     "Strengths.dc.html",
+    "RolesBuilding.dc.html",
     "Roles.dc.html",
+    "CustomTarget.dc.html",
     "Gaps.dc.html",
     "Plan.dc.html",
     "Resume.dc.html",

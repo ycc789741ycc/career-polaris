@@ -82,6 +82,7 @@ function Shell() {
     credential: null,
   });
   const [target, setTarget] = useState<string | null>(null);
+  const [heading, setHeading] = useState<string | null>(null);
   const [callback, setCallback] = useState<CallbackOutcome | null>(null);
   const handled = useRef(false);
 
@@ -143,7 +144,16 @@ function Shell() {
   }, [refresh]);
 
   const shell = useMemo(
-    () => ({ status, navigate, focus, setFocus, refresh, target, setTarget }),
+    () => ({
+      status,
+      navigate,
+      focus,
+      setFocus,
+      refresh,
+      target,
+      setTarget,
+      setHeading,
+    }),
     [status, navigate, focus, setFocus, refresh, target],
   );
   const me = status.me;
@@ -154,13 +164,15 @@ function Shell() {
         <Sidebar current={screen} status={status} onNavigate={navigate} />
         <main className="main">
           <PageHeader
-            meta={metaOf(screen)}
+            meta={
+              heading ? { ...metaOf(screen), title: heading } : metaOf(screen)
+            }
             status={status}
             target={target}
             email={me?.email ?? email}
             onSignOut={() => void signOut()}
           />
-          <ActivityBar />
+          <ActivityBar screen={screen} />
           <div className="page-body" key={screen}>
             {me?.background_jobs_paused && (
               <p
