@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>04 Advisor — Your own role</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caprasimo&amp;family=Figtree:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body{margin:0;background:#f5ead8;font-family:Figtree,system-ui,sans-serif;color:#201e1d}
+a{color:#8c491a}a:hover{color:#643312}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1180px; display: flex; align-items: stretch; background: #f5ead8; color: #201e1d; font-family: Figtree, system-ui, sans-serif; font-size: 15px">
+<dc-import name="Sidebar" current="advisor" hint-size="246px,100%"></dc-import>
+<main style="flex-grow: 1; min-width: 0">
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 30px 34px 20px">
+<div>
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8c491a; font-weight: 700; margin-bottom: 7px">Plan &amp; résumé</div>
+<h1 style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 38px; line-height: 1.1">Aim the Advisor at your own role</h1>
+</div>
+<div style="display: flex; align-items: center; gap: 10px">
+<span style="display: inline-flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #e1eecc; color: #3d472b"><span style="width: 8px; height: 8px; border-radius: 999px; background: currentColor"></span>claude-sonnet-5</span>
+<button type="button" aria-label="Account maya.chen@example.com" style="width: 44px; height: 44px; border: 0; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-family: Caprasimo, system-ui, sans-serif; font-size: 14px; cursor: pointer">MC</button>
+</div>
+</header>
+
+<div style="padding: 4px 34px 64px; display: flex; flex-direction: column; gap: 20px">
+<a href="Gaps.dc.html" style="align-self: flex-start; font: 600 14px Figtree, sans-serif; text-decoration: none">← Back to the Advisor</a>
+
+<section style="background: #ffe1d0; border: 2px solid #c67139; border-radius: 28px; padding: 20px 24px">
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #643312">Not on your role map?</div>
+<h2 style="margin: 4px 0 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 26px">Bring the job yourself</h2>
+<p style="font-size: 14px; line-height: 1.55; color: #474238; margin: 6px 0 0">Add roles you found yourself to your own list. They are not added to the role map. Pick one as your Advisor target and the Advisor compares it with your strengths, then asks its follow-up questions in Fill the gap.</p>
+</section>
+
+<section aria-labelledby="role-h" style="background: #ebddc5; border-radius: 28px; padding: 24px 26px">
+<h3 id="role-h" style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">Your role</h3>
+<p style="font-size: 13.5px; color: #474238; margin: 4px 0 18px">Upload the job description, or fill in the role yourself. One is enough.</p>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr); align-items: stretch">
+<div>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Upload the job description</div>
+<div style="margin-top: 10px; border: 2px dashed rgba(32,30,29,0.25); border-radius: 20px; padding: 40px 22px; text-align: center; background: #f5ead8">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#8c491a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+<div style="font-size: 14px; font-weight: 700; margin-top: 6px">Drop a PDF, DOCX or TXT</div>
+<div style="font-size: 12.5px; color: #645c50; margin-top: 4px">Requirements are read straight from the posting</div>
+<button type="button" style="margin-top: 12px; padding: 9px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 13.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">Choose file</button>
+</div>
+</div>
+<div aria-hidden="true" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px"><span style="flex-grow: 1; width: 1px; background: rgba(32,30,29,0.16)"></span><span style="width: 40px; height: 40px; border-radius: 999px; background: #f5ead8; border: 1px solid rgba(32,30,29,0.16); display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #645c50">or</span><span style="flex-grow: 1; width: 1px; background: rgba(32,30,29,0.16)"></span></div>
+<div>
+<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Fill it in yourself</div>
+<label for="ct-title" style="display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px">Job title</label>
+<input id="ct-title" required="" placeholder="e.g. Principal Engineer" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+<label for="ct-company" style="display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px">Company <span style="font-weight: 500; color: #645c50">(optional)</span></label>
+<input id="ct-company" placeholder="e.g. Halden Labs" style="width: 100%; box-sizing: border-box; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
+<label for="ct-req" style="display: block; font-size: 13px; font-weight: 700; margin: 14px 0 6px">What the role asks for <span style="font-weight: 500; color: #645c50">(optional)</span></label>
+<textarea id="ct-req" rows="4" placeholder="One requirement per line, e.g. Leads architecture across teams" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 16px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif; resize: vertical"></textarea>
+<p style="font-size: 12.5px; color: #645c50; margin: 8px 0 0">Leave requirements empty and the Advisor infers typical ones for this title, marked as estimates.</p>
+</div>
+</div>
+<div style="display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(32,30,29,0.12)">
+<button type="button" style="padding: 12px 24px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 15px Figtree, sans-serif; cursor: pointer">Add to my roles</button>
+</div>
+</section>
+
+<section aria-labelledby="my-roles-h" style="background: #ebddc5; border-radius: 28px; padding: 20px 24px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<h3 id="my-roles-h" style="margin: 0; font-family: Caprasimo, system-ui, sans-serif; font-weight: 400; font-size: 21px">My roles</h3>
+<span style="font-size: 12.5px; font-weight: 700; color: #645c50">2 roles</span>
+</div>
+<p style="font-size: 13px; color: #474238; margin: 4px 0 6px">Setting a role as target compares it with your strengths and writes the gap questions, about 6 calls on your key. It replaces Staff Backend Engineer as your target.</p>
+<ul style="list-style: none; margin: 0; padding: 0">
+<li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.1);">
+<div style="min-width: 0"><div style="font-size: 14.5px; font-weight: 700">Principal Engineer · Halden Labs</div><div style="font-size: 12.5px; color: #645c50; margin-top: 2px">Uploaded JD · added 12 Sep · gap plan v1 and résumé v1 kept</div></div>
+<div style="display: flex; gap: 8px; flex: 0 0 auto">
+<a href="Gaps.dc.html" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; text-decoration: none; background: #c67139; color: #f5ead8">Set as target</a>
+<button type="button" aria-label="Remove Principal Engineer · Halden Labs" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; text-decoration: none; border: 0; background: transparent; color: #b2622d; cursor: pointer">Remove</button>
+</div>
+</li>
+<li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0;">
+<div style="min-width: 0"><div style="font-size: 14.5px; font-weight: 700">Platform Lead</div><div style="font-size: 12.5px; color: #645c50; margin-top: 2px">Filled in · no company · requirements estimated · added 1 Oct</div></div>
+<div style="display: flex; gap: 8px; flex: 0 0 auto">
+<a href="Gaps.dc.html" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; text-decoration: none; background: #c67139; color: #f5ead8">Set as target</a>
+<button type="button" aria-label="Remove Platform Lead" style="padding: 9px 16px; border-radius: 999px; font: 600 13.5px Figtree, sans-serif; text-decoration: none; border: 0; background: transparent; color: #b2622d; cursor: pointer">Remove</button>
+</div>
+</li>
+</ul>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,17 +1,19 @@
 # Career Advisor — Domain Concepts & Design Decisions
 
-This summarizes the design review of the "Career Advisor — current layout" canvas (28 Sep 2026). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
+This summarizes the design review of the "Career Advisor — current layout" canvas (last updated 3 Oct 2026). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
 
 ## 1. User journey (forward-only)
 
 ```
-01 Sources ──► 02 Strengths ──► 03 Role map ──► 04 Advisor
- (profile)      (analysis)       (market)        First: Fill the gap
-                                                 Then, either: Gap plan | Résumé
+01 Sources ──► [analysing] ──► 02 Strengths ──► [building] ──► 03 Role map ──► 04 Advisor
+ (profile)     waiting screen   (analysis)      waiting screen   (market)       target: role map pick OR own role
+                                                                                First: Fill the gap
+                                                                                Then, either: Gap plan | Résumé
 ```
 
 - A step reads only from the steps before it, never from later ones. For example, Strengths shows no role fit; comparing against roles is the Role map's job.
-- The one exception is a deliberate feedback loop: answers given in **Fill the gap** are written back into **Sources** as evidence (see §5).
+- The one exception is a deliberate feedback loop: answers given in **Fill the gap** are written back into **Sources** as evidence (see §6.1).
+- The role map build starts **automatically** when the strength analysis finishes.
 
 ## 2. Core entities
 
@@ -21,10 +23,12 @@ This summarizes the design review of the "Career Advisor — current layout" can
 | **Target location** | Where the user wants to work. Chosen in the profile (01 Sources). **Max 3.** Scopes the market search and salary bands. | name (city / country / remote region e.g. "Remote EU") |
 | **Source** | An evidence provider | type: `github` \| `jira` \| `resume` \| `user_answer`; status (connected / not connected / parsed); last synced |
 | **Fact (evidence)** | One traceable piece of evidence | source, source ref (e.g. `payments-api#1284`), text |
-| **Strength dimension** | A scored skill axis (e.g. Backend systems, Incident response, Tech leadership…) | score 0–100, **confidence %**, cited facts |
+| **Strength dimension** | A scored skill axis (e.g. Backend systems, Incident response) | score 0–100, **confidence %**, cited facts |
 | **Profile confidence** | How well the evidence supports the strength scores overall | percentage |
-| **Role (market)** | A role found on the market or added by the user | title, company?, JD?, fit %, salary band, hiring bar, openings, origin: `recommended` \| `custom` |
-| **Target role** | The single role the Advisor works against | a reference to one Role (+ company/opening) |
+| **Analysis run / Role map run** | A background job with visible progress | status, steps (done / running / waiting), progress %, ETA, cost estimate, cancellable |
+| **Market role** | A role found by the role map worker (system only) | title, fit %, annual pay band, hiring bar (reported or AI estimate), openings, per-dimension requirement levels |
+| **Own role (custom role)** | A role the user brings themselves, **never shown on the role map** | job title (required), company?, requirements? (or parsed from an uploaded JD file), source: `uploaded_jd` \| `filled_in`, added date |
+| **Target role** | The single role the Advisor works against | reference to a Market role (+ opening) **or** an Own role |
 | **Gap** | A requirement of the target role that the evidence doesn't fully cover | title, status: `partial` \| `no_evidence`, fit-point impact |
 | **Follow-up question** | Generated per gap to collect missing evidence | gap, question text, "asked because" reason, answer type (choice / free text), answer |
 | **Gap plan** | Plan to close the gaps to the target role | gaps ranked by fit impact, milestones & tasks, stepping-stone roles, projects |
@@ -33,74 +37,81 @@ This summarizes the design review of the "Career Advisor — current layout" can
 ## 3. 01 Sources (Profile)
 
 - **Target locations**: chips with remove buttons, an input with Add, and a counter ("2 of 3 chosen"). A hard cap of 3: once 3 are chosen, the user must remove one before adding another.
-- Source connectors: GitHub, Jira, existing résumé (upload PDF/DOCX → "Analyze with AI").
+- Source connectors: GitHub, Jira, existing résumé (upload PDF/DOCX → **"Analyze with AI" opens the analysing waiting screen**).
 - "What it found so far": a breakdown of facts by source (GitHub / Résumé / **Your answers**).
 - Evidence table, filterable by source.
-- **Removed:** the "Fill the gaps" follow-up questions block. Questions no longer live on Sources.
-- **Removed:** the Profile confidence meter from the shared sidebar (it moved to Strengths).
-- Sidebar: no badge count on Sources.
+- No follow-up questions here (they live in the Advisor's Fill the gap). No profile confidence here (it lives on Strengths).
 
 ## 4. 02 Strengths (Analysis)
 
-- Skill radar across dimensions; the list is ordered "least certain first".
-- Each dimension shows its **score** and a separate **confidence** (how sure the score is), plus cited evidence.
-- **Profile confidence** lives here, next to Re-analyse. It means how well the evidence backs the strength scores, so it belongs to the analysis stage, not to Sources.
+- **Waiting screen ("analysing")** while the run is in progress: overall % and time left, steps (Collected facts → Grouped by skill → Scoring each dimension → Checking confidence → Writing report), a radar that fills in point by point, "you don't need to wait here" (the role map builds automatically afterwards), cost (~12 calls), Cancel run.
+- Result: skill radar; list ordered "least certain first".
+- Each dimension shows its **score** and a separate **confidence**, plus cited evidence.
+- **Profile confidence** sits next to **Re-analyse**, with the last-run line ("Analysed {date} on {model} · {n} facts read").
 - The thin-evidence hint points to Sources ("Connect more sources, like Jira, to add more").
+- "Match me to roles" opens the role map waiting screen.
 
 ## 5. 03 Role map (Market)
 
-- **Built automatically after the strength analysis.** A background worker searches the market for the best-fit roles. **Default: 10 roles, decided by the system** (not user-configurable).
-- The search is scoped to the user's **target locations** (e.g. "1,284 open postings in Berlin and Remote EU").
+- **Built automatically after the strength analysis** by a background worker. **Default: 10 roles, decided by the system** (not user-configurable). Only system-found roles appear here.
+- **Waiting screen ("building")**: overall % and time left, steps (Read strength analysis → Searched postings in your locations → Scoring fit → Picking 10 best-fit roles → Drawing the map), an empty map preview, "you don't need to wait here", cost (~40 calls), Cancel run.
+- **Toolbar**, laid out like Strengths: **"Rebuild role map"** button + "Built {date} on {model} · {n} open postings in {locations} · about 40 calls to rebuild".
 - Bubble chart: x = hiring bar, y = salary midpoint, size = fit. A dashed outline means the hiring bar is an AI estimate.
-- **Custom role**: if the user isn't satisfied with the recommendations, they add their own role:
-  - Job title (**required**)
-  - Company name (optional)
-  - JD (optional; improves the analysis; private to the user)
-  - The **"Add to Role Map"** button triggers the analysis and places the role on the map.
-  - Custom roles are visually distinct (green outline, "yours" label).
+- **Selected role card:**
+  - Title; stats: **Fit**, **Annual pay**, **Openings**, each with a context line (e.g. "across 38 postings", locations).
+  - A one-line verdict ("You clear 3 of 6 skills this role screens for") plus 1–2 plain sentences. **Use display names, never internal slugs** (no `backend-eng-python`).
+  - **"How you fit each skill"**, sorted biggest gap first. Each row: name, "you X · asks Y", a signed gap chip (−23 terracotta / +14 green). Bar = track; fill = your score (terracotta if below the target, green if you meet it); hatched segment from your score to the target = shortfall; 3px dark tick at the target. Legend above the rows. Each bar has an aria-label ("{skill}: you X, role asks Y").
+  - "What this role asks for" (collapsible).
+  - No "no evidence" callout on this card.
 - Top matched openings list (no subscribe action).
-- **Exactly one control aims the Advisor:** the sticky "Advisor target" bar → "Target this role", which opens Fill the gap.
-- **Removed:** Subscribe buttons, "Roles to watch", "Roles to analyse" (count input), "Markets you are looking in" (replaced by profile target locations), and the market filter pills.
+- Sticky "Advisor target" bar → "Target this role" opens Fill the gap.
+- **Removed:** custom role entry ("Add to Role Map"), Subscribe buttons, "Roles to watch", "Roles to analyse", "Markets you are looking in", market filter pills.
 
 ## 6. 04 Advisor
 
-The Advisor always works against **one target role**, already chosen on the Role map.
+The Advisor always works against **one target role**.
 
-- **No role or company picker inside the Advisor.** Changing role means going back to the Role map ("Change role" link).
-- Every Advisor page opens with an explicit **"Your target role" banner**: the title, "at {company} · {location} · {posting}", fit today, salary band, and "Everything on this page is measured against this one role."
+- Every Advisor page opens with a **"Your target role" banner**: title, "at {company} · {location} · {posting}", fit today, salary band, "Everything on this page is measured against this one role", and two buttons: **"Pick from role map"** and **"Use your own role"**.
+- No company/opening picker inside the Advisor pages.
 - Navigation is a fork, not a linear sequence:
   **First:** Fill the gap → **Then, either:** Gap plan | Résumé
+
+### 6.0 Your own role (custom target)
+
+- One **"Your role"** block with two ways side by side ("One is enough"):
+  - **Upload the job description**: file drop zone only (PDF, DOCX, TXT).
+  - **Fill it in yourself**: Job title (required), Company (optional), "What the role asks for" (optional, one per line; if empty the Advisor infers typical requirements and marks them as estimates).
+  - **"Add to my roles"** saves the role to the list. Adding does **not** run any analysis.
+- **"My roles" list**: each role shows how it was added (uploaded JD / filled in) and the date, with **"Set as target"** and **"Remove"**.
+  - "Set as target" compares the role with the user's strengths and generates the gap questions (cost shown first, ~6 calls), replaces the current target, and opens Fill the gap.
+- Own roles never go to the role map or its analysis.
 
 ### 6.1 Fill the gap (first step)
 
 - The system compares the user's evidence against the target role's requirements and generates **follow-up questions per gap**.
 - Gaps are grouped as cards: title, status tag (Partial / No evidence), and potential fit points.
 - Each question has an "Asked because: …" reason and an answer input (choice buttons and/or free text).
-- **A single "Submit answers" button** (with an answered count, e.g. "4 of 5 answered", and a cost estimate on the user's key).
-- **On submit:**
-  1. Each answer becomes a **Fact** in Sources with source type `user_answer` ("Your answers").
-  2. The Gap plan and Résumé are regenerated or updated from the new evidence.
-- Answers are **not** auto-saved per question. Nothing propagates until the user submits.
-- Unanswered questions stay gaps.
+- **A single "Submit answers" button** (with an answered count and a cost estimate).
+- **On submit:** each answer becomes a **Fact** in Sources (`user_answer`), and the Gap plan and Résumé are regenerated from the new evidence.
+- Answers are **not** auto-saved per question. Unanswered questions stay gaps.
 
 ### 6.2 Gap plan
 
-- Gaps between the user and the target role, ranked by fit impact, each citing evidence.
-- Milestones & tasks with progress, stepping-stone roles, and "projects that prove it".
+- Gaps ranked by fit impact, each citing evidence; milestones & tasks with progress; stepping-stone roles; projects that prove it.
 - Notes that it uses the answers from Fill the gap.
 
 ### 6.3 Résumé
 
-- Tailored to the target role; saved versions per company; templates; PDF export.
-- A requirements → evidence panel (Covered / Partial / Gap).
+- Tailored to the target role; saved versions per company/role; templates; PDF export.
+- Requirements → evidence panel (Covered / Partial / Gap).
 - AI revise chat; proposals apply only on user confirmation.
-- Drafted from sources, including the Fill the gap answers.
 
 ## 7. Cross-cutting rules
 
 - Every AI action shows a cost estimate on the user's own API key before running.
+- Long AI jobs (strength analysis, role map build) show a waiting screen with steps, progress, ETA, cost and Cancel; the user can leave and the job keeps running.
 - Every claim or score must be traceable to a Fact and its source ref.
-- "No evidence" is distinct from a low score: nothing speaks to it either way.
+- "No evidence" is distinct from a low score.
 - The model in use (e.g. `claude-sonnet-5`) is shown and configured under System configuration → AI & model.
 
 ## 8. Data flow summary
@@ -108,14 +119,16 @@ The Advisor always works against **one target role**, already chosen on the Role
 ```
 Target locations ─┐
                   ▼
-Sources ─► Facts ─► Strength analysis (scores, confidence, profile confidence)
-  ▲                         │
+Sources ─► Facts ─► Strength analysis run (scores, confidence, profile confidence)
+  ▲                         │ auto-starts
   │                         ▼
-  │              Role map worker (top 10 fit roles in target locations)
-  │                 + custom roles ("Add to Role Map")
-  │                         │ user picks one → Target role
+  │              Role map run (top 10 fit roles in target locations)   ◄── Rebuild
+  │                         │ "Target this role"
   │                         ▼
-  │              Fill the gap: generate questions per gap
+  │                   Target role  ◄── "Set as target" ◄── My roles (uploaded JD / filled in)
+  │                         │
+  │                         ▼
+  │              Fill the gap: questions per gap
   │                         │ Submit answers
   └──── user_answer facts ◄─┤
                             ▼
