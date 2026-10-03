@@ -1,6 +1,7 @@
-"""Postings of the user's own against a real database (Phase 8, ADR 0033):
-what Target stores, that nobody else sees it, that removing a posting takes
-everything made of it, and that a Target is one shape or the other."""
+"""Postings of the user's own against a real database (Phase 8, ADR 0033,
+ADR 0034): what Target stores, that nobody else sees it, that removing a
+posting takes everything made of it, and that a Target is one shape or the
+other."""
 
 from __future__ import annotations
 
@@ -37,11 +38,11 @@ async def _scored(uow: SqlAlchemyTargetUnitOfWork, owner_id: uuid.UUID) -> OwnPo
     assessment_id = uuid.uuid4()
     async with uow.for_owner(owner_id) as mine:
         posting = await mine.postings.create(
-            PrivateJobPosting.added(
+            PrivateJobPosting.filled_in(
                 owner_id=owner_id,
                 title="Staff Engineer",
                 company_name=None,
-                job_description="Lead design across three teams.",
+                requirements=("Lead design across three teams.",),
             )
         )
         run = await mine.evaluations.create(
@@ -155,6 +156,47 @@ async def test_removing_a_posting_of_your_own_takes_what_was_made_of_it(
         assert await mine.requirements.get_count(PostingRequirementFilter()) == 0
         assert await mine.requirement_fits.get_count(PostingRequirementFitFilter()) == 0
         assert await mine.fits.get_count(OwnPostingFitFilter()) == 0
+
+
+async def test_a_role_filled_in_with_nothing_listed_and_an_untitled_upload_round_trip(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyTargetUnitOfWork(database)
+    estimated = PrivateJobPosting.filled_in(
+        owner_id=account, title="Platform Lead", company_name=None, requirements=()
+    )
+    untitled = PrivateJobPosting.uploaded(
+        owner_id=account,
+        title=None,
+        company_name=None,
+        filename="principal-engineer.pdf",
+        content_type="application/pdf",
+        storage_key="owner/ownpostings/x",
+    )
+    async with uow.for_owner(account) as mine:
+        await mine.postings.create(estimated)
+        await mine.postings.create(untitled)
+
+    async with uow.for_owner(account) as mine:
+        loaded = await mine.postings.get(estimated.id)
+        assert loaded is not None
+        assert (str(loaded.source), loaded.job_description) == ("filled_in", None)
+        assert loaded.has_estimated_requirements and not loaded.has_placeholder_title
+        upload = await mine.postings.get(untitled.id)
+        assert upload is not None
+        assert (upload.title, upload.has_placeholder_title) == ("principal-engineer", True)
+
+
+async def test_only_a_role_with_nothing_listed_may_have_no_jd(
+    database: Database, account: uuid.UUID
+) -> None:
+    posting = PrivateJobPosting.filled_in(
+        owner_id=account, title="Platform Lead", company_name=None, requirements=("Leads",)
+    )
+    posting.job_description = None
+    with pytest.raises(IntegrityError):
+        async with SqlAlchemyTargetUnitOfWork(database).for_owner(account) as mine:
+            await mine.postings.create(posting)
 
 
 @pytest.mark.parametrize("ids", ["neither", "both"])

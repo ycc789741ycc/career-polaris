@@ -110,6 +110,7 @@ __all__ = [
     "PostingFitView",
     "ProjectionView",
     "RequirementView",
+    "RequirementsReadView",
     "RoleCandidateView",
     "RoleMapService",
     "RoleView",
@@ -222,6 +223,15 @@ class RequirementView:
     statement: str
     weight: float
     expected_level: str
+
+
+@dataclass(frozen=True, slots=True)
+class RequirementsReadView:
+    """What a JD the user brought asks for, weightiest first, and the one job
+    title the model read it as."""
+
+    name: str
+    requirements: tuple[RequirementView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1473,6 +1483,18 @@ class RoleMapService:
             untrusted=frozenset({"requirements"}),
         )
 
+    async def estimate_inferred_requirements(
+        self, owner_id: uuid.UUID, *, title: str, company_name: str | None
+    ) -> Estimate:
+        """What estimating a job's requirements from its title costs."""
+        return await self._gateway.estimate(
+            owner_id,
+            task="rolemap.extract",
+            template=load_template("typical_requirements", "v1"),
+            inputs={"job": _job_block(title, company_name)},
+            untrusted=frozenset({"job"}),
+        )
+
     async def extract_requirements(
         self,
         owner_id: uuid.UUID,
@@ -1480,7 +1502,7 @@ class RoleMapService:
         title: str,
         company_name: str | None,
         job_description: str,
-    ) -> tuple[RequirementView, ...]:
+    ) -> RequirementsReadView:
         """What a JD asks for, on the user's key: one call, with the prompt a
         role's requirements are read with. Weightiest first; stores nothing."""
         extracted = await self._gateway.run(
@@ -1491,10 +1513,23 @@ class RoleMapService:
             output_schema=_RoleExtraction,
             untrusted=frozenset({"postings"}),
         )
-        return tuple(
-            RequirementView(r.statement, r.weight, r.expected_level)
-            for r in sorted(extracted.value.requirements, key=lambda r: (-r.weight, r.statement))
+        return _requirements_read(extracted.value)
+
+    async def infer_requirements(
+        self, owner_id: uuid.UUID, *, title: str, company_name: str | None
+    ) -> RequirementsReadView:
+        """What a job typically asks for, estimated from its title alone, on
+        the user's key: one call, for a role the user filled in without
+        listing any (ADR 0034). Weightiest first; stores nothing."""
+        extracted = await self._gateway.run(
+            owner_id,
+            task="rolemap.extract",
+            template=load_template("typical_requirements", "v1"),
+            inputs={"job": _job_block(title, company_name)},
+            output_schema=_RoleExtraction,
+            untrusted=frozenset({"job"}),
         )
+        return _requirements_read(extracted.value)
 
     async def project_requirements(
         self,
@@ -1732,6 +1767,21 @@ class RoleMapService:
 def _posting_key(posting: PostingView) -> str:
     """The key a posting is matched under (see ``MarketService.scope_with_vectors``)."""
     return str(posting.id)
+
+
+def _requirements_read(extraction: _RoleExtraction) -> RequirementsReadView:
+    return RequirementsReadView(
+        name=extraction.name,
+        requirements=tuple(
+            RequirementView(r.statement, r.weight, r.expected_level)
+            for r in sorted(extraction.requirements, key=lambda r: (-r.weight, r.statement))
+        ),
+    )
+
+
+def _job_block(title: str, company_name: str | None) -> str:
+    """A job the user named without a posting, as untrusted text."""
+    return f"{title} — {company_name or 'company not stated'}"
 
 
 def _jd_block(title: str, company_name: str | None, description: str) -> str:

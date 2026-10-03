@@ -1,6 +1,6 @@
-"""Target at the HTTP edge: the postings the user brings themselves, priced
-first, queued to be read and scored, listed, rescored and removed
-(Phase 8, ADR 0033).
+"""Target at the HTTP edge: the postings the user brings themselves, added
+without spending anything, priced and queued when set as the target, listed
+and removed (Phase 8, ADR 0033, ADR 0034).
 
 Runs the real router and error handlers in-process against a stand-in service —
 no network, no infra.
@@ -25,13 +25,17 @@ JD_ID = uuid.uuid4()
 RUN_ID = uuid.uuid4()
 
 
-def _own(title: str, *, status: str, fit: int | None = None) -> OwnPostingView:
+def _own(
+    title: str, *, status: str | None, fit: int | None = None, source: str = "filled_in"
+) -> OwnPostingView:
     return OwnPostingView(
         private_job_posting_id=JD_ID,
         title=title,
         company_name="Northwind",
-        source="pasted",
+        source=source,
         filename=None,
+        has_estimated_requirements=False,
+        created_at=None,
         status=status,
         error_code=None,
         error_message=None,
@@ -46,33 +50,23 @@ class FakeTarget:
         self.added: list[dict[str, Any]] = []
         self.uploaded: list[dict[str, Any]] = []
         self.removed: list[uuid.UUID] = []
-        self.rescore_run: uuid.UUID | None = RUN_ID
+        self.target_run: uuid.UUID | None = RUN_ID
 
-    async def estimate_own_posting(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
+    async def add_own_posting(self, owner_id: uuid.UUID, **kw: Any) -> OwnPostingView:
+        self.added.append(kw)
+        return _own(kw["title"], status=None)
+
+    async def upload_own_posting(self, owner_id: uuid.UUID, **kw: Any) -> OwnPostingView:
+        self.uploaded.append(kw)
+        return _own(kw["title"] or "jd", status=None, source="uploaded")
+
+    async def estimate_target(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> dict[str, Any]:
         return {"cost_usd": "0.18", "model_id": "claude-opus-5", "rate_is_published": True}
 
-    async def estimate_rescore(self, owner_id: uuid.UUID, posting_id: uuid.UUID) -> dict[str, Any]:
-        return {"cost_usd": "0.09", "model_id": "claude-opus-5", "rate_is_published": True}
-
-    async def add_own_posting(
-        self, owner_id: uuid.UUID, **kw: Any
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        self.added.append(kw)
-        return _own(kw["title"], status="running"), RUN_ID
-
-    async def estimate_upload(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
-        return {"cost_usd": "0.22", "model_id": "claude-opus-5", "rate_is_published": True}
-
-    async def upload_own_posting(
-        self, owner_id: uuid.UUID, **kw: Any
-    ) -> tuple[OwnPostingView, uuid.UUID]:
-        self.uploaded.append(kw)
-        return _own(kw["title"], status="running"), RUN_ID
-
-    async def rescore_own_posting(
+    async def set_as_target(
         self, owner_id: uuid.UUID, posting_id: uuid.UUID
     ) -> tuple[OwnPostingView, uuid.UUID | None]:
-        return _own("Staff Engineer", status="running"), self.rescore_run
+        return _own("Staff Engineer", status="running"), self.target_run
 
     async def own_postings(self, owner_id: uuid.UUID) -> list[OwnPostingView]:
         return [_own("Staff Engineer", status="ready", fit=64)]
@@ -125,21 +119,7 @@ def client(target: FakeTarget, activity: FakeActivity, queued: list[Any]) -> Tes
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_a_posting_of_your_own_is_priced_first(client: TestClient) -> None:
-    response = client.post(
-        "/own-postings/cost-estimate",
-        json={"title": "Staff Engineer", "job_description": "Own the ledger."},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "cost_usd": "0.18",
-        "model_id": "claude-opus-5",
-        "rate_is_published": True,
-    }
-
-
-def test_a_posting_of_your_own_is_queued_to_be_scored_and_builds_nothing(
+def test_a_role_filled_in_by_hand_is_stored_and_spends_nothing(
     client: TestClient,
     target: FakeTarget,
     activity: FakeActivity,
@@ -150,36 +130,42 @@ def test_a_posting_of_your_own_is_queued_to_be_scored_and_builds_nothing(
         json={
             "title": "Staff Engineer",
             "company_name": "Northwind",
-            "job_description": "Own the ledger.",
+            "requirements": ["Own the ledger", "Lead incident reviews"],
         },
     )
 
-    assert response.status_code == 202
+    assert response.status_code == 201
     body = response.json()
-    assert (body["private_job_posting_id"], body["status"]) == (str(JD_ID), "running")
+    assert (body["private_job_posting_id"], body["status"]) == (str(JD_ID), None)
+    assert body["source"] == "filled_in"
     assert target.added == [
         {
             "title": "Staff Engineer",
             "company_name": "Northwind",
-            "job_description": "Own the ledger.",
+            "requirements": ("Own the ledger", "Lead incident reviews"),
         }
     ]
-    assert [c["name"] for c in queued] == ["target.evaluate_own_posting"]
-    assert queued[0]["evaluation_id"] == str(RUN_ID)
+    assert queued == []
     assert activity.requests == 0
+
+
+def test_a_role_filled_in_by_hand_may_list_nothing(client: TestClient, target: FakeTarget) -> None:
+    assert client.post("/own-postings", json={"title": "Platform Lead"}).status_code == 201
+    assert target.added[0]["requirements"] == ()
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        {"title": "", "job_description": "JD"},
-        {"title": "Staff Engineer"},
-        {"title": "x" * 256, "job_description": "JD"},
-        {"title": "Staff Engineer", "job_description": "x" * 50_001},
+        {"title": ""},
+        {"company_name": "Northwind"},
+        {"title": "x" * 256},
+        {"title": "Staff Engineer", "requirements": ["x" * 501]},
+        {"title": "Staff Engineer", "requirements": ["r"] * 31},
     ],
 )
-def test_a_posting_of_your_own_needs_a_title_and_a_jd(
-    client: TestClient, target: FakeTarget, body: dict[str, str]
+def test_a_role_filled_in_by_hand_needs_a_title_and_short_requirements(
+    client: TestClient, target: FakeTarget, body: dict[str, Any]
 ) -> None:
     assert client.post("/own-postings", json=body).status_code == 422
     assert target.added == []
@@ -192,23 +178,41 @@ def test_the_postings_of_your_own_are_listed_with_their_fit(client: TestClient) 
     assert (body["items"][0]["status"], body["items"][0]["fit"]) == ("ready", 64)
 
 
-def test_a_rescore_is_priced_first(client: TestClient) -> None:
-    response = client.get(f"/own-postings/{JD_ID}/rescore-estimate")
+def test_setting_one_as_the_target_is_priced_first(client: TestClient) -> None:
+    response = client.get(f"/own-postings/{JD_ID}/target-estimate")
 
     assert response.status_code == 200
-    assert response.json()["cost_usd"] == "0.09"
+    assert response.json() == {
+        "cost_usd": "0.18",
+        "model_id": "claude-opus-5",
+        "rate_is_published": True,
+    }
 
 
 @pytest.mark.parametrize("run", [RUN_ID, None])
-def test_a_rescore_is_queued_unless_one_is_already_running(
-    client: TestClient, target: FakeTarget, queued: list[dict[str, Any]], run: uuid.UUID | None
+def test_setting_one_as_the_target_queues_its_scoring_unless_there_is_nothing_to_do(
+    client: TestClient,
+    target: FakeTarget,
+    activity: FakeActivity,
+    queued: list[dict[str, Any]],
+    run: uuid.UUID | None,
 ) -> None:
-    target.rescore_run = run
+    target.target_run = run
 
-    response = client.post(f"/own-postings/{JD_ID}/rescore")
+    response = client.post(f"/own-postings/{JD_ID}/target")
 
     assert response.status_code == 202
     assert [c["name"] for c in queued] == (["target.evaluate_own_posting"] if run else [])
+    if run:
+        assert queued[0]["evaluation_id"] == str(RUN_ID)
+    assert activity.requests == 0
+
+
+def test_the_old_paths_are_gone(client: TestClient) -> None:
+    assert client.post("/own-postings/cost-estimate", json={}).status_code in (404, 405)
+    assert client.post("/own-postings/upload-estimate", json={}).status_code in (404, 405)
+    assert client.get(f"/own-postings/{JD_ID}/rescore-estimate").status_code == 404
+    assert client.post(f"/own-postings/{JD_ID}/rescore").status_code == 404
 
 
 def test_a_posting_of_your_own_is_removed(client: TestClient, target: FakeTarget) -> None:
@@ -216,14 +220,7 @@ def test_a_posting_of_your_own_is_removed(client: TestClient, target: FakeTarget
     assert target.removed == [JD_ID]
 
 
-def test_an_upload_is_priced_from_its_title_alone(client: TestClient) -> None:
-    response = client.post("/own-postings/upload-estimate", json={"title": "Staff Engineer"})
-
-    assert response.status_code == 200
-    assert response.json()["cost_usd"] == "0.22"
-
-
-def test_an_uploaded_file_is_handed_over_as_it_came_and_queued_to_be_read(
+def test_an_uploaded_file_is_handed_over_as_it_came_and_spends_nothing(
     client: TestClient,
     target: FakeTarget,
     activity: FakeActivity,
@@ -235,8 +232,8 @@ def test_an_uploaded_file_is_handed_over_as_it_came_and_queued_to_be_read(
         files={"file": ("jd.pdf", b"%PDF-1.7 ...", "application/pdf")},
     )
 
-    assert response.status_code == 202
-    assert response.json()["status"] == "running"
+    assert response.status_code == 201
+    assert response.json()["status"] is None
     assert target.uploaded == [
         {
             "title": "Staff Engineer",
@@ -246,20 +243,24 @@ def test_an_uploaded_file_is_handed_over_as_it_came_and_queued_to_be_read(
             "content": b"%PDF-1.7 ...",
         }
     ]
-    assert [c["name"] for c in queued] == ["target.evaluate_own_posting"]
+    assert queued == []
     assert activity.requests == 0
 
 
-@pytest.mark.parametrize(
-    "form",
-    [{"title": ""}, {}, {"title": "x" * 256}],
-)
-def test_an_upload_needs_a_title(
-    client: TestClient, target: FakeTarget, form: dict[str, str]
-) -> None:
+def test_an_upload_needs_no_title(client: TestClient, target: FakeTarget) -> None:
     response = client.post(
         "/own-postings/upload",
-        data=form,
+        files={"file": ("principal-engineer.txt", b"Own the ledger.", "text/plain")},
+    )
+
+    assert response.status_code == 201
+    assert target.uploaded[0]["title"] is None
+
+
+def test_an_upload_refuses_an_overlong_title(client: TestClient, target: FakeTarget) -> None:
+    response = client.post(
+        "/own-postings/upload",
+        data={"title": "x" * 256},
         files={"file": ("jd.txt", b"Own the ledger.", "text/plain")},
     )
 

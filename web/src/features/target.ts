@@ -24,6 +24,9 @@ export interface AdvisorTarget {
   band: string | null;
   /** A posting the user brought themselves; its JD is its requirements. */
   isOwnPosting: boolean;
+  /** A role of your own filled in with nothing listed: what it asks for was
+   * estimated from its title (ADR 0034). */
+  requirementsEstimated?: boolean;
 }
 
 /** Whether two references name the same Target. Pure. */

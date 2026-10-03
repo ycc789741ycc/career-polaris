@@ -19,3 +19,8 @@ MAX_JOB_DESCRIPTION = 50_000
 
 # An uploaded file's name, as shown back to the user.
 MAX_FILENAME = 255
+
+# What a role filled in by hand may list as what it asks for: one requirement
+# per line, so a few dozen short lines at most.
+MAX_REQUIREMENT_LINES = 30
+MAX_REQUIREMENT_LINE = 500

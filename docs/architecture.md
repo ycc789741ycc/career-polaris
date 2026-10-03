@@ -337,7 +337,8 @@ flowchart LR
 | Not built | worker | re-check demand `crawl_source` rows whose company had no board yet. A search needs no refresh job: the next build that needs it fetches it if it is stale (ADR 0027) |
 | User clicks "Analyze" | api → worker (`ai`) | refused with 409 `sources_processing` while a sync or parse runs → cost estimate → user confirms → analysis run `running` → assessment → run `ready` or `failed` with a code, `AnalysisFinished` → fits → the role-map build, whose cost was part of the same confirmation (domain decision 24; ADR 0006, ADR 0018) |
 | Role-map build (after an analysis, or a market change) | worker (`ai`) | build `running` and queued, or `waiting` while an analysis runs and started on `AnalysisFinished` → the first ten candidates the market has, plus every custom role → `ready` or `failed` (ADR 0018), recording `RoleMapBuildFinished` → compute fits once (ADR 0024) |
-| User aims at a posting of their own (title, company?, a pasted JD or a PDF/DOCX/TXT file) | api → worker (`ai`) | cost estimate (a ceiling for a file, which is unread until the worker reads it) → user confirms → JD stored privately in `target`, or the file in object storage, a `posting_evaluation` run `running` → `target.evaluate_own_posting`: a file is read into the JD (`kernel.documents`, worker only, page-capped) and deleted → requirements read (`rolemap.extract`, through the fit kit) → projected onto the dimensions (`rolemap.fit`) → the fit worked out locally → `ready` or `failed`; the Advisor polls `GET /own-postings`. Nothing is built or placed on the map |
+| User adds a role of their own (a PDF/DOCX/TXT file, or a title, company? and what it asks for, one per line) | api | stored privately in `target` — the file in object storage, unread — with no estimate, no run and nothing spent (ADR 0034). Nothing is built or placed on the map |
+| User sets a role of their own as the target | api → worker (`ai`) | `GET /own-postings/{id}/target-estimate` (0 when its fit is current; a ceiling for an unread file) → user confirms → `POST /own-postings/{id}/target` records a `posting_evaluation` run `running`, unless the fit is current or a run is going → `target.evaluate_own_posting`: a file is read into the JD (`kernel.documents`, worker only, page-capped) and deleted → requirements read (`rolemap.extract`, through the fit kit; `typical_requirements` from the title when nothing was listed; an untitled upload takes the name read) → projected onto the dimensions (`rolemap.fit`) → the fit worked out locally → `ready` or `failed`; the Advisor polls `GET /own-postings` and opens Fill the gap |
 | Any background work running | api | the shell polls `GET /activity` every 2 s while a sync, parse, analysis or build is busy: the running bar, sidebar marks, a toast when a stage ends, and screens reload what it wrote. Work busy past `JOB_STALE_AFTER_SECONDS` reads as `failed`/`stale` (ADR 0018) |
 | Connector authorized / weekly | worker (`sync`) | fetch → Evidence → `ProfileUpdated`; nothing on the user's key |
 | Résumé uploaded | api → worker (`sync`) | store file → parse → Evidence and base résumé → `ProfileUpdated`; nothing on the user's key |
@@ -411,7 +412,7 @@ flowchart LR
 | 26 Target = role + optional opening | T21, T14 |
 | 27 Questions per gap of the Target | T22: `gapfill` schema, rule 5 layering, `GapAnswersSubmitted` |
 | 28 Profile confidence on the analysis | T23 |
-| 34 Postings of the user's own | T26, T29: `POST /own-postings`, `target.evaluate_own_posting`, migrations 0025 and 0030 |
+| 34 Postings of the user's own | T26, T29: `POST /own-postings`, `POST /own-postings/{id}/target`, `target.evaluate_own_posting`, migrations 0025, 0030 and 0032 |
 
 ## 8. Open questions
 

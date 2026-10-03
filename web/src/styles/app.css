@@ -1210,3 +1210,62 @@ select.input { appearance: auto; }
   color: var(--color-neutral-800);
   margin: 6px 0 14px;
 }
+
+/* "Your own role" (CustomTarget.dc.html): two ways in, side by side. */
+.own-role-ways {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+}
+@media (max-width: 860px) {
+  .own-role-ways {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .own-role-or {
+    flex-direction: row !important;
+  }
+}
+.own-role-or {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-neutral-700);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.own-role-or > span:not(:nth-child(2)) {
+  flex: 1;
+  width: 1px;
+  min-height: 1px;
+  background: var(--color-divider);
+}
+.drop-zone {
+  margin-top: 8px;
+  padding: 28px 18px;
+  border: 2px dashed color-mix(in srgb, #201e1d 22%, transparent);
+  border-radius: 16px;
+  background: var(--color-bg);
+  text-align: center;
+}
+.drop-zone-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-100);
+}
+.own-role-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.own-role-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, #201e1d 10%, transparent);
+}
