@@ -1454,6 +1454,14 @@ select.input { appearance: auto; }
   grid-template-areas: "tools page requirements";
   align-items: start;
 }
+/* Each column keeps to its track. A side column is a .stack, a grid whose one
+ * auto column would otherwise grow to its widest line — a long saved-résumé
+ * name — and run under the page. */
+.resume-col-tools,
+.resume-col-requirements {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
 .resume-col-tools { grid-area: tools; }
 .resume-col-page { grid-area: page; min-width: 0; }
 .resume-col-requirements { grid-area: requirements; }
