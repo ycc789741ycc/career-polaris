@@ -7,7 +7,15 @@ import { ActivityContext } from "../shell/activity";
 import type { Focus } from "../shell/navigation";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { Roles, scopeLine } from "./Roles";
+import {
+  builtLine,
+  getClearCount,
+  getSkillFits,
+  humanizeKey,
+  Roles,
+  scopeLine,
+  signed,
+} from "./Roles";
 import { page } from "../test/page";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
@@ -291,20 +299,40 @@ describe("the selected role's fit", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("shows you against what the role asks on each dimension, most asked first", async () => {
+  it("shows you against what the role asks on each skill, biggest gap first", async () => {
     renderRoles({ role: "r1" });
 
     expect(
-      await screen.findByText("How you fit each dimension"),
+      await screen.findByText("How you fit each skill"),
     ).toBeInTheDocument();
-    expect(screen.getByText("you 48 · role asks 80")).toBeInTheDocument();
-    expect(screen.getByText("you 70 · role asks 55")).toBeInTheDocument();
-    const bars = screen.getAllByRole("img", { name: /: you \d+, the bar is/ });
+    expect(screen.getByText("Biggest gap first")).toBeInTheDocument();
+    expect(
+      screen.getByText("You clear 1 of 2 skills this role screens for."),
+    ).toBeInTheDocument();
+    const bars = screen.getAllByRole("img", { name: /: you \d+, role asks/ });
     expect(bars.map((bar) => bar.getAttribute("aria-label"))).toEqual([
-      "system_design: you 48, the bar is 80",
-      "testing: you 70, the bar is 55",
+      "System design: you 48, role asks 80",
+      "Testing: you 70, role asks 55",
     ]);
-    expect(screen.queryByText("-32")).not.toBeInTheDocument();
+    expect(screen.getByText("\u221232")).toBeInTheDocument();
+    expect(screen.getByText("+15")).toBeInTheDocument();
+  });
+
+  it("says no more about what has no evidence than the bars do", async () => {
+    renderRoles({ role: "r1" });
+
+    await screen.findByText("How you fit each skill");
+    expect(
+      screen.queryByText("No evidence at all for these"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("gives each stat its context", async () => {
+    renderRoles({ role: "r1" });
+
+    expect(await screen.findByText("across 4 postings")).toBeInTheDocument();
+    expect(screen.getByText("Berlin · Remote EU")).toBeInTheDocument();
+    expect(screen.getByText("in your locations")).toBeInTheDocument();
   });
 });
 
@@ -368,13 +396,11 @@ describe("the role map while an analysis runs", () => {
     ).toBeDisabled();
   });
 
-  it("says how old the market is and that the locations moved since", async () => {
+  it("says when the map was built and that the locations moved since", async () => {
     renderRoles(null);
 
     expect(
-      await screen.findByText(
-        `Market data as of ${new Date("2026-09-30T12:00:00+00:00").toLocaleDateString()}.`,
-      ),
+      await screen.findByText(/^Built 30 Sep 2026 on your model · /),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Your locations changed since this map was built/),
@@ -424,7 +450,7 @@ describe("how much of the market the role map takes in", () => {
     renderRoles(null);
 
     expect(
-      await screen.findByText(/1,284 open postings in Berlin and Remote EU\./),
+      await screen.findByText(/1,284 open postings in Berlin and Remote EU/),
     ).toBeInTheDocument();
   });
 
@@ -461,7 +487,7 @@ describe("ten roles, chosen by the system", () => {
   it("offers no count of roles to choose", async () => {
     renderRoles(null);
 
-    await screen.findByText(/The 10 best-fit roles on the market/);
+    await screen.findByText(/The 2 best-fit roles on the market/);
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 });
@@ -516,5 +542,73 @@ describe("no roles of your own", () => {
       screen.queryByRole("button", { name: "Add to Role Map" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Job title")).not.toBeInTheDocument();
+  });
+});
+
+describe("the role map toolbar", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("puts Rebuild first, with what the last build was and what a rebuild costs", async () => {
+    renderRoles(null);
+
+    expect(
+      await screen.findByText(
+        "Built 30 Sep 2026 on your model · 1,284 open postings in Berlin and Remote EU · about $0.40 on your key to rebuild",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Rebuild role map" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Re-score fit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves out what is not known yet", () => {
+    expect(
+      builtLine({
+        builtAt: null,
+        model: "m",
+        scope: null,
+        rebuildCostUsd: null,
+      }),
+    ).toBe("Not built yet");
+  });
+});
+
+describe("the skill fit helpers", () => {
+  const gaps = [
+    { dimension_key: "a", user_score: 92, target_score: 78 },
+    { dimension_key: "b", user_score: 42, target_score: 65 },
+    { dimension_key: "c", user_score: 72, target_score: 80 },
+    { dimension_key: "d", user_score: 60, target_score: 60 },
+  ];
+
+  it("counts a skill met exactly as cleared", () => {
+    expect(getClearCount(gaps)).toBe(2);
+  });
+
+  it("sorts the biggest gap first and names each by its display name", () => {
+    const names = new Map([["b", "Incident response"]]);
+    expect(getSkillFits(gaps, names).map((s) => [s.name, s.delta])).toEqual([
+      ["Incident response", -23],
+      ["C", -8],
+      ["D", 0],
+      ["A", 14],
+    ]);
+  });
+
+  it("never shows a raw slug", () => {
+    expect(humanizeKey("backend-eng_python")).toBe("Backend eng python");
+  });
+
+  it("signs a gap with a real minus", () => {
+    expect(signed(-23)).toBe("\u221223");
+    expect(signed(14)).toBe("+14");
+    expect(signed(0)).toBe("+0");
   });
 });

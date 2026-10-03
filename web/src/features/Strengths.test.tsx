@@ -114,7 +114,9 @@ describe("Strengths", () => {
     serve(assessment({}));
     renderStrengths();
 
-    expect(await screen.findByText(/Profile v2/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/^Analysed 27 Sep 2026 on claude-opus-5/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Out of date/)).not.toBeInTheDocument();
   });
 
@@ -124,7 +126,9 @@ describe("Strengths", () => {
     const fetch = serve(assessment({}));
     renderStrengths();
 
-    expect(await screen.findByText(/Profile v2/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/^Analysed 27 Sep 2026 on claude-opus-5/),
+    ).toBeInTheDocument();
     const paths = fetch.mock.calls.map(([input]) => String(input));
     expect(paths.some((path) => /\/(fits|roles)\b/.test(path))).toBe(false);
     expect(screen.queryByText(/Compared against/)).not.toBeInTheDocument();
@@ -257,6 +261,17 @@ describe("Strengths", () => {
       "$0.10 for the analysis, at most $0.40 for the role map built after it, up to 10 roles, and at most $0.10 for scoring your fit against them.",
     );
     expect(dialog).toHaveTextContent("$0.60");
+  });
+
+  it("puts Re-analyse first, then when and on what it ran", async () => {
+    serve(assessment({}));
+    renderStrengths();
+
+    const button = await screen.findByRole("button", { name: "Re-analyse" });
+    const line = await screen.findByText(/^Analysed 27 Sep 2026/);
+    expect(button.compareDocumentPosition(line)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("shows the analysis's own profile confidence next to Re-analyse", async () => {
