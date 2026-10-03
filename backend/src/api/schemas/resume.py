@@ -15,6 +15,7 @@ from advisor.resume import (
     RevisionFailed,
     RevisionText,
     Template,
+    TemplateView,
     VersionView,
 )
 from api.schemas.common import (
@@ -254,7 +255,8 @@ class ResumeExport(ApiModel):
     # rendering -> ready | failed
     status: Literal["rendering", "ready", "failed"]
     error: JobError | None
-    # Short-lived and signed; the file itself is never public.
+    # Short-lived and signed, and it downloads the file rather than opening it
+    # (ADR 0038). The file itself is never public.
     download_url: str | None
 
     @classmethod
@@ -303,4 +305,65 @@ def revision_event(event: RevisionText | RevisionDone | RevisionFailed) -> dict[
 
 
 class ResumeSummaryPage(Page[ResumeSummary]):
+    pass
+
+
+class ResumeTemplate(ApiModel):
+    """One template as the PDF renderer draws it, for the picker and the
+    preview to draw the same page (ADR 0038). Sizes in points, the page in
+    millimetres."""
+
+    id: TemplateName
+    name: str
+    note: str
+    # The line under the header, as a CSS border shorthand.
+    rule: str
+    swatch: str
+    name_color: str
+    dot_color: str
+    heading_font: str
+    body_font: str
+    page_width_mm: int
+    page_height_mm: int
+    margin_top_mm: int
+    margin_side_mm: int
+    name_pt: float
+    title_pt: float
+    body_pt: float
+    contact_pt: float
+    small_pt: float
+    heading_pt: float
+    # What "Trim to one page" keeps: bullets per position, and skills.
+    trimmed_bullets: int
+    trimmed_skills: int
+
+    @classmethod
+    def from_view(cls, template: TemplateView) -> ResumeTemplate:
+        look = template.look
+        return cls(
+            id=str(look.template),
+            name=look.name,
+            note=look.note,
+            rule=look.rule,
+            swatch=look.swatch,
+            name_color=look.name_color,
+            dot_color=look.dot_color,
+            heading_font=look.heading_font,
+            body_font=look.body_font,
+            page_width_mm=template.page_width_mm,
+            page_height_mm=template.page_height_mm,
+            margin_top_mm=template.margin_top_mm,
+            margin_side_mm=template.margin_side_mm,
+            name_pt=template.name_pt,
+            title_pt=template.title_pt,
+            body_pt=template.body_pt,
+            contact_pt=template.contact_pt,
+            small_pt=template.small_pt,
+            heading_pt=template.heading_pt,
+            trimmed_bullets=template.trimmed_bullets,
+            trimmed_skills=template.trimmed_skills,
+        )
+
+
+class ResumeTemplatePage(Page[ResumeTemplate]):
     pass

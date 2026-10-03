@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -131,6 +132,9 @@ class Export(Base, OwnedMixin):
         ForeignKey("resume.version.id", ondelete="CASCADE"), nullable=False, index=True
     )
     template: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Cut to one page or not, read when Export was clicked (ADR 0038). None on
+    # exports from before it was kept, which are never reused.
+    trim: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

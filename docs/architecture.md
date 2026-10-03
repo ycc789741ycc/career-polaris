@@ -57,7 +57,7 @@ The worker queues share one image for the MVP. Split them later by giving each q
 | API | Python 3.12, FastAPI, Pydantic v2 | Pydantic models are used for both API contracts and LLM output validation |
 | Persistence | Postgres, SQLAlchemy 2, Alembic | One managed database for data, queue and outbox |
 | Jobs | Procrastinate (Postgres-backed, periodic tasks) | No Redis at MVP scale |
-| Documents | WeasyPrint (PDF export, [ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)), pypdf / python-docx (parsing) | No browser in the image; the export fetches nothing |
+| Documents | WeasyPrint (PDF export, [ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)), pypdf / python-docx (parsing) | No browser in the image; the export fetches nothing. Caprasimo and Figtree are installed for it, and its look is the domain's, which the preview reads too ([ADR 0038](decisions/0038-export-the-resume-as-previewed-and-download-it.md)) |
 | Local ML | sentence-transformers | Works with every LLM provider, including Anthropic, which has no embeddings API |
 | Client | React + Vite, `openapi-typescript` client generated from FastAPI's OpenAPI; the SPA's response types alias it | The API contract is the client/server boundary, checked in CI down to the SPA's typecheck ([ADR 0013](decisions/0013-type-every-http-response-with-a-schema-model.md)) |
 | Auth | Own sign-in in `identity`: Argon2id, 15-minute HS256 access tokens, rotating refresh cookie; optional Google through our own OpenID Connect exchange | No external account needed to run the app; see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md) and [ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md) |

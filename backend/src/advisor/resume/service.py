@@ -9,7 +9,8 @@
   revision the user applies or ignores (ADR 0007 is about export; the chat is
   ``AiGateway.stream_structured``).
 * Export renders a version to PDF on the worker's ``docs`` queue and hands back
-  a short-lived signed link.
+  a short-lived signed link that downloads the file. An export of a version,
+  template and trim already rendered is reused (ADR 0038).
 * A résumé is written again only when the user asks. It records what its latest
   generated version read, and says it is outdated once the evidence or the
   Target has moved on (ADR 0035).
@@ -43,8 +44,12 @@ from advisor.resume.domain import (
     MAX_BULLETS_PER_ROLE,
     MAX_ROLES,
     MAX_SKILLS,
+    TEMPLATE_LOOKS,
+    TRIMMED_BULLETS,
+    TRIMMED_SKILLS,
     Coverage,
     Export,
+    ExportFilter,
     ExportStatus,
     Options,
     Origin,
@@ -62,12 +67,26 @@ from advisor.resume.domain import (
     TailoredResume,
     TailoredResumeFilter,
     Template,
+    TemplateLook,
     VersionSource,
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_download_name,
     mark_edits,
     settle_revision,
+)
+from advisor.resume.domain.constants import (
+    BODY_PT,
+    CONTACT_PT,
+    HEADING_PT,
+    NAME_PT,
+    PAGE_HEIGHT_MM,
+    PAGE_MARGIN_SIDE_MM,
+    PAGE_MARGIN_TOP_MM,
+    PAGE_WIDTH_MM,
+    SMALL_PT,
+    TITLE_PT,
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.target import (
@@ -106,6 +125,7 @@ __all__ = [
     "RevisionText",
     "RevisionView",
     "Template",
+    "TemplateView",
     "VersionView",
 ]
 
@@ -234,6 +254,27 @@ class ExportView:
     error_code: str | None
     error_message: str | None
     download_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateView:
+    """One template as the PDF renderer draws it: what the preview reads so it
+    shows the page the PDF will be (ADR 0038). Sizes in points, the page in
+    millimetres."""
+
+    look: TemplateLook
+    page_width_mm: int
+    page_height_mm: int
+    margin_top_mm: int
+    margin_side_mm: int
+    name_pt: float
+    title_pt: float
+    body_pt: float
+    contact_pt: float
+    small_pt: float
+    heading_pt: float
+    trimmed_bullets: int
+    trimmed_skills: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -615,11 +656,23 @@ class ResumeService:
                 await mine.revisions.update(stored)
         return version
 
+    # -- templates ----------------------------------------------------------
+
+    def templates(self, *, page: int = 1, page_size: int | None = None) -> Page[TemplateView]:
+        """Every template, as the renderer draws it. The same for every user."""
+        return paginate([_template_view(look) for look in TEMPLATE_LOOKS.values()], page, page_size)
+
     # -- export -------------------------------------------------------------
 
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
     ) -> ExportView:
+        """Record an export of one version, in the résumé's template and trim as
+        they are now; the caller queues ``export`` while it is rendering.
+
+        An export of the same version, template and trim already rendered is
+        returned as it is, and nothing is rendered again (ADR 0038).
+        """
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             found = await mine.versions.get_list(
@@ -627,12 +680,22 @@ class ResumeService:
             )
             if not found:
                 raise NotFoundError("version not found", number=number)
+            same = ExportFilter(
+                version_id=found[0].id,
+                template=resume.template,
+                trim=resume.options.trim,
+                status=ExportStatus.READY,
+            )
+            rendered = await mine.exports.get_list(same, page_size=1)
+            if rendered:
+                return _export_view(rendered[0], download_url=None)
             export = await mine.exports.create(
                 Export(
                     id=uuid.uuid4(),
                     owner_id=owner_id,
                     version_id=found[0].id,
                     template=resume.template,
+                    trim=resume.options.trim,
                     status=ExportStatus.RENDERING,
                     created_at=utcnow(),
                 )
@@ -655,7 +718,16 @@ class ResumeService:
                 raise NotFoundError("résumé not found", resume_id=str(version.resume_id))
             content = ResumeContent.from_dict(version.content)
             template = export.template
-            options = resume.options
+            # The trim asked for when Export was clicked, not whatever it is now.
+            options = (
+                resume.options
+                if export.trim is None
+                else Options(
+                    metrics=resume.options.metrics,
+                    reorder=resume.options.reorder,
+                    trim=export.trim,
+                )
+            )
 
         try:
             pdf = render_pdf(render_html(content, template=template, options=options))
@@ -683,11 +755,21 @@ class ResumeService:
                 await mine.exports.update(stored)
 
     async def get_export(self, owner_id: uuid.UUID, export_id: uuid.UUID) -> ExportView:
+        """The export, and once it is ready a link that downloads it, signed
+        now, saved as "<name> — <role>.pdf" (ADR 0038)."""
         async with self._uow.for_owner(owner_id) as mine:
             export = await mine.exports.get(export_id)
-        if export is None:
-            raise NotFoundError("export not found", export_id=str(export_id))
-        url = self._store.signed_url(export.storage_key) if export.storage_key else None
+            if export is None:
+                raise NotFoundError("export not found", export_id=str(export_id))
+            if export.storage_key is None:
+                return _export_view(export, download_url=None)
+            version = await mine.versions.get(export.version_id)
+            resume = await mine.resumes.get(version.resume_id) if version else None
+        name = get_download_name(
+            str((version.content if version else {}).get("name", "")),
+            resume.target_label if resume else "",
+        )
+        url = self._store.signed_url(export.storage_key, download_name=name)
         return _export_view(export, download_url=url)
 
     # -- internals ----------------------------------------------------------
@@ -1012,6 +1094,24 @@ def _revision_view(revision: Revision) -> RevisionView:
         has_proposal=revision.proposal is not None,
         applied_version_id=revision.applied_version_id,
         created_at=revision.created_at,
+    )
+
+
+def _template_view(look: TemplateLook) -> TemplateView:
+    return TemplateView(
+        look=look,
+        page_width_mm=PAGE_WIDTH_MM,
+        page_height_mm=PAGE_HEIGHT_MM,
+        margin_top_mm=PAGE_MARGIN_TOP_MM,
+        margin_side_mm=PAGE_MARGIN_SIDE_MM,
+        name_pt=NAME_PT,
+        title_pt=TITLE_PT,
+        body_pt=BODY_PT,
+        contact_pt=CONTACT_PT,
+        small_pt=SMALL_PT,
+        heading_pt=HEADING_PT,
+        trimmed_bullets=TRIMMED_BULLETS,
+        trimmed_skills=TRIMMED_SKILLS,
     )
 
 

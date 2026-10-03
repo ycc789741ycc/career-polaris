@@ -4,6 +4,8 @@ from advisor.resume.domain.constants import (
     MAX_SKILLS,
     MAX_TEXT,
     PARTIAL_WITHIN,
+    TRIMMED_BULLETS,
+    TRIMMED_SKILLS,
 )
 from advisor.resume.domain.content import (
     Bullet,
@@ -23,7 +25,7 @@ from advisor.resume.domain.content import (
     settle_revision,
 )
 from advisor.resume.domain.events import ResumeEvent, ResumeTailored, ResumeVersionSaved
-from advisor.resume.domain.export import Export, ExportStatus
+from advisor.resume.domain.export import Export, ExportStatus, get_download_name
 from advisor.resume.domain.repositories import (
     ExportFilter,
     ExportRepository,
@@ -39,6 +41,7 @@ from advisor.resume.domain.repositories import (
 )
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.tailored_resume import ResumeStatus, ResumeVersion, TailoredResume
+from advisor.resume.domain.template_look import TEMPLATE_LOOKS, TemplateLook, get_template_look
 
 __all__ = [
     "MAX_BULLETS_PER_ROLE",
@@ -46,6 +49,9 @@ __all__ = [
     "MAX_SKILLS",
     "MAX_TEXT",
     "PARTIAL_WITHIN",
+    "TEMPLATE_LOOKS",
+    "TRIMMED_BULLETS",
+    "TRIMMED_SKILLS",
     "Bullet",
     "Coverage",
     "Export",
@@ -74,11 +80,14 @@ __all__ = [
     "TailoredResumeFilter",
     "TailoredResumeRepository",
     "Template",
+    "TemplateLook",
     "Verdict",
     "VersionSource",
     "assert_well_formed",
     "assert_written_lines_cited",
     "coverage",
+    "get_download_name",
+    "get_template_look",
     "mark_edits",
     "settle_revision",
 ]

@@ -160,6 +160,7 @@ def export(row: models.Export) -> Export:
         template=Template(row.template),
         status=ExportStatus(row.status),
         created_at=row.created_at,
+        trim=row.trim,
         storage_key=row.storage_key,
         error_code=row.error_code,
         error_message=row.error_message,
@@ -180,6 +181,7 @@ def export_row(entity: Export) -> models.Export:
 
 def apply_export(row: models.Export, entity: Export) -> None:
     row.template = str(entity.template)
+    row.trim = entity.trim
     row.status = str(entity.status)
     row.storage_key = entity.storage_key
     row.error_code = entity.error_code

@@ -14,6 +14,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from decimal import Decimal
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 import pytest_asyncio
@@ -444,6 +445,13 @@ async def test_an_export_is_a_pdf_in_object_storage_behind_a_signed_link(
     ready = await world.resume.get_export(account, export.id)
     assert ready.status == "ready", ready.error_message
     assert ready.download_url is not None and "X-Amz-Signature" in ready.download_url
+    # It downloads the file, under the person's name and the role (ADR 0038).
+    disposition = parse_qs(urlparse(ready.download_url).query)["response-content-disposition"]
+    assert disposition[0].startswith('attachment; filename="')
+    assert disposition[0].endswith(".pdf")
+    # Asked for again unchanged, the rendered file is reused.
+    again = await world.resume.request_export(account, resume_id, number=1)
+    assert (again.id, again.status) == (export.id, "ready")
     key = f"users/{account}/exports/{export.id}.pdf"
     try:
         assert world.store.get(key).startswith(b"%PDF-")

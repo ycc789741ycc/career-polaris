@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { api, streamEvents } from "../api/client";
 import type {
   PlanEstimate,
@@ -7,6 +7,8 @@ import type {
   ResumeOptions,
   ResumeSummary,
   ResumeTemplate,
+  ResumeTemplateLook,
+  ResumeTemplatePage,
   ResumeVersion,
   TailoredResume,
   TargetRef,
@@ -26,6 +28,7 @@ import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
+import { startDownload } from "./download";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
@@ -33,32 +36,6 @@ import { messageOf } from "./useAsync";
 type Ref = TargetRef;
 
 const POLL_MS = 2000;
-
-const TEMPLATES: {
-  id: ResumeTemplate;
-  name: string;
-  note: string;
-  swatch: string;
-  color: string;
-  rule: string;
-}[] = [
-  {
-    id: "organic",
-    name: "Organic",
-    note: "Rounded, terracotta rule.",
-    swatch: "#c67139",
-    color: "#8a4a20",
-    rule: "3px solid #c67139",
-  },
-  {
-    id: "plain",
-    name: "Plain",
-    note: "One page, evidence first.",
-    swatch: "#9b9691",
-    color: "#201e1d",
-    rule: "1px solid #cfcac5",
-  },
-];
 
 const OPTION_LABELS: { key: keyof ResumeOptions; label: string }[] = [
   { key: "metrics", label: "Quantify bullets with data from Jira and GitHub" },
@@ -90,6 +67,10 @@ interface Exchange {
  * edited in place, saved as versions, revised through a streamed chat whose
  * proposals apply only on request, and exported as a PDF. Opening a résumé
  * kept for another Target moves the Advisor there.
+ *
+ * The preview is the PDF's page: its template, sizes, margins and trim come
+ * from GET /resume-templates, the definition the renderer uses, and Export
+ * downloads the file the moment it is rendered (ADR 0038).
  */
 export function Resume({
   target,
@@ -133,9 +114,13 @@ export function Resume({
   });
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
+  const [templates, setTemplates] = useState<ResumeTemplateLook[]>([]);
+  const [showSources, setShowSources] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasDrafting = useRef(false);
+
+  const look = templates.find((t) => t.id === template) ?? templates[0] ?? null;
 
   const dirty =
     !!draft &&
@@ -177,6 +162,14 @@ export function Resume({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, reloads]);
+
+  // Every template, as the renderer draws it: the picker and the page read it.
+  useEffect(() => {
+    api
+      .items<ResumeTemplatePage>("/resume-templates")
+      .then(setTemplates)
+      .catch((caught: unknown) => setError(messageOf(caught)));
+  }, []);
 
   function show(next: TailoredResume) {
     setResume(next);
@@ -304,7 +297,9 @@ export function Resume({
         setExporting(job);
       }
       if (job.status === "ready" && job.download_url) {
-        flash(`Exported — ${resume.label}, ${template} template.`);
+        // Signed just now, so it is used before it can expire.
+        startDownload(job.download_url);
+        flash(`Downloaded — ${resume.label}, ${template} template.`);
       }
     } catch (caught) {
       setError(messageOf(caught));
@@ -495,7 +490,7 @@ export function Resume({
           <div className="panel panel-tight">
             <Eyebrow style={{ marginBottom: 12 }}>Template</Eyebrow>
             <div className="stack" style={{ gap: 10 }}>
-              {TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -547,20 +542,10 @@ export function Resume({
               disabled={!resume?.version || dirty}
               onClick={() => void exportPdf()}
             >
-              Export as PDF
+              {exporting?.status === "rendering"
+                ? "Rendering…"
+                : "Export as PDF"}
             </Button>
-            {exporting?.status === "ready" && exporting.download_url && (
-              <p style={{ fontSize: 13, margin: "10px 0 0" }}>
-                <a
-                  href={exporting.download_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download the PDF
-                </a>{" "}
-                <span className="muted">(the link expires shortly)</span>
-              </p>
-            )}
             {exporting?.status === "failed" && (
               <ErrorNote error={exporting.error?.message ?? "Export failed."} />
             )}
@@ -568,7 +553,7 @@ export function Resume({
               {dirty
                 ? "Save this version first — the export is of a saved version."
                 : resume?.snapshot
-                  ? `Highlighted lines were rewritten for ${resume.snapshot.role_name ?? resume.snapshot.title} at ${resume.snapshot.company}, from the sources cited under each bullet.`
+                  ? `Show where each line came from to see the lines rewritten for ${resume.snapshot.role_name ?? resume.snapshot.title} and the sources behind them. Neither prints.`
                   : "The export is a white, printable page in the template you pick."}
             </p>
           </div>
@@ -605,17 +590,37 @@ export function Resume({
                 </Button>
               )}
             </div>
+          ) : draft && look ? (
+            <>
+              <div
+                className="row-between"
+                style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}
+              >
+                <RoundCheck checked={showSources} onChange={setShowSources}>
+                  Show where each line came from
+                </RoundCheck>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {trimmedNote(draft, options, look)}
+                </span>
+              </div>
+              {options.reorder && (
+                <p className="resume-annotation">
+                  Skills are ordered for this role.
+                </p>
+              )}
+              <ResumePage
+                key={resume.version?.id}
+                content={draft}
+                evidence={resume.evidence}
+                look={look}
+                trim={options.trim}
+                reorder={options.reorder}
+                showSources={showSources}
+                onChange={setDraft}
+              />
+            </>
           ) : draft ? (
-            <ResumePage
-              key={resume.version?.id}
-              content={draft}
-              evidence={resume.evidence}
-              template={
-                TEMPLATES.find((t) => t.id === template) ?? TEMPLATES[0]!
-              }
-              reorder={options.reorder}
-              onChange={setDraft}
-            />
+            <Loading what="the template" />
           ) : null}
         </div>
 
@@ -686,17 +691,64 @@ export function Resume({
   );
 }
 
+/** The page's custom properties, from the template as the renderer draws
+ * it: sizes in points, margins as a share of the page's width. Pure. */
+export function pageStyle(look: ResumeTemplateLook): Record<string, string> {
+  const share = (mm: number) => `${(mm / look.page_width_mm) * 100}cqw`;
+  return {
+    "--page-ratio": String(look.page_height_mm / look.page_width_mm),
+    "--margin-top": share(look.margin_top_mm),
+    "--margin-side": share(look.margin_side_mm),
+    "--name-pt": String(look.name_pt),
+    "--title-pt": String(look.title_pt),
+    "--body-pt": String(look.body_pt),
+    "--contact-pt": String(look.contact_pt),
+    "--small-pt": String(look.small_pt),
+    "--heading-pt": String(look.heading_pt),
+    "--rule": look.rule,
+    "--name-color": look.name_color,
+    "--dot-color": look.dot_color,
+    "--heading-font": `"${look.heading_font}"`,
+    "--body-font": `"${look.body_font}"`,
+  };
+}
+
+/** What "Trim to one page" leaves out of the PDF, and so of the page. Pure. */
+export function trimmedNote(
+  content: ResumeContent,
+  options: ResumeOptions,
+  look: ResumeTemplateLook,
+): string {
+  if (!options.trim) return "As it will print, A4.";
+  const lines = content.experience.reduce(
+    (sum, p) => sum + Math.max(0, p.bullets.length - look.trimmed_bullets),
+    0,
+  );
+  const skills = Math.max(0, content.skills.length - look.trimmed_skills);
+  if (lines === 0 && skills === 0)
+    return "Trimmed to one page; nothing left out.";
+  const parts = [
+    lines ? `${lines} line${lines === 1 ? "" : "s"}` : null,
+    skills ? `${skills} skill${skills === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return `Trimmed to one page: ${parts.join(" and ")} left out of the PDF.`;
+}
+
 function ResumePage({
   content,
   evidence,
-  template,
+  look,
+  trim,
   reorder,
+  showSources,
   onChange,
 }: {
   content: ResumeContent;
   evidence: TailoredResume["evidence"];
-  template: (typeof TEMPLATES)[number];
+  look: ResumeTemplateLook;
+  trim: boolean;
   reorder: boolean;
+  showSources: boolean;
   onChange: (next: ResumeContent) => void;
 }) {
   const edit = (patch: Partial<ResumeContent>) =>
@@ -717,121 +769,100 @@ function ResumePage({
       ),
     });
 
+  const skills = trim
+    ? content.skills.slice(0, look.trimmed_skills)
+    : content.skills;
+
   return (
-    <article className="resume-page" aria-label="Résumé">
-      <header
-        style={{
-          borderBottom: template.rule,
-          paddingBottom: 14,
-          marginBottom: 20,
-        }}
+    <div className="resume-sheet">
+      <article
+        className="resume-page"
+        aria-label="Résumé"
+        style={pageStyle(look) as CSSProperties}
       >
-        <div
-          className="resume-name"
-          style={{ color: template.color }}
+        <header>
+          <div
+            className="resume-name"
+            contentEditable
+            suppressContentEditableWarning
+            aria-label="Name"
+            onBlur={(event) =>
+              edit({ name: event.currentTarget.textContent ?? "" })
+            }
+          >
+            {content.name}
+          </div>
+          <div className="resume-contact">
+            {[content.headline, content.contact].filter(Boolean).join(" · ")}
+          </div>
+        </header>
+
+        <div className="resume-section">Summary</div>
+        <p
+          className="resume-summary"
           contentEditable
           suppressContentEditableWarning
-          aria-label="Name"
+          aria-label="Summary"
           onBlur={(event) =>
-            edit({ name: event.currentTarget.textContent ?? "" })
+            edit({ summary: event.currentTarget.textContent ?? "" })
           }
         >
-          {content.name}
-        </div>
-        <div className="resume-contact">
-          {[content.headline, content.contact].filter(Boolean).join(" · ")}
-        </div>
-      </header>
+          {content.summary}
+        </p>
 
-      <div
-        className="resume-section"
-        style={{ color: template.color, marginBottom: 6 }}
-      >
-        Summary
-      </div>
-      <p
-        style={{ fontSize: 14, lineHeight: 1.65, margin: "0 0 22px" }}
-        contentEditable
-        suppressContentEditableWarning
-        aria-label="Summary"
-        onBlur={(event) =>
-          edit({ summary: event.currentTarget.textContent ?? "" })
-        }
-      >
-        {content.summary}
-      </p>
-
-      <div
-        className="resume-section"
-        style={{ color: template.color, marginBottom: 10 }}
-      >
-        Experience
-      </div>
-      {content.experience.map((position, p) => (
-        <div key={`${position.title}-${p}`} style={{ marginBottom: 20 }}>
-          <div className="row-between">
-            <span className="resume-job-title">
-              {position.title}
-              {position.org ? ` — ${position.org}` : ""}
-            </span>
-            <span className="resume-when">{position.when}</span>
-          </div>
-          {position.bullets.map((bullet, b) => (
-            <div key={b} className="resume-bullet">
-              <span
-                className="resume-bullet-dot"
-                style={{ background: template.swatch }}
-                aria-hidden="true"
-              />
-              <div style={{ flex: 1 }}>
-                <span
-                  className="resume-bullet-text"
-                  data-rewritten={bullet.answers !== null}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onBlur={(event) =>
-                    editBullet(p, b, event.currentTarget.textContent ?? "")
-                  }
-                >
-                  {bullet.text}
-                </span>
-                <div className="resume-cite">{citeLine(bullet, evidence)}</div>
-              </div>
+        <div className="resume-section">Experience</div>
+        {content.experience.map((position, p) => (
+          <section key={`${position.title}-${p}`} className="resume-job">
+            <div className="resume-job-head">
+              <span className="resume-job-title">
+                {[position.title, position.org].filter(Boolean).join(" — ")}
+              </span>
+              <span className="resume-when">{position.when}</span>
             </div>
+            <ul className="resume-bullets">
+              {(trim
+                ? position.bullets.slice(0, look.trimmed_bullets)
+                : position.bullets
+              ).map((bullet, b) => (
+                <li key={b}>
+                  <span
+                    className="resume-bullet-text"
+                    data-rewritten={showSources && bullet.answers !== null}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(event) =>
+                      editBullet(p, b, event.currentTarget.textContent ?? "")
+                    }
+                  >
+                    {bullet.text}
+                  </span>
+                  <div className="resume-cite" hidden={!showSources}>
+                    {citeLine(bullet, evidence)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+
+        <div className="resume-section">Skills</div>
+        <div className="resume-skills">
+          {skills.map((skill, index) => (
+            <span
+              key={skill}
+              className="resume-skill"
+              data-lead={showSources && reorder && index < 3}
+            >
+              {skill}
+            </span>
           ))}
         </div>
-      ))}
-
-      <div
-        className="resume-section"
-        style={{ color: template.color, marginBottom: 10 }}
-      >
-        Skills{reorder ? ", ordered for this role" : ""}
-      </div>
-      <div className="row" style={{ gap: 8 }}>
-        {content.skills.map((skill, index) => (
-          <span
-            key={skill}
-            className="resume-skill"
-            data-lead={reorder && index < 3}
-          >
-            {skill}
-          </span>
-        ))}
-      </div>
-
-      <p
-        style={{
-          fontSize: 12,
-          color: "#8a847e",
-          marginTop: 24,
-          marginBottom: 0,
-        }}
-      >
-        Click any line to edit it directly. Grey notes show the source each line
-        was written from.
+      </article>
+      <p className="resume-annotation" style={{ marginTop: 10 }}>
+        Click any line to edit it in place. The page is laid out as the PDF
+        prints it; the line across it marks where an A4 page ends.
       </p>
-    </article>
+    </div>
   );
 }
 

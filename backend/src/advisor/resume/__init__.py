@@ -22,6 +22,7 @@ from advisor.resume.service import (
     RevisionText,
     RevisionView,
     Template,
+    TemplateView,
     VersionView,
 )
 
@@ -37,6 +38,7 @@ __all__ = [
     "RevisionText",
     "RevisionView",
     "Template",
+    "TemplateView",
     "VersionView",
     "create_resume_service",
     "jobs",

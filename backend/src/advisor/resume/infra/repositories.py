@@ -148,6 +148,13 @@ class SqlAlchemyExportRepository(
         return entity.id
 
     def conditions(self, filter: ExportFilter) -> list[ColumnElement[bool]]:
-        if filter.version_id is None:
-            return []
-        return [models.Export.version_id == filter.version_id]
+        found: list[ColumnElement[bool]] = []
+        if filter.version_id is not None:
+            found.append(models.Export.version_id == filter.version_id)
+        if filter.template is not None:
+            found.append(models.Export.template == str(filter.template))
+        if filter.trim is not None:
+            found.append(models.Export.trim == filter.trim)
+        if filter.status is not None:
+            found.append(models.Export.status == str(filter.status))
+        return found

@@ -1931,6 +1931,21 @@ Open questions:
   facts.
 
 ## Export what you previewed
+**Done** (ADR 0038, migration 0034). Where the build differs from the plan
+below:
+
+* The looks live in the domain (`template_look.py`, `constants.py`), not in
+  the renderer, so the service can serve them without reaching into infra.
+* The TTFs are the SPA's WOFF2 files converted, with their name tables fixed:
+  the web subsets name Figtree "Figtree Light", which fontconfig would not
+  match to "Figtree". `backend/assets/fonts/README.md` says how.
+* The page end is a thin solid line, drawn by a repeating background, not a
+  dashed one.
+* The download is named with an em dash ("Maya Chen — Staff Engineer.pdf");
+  ruff refuses the en dash as ambiguous.
+* The source notes are shown under "Show where each line came from", off by
+  default, so the page lays out as it prints.
+
 The Résumé tab shows a preview, and Export as PDF renders the saved version
 on the worker's `docs` queue (ADR 0007). The two are separate renderings
 that share only three colours, and those are copied by hand:

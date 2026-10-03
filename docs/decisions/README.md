@@ -43,6 +43,7 @@ new record that supersedes the old one.
 | [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted |
 | [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted |
 | [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
+| [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

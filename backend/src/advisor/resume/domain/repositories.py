@@ -19,8 +19,9 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from advisor.resume.domain.content import Template
 from advisor.resume.domain.events import ResumeEvent
-from advisor.resume.domain.export import Export
+from advisor.resume.domain.export import Export, ExportStatus
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.tailored_resume import ResumeVersion, TailoredResume
 
@@ -74,6 +75,9 @@ class RevisionRepository(Repository[Revision, RevisionFilter], Protocol): ...
 @dataclass(frozen=True, slots=True)
 class ExportFilter:
     version_id: uuid.UUID | None = None
+    template: Template | None = None
+    trim: bool | None = None
+    status: ExportStatus | None = None
 
 
 class ExportRepository(Repository[Export, ExportFilter], Protocol): ...
