@@ -28,6 +28,8 @@ from api.schemas.common import (
 from api.schemas.target import TargetFields, TargetRefBody
 
 TemplateName = Literal["organic", "plain"]
+# What moved on since the résumé was last written (ADR 0035).
+OutdatedReasonName = Literal["evidence", "target"]
 
 
 class OptionsBody(RequestModel):
@@ -121,7 +123,9 @@ class ResumeVersion(ApiModel):
     id: uuid.UUID
     number: int
     label: str
-    source: Literal["generated", "manual", "chat"]
+    # "answers": rewritten after Fill the gap, before ADR 0035; nothing new
+    # is saved with it.
+    source: Literal["generated", "manual", "chat", "answers"]
     model_id: str | None
     created_at: Timestamp
 
@@ -182,6 +186,10 @@ class TailoredResume(ResumeSummary):
     evidence: dict[str, EvidenceNote]
     versions: list[ResumeVersion]
     revisions: list[Revision]
+    # Whether the evidence or the Target has changed since the résumé was last
+    # written. Regenerating is a request the user confirms (ADR 0035).
+    is_outdated: bool
+    outdated_by: list[OutdatedReasonName]
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
@@ -234,6 +242,8 @@ class TailoredResume(ResumeSummary):
                 )
                 for r in resume.revisions
             ],
+            is_outdated=resume.is_outdated,
+            outdated_by=[str(r) for r in resume.outdated_by],
         )
 
 

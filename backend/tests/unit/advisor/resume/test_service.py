@@ -21,8 +21,8 @@ from advisor.resume.domain import (
     Revision,
     VersionSource,
 )
-from advisor.target import TargetRef
-from kernel.errors import NotFoundError, ValidationError
+from advisor.target import DraftBasis, OutdatedReason, TargetRef
+from kernel.errors import ConflictError, NotFoundError, ValidationError
 from tests.unit.advisor.resume.fakes import FakeObjectStore, FakeResumeUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -30,24 +30,56 @@ OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 
 
 class FakeTarget:
+    """The Target as it stands now hashes to ``digest``; the comparison is the
+    real one."""
+
+    def __init__(self, digest: str = "d1") -> None:
+        self.digest = digest
+
     async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> Any:
         named = ref.role_id or ref.private_job_posting_id or ""
         return SimpleNamespace(label=f"Target {named[:8]}")
 
+    async def get_outdated_reasons(
+        self,
+        owner_id: uuid.UUID,
+        ref: TargetRef,
+        *,
+        recorded: DraftBasis | None,
+        profile_version: int,
+    ) -> tuple[OutdatedReason, ...]:
+        if recorded is None:
+            return ()
+        return recorded.get_outdated_reasons(
+            DraftBasis(profile_version=profile_version, target_digest=self.digest)
+        )
+
 
 class FakeProfile:
+    def __init__(self, version: int = 0) -> None:
+        self.current = version
+
     async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
         return {"e1"}
 
     async def snapshot(self, owner_id: uuid.UUID) -> Any:
         return SimpleNamespace(evidence=())
 
+    async def version(self, owner_id: uuid.UUID) -> int:
+        return self.current
 
-def _service(uow: FakeResumeUnitOfWork, store: FakeObjectStore | None = None) -> ResumeService:
+
+def _service(
+    uow: FakeResumeUnitOfWork,
+    store: FakeObjectStore | None = None,
+    *,
+    profile: FakeProfile | None = None,
+    digest: str = "d1",
+) -> ResumeService:
     return ResumeService(
         uow,
-        target=FakeTarget(),  # type: ignore[arg-type]
-        profile=FakeProfile(),  # type: ignore[arg-type]
+        target=FakeTarget(digest),  # type: ignore[arg-type]
+        profile=profile or FakeProfile(),  # type: ignore[arg-type]
         assessment=None,  # type: ignore[arg-type]
         gateway=None,  # type: ignore[arg-type]
         object_store=store or FakeObjectStore(),  # type: ignore[arg-type]
@@ -177,31 +209,67 @@ async def test_a_failure_is_recorded_on_the_resume_and_generation_skips_it() -> 
     assert summary.status == "failed" and summary.error_code == "target_unusable"
 
 
-# --- after Fill the gap (ADR 0023) -------------------------------------------
+# --- outdated, regenerated only when asked (ADR 0035) -------------------------
 
 
-async def test_regenerating_a_target_with_no_resume_does_nothing() -> None:
-    service = _service(FakeResumeUnitOfWork())
+def _written(uow: FakeResumeUnitOfWork, resume_id: uuid.UUID, *, version: int, digest: str) -> None:
+    resume = uow.store.resumes[resume_id]
+    resume.written(
+        snapshot={},
+        label=resume.target_label,
+        coverage=(),
+        profile_version=version,
+        target_digest=digest,
+        at=resume.created_at,
+    )
 
-    assert await service.regenerate(OWNER, TargetRef(str(uuid.uuid4()))) is None
 
-
-async def test_regenerating_writes_the_targets_resume_again_as_an_answers_version(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_redrafting_asks_for_the_next_version_and_refuses_while_writing() -> None:
     uow = FakeResumeUnitOfWork()
     service = _service(uow)
     resume_id = await _resume(service)
-    ref = next(iter(uow.store.resumes.values()))
-    target = TargetRef(str(ref.role_id), str(ref.job_posting_id))
-    uow.store.resumes[resume_id].status = ResumeStatus.READY
-    written: list[tuple[uuid.UUID, VersionSource]] = []
 
-    async def generate(owner_id: uuid.UUID, resume_id: uuid.UUID, *, source: VersionSource) -> None:
-        written.append((resume_id, source))
+    with pytest.raises(ConflictError):
+        await service.redraft(OWNER, resume_id)
 
-    monkeypatch.setattr(service, "generate", generate)
+    _written(uow, resume_id, version=1, digest="d1")
+    redrafting = await service.redraft(OWNER, resume_id)
 
-    assert await service.regenerate(OWNER, target) == resume_id
-    assert written == [(resume_id, VersionSource.ANSWERS)]
+    assert redrafting.status == "drafting"
     assert uow.store.resumes[resume_id].status is ResumeStatus.DRAFTING
+    with pytest.raises(NotFoundError):
+        await service.redraft(OTHER, resume_id)
+
+
+@pytest.mark.parametrize(
+    ("version", "digest", "reasons"),
+    [
+        (1, "d1", ()),
+        (2, "d1", (OutdatedReason.EVIDENCE,)),
+        (1, "d2", (OutdatedReason.TARGET,)),
+    ],
+)
+async def test_a_written_resume_is_outdated_by_what_moved_on(
+    version: int, digest: str, reasons: tuple[OutdatedReason, ...]
+) -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow, profile=FakeProfile(version=version), digest=digest)
+    resume_id = await _resume(service)
+    _written(uow, resume_id, version=1, digest="d1")
+
+    view = await service.get(OWNER, resume_id)
+
+    assert view.outdated_by == reasons and view.is_outdated == bool(reasons)
+
+
+async def test_a_manual_edit_keeps_what_the_resume_was_written_from() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow, profile=FakeProfile(version=1), digest="d1")
+    resume_id = await _resume(service)
+    _written(uow, resume_id, version=1, digest="d1")
+
+    await service.save_version(OWNER, resume_id, content=_content("Rewrote it myself"))
+
+    stored = uow.store.resumes[resume_id]
+    assert (stored.profile_version, stored.target_digest) == (1, "d1")
+    assert (await service.get(OWNER, resume_id)).outdated_by == ()

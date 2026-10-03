@@ -14,7 +14,6 @@ from api.schemas.gapfill import (
     AnswersRequest,
     QuestionSet,
     QuestionSetRequest,
-    SubmitEstimate,
     Submitted,
 )
 from wiring.queue import enqueue
@@ -48,30 +47,13 @@ async def get_set(set_id: uuid.UUID, user: CurrentUser, deps: Deps) -> QuestionS
     return QuestionSet.from_view(await deps.gapfill.get(user, set_id))
 
 
-@router.get("/gap-question-sets/{set_id}/submit-estimate")
-async def submit_estimate(set_id: uuid.UUID, user: CurrentUser, deps: Deps) -> SubmitEstimate:
-    """Submitting writes the Target's plan and résumé again, each only if the
-    user has one; that is what it costs."""
-    ref = (await deps.gapfill.get(user, set_id)).target
-    plan = (
-        await deps.gapplan.estimate_cost(user, ref)
-        if await deps.gapplan.latest_for(user, ref) is not None
-        else None
-    )
-    resume = (
-        await deps.resume.estimate_cost(user, ref)
-        if await deps.resume.latest_for(user, ref) is not None
-        else None
-    )
-    return SubmitEstimate.of(plan=plan, resume=resume)
-
-
 @router.post("/gap-question-sets/{set_id}/answers")
 async def submit(
     set_id: uuid.UUID, body: AnswersRequest, user: CurrentUser, deps: Deps
 ) -> Submitted:
-    """Every answer at once: checked as a batch, stored as ``user_answer``
-    evidence, then the Target's plan and résumé are written again."""
+    """Every answer at once: checked as a batch and stored as ``user_answer``
+    evidence. Spends nothing and rewrites nothing: the Target's plan and résumé
+    then read as outdated, and the user regenerates them (ADR 0035)."""
     done = await deps.gapfill.submit(
         user,
         set_id,

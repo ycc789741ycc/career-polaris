@@ -21,7 +21,7 @@ import pytest_asyncio
 from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
-from advisor.profile import create_profile_service
+from advisor.profile import ProfileService, create_profile_service
 from advisor.resume import (
     Options,
     ResumeService,
@@ -86,6 +86,7 @@ class World:
     resume: ResumeService
     store: ObjectStore
     evidence_id: str
+    profile: ProfileService
 
 
 @pytest_asyncio.fixture
@@ -191,6 +192,7 @@ async def world(
         resume=resume,
         store=store,
         evidence_id=str(evidence.id),
+        profile=profile,
     )
 
 
@@ -447,6 +449,33 @@ async def test_an_export_is_a_pdf_in_object_storage_behind_a_signed_link(
         assert world.store.get(key).startswith(b"%PDF-")
     finally:
         world.store.delete(key)
+
+
+async def test_new_evidence_marks_the_resume_outdated_until_it_is_regenerated(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """Answering spends nothing: the résumé says it is outdated, and writing
+    it again is a request, saved as its next version (ADR 0035)."""
+    resume_id = await _written(world, account)
+    assert (await world.resume.get(account, resume_id)).outdated_by == ()
+
+    await world.profile.record_answer(
+        account, question_id="later", question="Did another team adopt it?", answer="Yes"
+    )
+    outdated = await world.resume.get(account, resume_id)
+    assert [str(r) for r in outdated.outdated_by] == ["evidence"]
+    assert [v.number for v in outdated.versions] == [1]
+
+    with pytest.raises(NotFoundError):
+        await world.resume.redraft(other_account, resume_id)
+    await world.resume.redraft(account, resume_id)
+    world.stub.replies.append(_resume_reply(CITED))
+    await world.resume.generate(account, resume_id)
+
+    regenerated = await world.resume.get(account, resume_id)
+    assert regenerated.summary.status == "ready", regenerated.summary.error_message
+    assert [v.number for v in regenerated.versions] == [2, 1]
+    assert regenerated.outdated_by == ()
 
 
 async def test_another_user_cannot_read_the_resume_or_its_export(

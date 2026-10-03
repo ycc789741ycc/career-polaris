@@ -89,6 +89,8 @@ const resume: TailoredResume = {
   evidence: { e1: { reference: "GitHub · 38 PRs", fact: "payments-svc" } },
   versions: [version],
   revisions: [],
+  is_outdated: false,
+  outdated_by: [],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -202,6 +204,47 @@ describe("résumé screen", () => {
     expect(
       screen.getByRole("button", { name: "Save this version" }),
     ).toBeDisabled();
+  });
+
+  it("regenerates an outdated résumé as its next version once priced", async () => {
+    let regenerated = false;
+    const calls = serve((call) => {
+      if (call.url.startsWith("/tailored-resumes/cost-estimate"))
+        return { cost_usd: "0.05", model_id: "claude-opus-5" };
+      if (call.url === "/tailored-resumes/res-1/regenerate") {
+        regenerated = true;
+        return { ...summary, status: "drafting" };
+      }
+      if (call.url === "/tailored-resumes/res-1")
+        return regenerated
+          ? { ...resume, status: "drafting" }
+          : { ...resume, is_outdated: true, outdated_by: ["evidence"] };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const banner = await screen.findByRole("status", { name: "Outdated" });
+    expect(banner).toHaveTextContent("Outdated: your evidence changed");
+    await user.click(
+      within(banner).getByRole("button", { name: "Regenerate" }),
+    );
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(confirm).toHaveTextContent("Writing the résumé again for");
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
+
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: "/tailored-resumes/res-1/regenerate",
+      body: undefined,
+    });
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes" && c.method === "POST"),
+    ).toBe(false);
   });
 
   it("saves an edited line as a new version", async () => {

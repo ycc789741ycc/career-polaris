@@ -30,6 +30,8 @@ def plan(row: models.GapPlan) -> GapPlan:
         model_id=row.model_id,
         template_version=row.template_version,
         drafted_at=row.drafted_at,
+        profile_version=row.profile_version,
+        target_digest=row.target_digest,
     )
 
 
@@ -59,6 +61,8 @@ def apply_plan(row: models.GapPlan, entity: GapPlan) -> None:
     row.model_id = entity.model_id
     row.template_version = entity.template_version
     row.drafted_at = entity.drafted_at
+    row.profile_version = entity.profile_version
+    row.target_digest = entity.target_digest
 
 
 def milestone(row: models.Milestone) -> Milestone:

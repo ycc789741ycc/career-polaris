@@ -50,6 +50,8 @@ def resume(row: models.Resume) -> TailoredResume:
         coverage=tuple(row.coverage),
         error_code=row.error_code,
         error_message=row.error_message,
+        profile_version=row.profile_version,
+        target_digest=row.target_digest,
     )
 
 
@@ -76,6 +78,8 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.error_code = entity.error_code
     row.error_message = entity.error_message
     row.updated_at = entity.updated_at
+    row.profile_version = entity.profile_version
+    row.target_digest = entity.target_digest
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:

@@ -22,6 +22,7 @@ import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
+import { OutdatedBanner } from "./OutdatedBanner";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
 
@@ -290,6 +291,11 @@ export function GapPlan({
         </div>
       ) : (
         <>
+          <OutdatedBanner
+            reasons={plan.outdated_by}
+            busy={busy}
+            onRegenerate={() => void price(plan.target, plan.label)}
+          />
           <span className="model-pill" style={{ marginBottom: 16 }}>
             Drafted by {plan.model_id ?? model} for {plan.label}
             {plan.snapshot?.fit != null &&

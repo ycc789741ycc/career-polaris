@@ -5,8 +5,9 @@ on, and the requirements nothing in their evidence speaks to — on the user's
 key, as a job whose status the page polls (ADR 0006). The answers arrive in one
 submit: the whole batch is checked, every answer is recorded as ``user_answer``
 evidence through ``profile`` in one transaction, and ``GapAnswersSubmitted``
-has the Target's gap plan and résumé regenerated, each only if the user has
-one. An unanswered question stays a gap.
+is recorded. Submitting spends nothing: the Target's gap plan and résumé read
+as outdated by the new evidence until the user regenerates them (ADR 0035).
+An unanswered question stays a gap.
 """
 
 from __future__ import annotations

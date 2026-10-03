@@ -80,28 +80,29 @@ and the role-map build are described step by step in
 [strength-analysis.md](strength-analysis.md) and
 [role-map-build.md](role-map-build.md).
 
-### Example: submitting gap answers
+### Example: regenerating a résumé the user was told is outdated
 
 ```mermaid
 sequenceDiagram
-    participant API as API / gap-fill service
+    participant UI as Browser
+    participant API as API / résumé service
     participant DB as PostgreSQL
-    participant D as Outbox dispatcher
     participant Q as Procrastinate queue
     participant W as Worker
 
-    API->>DB: Commit answers and GapAnswersSubmitted event
-    D->>DB: Read pending event
-    D->>Q: Enqueue gapplan.regenerate
-    D->>Q: Enqueue resume.regenerate
-    D->>DB: Mark event dispatched
-    W->>Q: Pick up tasks
-    W->>DB: Save regenerated plan and résumé through component services
+    UI->>API: GET /tailored-resumes/cost-estimate
+    UI->>API: POST /tailored-resumes/{id}/regenerate
+    API->>DB: Record the résumé as drafting
+    API->>Q: Enqueue resume.generate
+    W->>Q: Pick up the task
+    W->>DB: Save the next version with what it read
+    UI->>API: Poll GET /tailored-resumes/{id}
 ```
 
-The two tasks run independently; the diagram does not require them to finish
-in order. Each regeneration only produces work if the user already has the
-corresponding plan or résumé for the target.
+Submitting gap answers queues nothing. `GapAnswersSubmitted` is recorded and
+dispatched without a task: the Target's plan and résumé read as outdated by
+the new evidence, and the user regenerates either at a price they confirm
+([ADR 0035](../decisions/0035-regenerate-the-plan-and-resume-only-when-asked.md)).
 
 ## Completion and failure
 

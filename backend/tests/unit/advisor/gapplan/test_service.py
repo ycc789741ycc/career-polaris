@@ -11,7 +11,7 @@ import pytest
 
 from advisor.gapplan import GapPlanService, PlanStatus
 from advisor.gapplan.domain import Milestone, Task
-from advisor.target import TargetRef
+from advisor.target import DraftBasis, OutdatedReason, TargetRef
 from kernel.errors import NotFoundError
 from tests.unit.advisor.gapplan.fakes import FakeGapPlanUnitOfWork
 
@@ -25,11 +25,46 @@ class FakeTarget:
         return SimpleNamespace(label=f"Target {named[:8]}")
 
 
-def _service(uow: FakeGapPlanUnitOfWork) -> GapPlanService:
+class OutdatingTarget(FakeTarget):
+    """The Target as it stands now hashes to ``digest``; the comparison is the
+    real one."""
+
+    def __init__(self, *, digest: str) -> None:
+        self.digest = digest
+
+    async def get_outdated_reasons(
+        self,
+        owner_id: uuid.UUID,
+        ref: TargetRef,
+        *,
+        recorded: DraftBasis | None,
+        profile_version: int,
+    ) -> tuple[OutdatedReason, ...]:
+        if recorded is None:
+            return ()
+        return recorded.get_outdated_reasons(
+            DraftBasis(profile_version=profile_version, target_digest=self.digest)
+        )
+
+
+class VersionedProfile:
+    def __init__(self, version: int) -> None:
+        self.current = version
+
+    async def version(self, owner_id: uuid.UUID) -> int:
+        return self.current
+
+
+def _service(
+    uow: FakeGapPlanUnitOfWork,
+    *,
+    target: FakeTarget | None = None,
+    profile: VersionedProfile | None = None,
+) -> GapPlanService:
     return GapPlanService(
         uow,
-        target=FakeTarget(),  # type: ignore[arg-type]
-        profile=None,  # type: ignore[arg-type]
+        target=target or FakeTarget(),  # type: ignore[arg-type]
+        profile=profile or VersionedProfile(0),  # type: ignore[arg-type]
         assessment=None,  # type: ignore[arg-type]
         rolemap=None,  # type: ignore[arg-type]
         gateway=None,  # type: ignore[arg-type]
@@ -169,33 +204,78 @@ async def test_a_failure_is_recorded_on_the_plan_and_drafting_skips_it() -> None
         await plans.draft(OTHER, plan.id)
 
 
-# --- after Fill the gap (ADR 0023) -------------------------------------------
+# --- outdated, regenerated only when asked (ADR 0035) -------------------------
 
 
-async def test_regenerating_a_target_with_no_plan_does_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    plans = _service(FakeGapPlanUnitOfWork())
+def _drafted(uow: FakeGapPlanUnitOfWork, plan_id: uuid.UUID, *, version: int, digest: str) -> None:
+    plan = uow.store.plans[plan_id]
+    plan.drafted(
+        snapshot={},
+        label=plan.target_label,
+        gaps=(),
+        projects=(),
+        stepping_stones=(),
+        model_id="claude-opus-5",
+        template_version="gap_plan/v1",
+        profile_version=version,
+        target_digest=digest,
+        at=plan.created_at,
+    )
 
-    assert await plans.regenerate(OWNER, _ref()) is None
+
+async def test_a_plan_records_nothing_until_drafted_and_reads_current_while_unchanged() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    target = OutdatingTarget(digest="d1")
+    plans = _service(uow, target=target, profile=VersionedProfile(3))
+    plan = await plans.request(OWNER, _ref())
+    assert uow.store.plans[plan.id].profile_version is None
+
+    _drafted(uow, plan.id, version=3, digest="d1")
+    view = await plans.get(OWNER, plan.id)
+
+    assert not view.is_outdated and view.outdated_by == ()
 
 
-async def test_regenerating_drafts_the_targets_next_version(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("version", "digest", "reasons"),
+    [
+        (4, "d1", (OutdatedReason.EVIDENCE,)),
+        (3, "d2", (OutdatedReason.TARGET,)),
+        (4, "d2", (OutdatedReason.EVIDENCE, OutdatedReason.TARGET)),
+    ],
+)
+async def test_the_latest_plan_is_outdated_by_what_moved_on(
+    version: int, digest: str, reasons: tuple[OutdatedReason, ...]
 ) -> None:
     uow = FakeGapPlanUnitOfWork()
-    plans = _service(uow)
+    plans = _service(uow, target=OutdatingTarget(digest=digest), profile=VersionedProfile(version))
+    plan = await plans.request(OWNER, _ref())
+    _drafted(uow, plan.id, version=3, digest="d1")
+
+    view = await plans.get(OWNER, plan.id)
+
+    assert view.is_outdated and view.outdated_by == reasons
+
+
+async def test_only_the_targets_latest_ready_plan_is_judged() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow, target=OutdatingTarget(digest="d2"), profile=VersionedProfile(9))
     ref = _ref()
-    await plans.request(OWNER, ref)
-    drafted: list[uuid.UUID] = []
+    older = await plans.request(OWNER, ref)
+    _drafted(uow, older.id, version=3, digest="d1")
+    newer = await plans.request(OWNER, ref)
 
-    async def draft(owner_id: uuid.UUID, plan_id: uuid.UUID) -> None:
-        drafted.append(plan_id)
+    # An older version is history; a plan still drafting has read nothing yet.
+    assert (await plans.get(OWNER, older.id)).outdated_by == ()
+    assert (await plans.get(OWNER, newer.id)).outdated_by == ()
 
-    monkeypatch.setattr(plans, "draft", draft)
 
-    regenerated = await plans.regenerate(OWNER, ref)
+async def test_a_plan_drafted_before_its_basis_was_kept_is_never_outdated() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _service(uow, target=OutdatingTarget(digest="d2"), profile=VersionedProfile(9))
+    plan = await plans.request(OWNER, _ref())
+    _drafted(uow, plan.id, version=3, digest="d1")
+    uow.store.plans[plan.id].profile_version = None
+    uow.store.plans[plan.id].target_digest = None
 
-    assert regenerated is not None and drafted == [regenerated]
-    latest = await plans.latest_for(OWNER, ref)
-    assert latest is not None and (latest.id, latest.version) == (regenerated, 2)
+    assert (await plans.get(OWNER, plan.id)).outdated_by == ()

@@ -19,6 +19,8 @@ from api.schemas.common import (
 from api.schemas.target import TargetFields, TargetRefBody
 
 PlanStatusName = Literal["drafting", "ready", "failed"]
+# What moved on since a plan was drafted (ADR 0035).
+OutdatedReasonName = Literal["evidence", "target"]
 
 
 class TargetRequest(TargetFields):
@@ -163,6 +165,10 @@ class Plan(PlanSummary):
     projects: list[PlanProject]
     stepping_stones: list[SteppingStone]
     versions: list[PlanSummary]
+    # The Target's latest plan only: whether the evidence or the Target has
+    # changed since it was drafted. Regenerating is a new request (ADR 0035).
+    is_outdated: bool
+    outdated_by: list[OutdatedReasonName]
 
     @classmethod
     def from_plan(cls, plan: PlanView) -> Plan:
@@ -195,6 +201,8 @@ class Plan(PlanSummary):
                 for s in plan.stepping_stones
             ],
             versions=[PlanSummary.from_view(v) for v in plan.versions],
+            is_outdated=plan.is_outdated,
+            outdated_by=[str(r) for r in plan.outdated_by],
         )
 
 

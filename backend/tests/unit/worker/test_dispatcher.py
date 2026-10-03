@@ -1,4 +1,4 @@
-"""The outbox dispatcher: submitted answers into regenerations (ADR 0023),
+"""The outbox dispatcher: submitted answers into nothing at all (ADR 0035),
 finished analyses into the role-map builds that follow them (ADR 0018, 0020),
 and finished builds into one scoring of the fits (ADR 0024). Nothing the
 market does, and no change of locations, builds a map (ADR 0027).
@@ -58,9 +58,11 @@ async def test_new_evidence_spends_nothing(source: str, queued: list[dict[str, A
 @pytest.mark.parametrize(
     ("role", "opening", "own"), [("r1", None, None), ("r1", "p1", None), (None, None, "o1")]
 )
-async def test_submitted_answers_regenerate_the_targets_plan_and_resume(
+async def test_submitted_answers_rewrite_nothing(
     role: str | None, opening: str | None, own: str | None, queued: list[dict[str, Any]]
 ) -> None:
+    """Answering spends nothing: the Target's plan and résumé read as outdated,
+    and the user regenerates them at a price they confirm (ADR 0035)."""
     event = OutboxEvent(
         name=str(EventName.GAP_ANSWERS_SUBMITTED),
         owner_id=OWNER,
@@ -75,16 +77,7 @@ async def test_submitted_answers_regenerate_the_targets_plan_and_resume(
 
     await dispatcher._handle(_container(), event)
 
-    target = {
-        "owner_id": str(OWNER),
-        "role_id": role,
-        "job_posting_id": opening,
-        "private_job_posting_id": own,
-    }
-    assert queued == [
-        {"name": "gapplan.regenerate", **target},
-        {"name": "resume.regenerate", **target},
-    ]
+    assert queued == []
 
 
 # --- role maps waiting on an analysis (ADR 0018) ---------------------------

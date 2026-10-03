@@ -30,7 +30,7 @@ from advisor.target import TargetRef
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import resume as resume_api
-from kernel.errors import TargetUnusableError
+from kernel.errors import ConflictError, TargetUnusableError
 
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
@@ -58,6 +58,21 @@ class FakeResumes:
             latest_version=None,
             created_at=datetime(2026, 9, 23, tzinfo=UTC),
             updated_at=datetime(2026, 9, 23, tzinfo=UTC),
+        )
+
+    async def redraft(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> ResumeSummaryView:
+        if self.refuse:
+            raise ConflictError("this résumé is already being written")
+        return ResumeSummaryView(
+            id=resume_id,
+            target=TargetRef(str(uuid.uuid4())),
+            label="Staff Platform Engineer · Meridian Labs",
+            status="drafting",
+            error_code=None,
+            error_message=None,
+            latest_version=3,
+            created_at=datetime(2026, 9, 23, tzinfo=UTC),
+            updated_at=datetime(2026, 10, 3, tzinfo=UTC),
         )
 
     async def revise(
@@ -200,3 +215,26 @@ def test_an_empty_chat_message_is_refused(client: TestClient) -> None:
         f"/tailored-resumes/{RESUME_ID}/revisions", json={"message": "", "content": {}}
     )
     assert response.status_code == 422
+
+
+def test_regenerating_queues_the_next_version_when_asked(
+    client: TestClient, queued: list[dict[str, Any]]
+) -> None:
+    response = client.post(f"/tailored-resumes/{RESUME_ID}/regenerate")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "drafting"
+    assert [(job["name"], job["resume_id"]) for job in queued] == [
+        ("resume.generate", str(RESUME_ID))
+    ]
+
+
+def test_regenerating_while_it_is_written_is_refused_before_queueing(
+    client: TestClient, resumes: FakeResumes, queued: list[dict[str, Any]]
+) -> None:
+    resumes.refuse = True
+    response = client.post(f"/tailored-resumes/{RESUME_ID}/regenerate")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conflict"
+    assert queued == []

@@ -55,6 +55,16 @@ async def write_resume(body: ResumeRequest, user: CurrentUser, deps: Deps) -> Re
     return ResumeSummary.from_view(resume)
 
 
+@router.post("/tailored-resumes/{resume_id}/regenerate", status_code=202)
+async def regenerate_resume(resume_id: uuid.UUID, user: CurrentUser, deps: Deps) -> ResumeSummary:
+    """Writes the résumé again as its next version, priced first by
+    ``/tailored-resumes/cost-estimate``; poll ``GET /tailored-resumes/{id}``
+    (ADR 0035)."""
+    resume = await deps.resume.redraft(user, resume_id)
+    await enqueue("resume.generate", owner_id=str(user), resume_id=str(resume.id))
+    return ResumeSummary.from_view(resume)
+
+
 @router.get("/tailored-resumes")
 async def saved(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeSummaryPage:
     """Saved résumés, most recently changed first."""
