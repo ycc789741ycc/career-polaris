@@ -44,6 +44,7 @@ new record that supersedes the old one.
 | [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted |
 | [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
 | [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
+| [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

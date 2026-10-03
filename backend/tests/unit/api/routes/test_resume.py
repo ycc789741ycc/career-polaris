@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
@@ -25,14 +26,17 @@ from advisor.resume import (
     RevisionDone,
     RevisionFailed,
     RevisionText,
+    SectionKind,
+    SectionSlot,
     Template,
 )
-from advisor.resume.domain import Bullet, Position, ResumeContent
+from advisor.resume.domain import Bullet
 from advisor.target import TargetRef
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import resume as resume_api
 from kernel.errors import ConflictError, TargetUnusableError
+from tests.unit.advisor.resume.builders import make_content
 
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
@@ -43,6 +47,7 @@ class FakeResumes:
     def __init__(self) -> None:
         self.refuse = False
         self.export_status = "rendering"
+        self.slots: list[SectionSlot] = []
         self.requested: list[tuple[TargetRef, Template, Options]] = []
         self.fail_revision = False
 
@@ -81,6 +86,24 @@ class FakeResumes:
             download_url=None,
         )
 
+    async def estimate_section(
+        self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
+    ) -> dict[str, Any]:
+        self.slots.append(slot)
+        return {
+            "cost_usd": "0.02",
+            "model_id": "claude-opus-5",
+            "input_tokens": 900,
+            "rate_is_published": True,
+        }
+
+    async def request_section(
+        self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
+    ) -> ResumeSummaryView:
+        self.slots.append(slot)
+        summary = await self.redraft(owner_id, resume_id)
+        return replace(summary, status="filling")
+
     async def redraft(self, owner_id: uuid.UUID, resume_id: uuid.UUID) -> ResumeSummaryView:
         if self.refuse:
             raise ConflictError("this résumé is already being written")
@@ -107,13 +130,7 @@ class FakeResumes:
         yield RevisionDone(
             revision_id=REVISION_ID,
             reply="Shorter, and it leads with reliability.",
-            proposal=ResumeContent(
-                name="Maya",
-                headline="",
-                contact="",
-                summary="Short.",
-                experience=(Position("Engineer", "Kestrel", "2022", (Bullet("x", ("e1",)),)),),
-            ),
+            proposal=make_content(Bullet("x", ("e1",)), name="Maya", summary="Short."),
         )
 
 
@@ -212,7 +229,14 @@ def test_the_chat_streams_text_then_one_proposal(client: TestClient) -> None:
     )
     proposal = events[-1][1]
     assert proposal["revision_id"] == str(REVISION_ID)
-    assert proposal["proposal"]["summary"] == "Short."
+    assert proposal["proposal"]["sections"][0] == {
+        "kind": "summary",
+        "title": None,
+        "text": "Short.",
+        "entries": [],
+        "items": [],
+        "bullets": [],
+    }
 
 
 def test_a_rejected_revision_ends_the_stream_with_a_coded_error(
@@ -290,3 +314,33 @@ def test_an_export_is_queued_only_when_it_has_to_be_rendered(
 
     assert response.status_code == 202 and response.json()["status"] == status
     assert [job["name"] for job in queued] == queued_names
+
+
+def test_a_section_is_priced_then_added_and_queued_to_be_filled(
+    client: TestClient, resumes: FakeResumes, queued: list[dict[str, Any]]
+) -> None:
+    priced = client.get(f"/tailored-resumes/{RESUME_ID}/sections/estimate?kind=education")
+    assert priced.status_code == 200 and priced.json()["cost_usd"] == "0.02"
+    assert queued == []
+
+    added = client.post(
+        f"/tailored-resumes/{RESUME_ID}/sections", json={"kind": "custom", "title": "Volunteering"}
+    )
+
+    assert added.status_code == 202 and added.json()["status"] == "filling"
+    assert resumes.slots == [
+        SectionSlot(SectionKind.EDUCATION),
+        SectionSlot(SectionKind.CUSTOM, "Volunteering"),
+    ]
+    [job] = queued
+    assert (job["name"], job["kind"], job["title"]) == (
+        "resume.fill_section",
+        "custom",
+        "Volunteering",
+    )
+
+
+def test_an_unknown_kind_of_section_is_refused(client: TestClient) -> None:
+    response = client.post(f"/tailored-resumes/{RESUME_ID}/sections", json={"kind": "photo"})
+
+    assert response.status_code == 422

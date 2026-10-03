@@ -3,6 +3,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ResumeContent,
+  ResumeSection,
   ResumeSummary,
   ResumeTemplateLook,
   TailoredResume,
@@ -28,6 +30,24 @@ const matched: AdvisorTarget = {
   band: "USD 178k–196k",
   isOwnPosting: false,
 };
+
+function section(
+  kind: ResumeSection["kind"],
+  fields: Partial<ResumeSection> = {},
+): ResumeSection {
+  return {
+    kind,
+    title: null,
+    text: "",
+    entries: [],
+    items: [],
+    bullets: [],
+    ...fields,
+  };
+}
+
+const experience = (content: ResumeContent) =>
+  content.sections.find((s) => s.kind === "experience")!;
 
 const summary: ResumeSummary = {
   id: "res-1",
@@ -75,24 +95,34 @@ const resume: TailoredResume = {
     name: "Maya Lin Chen",
     headline: "Backend Engineer",
     contact: "maya@example.com",
-    summary: "Builds payment systems.",
-    experience: [
-      {
-        title: "Backend Engineer",
-        org: "Kestrel Financial",
-        when: "2022 — now",
-        bullets: [
+    sections: [
+      section("summary", { text: "Builds payment systems." }),
+      section("experience", {
+        entries: [
           {
-            text: "Owned the retry layer for payments-svc",
-            evidence_ids: ["e1"],
-            origin: "written",
-            answers: "Own a high-throughput payments service",
+            title: "Backend Engineer",
+            org: "Kestrel Financial",
+            when: "2022 — now",
+            link: "",
+            bullets: [
+              {
+                text: "Owned the retry layer for payments-svc",
+                evidence_ids: ["e1"],
+                origin: "written",
+                answers: "Own a high-throughput payments service",
+              },
+            ],
           },
         ],
-      },
+      }),
+      section("skills", { items: ["Go", "Postgres", "Kafka", "gRPC"] }),
     ],
-    skills: ["Go", "Postgres", "Kafka", "gRPC"],
   },
+  section_plan: [
+    { kind: "summary", title: null },
+    { kind: "experience", title: null },
+    { kind: "skills", title: null },
+  ],
   evidence: { e1: { reference: "GitHub · 38 PRs", fact: "payments-svc" } },
   versions: [version],
   revisions: [],
@@ -328,13 +358,10 @@ describe("résumé screen", () => {
     const posted = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
     );
-    expect(posted?.body).toMatchObject({
-      content: {
-        experience: [
-          { bullets: [{ text: "Owned the retry layer, end to end" }] },
-        ],
-      },
-    });
+    const body = posted?.body as { content: ResumeContent };
+    expect(experience(body.content).entries[0]!.bullets[0]!.text).toBe(
+      "Owned the retry layer, end to end",
+    );
   });
 
   it("writes for the target it is aimed at once the price is confirmed", async () => {
@@ -501,17 +528,24 @@ describe("the page as it prints (ADR 0038)", () => {
       options: { ...resume.options, trim: true },
       content: {
         ...resume.content!,
-        experience: [
-          {
-            ...resume.content!.experience[0]!,
-            bullets: Array.from({ length: 5 }, (_, i) => ({
-              text: `Line ${i}`,
-              evidence_ids: ["e1"],
-              origin: "written" as const,
-              answers: null,
-            })),
-          },
-        ],
+        sections: resume.content!.sections.map((s) =>
+          s.kind === "experience"
+            ? {
+                ...s,
+                entries: [
+                  {
+                    ...s.entries[0]!,
+                    bullets: Array.from({ length: 5 }, (_, i) => ({
+                      text: `Line ${i}`,
+                      evidence_ids: ["e1"],
+                      origin: "written" as const,
+                      answers: null,
+                    })),
+                  },
+                ],
+              }
+            : s,
+        ),
       },
     };
     serve((call) => (call.url === "/tailored-resumes/res-1" ? long : null));
@@ -584,10 +618,137 @@ describe("the page's measures", () => {
     ).toBe("As it will print, A4.");
     expect(
       trimmedNote(
-        { ...content, skills: Array.from({ length: 14 }, (_, i) => `S${i}`) },
+        {
+          ...content,
+          sections: [
+            section("skills", {
+              items: Array.from({ length: 14 }, (_, i) => `S${i}`),
+            }),
+          ],
+        },
         { ...resume.options, trim: true },
         organic,
       ),
-    ).toBe("Trimmed to one page: 2 skills left out of the PDF.");
+    ).toBe("Trimmed to one page: 2 items left out of the PDF.");
+  });
+});
+
+describe("sections you choose (ADR 0039)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("lists the sections with Experience required, and removing one saves a version", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    const rows = within(panel).getAllByRole("listitem");
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining("Summary"),
+      expect.stringContaining("Experience"),
+      expect.stringContaining("Skills"),
+    ]);
+    expect(rows[1]).toHaveTextContent("Required");
+    expect(
+      within(rows[1]!).queryByRole("button", { name: "Remove" }),
+    ).toBeNull();
+
+    // Skills has items: the first click asks, the second removes.
+    await user.click(within(rows[2]!).getByRole("button", { name: "Remove" }));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await user.click(
+      within(rows[2]!).getByRole("button", { name: "Remove its lines too" }),
+    );
+
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
+    );
+    const body = saved?.body as { content: ResumeContent };
+    expect(body.content.sections.map((s) => s.kind)).toEqual([
+      "summary",
+      "experience",
+    ]);
+  });
+
+  it("moves a section with the keyboard and saves the new order", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const handle = await screen.findByRole("button", { name: "Move Summary" });
+    handle.focus();
+    await user.keyboard("{ArrowDown}");
+
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
+    );
+    const body = saved?.body as { content: ResumeContent };
+    expect(body.content.sections.map((s) => s.kind)).toEqual([
+      "experience",
+      "summary",
+      "skills",
+    ]);
+  });
+
+  it("prices filling a new section before adding it", async () => {
+    const calls = serve((call) => {
+      if (call.url.startsWith("/tailored-resumes/res-1/sections/estimate"))
+        return { cost_usd: "0.02", model_id: "claude-opus-5" };
+      if (call.url === "/tailored-resumes/res-1/sections")
+        return { ...summary, status: "filling" };
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    await user.click(
+      within(panel).getByRole("button", { name: "+ Education" }),
+    );
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(confirm).toHaveTextContent("Filling Education from your sources");
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
+
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: "/tailored-resumes/res-1/sections",
+      body: { kind: "education", title: null },
+    });
+  });
+
+  it("asks for a custom section's heading before pricing it", async () => {
+    const calls = serve((call) =>
+      call.url.startsWith("/tailored-resumes/res-1/sections/estimate")
+        ? { cost_usd: "0.02", model_id: "claude-opus-5" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    await user.click(await screen.findByRole("button", { name: "+ Custom…" }));
+    await user.type(
+      screen.getByLabelText("Heading of your section"),
+      "Volunteering",
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(calls.find((c) => c.url.includes("/sections/estimate"))?.url).toBe(
+      "/tailored-resumes/res-1/sections/estimate?kind=custom&title=Volunteering",
+    );
   });
 });

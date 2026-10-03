@@ -1133,6 +1133,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tailored-resumes/{resume_id}/sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Section
+         * @description Adds the section and fills it from the sources; poll
+         *     ``GET /tailored-resumes/{id}`` while it is ``filling`` (ADR 0039).
+         */
+        post: operations["add_section_api_v1_tailored_resumes__resume_id__sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tailored-resumes/{resume_id}/sections/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Section Estimate
+         * @description Filling a section from the sources runs on the user's key, so it is
+         *     priced first (ADR 0039).
+         */
+        get: operations["section_estimate_api_v1_tailored_resumes__resume_id__sections_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tailored-resumes/{resume_id}/settings": {
         parameters: {
             query?: never;
@@ -2105,16 +2147,28 @@ export interface components {
         ResumeContent: {
             /** Contact */
             contact: string;
-            /** Experience */
-            experience: components["schemas"]["ResumePosition"][];
             /** Headline */
             headline: string;
             /** Name */
             name: string;
-            /** Skills */
-            skills: string[];
-            /** Summary */
-            summary: string;
+            /** Sections */
+            sections: components["schemas"]["ResumeSection"][];
+        };
+        /**
+         * ResumeEntry
+         * @description A position, project, school or talk.
+         */
+        ResumeEntry: {
+            /** Bullets */
+            bullets: components["schemas"]["ResumeBullet"][];
+            /** Link */
+            link: string;
+            /** Org */
+            org: string;
+            /** Title */
+            title: string;
+            /** When */
+            when: string;
         };
         /** ResumeExport */
         ResumeExport: {
@@ -2178,17 +2232,6 @@ export interface components {
             /** Trim */
             trim: boolean;
         };
-        /** ResumePosition */
-        ResumePosition: {
-            /** Bullets */
-            bullets: components["schemas"]["ResumeBullet"][];
-            /** Org */
-            org: string;
-            /** Title */
-            title: string;
-            /** When */
-            when: string;
-        };
         /** ResumeRequest */
         ResumeRequest: {
             /** Job Posting Id */
@@ -2200,6 +2243,39 @@ export interface components {
             role_id?: string | null;
             /** @default organic */
             template: components["schemas"]["Template"];
+        };
+        /**
+         * ResumeSection
+         * @description One section. Its kind's shape decides which field it uses: ``text`` for
+         *     the summary, ``entries`` for experience and the other entry kinds,
+         *     ``items`` for skills and certifications, ``bullets`` for a custom one.
+         */
+        ResumeSection: {
+            /** Bullets */
+            bullets: components["schemas"]["ResumeBullet"][];
+            /** Entries */
+            entries: components["schemas"]["ResumeEntry"][];
+            /** Items */
+            items: string[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+            /** Text */
+            text: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ResumeSectionSlot */
+        ResumeSectionSlot: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+            /** Title */
+            title: string | null;
         };
         /** ResumeSnapshot */
         ResumeSnapshot: {
@@ -2235,7 +2311,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "drafting" | "ready" | "failed";
+            status: "drafting" | "ready" | "failed" | "filling";
             target: components["schemas"]["TargetRefBody"];
             /** Updated At */
             updated_at: string;
@@ -2543,6 +2619,20 @@ export interface components {
             sample_size: number;
         };
         /**
+         * SectionKind
+         * @enum {string}
+         */
+        SectionKind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
+        /**
+         * SectionRequest
+         * @description A section to add to the résumé, filled from the sources (ADR 0039).
+         */
+        SectionRequest: {
+            kind: components["schemas"]["SectionKind"];
+            /** Title */
+            title?: string | null;
+        };
+        /**
          * SessionResponse
          * @description What the client keeps.
          *
@@ -2644,12 +2734,14 @@ export interface components {
             outdated_by: ("evidence" | "target")[];
             /** Revisions */
             revisions: components["schemas"]["Revision"][];
+            /** Section Plan */
+            section_plan: components["schemas"]["ResumeSectionSlot"][];
             snapshot: components["schemas"]["ResumeSnapshot"] | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "drafting" | "ready" | "failed";
+            status: "drafting" | "ready" | "failed" | "filling";
             target: components["schemas"]["TargetRefBody"];
             /**
              * Template
@@ -5921,6 +6013,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersion"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_section_api_v1_tailored_resumes__resume_id__sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeSummary"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    section_estimate_api_v1_tailored_resumes__resume_id__sections_estimate_get: {
+        parameters: {
+            query: {
+                kind: components["schemas"]["SectionKind"];
+                title?: string | null;
+            };
+            header?: never;
+            path: {
+                resume_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetEstimate"];
                 };
             };
             /** @description The request could not be read. */

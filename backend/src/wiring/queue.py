@@ -120,6 +120,14 @@ def _register(app: App) -> None:
     async def generate_resume(owner_id: str, resume_id: str) -> None:
         await resume_jobs.generate(deps(), owner_id=owner_id, resume_id=resume_id)
 
+    @app.task(name="resume.fill_section", queue=str(Queue.AI))
+    async def fill_resume_section(
+        owner_id: str, resume_id: str, kind: str, title: str | None = None
+    ) -> None:
+        await resume_jobs.fill_section(
+            deps(), owner_id=owner_id, resume_id=resume_id, kind=kind, title=title
+        )
+
     @app.task(name="resume.export", queue=str(Queue.DOCS))
     async def export_resume(owner_id: str, export_id: str) -> None:
         await resume_jobs.export(deps(), owner_id=owner_id, export_id=export_id)

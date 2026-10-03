@@ -2087,6 +2087,23 @@ Open questions:
   ones, but nothing removes what is already stored.
 
 ## Sections you choose
+**Done** (ADR 0039, migration 0035). Where the build differs from the plan
+below:
+
+* A new résumé starts with summary, experience and skills only. Nothing
+  writes positions to the timeline, so "GitHub work outside every position"
+  is every repository; side projects are added by the user.
+* Every saved version sets the plan to its own sections, so a move or a
+  removal is simply a version; there is no separate plan route.
+* A section being filled puts the résumé in a `filling` status, which the
+  page polls; a failure leaves it `ready` with the error.
+* An empty section prints nothing. The preview says so and offers "+ Add to
+  …", which starts it with a line to edit.
+* Removing a section with lines asks inline ("Remove its lines too") rather
+  than in a dialog.
+* The migration's JSON rewrite is tested both ways against Postgres on a
+  literal value (`tests/integration/migrations`).
+
 A tailored résumé always has the same three sections, in the same order:
 summary, experience and skills. `ResumeContent` has a field for each, and
 the write prompt, the revise prompt, the renderer and the preview all assume

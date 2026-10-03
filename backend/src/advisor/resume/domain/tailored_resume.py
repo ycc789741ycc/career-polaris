@@ -9,12 +9,16 @@ from enum import StrEnum
 from typing import Any
 
 from advisor.resume.domain.content import Options, Template, VersionSource
+from advisor.resume.domain.section import DEFAULT_PLAN, SectionSlot
 
 
 class ResumeStatus(StrEnum):
     DRAFTING = "drafting"
     READY = "ready"
     FAILED = "failed"
+    # Written, and one section being filled from the sources (ADR 0039): the
+    # page stays readable, and a failure leaves it ready, with the reason.
+    FILLING = "filling"
 
 
 @dataclass(slots=True)
@@ -43,6 +47,8 @@ class TailoredResume:
     # résumés written before they were recorded.
     profile_version: int | None = None
     target_digest: str | None = None
+    # The sections every new version is written to, in order (ADR 0039).
+    section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
 
     @classmethod
     def requested(
@@ -94,6 +100,30 @@ class TailoredResume:
         self.status = ResumeStatus.DRAFTING
         self.error_code = None
         self.error_message = None
+        self.updated_at = at
+
+    def update_plan(self, plan: tuple[SectionSlot, ...], *, at: datetime) -> None:
+        """Sections added, removed or moved: what the next version is written to."""
+        self.section_plan = plan
+        self.updated_at = at
+
+    def update_filling(self, *, at: datetime) -> None:
+        """One section is being filled from the sources."""
+        self.status = ResumeStatus.FILLING
+        self.error_code = None
+        self.error_message = None
+        self.updated_at = at
+
+    def update_filled(self, *, at: datetime) -> None:
+        self.status = ResumeStatus.READY
+        self.updated_at = at
+
+    def update_fill_failed(self, *, code: str, message: str, at: datetime) -> None:
+        """A section that could not be filled leaves the résumé as it was:
+        ready, with the reason to show."""
+        self.status = ResumeStatus.READY
+        self.error_code = code
+        self.error_message = message
         self.updated_at = at
 
     def restyle(self, *, template: Template, options: Options, at: datetime) -> None:

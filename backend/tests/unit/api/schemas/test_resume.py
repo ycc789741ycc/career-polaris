@@ -24,26 +24,19 @@ from advisor.resume import (
     Template,
     VersionView,
 )
-from advisor.resume.domain import Bullet, Position, ResumeContent
+from advisor.resume.domain import Bullet
 from advisor.resume.domain.content import VersionSource
 from advisor.resume.service import EvidenceNote
 from advisor.target import OutdatedReason, TargetRef
 from api.schemas.resume import ResumeContent as ContentBody
 from api.schemas.resume import ResumeExport, TailoredResume, revision_event
+from tests.unit.advisor.resume.builders import make_content
 
 AT = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
 ROLE_ID = uuid.uuid4()
 RESUME_ID = uuid.uuid4()
 VERSION_ID = uuid.uuid4()
-CONTENT = ResumeContent(
-    name="Maya",
-    headline="Platform engineer",
-    contact="maya@example.test",
-    summary="Short.",
-    experience=(
-        Position("Engineer", "Kestrel", "2022 - now", (Bullet("Cut p99 by 40%", ("e1",)),)),
-    ),
-)
+CONTENT = make_content(Bullet("Cut p99 by 40%", ("e1",)), name="Maya", summary="Short.")
 
 
 def _view() -> ResumeView:

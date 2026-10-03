@@ -14,6 +14,8 @@ from advisor.resume import (
     RevisionDone,
     RevisionFailed,
     RevisionText,
+    SectionKind,
+    SectionSlot,
     Template,
     TemplateView,
     VersionView,
@@ -64,6 +66,17 @@ class ExportRequest(RequestModel):
     version: int = Field(ge=1)
 
 
+class SectionRequest(RequestModel):
+    """A section to add to the résumé, filled from the sources (ADR 0039)."""
+
+    kind: SectionKind
+    # A section of the user's own needs its heading; no other kind takes one.
+    title: str | None = Field(default=None, min_length=1, max_length=60)
+
+    def slot(self) -> SectionSlot:
+        return SectionSlot(self.kind, self.title if self.kind is SectionKind.CUSTOM else None)
+
+
 class ResumeBullet(ApiModel):
     text: str
     evidence_ids: list[str]
@@ -73,20 +86,55 @@ class ResumeBullet(ApiModel):
     answers: str | None
 
 
-class ResumePosition(ApiModel):
+class ResumeEntry(ApiModel):
+    """A position, project, school or talk."""
+
     title: str
     org: str
     when: str
+    # Shown as text; never a live link.
+    link: str
     bullets: list[ResumeBullet]
+
+
+SectionKindName = Literal[
+    "summary",
+    "experience",
+    "side_projects",
+    "open_source",
+    "education",
+    "talks_and_writing",
+    "skills",
+    "certifications",
+    "custom",
+]
+
+
+class ResumeSection(ApiModel):
+    """One section. Its kind's shape decides which field it uses: ``text`` for
+    the summary, ``entries`` for experience and the other entry kinds,
+    ``items`` for skills and certifications, ``bullets`` for a custom one."""
+
+    kind: SectionKindName
+    # A custom section's heading; null for every other kind.
+    title: str | None
+    text: str
+    entries: list[ResumeEntry]
+    items: list[str]
+    bullets: list[ResumeBullet]
+
+
+class ResumeSectionSlot(ApiModel):
+    kind: SectionKindName
+    title: str | None
 
 
 class ResumeContent(ApiModel):
     name: str
     headline: str
     contact: str
-    summary: str
-    experience: list[ResumePosition]
-    skills: list[str]
+    # In order (ADR 0039).
+    sections: list[ResumeSection]
 
     @classmethod
     def from_dict(cls, content: dict[str, Any]) -> ResumeContent:
@@ -100,7 +148,9 @@ class ResumeSummary(ApiModel):
     target: TargetRefBody
     label: str
     # drafting -> ready | failed. A failure carries the error's stable code.
-    status: Literal["drafting", "ready", "failed"]
+    # ready -> filling -> ready: one section being filled from the sources; a
+    # failure to fill it leaves it ready, with the error (ADR 0039).
+    status: Literal["drafting", "ready", "failed", "filling"]
     error: JobError | None
     latest_version: int | None
     created_at: Timestamp
@@ -191,6 +241,8 @@ class TailoredResume(ResumeSummary):
     # written. Regenerating is a request the user confirms (ADR 0035).
     is_outdated: bool
     outdated_by: list[OutdatedReasonName]
+    # The sections every new version is written to, in order (ADR 0039).
+    section_plan: list[ResumeSectionSlot]
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
@@ -245,6 +297,10 @@ class TailoredResume(ResumeSummary):
             ],
             is_outdated=resume.is_outdated,
             outdated_by=[str(r) for r in resume.outdated_by],
+            section_plan=[
+                ResumeSectionSlot(kind=str(slot.kind), title=slot.title)
+                for slot in resume.section_plan
+            ],
         )
 
 

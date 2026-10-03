@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from sse_starlette.sse import EventSourceResponse
 
-from advisor.resume import Options
+from advisor.resume import Options, SectionKind
 from api.dependencies import CurrentUser, Deps, Paging, TargetQuery
 from api.schemas.common import TargetEstimate
 from api.schemas.resume import (
@@ -28,6 +28,7 @@ from api.schemas.resume import (
     ResumeTemplatePage,
     ResumeVersion,
     RevisionRequest,
+    SectionRequest,
     SettingsRequest,
     TailoredResume,
     VersionRequest,
@@ -64,6 +65,38 @@ async def regenerate_resume(resume_id: uuid.UUID, user: CurrentUser, deps: Deps)
     (ADR 0035)."""
     resume = await deps.resume.redraft(user, resume_id)
     await enqueue("resume.generate", owner_id=str(user), resume_id=str(resume.id))
+    return ResumeSummary.from_view(resume)
+
+
+@router.get("/tailored-resumes/{resume_id}/sections/estimate")
+async def section_estimate(
+    resume_id: uuid.UUID,
+    user: CurrentUser,
+    deps: Deps,
+    kind: Annotated[SectionKind, Query()],
+    title: Annotated[str | None, Query(min_length=1, max_length=60)] = None,
+) -> TargetEstimate:
+    """Filling a section from the sources runs on the user's key, so it is
+    priced first (ADR 0039)."""
+    slot = SectionRequest(kind=kind, title=title).slot()
+    return TargetEstimate.model_validate(await deps.resume.estimate_section(user, resume_id, slot))
+
+
+@router.post("/tailored-resumes/{resume_id}/sections", status_code=202)
+async def add_section(
+    resume_id: uuid.UUID, body: SectionRequest, user: CurrentUser, deps: Deps
+) -> ResumeSummary:
+    """Adds the section and fills it from the sources; poll
+    ``GET /tailored-resumes/{id}`` while it is ``filling`` (ADR 0039)."""
+    slot = body.slot()
+    resume = await deps.resume.request_section(user, resume_id, slot)
+    await enqueue(
+        "resume.fill_section",
+        owner_id=str(user),
+        resume_id=str(resume.id),
+        kind=str(slot.kind),
+        title=slot.title,
+    )
     return ResumeSummary.from_view(resume)
 
 

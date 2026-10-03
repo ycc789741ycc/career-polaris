@@ -2,8 +2,11 @@ import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { api, streamEvents } from "../api/client";
 import type {
   PlanEstimate,
+  ResumeBullet,
   ResumeContent,
   ResumeExport,
+  ResumeSection,
+  ResumeSectionSlot,
   ResumeOptions,
   ResumeSummary,
   ResumeTemplate,
@@ -29,6 +32,11 @@ import { modelName, useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
 import { startDownload } from "./download";
+import {
+  isEmptySection,
+  sectionHeading,
+  SectionsPanel,
+} from "./ResumeSections";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { ago } from "./time";
 import { messageOf } from "./useAsync";
@@ -103,7 +111,11 @@ export function Resume({
     cost: PlanEstimate;
     /** Set when the estimate is for writing this résumé again (ADR 0035). */
     regenerates: string | null;
+    /** Set when the estimate is for filling a new section (ADR 0039). */
+    section?: ResumeSectionSlot;
   } | null>(null);
+  // Sections added in this visit, marked "New" in the panel.
+  const [added, setAdded] = useState<string[]>([]);
   // Bumped to re-read the open résumé after asking for it to be written again.
   const [reloads, setReloads] = useState(0);
   const [template, setTemplate] = useState<ResumeTemplate>("organic");
@@ -139,7 +151,7 @@ export function Resume({
         );
         if (cancelled) return;
         show(next);
-        if (next.status === "drafting") {
+        if (next.status === "drafting" || next.status === "filling") {
           wasDrafting.current = true;
           timer = setTimeout(load, POLL_MS);
         } else if (wasDrafting.current) {
@@ -147,7 +159,9 @@ export function Resume({
           onChanged();
           flash(
             next.status === "ready"
-              ? `Written for ${next.label}.`
+              ? next.error
+                ? "That section could not be filled — the reason is on the page."
+                : `Written for ${next.label}.`
               : "Writing failed — the reason is on the page.",
           );
         }
@@ -213,11 +227,54 @@ export function Resume({
     }
   }
 
+  async function priceSection(slot: ResumeSectionSlot) {
+    if (!resume) return;
+    if (!status.credential) {
+      flash("Sections are filled on your model — add a key.");
+      navigate("model");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ kind: slot.kind });
+      if (slot.title) query.set("title", slot.title);
+      const cost = await api.get<PlanEstimate>(
+        `/tailored-resumes/${resume.id}/sections/estimate?${query.toString()}`,
+      );
+      setEstimate({
+        ref: resume.target,
+        label: sectionHeading(slot),
+        cost,
+        regenerates: null,
+        section: slot,
+      });
+    } catch (caught) {
+      setError(messageOf(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function write() {
     if (!estimate) return;
     setBusy(true);
     setError(null);
     try {
+      if (estimate.section && resume) {
+        // Added to the plan, then filled from the sources as the next version.
+        await api.post<ResumeSummary>(
+          `/tailored-resumes/${resume.id}/sections`,
+          estimate.section,
+        );
+        setAdded((all) => [
+          ...all,
+          `${estimate.section!.kind}:${estimate.section!.title ?? ""}`,
+        ]);
+        setEstimate(null);
+        setReloads((n) => n + 1);
+        return;
+      }
       if (estimate.regenerates) {
         // The same résumé, written again as its next version.
         await api.post<ResumeSummary>(
@@ -246,14 +303,14 @@ export function Resume({
     }
   }
 
-  async function saveVersion() {
-    if (!resume || !draft) return;
+  async function saveVersion(content: ResumeContent | null = draft) {
+    if (!resume || !content) return;
     setBusy(true);
     setError(null);
     try {
       const version = await api.post<ResumeVersion>(
         `/tailored-resumes/${resume.id}/versions`,
-        { content: draft },
+        { content },
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
       onChanged();
@@ -419,10 +476,13 @@ export function Resume({
           onConfirm={() => void write()}
           onCancel={() => setEstimate(null)}
         >
-          {estimate.regenerates
-            ? "Writing the résumé again for"
-            : "Writing a résumé for"}{" "}
-          <strong>{estimate.label}</strong> costs about{" "}
+          {estimate.section
+            ? "Filling"
+            : estimate.regenerates
+              ? "Writing the résumé again for"
+              : "Writing a résumé for"}{" "}
+          <strong>{estimate.label}</strong>
+          {estimate.section ? " from your sources" : ""} costs about{" "}
           <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
           , charged to your own provider.
           {estimate.cost.rate_is_published === false &&
@@ -476,7 +536,7 @@ export function Resume({
               variant="secondary"
               busy={busy}
               disabled={!dirty}
-              onClick={() => void saveVersion()}
+              onClick={() => void saveVersion(draft)}
             >
               Save this version
             </Button>
@@ -557,6 +617,34 @@ export function Resume({
                   : "The export is a white, printable page in the template you pick."}
             </p>
           </div>
+
+          {draft &&
+            resume &&
+            (resume.status === "ready" || resume.status === "filling") && (
+              <SectionsPanel
+                content={draft}
+                added={added}
+                filling={
+                  resume.status === "filling"
+                    ? (resume.section_plan.find(
+                        (slot) =>
+                          !resume.content?.sections.some(
+                            (s) =>
+                              s.kind === slot.kind &&
+                              (s.title ?? null) === (slot.title ?? null) &&
+                              !isEmptySection(s),
+                          ),
+                      ) ?? null)
+                    : null
+                }
+                busy={busy || resume.status === "filling"}
+                onChange={(next) => {
+                  setDraft(next);
+                  void saveVersion(next);
+                }}
+                onAdd={(slot) => void priceSection(slot)}
+              />
+            )}
         </div>
 
         <div>
@@ -592,6 +680,15 @@ export function Resume({
             </div>
           ) : draft && look ? (
             <>
+              {resume.status === "filling" && (
+                <p className="resume-annotation" role="status">
+                  Filling a section from your sources on {model}… The rest of
+                  the page stays as it is.
+                </p>
+              )}
+              {resume.status === "ready" && resume.error && (
+                <ErrorNote error={resume.error.message} />
+              )}
               <div
                 className="row-between"
                 style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}
@@ -720,16 +817,21 @@ export function trimmedNote(
   look: ResumeTemplateLook,
 ): string {
   if (!options.trim) return "As it will print, A4.";
-  const lines = content.experience.reduce(
-    (sum, p) => sum + Math.max(0, p.bullets.length - look.trimmed_bullets),
-    0,
-  );
-  const skills = Math.max(0, content.skills.length - look.trimmed_skills);
-  if (lines === 0 && skills === 0)
+  const over = (count: number, limit: number) => Math.max(0, count - limit);
+  let lines = 0;
+  let items = 0;
+  for (const section of content.sections) {
+    for (const entry of section.entries) {
+      lines += over(entry.bullets.length, look.trimmed_bullets);
+    }
+    lines += over(section.bullets.length, look.trimmed_bullets);
+    items += over(section.items.length, look.trimmed_skills);
+  }
+  if (lines === 0 && items === 0)
     return "Trimmed to one page; nothing left out.";
   const parts = [
     lines ? `${lines} line${lines === 1 ? "" : "s"}` : null,
-    skills ? `${skills} skill${skills === 1 ? "" : "s"}` : null,
+    items ? `${items} item${items === 1 ? "" : "s"}` : null,
   ].filter(Boolean);
   return `Trimmed to one page: ${parts.join(" and ")} left out of the PDF.`;
 }
@@ -753,25 +855,53 @@ function ResumePage({
 }) {
   const edit = (patch: Partial<ResumeContent>) =>
     onChange({ ...content, ...patch });
-
-  const editBullet = (p: number, b: number, text: string) =>
+  const editSection = (at: number, next: ResumeSection) =>
     onChange({
       ...content,
-      experience: content.experience.map((position, pi) =>
-        pi !== p
-          ? position
-          : {
-              ...position,
-              bullets: position.bullets.map((bullet, bi) =>
-                bi === b ? { ...bullet, text } : bullet,
-              ),
-            },
-      ),
+      sections: content.sections.map((s, i) => (i === at ? next : s)),
     });
 
-  const skills = trim
-    ? content.skills.slice(0, look.trimmed_skills)
-    : content.skills;
+  const lines = (bullets: ResumeBullet[]) =>
+    trim ? bullets.slice(0, look.trimmed_bullets) : bullets;
+
+  const bulletList = (
+    bullets: ResumeBullet[],
+    onLines: (next: ResumeBullet[]) => void,
+  ) => (
+    <ul className="resume-bullets">
+      {lines(bullets).map((bullet, b) => (
+        <li key={b}>
+          <span
+            className="resume-bullet-text"
+            data-rewritten={showSources && bullet.answers !== null}
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={(event) =>
+              onLines(
+                bullets.map((line, i) =>
+                  i === b
+                    ? { ...line, text: event.currentTarget.textContent ?? "" }
+                    : line,
+                ),
+              )
+            }
+          >
+            {bullet.text}
+          </span>
+          <div className="resume-cite" hidden={!showSources}>
+            {citeLine(bullet, evidence)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const newLine: ResumeBullet = {
+    text: "New line",
+    evidence_ids: [],
+    origin: "yours",
+    answers: null,
+  };
 
   return (
     <div className="resume-sheet">
@@ -797,66 +927,98 @@ function ResumePage({
           </div>
         </header>
 
-        <div className="resume-section">Summary</div>
-        <p
-          className="resume-summary"
-          contentEditable
-          suppressContentEditableWarning
-          aria-label="Summary"
-          onBlur={(event) =>
-            edit({ summary: event.currentTarget.textContent ?? "" })
+        {content.sections.map((section, at) => {
+          const heading = sectionHeading(section);
+          const key = `${section.kind}:${section.title ?? ""}`;
+          if (isEmptySection(section)) {
+            // Nothing prints for it; the app says so and offers a first line.
+            return (
+              <div
+                key={key}
+                className="resume-annotation"
+                style={{ margin: "8px 0" }}
+              >
+                Nothing in your sources for {heading} yet; add lines in place.{" "}
+                <button
+                  type="button"
+                  className="resume-add-line"
+                  onClick={() =>
+                    editSection(at, startSection(section, newLine))
+                  }
+                >
+                  + Add to {heading}
+                </button>
+              </div>
+            );
           }
-        >
-          {content.summary}
-        </p>
-
-        <div className="resume-section">Experience</div>
-        {content.experience.map((position, p) => (
-          <section key={`${position.title}-${p}`} className="resume-job">
-            <div className="resume-job-head">
-              <span className="resume-job-title">
-                {[position.title, position.org].filter(Boolean).join(" — ")}
-              </span>
-              <span className="resume-when">{position.when}</span>
-            </div>
-            <ul className="resume-bullets">
-              {(trim
-                ? position.bullets.slice(0, look.trimmed_bullets)
-                : position.bullets
-              ).map((bullet, b) => (
-                <li key={b}>
-                  <span
-                    className="resume-bullet-text"
-                    data-rewritten={showSources && bullet.answers !== null}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(event) =>
-                      editBullet(p, b, event.currentTarget.textContent ?? "")
-                    }
-                  >
-                    {bullet.text}
-                  </span>
-                  <div className="resume-cite" hidden={!showSources}>
-                    {citeLine(bullet, evidence)}
+          return (
+            <section key={key} aria-label={heading}>
+              <div className="resume-section">{heading}</div>
+              {section.kind === "summary" && (
+                <p
+                  className="resume-summary"
+                  contentEditable
+                  suppressContentEditableWarning
+                  aria-label="Summary"
+                  onBlur={(event) =>
+                    editSection(at, {
+                      ...section,
+                      text: event.currentTarget.textContent ?? "",
+                    })
+                  }
+                >
+                  {section.text}
+                </p>
+              )}
+              {section.entries.map((entry, e) => (
+                <section key={`${entry.title}-${e}`} className="resume-job">
+                  <div className="resume-job-head">
+                    <span className="resume-job-title">
+                      {[entry.title, entry.org].filter(Boolean).join(" — ")}
+                    </span>
+                    <span className="resume-when">{entry.when}</span>
                   </div>
-                </li>
+                  {entry.link && (
+                    <div className="resume-when">{entry.link}</div>
+                  )}
+                  {bulletList(entry.bullets, (next) =>
+                    editSection(at, {
+                      ...section,
+                      entries: section.entries.map((it, i) =>
+                        i === e ? { ...it, bullets: next } : it,
+                      ),
+                    }),
+                  )}
+                </section>
               ))}
-            </ul>
-          </section>
-        ))}
-
-        <div className="resume-section">Skills</div>
-        <div className="resume-skills">
-          {skills.map((skill, index) => (
-            <span
-              key={skill}
-              className="resume-skill"
-              data-lead={showSources && reorder && index < 3}
-            >
-              {skill}
-            </span>
-          ))}
-        </div>
+              {section.items.length > 0 && (
+                <div className="resume-skills">
+                  {(trim
+                    ? section.items.slice(0, look.trimmed_skills)
+                    : section.items
+                  ).map((item, index) => (
+                    <span
+                      key={item}
+                      className="resume-skill"
+                      data-lead={
+                        showSources &&
+                        reorder &&
+                        section.kind === "skills" &&
+                        index < 3
+                      }
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {section.bullets.length > 0 &&
+                bulletList(section.bullets, (next) =>
+                  editSection(at, { ...section, bullets: next }),
+                )}
+            </section>
+          );
+        })}
       </article>
       <p className="resume-annotation" style={{ marginTop: 10 }}>
         Click any line to edit it in place. The page is laid out as the PDF
@@ -866,9 +1028,32 @@ function ResumePage({
   );
 }
 
+/** An empty section with a first line, entry or item to edit. Pure. */
+function startSection(
+  section: ResumeSection,
+  line: ResumeBullet,
+): ResumeSection {
+  switch (section.kind) {
+    case "summary":
+      return { ...section, text: "A sentence about you." };
+    case "skills":
+    case "certifications":
+      return { ...section, items: ["New item"] };
+    case "custom":
+      return { ...section, bullets: [line] };
+    default:
+      return {
+        ...section,
+        entries: [
+          { title: "New entry", org: "", when: "", link: "", bullets: [line] },
+        ],
+      };
+  }
+}
+
 /** The grey note under a line: where it came from, and what it answers. */
 export function citeLine(
-  bullet: ResumeContent["experience"][number]["bullets"][number],
+  bullet: ResumeBullet,
   evidence: TailoredResume["evidence"],
 ): string {
   const sources = bullet.evidence_ids

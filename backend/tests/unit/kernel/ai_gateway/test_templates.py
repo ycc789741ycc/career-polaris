@@ -24,8 +24,10 @@ TEMPLATES = [
     # there each reads each fact with its date (ADR 0037).
     ("gap_plan", "v3"),
     ("gap_questions", "v2"),
-    ("resume_write", "v2"),
-    ("resume_revise", "v2"),
+    # v3 writes to the résumé's sections (ADR 0039).
+    ("resume_write", "v3"),
+    ("resume_revise", "v3"),
+    ("resume_section", "v1"),
 ]
 
 
@@ -35,8 +37,9 @@ TEMPLATES = [
         ("skill_assessment", "v4"),
         ("gap_plan", "v3"),
         ("gap_questions", "v2"),
-        ("resume_write", "v2"),
-        ("resume_revise", "v2"),
+        ("resume_write", "v3"),
+        ("resume_revise", "v3"),
+        ("resume_section", "v1"),
     ],
 )
 def test_every_prompt_that_reads_evidence_is_told_what_its_dates_mean(
