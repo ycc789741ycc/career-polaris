@@ -393,8 +393,7 @@ describe("the role map while an analysis runs", () => {
     ]);
   });
 
-  it("offers the last map while a build runs, with no second build", async () => {
-    const user = userEvent.setup();
+  it("shows only the building screen while a build runs: no map, no second build", async () => {
     renderRoles(null, {
       syncing: [],
       parsing: [],
@@ -402,12 +401,12 @@ describe("the role map while an analysis runs", () => {
       role_map: { status: "running", ...running },
     });
 
-    await user.click(
-      await screen.findByRole("button", { name: "See your last map" }),
-    );
+    await screen.findByRole("region", { name: "Role map progress" });
+    expect(screen.queryByText(/See your last map/)).not.toBeInTheDocument();
     expect(
-      await screen.findByRole("button", { name: "Building…" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /Rebuild|Building/ }),
+    ).toBeNull();
+    expect(screen.queryByText("Role market map")).not.toBeInTheDocument();
   });
 
   it("says when the map was built and that the locations moved since", async () => {

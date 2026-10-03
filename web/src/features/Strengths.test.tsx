@@ -286,7 +286,7 @@ describe("Strengths", () => {
     ).toHaveAttribute("aria-valuenow", "72");
   });
 
-  it("shows the analysing screen while an analysis runs, and the last report on request", async () => {
+  it("shows only the analysing screen while an analysis runs", async () => {
     serve(assessment({}));
     renderStrengths({
       syncing: [],
@@ -308,15 +308,13 @@ describe("Strengths", () => {
         .getAllByRole("listitem")
         .map((step) => step.lastChild?.textContent),
     ).toEqual(["Done", "Running", "Waiting"]);
+    // The waiting screen is the page: no report, no old running state.
     expect(
       screen.queryByRole("button", { name: /Re-analyse|Analysing/ }),
     ).not.toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "See your last report" }),
-    );
+    expect(screen.queryByText(/See your last report/)).not.toBeInTheDocument();
     expect(
-      await screen.findByRole("button", { name: "Analysing…" }),
-    ).toBeDisabled();
+      screen.queryByRole("list", { name: "Dimensions, least certain first" }),
+    ).not.toBeInTheDocument();
   });
 });

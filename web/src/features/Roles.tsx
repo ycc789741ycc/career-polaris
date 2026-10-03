@@ -17,7 +17,6 @@ import { RoleMap, type RoleBubble } from "../charts/RoleMap";
 import {
   AutoGrid,
   Button,
-  Done,
   EmptyState,
   ErrorNote,
   Eyebrow,
@@ -26,7 +25,7 @@ import {
   SkillFitBar,
   StatTile,
 } from "../components/ui";
-import { isBusy, useActivity } from "../shell/activity";
+import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
 import { modelName, useHeading, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
@@ -79,9 +78,6 @@ export function Roles() {
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [queued, setQueued] = useState<string | null>(null);
-  // While a build runs, the last map can still be read on request.
-  const [showPrevious, setShowPrevious] = useState(false);
 
   const fitByRole = useMemo(
     () => new Map((fits.data ?? []).map((fit) => [fit.role_id, fit])),
@@ -161,17 +157,17 @@ export function Roles() {
         }
     : null;
 
-  const building = isBusy(activity?.role_map);
   const analysing = activity?.analysis?.status === "running";
-  const waiting = isMapComing(activity) && !showPrevious;
+  // While a build runs or is about to, its waiting screen is the page.
+  const waiting = isMapComing(activity);
   useHeading(waiting ? "Building your role map" : null);
 
-  async function act(label: string, run: () => Promise<unknown>) {
+  async function rebuild() {
     setBusy(true);
     setError(null);
     try {
-      await run();
-      setQueued(label);
+      await api.post("/roles/recluster");
+      setEstimate(null);
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -227,14 +223,6 @@ export function Roles() {
             ? scope.data.target_locations.join(" and ")
             : "your locations"
         } keeps this down.`}
-        previous={
-          bubbles.length > 0
-            ? {
-                label: "See your last map",
-                onClick: () => setShowPrevious(true),
-              }
-            : undefined
-        }
       />
     );
   }
@@ -245,19 +233,8 @@ export function Roles() {
         className="row report-toolbar"
         style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
       >
-        <Button
-          variant="secondary"
-          busy={busy}
-          disabled={building}
-          onClick={askForEstimate}
-        >
-          {activity?.role_map?.status === "waiting"
-            ? activity.role_map.waiting_for === "market"
-              ? "Searching the market…"
-              : "Waiting for analysis…"
-            : building
-              ? "Building…"
-              : "Rebuild role map"}
+        <Button variant="secondary" busy={busy} onClick={askForEstimate}>
+          Rebuild role map
         </Button>
         <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
           {builtLine({
@@ -282,23 +259,11 @@ export function Roles() {
         </p>
       )}
       <ErrorNote error={error} />
-      {queued && <Done>{queued}.</Done>}
       {estimate && (
         <CostConfirm
           busy={busy}
           onCancel={() => setEstimate(null)}
-          onConfirm={() =>
-            act(
-              // A build asked for during an analysis waits for it (ADR 0018).
-              analysing
-                ? "Role map queued — it starts when your analysis finishes"
-                : "Role map queued",
-              async () => {
-                await api.post("/roles/recluster");
-                setEstimate(null);
-              },
-            )
-          }
+          onConfirm={() => void rebuild()}
         >
           Your map covers up to {estimate.max_roles} of the roles your last
           analysis recommended. Naming them and scoring your fit against each

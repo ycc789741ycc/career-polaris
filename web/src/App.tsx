@@ -172,7 +172,7 @@ function Shell() {
             email={me?.email ?? email}
             onSignOut={() => void signOut()}
           />
-          <ActivityBar />
+          <ActivityBar screen={screen} />
           <div className="page-body" key={screen}>
             {me?.background_jobs_paused && (
               <p
