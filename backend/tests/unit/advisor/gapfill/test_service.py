@@ -59,6 +59,12 @@ class _Evidence:
 @dataclass
 class FakeProfile:
     recorded: list[list[AnswerRecord]] = field(default_factory=list)
+    # Evidence ids the profile still holds; None means every one recorded.
+    kept: set[str] | None = None
+    stored: list[str] = field(default_factory=list)
+
+    async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
+        return set(self.stored) if self.kept is None else self.kept
 
     async def snapshot(self, owner_id: uuid.UUID) -> Any:
         return type(
@@ -69,7 +75,9 @@ class FakeProfile:
 
     async def record_answers(self, owner_id: uuid.UUID, answers: list[AnswerRecord]) -> Any:
         self.recorded.append(list(answers))
-        return [_Evidence(uuid.uuid4(), "user_answer", "Your answer", a.fact) for a in answers]
+        stored = [_Evidence(uuid.uuid4(), "user_answer", "Your answer", a.fact) for a in answers]
+        self.stored += [str(e.id) for e in stored]
+        return stored
 
 
 @dataclass
@@ -275,3 +283,44 @@ async def test_a_set_is_submitted_once() -> None:
 
     with pytest.raises(ValidationError, match="already submitted"):
         await service.submit(OWNER, written.id, answers)
+
+
+# --- answers a gap plan may cite (ADR 0036) ----------------------------------
+
+
+async def test_a_targets_answers_are_listed_by_gap_newest_first() -> None:
+    uow = FakeGapFillUnitOfWork()
+    service = _service(uow)
+    first = await _written(service)
+    lead = first.questions[0]
+    earlier = await service.submit(OWNER, first.id, [Answer(question_id=lead.id, choice="Yes")])
+    second = await _written(service)
+    later = await service.submit(
+        OWNER, second.id, [Answer(question_id=second.questions[1].id, choice="Partly")]
+    )
+
+    answers = await service.get_answers(OWNER, REF)
+
+    assert [(a.gap_key, a.evidence_id) for a in answers] == [
+        ("req:multi-region-capacity", later.evidence_ids[0]),
+        ("dim:incidents", earlier.evidence_ids[0]),
+    ]
+    elsewhere = TargetRef("00000000-0000-0000-0000-0000000000bb")
+    assert await service.get_answers(OWNER, elsewhere) == ()
+
+
+async def test_an_answer_whose_evidence_is_gone_is_left_out() -> None:
+    profile = FakeProfile(kept=set())
+    service = _service(FakeGapFillUnitOfWork(), profile=profile)
+    written = await _written(service)
+    answer = Answer(question_id=written.questions[0].id, choice="Yes")
+    await service.submit(OWNER, written.id, [answer])
+
+    assert await service.get_answers(OWNER, REF) == ()
+
+
+async def test_unanswered_questions_are_not_answers() -> None:
+    service = _service(FakeGapFillUnitOfWork())
+    await _written(service)
+
+    assert await service.get_answers(OWNER, REF) == ()

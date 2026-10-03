@@ -1,17 +1,28 @@
 """Gap-plan use cases against in-memory storage: requesting, versions, history,
-ticking tasks and recording failures, with no database and no model."""
+ticking tasks, recording failures, being outdated, and drafting against a
+stand-in model that cites what the user answered — with no database."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from advisor.gapfill import GapAnswerView
 from advisor.gapplan import GapPlanService, PlanStatus
 from advisor.gapplan.domain import Milestone, Task
-from advisor.target import DraftBasis, OutdatedReason, TargetRef
+from advisor.target import (
+    DimensionGap,
+    DraftBasis,
+    OutdatedReason,
+    TargetRef,
+    TargetSnapshot,
+    UncoveredGap,
+)
+from advisor.target.domain import Requirement, RequirementBasis
 from kernel.errors import NotFoundError
 from tests.unit.advisor.gapplan.fakes import FakeGapPlanUnitOfWork
 
@@ -48,11 +59,33 @@ class OutdatingTarget(FakeTarget):
 
 
 class VersionedProfile:
-    def __init__(self, version: int) -> None:
+    """A profile at ``version`` holding ``evidence``: (id, source, reference, fact)."""
+
+    def __init__(self, version: int, evidence: tuple[tuple[str, str, str, str], ...] = ()) -> None:
         self.current = version
+        self.evidence = tuple(
+            SimpleNamespace(id=i, source=source, reference=reference, fact=fact)
+            for i, source, reference, fact in evidence
+        )
 
     async def version(self, owner_id: uuid.UUID) -> int:
         return self.current
+
+    async def snapshot(self, owner_id: uuid.UUID) -> Any:
+        return SimpleNamespace(version=self.current, evidence=self.evidence)
+
+
+class NoAssessment:
+    async def latest(self, owner_id: uuid.UUID) -> None:
+        return None
+
+
+class NoRoles:
+    async def fits(self, owner_id: uuid.UUID) -> list[Any]:
+        return []
+
+    async def roles(self, owner_id: uuid.UUID) -> list[Any]:
+        return []
 
 
 def _service(
@@ -60,14 +93,17 @@ def _service(
     *,
     target: FakeTarget | None = None,
     profile: VersionedProfile | None = None,
+    gapfill: Any = None,
+    gateway: Any = None,
 ) -> GapPlanService:
     return GapPlanService(
         uow,
         target=target or FakeTarget(),  # type: ignore[arg-type]
         profile=profile or VersionedProfile(0),  # type: ignore[arg-type]
-        assessment=None,  # type: ignore[arg-type]
-        rolemap=None,  # type: ignore[arg-type]
-        gateway=None,  # type: ignore[arg-type]
+        assessment=NoAssessment(),  # type: ignore[arg-type]
+        rolemap=NoRoles(),  # type: ignore[arg-type]
+        gapfill=gapfill,
+        gateway=gateway,
     )
 
 
@@ -279,3 +315,132 @@ async def test_a_plan_drafted_before_its_basis_was_kept_is_never_outdated() -> N
     uow.store.plans[plan.id].target_digest = None
 
     assert (await plans.get(OWNER, plan.id)).outdated_by == ()
+
+
+# --- citing what the user answered (ADR 0036) --------------------------------
+
+LEAD = "dim:leadership"
+ORG = "req:demonstrated-org-level-influence"
+WORK, ANSWER, OTHER_ANSWER = (
+    "11111111-1111-1111-1111-111111111111",
+    "22222222-2222-2222-2222-222222222222",
+    "33333333-3333-3333-3333-333333333333",
+)
+
+
+def _gapped_snapshot(ref: TargetRef) -> TargetSnapshot:
+    return TargetSnapshot(
+        ref=ref,
+        title="Staff Platform Engineer",
+        company="Meridian Labs",
+        role_id=ref.role_id,
+        role_name="Staff Platform Engineer",
+        requirements=(
+            Requirement("Lead technical direction", 1.0, "expert"),
+            Requirement("Demonstrated org-level influence", 0.5, "advanced"),
+        ),
+        basis=RequirementBasis.ROLE,
+        fit_score=60,
+        dimensions=(DimensionGap("leadership", "Technical leadership", 70, 90, 10),),
+        uncovered=(UncoveredGap("Demonstrated org-level influence", 0.5, 25),),
+        requirement_map={},
+        taken_at=datetime(2026, 10, 3, tzinfo=UTC),
+    )
+
+
+class SnapshotTarget(OutdatingTarget):
+    def __init__(self) -> None:
+        super().__init__(digest="unchanged")
+
+    async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+        return _gapped_snapshot(ref)
+
+
+class Answers:
+    def __init__(self, *answers: tuple[str, str]) -> None:
+        self.answers = tuple(
+            GapAnswerView(gap_key=key, evidence_id=uuid.UUID(i), answered_at=datetime.now(UTC))
+            for key, i in answers
+        )
+
+    async def get_answers(self, owner_id: uuid.UUID, ref: TargetRef) -> tuple[GapAnswerView, ...]:
+        return self.answers
+
+
+class PlanGateway:
+    """Replies with a plan citing ``org`` for the requirement gap and E1 for
+    the skill gap, and records what it was shown."""
+
+    def __init__(self, org: list[str]) -> None:
+        self.org = org
+        self.inputs: list[dict[str, str]] = []
+
+    async def run(self, owner_id: uuid.UUID, *, inputs: dict[str, str], **kwargs: Any) -> Any:
+        self.inputs.append(inputs)
+        tasks = [{"text": f"Task {n}", "due": "Wk 1", "closes": [LEAD]} for n in range(2)]
+        reply = {
+            "gaps": [
+                {"key": ORG, "why": "You said another team built on it.", "evidence_ids": self.org},
+                {"key": LEAD, "why": "Short of the bar.", "evidence_ids": ["E1"]},
+            ],
+            "milestones": [
+                {"title": "One", "window": "Weeks 1-6", "outcome": "Proof.", "tasks": tasks},
+                {"title": "Two", "window": "Weeks 6-9", "outcome": "More.", "tasks": tasks},
+            ],
+            "projects": [],
+        }
+        return SimpleNamespace(
+            value=kwargs["output_schema"].model_validate(reply),
+            model_id="claude-opus-5",
+            template_version="gap_plan@v2",
+        )
+
+
+def _cited_service(uow: FakeGapPlanUnitOfWork, gateway: PlanGateway) -> GapPlanService:
+    profile = VersionedProfile(
+        2,
+        (
+            (WORK, "github", "GitHub · ledger", "Led the ledger split"),
+            (ANSWER, "user_answer", "Your answer", "Did another team build on it? Yes"),
+            (OTHER_ANSWER, "user_answer", "Your answer", "How many engineers? 4 to 10"),
+        ),
+    )
+    return _service(
+        uow,
+        target=SnapshotTarget(),
+        profile=profile,
+        gapfill=Answers((ORG, ANSWER), (LEAD, OTHER_ANSWER)),
+        gateway=gateway,
+    )
+
+
+async def test_each_answered_gap_lists_its_answers_and_a_requirement_cites_its_own() -> None:
+    uow = FakeGapPlanUnitOfWork()
+    gateway = PlanGateway(org=["E2"])
+    plans = _cited_service(uow, gateway)
+    plan = await plans.request(OWNER, _ref())
+
+    await plans.draft(OWNER, plan.id)
+
+    gaps = gateway.inputs[0]["gaps"]
+    assert f"- {ORG} — no evidence at all for" in gaps and "answered in [E2])" in gaps
+    assert "answered in [E3])" in gaps
+    view = await plans.get(OWNER, plan.id)
+    assert view.summary.status is PlanStatus.READY, view.summary.error_message
+    org = next(g for g in view.gaps if g.key == ORG)
+    assert [(e.id, e.reference) for e in org.evidence] == [(ANSWER, "Your answer")]
+
+
+@pytest.mark.parametrize("cited", [["E1"], ["E3"]])
+async def test_a_requirement_citing_anything_but_its_own_answers_is_rejected(
+    cited: list[str],
+) -> None:
+    uow = FakeGapPlanUnitOfWork()
+    plans = _cited_service(uow, PlanGateway(org=cited))
+    plan = await plans.request(OWNER, _ref())
+
+    await plans.draft(OWNER, plan.id)
+
+    failed = await plans.get(OWNER, plan.id)
+    assert failed.summary.status is PlanStatus.FAILED
+    assert failed.summary.error_code == "plan_invalid"

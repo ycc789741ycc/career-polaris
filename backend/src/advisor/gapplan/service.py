@@ -24,6 +24,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapAnswerView, GapFillService
 from advisor.gapplan.domain import (
     MAX_MILESTONES,
     MAX_PROJECTS,
@@ -95,7 +96,7 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_TEMPLATE = ("gap_plan", "v1")
+_TEMPLATE = ("gap_plan", "v2")
 _UNTRUSTED = frozenset({"requirements", "evidence", "dimensions"})
 
 
@@ -233,6 +234,7 @@ class GapPlanService:
         profile: ProfileService,
         assessment: AssessmentService,
         rolemap: RoleMapService,
+        gapfill: GapFillService,
         gateway: AiGateway,
     ) -> None:
         self._uow = uow
@@ -240,6 +242,7 @@ class GapPlanService:
         self._profile = profile
         self._assessment = assessment
         self._rolemap = rolemap
+        self._gapfill = gapfill
         self._gateway = gateway
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
@@ -253,6 +256,7 @@ class GapPlanService:
             snapshot=preview.snapshot,
             profile=profile,
             handles=CitationHandles(e.id for e in profile.evidence),
+            answers=await self._gapfill.get_answers(owner_id, ref),
         )
         estimate = await self._gateway.estimate(
             owner_id,
@@ -420,6 +424,7 @@ class GapPlanService:
 
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
+        answers = await self._gapfill.get_answers(owner_id, ref)
         result = await self._gateway.run(
             owner_id,
             task="gapplan.draft",
@@ -431,6 +436,7 @@ class GapPlanService:
                 snapshot=snapshot,
                 profile=profile,
                 handles=handles,
+                answers=answers,
             ),
             output_schema=_Plan,
             untrusted=_UNTRUSTED,
@@ -455,6 +461,9 @@ class GapPlanService:
                 projects=projects,
                 shown_keys=shown_keys,
                 dimension_keys=[g.key for g in shown if isinstance(g, DimensionGap)],
+                answers_by_gap={
+                    key: frozenset(ids) for key, ids in _answer_handles(answers, handles).items()
+                },
             )
         except PlanError as exc:
             raise PlanInvalidError(f"the drafted plan was rejected: {exc}") from exc
@@ -579,23 +588,28 @@ class GapPlanService:
         snapshot: TargetSnapshot | None,
         profile: ProfileSnapshot,
         handles: CitationHandles,
+        answers: tuple[GapAnswerView, ...],
     ) -> dict[str, str]:
         assessment = await self._assessment.latest(owner_id)
         if snapshot is None:
             gaps = "(worked out once the job description has been scored)"
         else:
+            answered = _answer_handles(answers, handles)
             lines = []
             for gap in snapshot.open_gaps[:SHOWN_GAPS]:
                 if isinstance(gap, DimensionGap):
-                    lines.append(
+                    line = (
                         f"- {gap.key} — {gap.name}: scored {gap.user_score}, the job expects "
-                        f"{gap.target_score} (worth {gap.lift} fit points)"
+                        f"{gap.target_score} (worth {gap.lift} fit points"
                     )
                 else:
-                    lines.append(
+                    line = (
                         f"- {gap.key} — no evidence at all for: {gap.statement} "
-                        f"(worth {gap.lift} fit points)"
+                        f"(worth {gap.lift} fit points"
                     )
+                if gap.key in answered:
+                    line += "; answered in " + ", ".join(f"[{h}]" for h in answered[gap.key])
+                lines.append(line + ")")
             gaps = "\n".join(lines) or "(none)"
         return {
             "target": label,
@@ -653,6 +667,17 @@ def _same_target(ref: TargetRef) -> GapPlanFilter:
 
 def _ref_of(plan: GapPlan) -> TargetRef:
     return TargetRef.of(plan.role_id, plan.job_posting_id, plan.private_job_posting_id)
+
+
+def _answer_handles(
+    answers: tuple[GapAnswerView, ...], handles: CitationHandles
+) -> dict[str, list[str]]:
+    """Each gap's answers from Fill the gap, under the handles the prompt shows
+    them by, newest first (ADR 0036)."""
+    by_gap: dict[str, list[str]] = {}
+    for answer in answers:
+        by_gap.setdefault(answer.gap_key, []).append(handles.handle(answer.evidence_id))
+    return by_gap
 
 
 def _basis_of(plan: GapPlan) -> DraftBasis | None:

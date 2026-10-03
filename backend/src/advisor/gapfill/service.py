@@ -50,6 +50,7 @@ from kernel.logging import get_logger
 
 __all__ = [
     "Answer",
+    "GapAnswerView",
     "GapFillService",
     "GapView",
     "QuestionSetView",
@@ -113,6 +114,16 @@ class QuestionSetView:
 
 
 @dataclass(frozen=True, slots=True)
+class GapAnswerView:
+    """One answer the user submitted, and the gap it was asked about: what a
+    gap plan may cite for that gap (ADR 0036)."""
+
+    gap_key: str
+    evidence_id: uuid.UUID
+    answered_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class SubmittedView:
     set_id: uuid.UUID
     evidence_ids: tuple[uuid.UUID, ...]
@@ -155,6 +166,33 @@ class GapFillService:
     async def get(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> QuestionSetView:
         async with self._uow.for_owner(owner_id) as mine:
             return await _view(mine, await _owned(mine, set_id))
+
+    async def get_answers(self, owner_id: uuid.UUID, ref: TargetRef) -> tuple[GapAnswerView, ...]:
+        """Every answer submitted for this Target, in any of its sets, with the
+        gap each was asked about, newest first (ADR 0036). An answer whose
+        evidence is gone is left out. One user's sets for one Target: few."""
+        async with self._uow.for_owner(owner_id) as mine:
+            sets = await mine.sets.get_list(_for_target(ref))
+            questions = (
+                await mine.questions.get_list(GapQuestionFilter(set_ids=tuple(s.id for s in sets)))
+                if sets
+                else []
+            )
+        answers = [
+            GapAnswerView(gap_key=q.gap_key, evidence_id=q.evidence_id, answered_at=q.answered_at)
+            for q in questions
+            if q.evidence_id is not None and q.answered_at is not None
+        ]
+        if not answers:
+            return ()
+        owned = await self._profile.evidence_ids(owner_id)
+        return tuple(
+            sorted(
+                (a for a in answers if str(a.evidence_id) in owned),
+                key=lambda a: (a.answered_at, str(a.evidence_id)),
+                reverse=True,
+            )
+        )
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
         """Priced before anything is spent."""

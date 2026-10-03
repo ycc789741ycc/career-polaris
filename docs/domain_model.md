@@ -218,7 +218,7 @@ v3 draws the answers going **straight from Questions to the Profile** ("Feedback
 - **On submit:**
   1. Each answer becomes Evidence with source `user_answer` (2.6). It appears on Sources under "Your answers" and in "What it found so far".
   2. The Target's gap plan and résumé are **not** rewritten. Each says it is outdated by the new evidence, and the user regenerates it at a price they confirm ([ADR 0035](decisions/0035-regenerate-the-plan-and-resume-only-when-asked.md); until then, ADR 0023 had them rewritten on submit).
-  3. A plan regenerated afterwards says so: *"uses your 4 answers from Fill the gap"*.
+  3. A plan regenerated afterwards says so: *"uses your 4 answers from Fill the gap"*. Each answer is evidence for the gap it was asked about: the plan sees it beside that gap, and a requirement with no other evidence may cite it — and nothing else ([ADR 0036](decisions/0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md)).
 - **Outdated.** A gap plan and a résumé each record what they were drafted from: the profile version and a digest of the Target. When either has moved on — answers, a sync, an upload, a re-analysis, a rebuild — the Advisor shows "Outdated: your evidence changed" or "Outdated: the target changed", and offers Regenerate.
 - A new Target, or a new analysis that changes the Target's gaps, gets a new QuestionSet. Evidence already submitted stays.
 - **Why per gap:** a question about a gap the user is actually trying to close is worth answering, and its answer counts directly toward the plan and the résumé. Questions from a low-confidence radar asked about dimensions the user might not care about, and cost a call on every sync (ADR 0012).
