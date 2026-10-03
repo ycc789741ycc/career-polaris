@@ -1671,6 +1671,13 @@ Open questions:
   would cost nothing to show.
 
 ## A plan cites what you answered
+**Done** (ADR 0036). As planned, with these details:
+
+* `get_answers` sorts by when each question was answered and leaves out an
+  answer whose evidence the profile no longer holds.
+* `answers_by_gap` is checked in handles, before they are resolved to ids,
+  since that is what the model cites.
+
 Fill the gap asks about the Target's gaps, and each answer is stored as
 `user_answer` evidence. `GapQuestion` keeps the gap it asked about
 (`gap_key`) and the evidence its answer became (`evidence_id`). A plan drafted

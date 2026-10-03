@@ -207,9 +207,43 @@ def test_a_gap_that_is_not_in_the_plan_cannot_be_explained() -> None:
         check(readings=[*readings(), extra])
 
 
-def test_a_skill_gap_must_cite_evidence_but_a_missing_requirement_cannot() -> None:
+def test_a_skill_gap_must_cite_evidence() -> None:
     with pytest.raises(PlanError, match="cites no evidence"):
         check(readings=readings(**{"dim:leadership": GapReading("dim:leadership", "Why.", ())}))
+
+
+def test_a_missing_requirement_may_cite_its_own_answers() -> None:
+    """What the user answered about a requirement is the one thing it can rest
+    on (ADR 0036)."""
+    check(
+        readings=readings(**{"req:k8s": GapReading("req:k8s", "You said you ran it.", ("a1",))}),
+        answers_by_gap={"req:k8s": frozenset({"a1", "a2"})},
+    )
+
+
+@pytest.mark.parametrize(
+    ("cited", "answers"),
+    [
+        (("e1",), {"req:k8s": frozenset({"a1"})}),
+        (("a9",), {"req:k8s": frozenset({"a1"}), "dim:leadership": frozenset({"a9"})}),
+        (("a1",), {}),
+    ],
+)
+def test_a_missing_requirement_cites_nothing_but_its_own_answers(
+    cited: tuple[str, ...], answers: dict[str, frozenset[str]]
+) -> None:
+    with pytest.raises(PlanError, match="its own answers"):
+        check(
+            readings=readings(**{"req:k8s": GapReading("req:k8s", "Why.", cited)}),
+            answers_by_gap=answers,
+        )
+
+
+def test_a_skill_gap_may_cite_an_answer_like_any_evidence() -> None:
+    check(
+        readings=readings(**{"dim:leadership": GapReading("dim:leadership", "Why.", ("a1",))}),
+        answers_by_gap={"dim:leadership": frozenset({"a1"})},
+    )
 
 
 @pytest.mark.parametrize("count", [1, 6])

@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 
 from advisor.assessment import AssessmentService, create_assessment_service
+from advisor.gapfill import Answer, GapFillService, create_gapfill_service
 from advisor.gapplan import GapPlanService, PlanStatus, create_gapplan_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
@@ -75,6 +76,7 @@ class World:
     gapplan: GapPlanService
     evidence_id: str
     profile: ProfileService
+    gapfill: GapFillService
 
 
 @pytest_asyncio.fixture
@@ -134,12 +136,14 @@ async def world(
         upload_max_bytes=settings.own_posting_max_bytes,
         upload_max_pages=settings.own_posting_max_pages,
     )
+    gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     gapplan = create_gapplan_service(
         database,
         target=target,
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        gapfill=gapfill,
         gateway=gateway,
     )
 
@@ -177,6 +181,7 @@ async def world(
         gapplan=gapplan,
         evidence_id=str(evidence.id),
         profile=profile,
+        gapfill=gapfill,
     )
 
 
@@ -347,7 +352,7 @@ async def test_a_posting_of_your_own_is_planned_for_with_gaps_ranked_by_worth(
     ]
     assert plan.summary.progress == 0
     assert plan.summary.model_id == "claude-opus-5"
-    assert plan.template_version == "gap_plan@v1"
+    assert plan.template_version == "gap_plan@v2"
     # Only the draft runs on the key: the build already read the JD and
     # scored the role (ADR 0022).
     assert len(world.stub.calls) == calls_before + 1
@@ -439,6 +444,56 @@ async def test_new_evidence_marks_the_latest_plan_outdated_and_rewrites_nothing(
     assert [v.version for v in after.versions] == [1]
     assert after.gaps == drafted.gaps
     assert len(world.stub.calls) == calls
+
+
+async def test_a_requirement_with_no_evidence_cites_the_answer_given_about_it(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """What the user answered in Fill the gap is the one thing an uncovered
+    requirement can rest on (ADR 0036)."""
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "gap_key": ORG_KEY,
+                        "text": "Did another team build on a design you wrote?",
+                        "asked_because": "Nothing speaks to influence beyond a team.",
+                        "answer_type": "free_text",
+                        "choices": [],
+                    }
+                ]
+            }
+        )
+    )
+    questions = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, questions.id)
+    written = await world.gapfill.get(account, questions.id)
+    assert written.status == "ready", written.error_message
+    done = await world.gapfill.submit(
+        account,
+        written.id,
+        [Answer(question_id=written.questions[0].id, text="Payments built on my ledger RFC.")],
+    )
+    [answer_id] = done.evidence_ids
+    assert [a.evidence_id for a in await world.gapfill.get_answers(account, ref)] == [answer_id]
+    assert await world.gapfill.get_answers(other_account, ref) == ()
+
+    profile = await world.profile.snapshot(account)
+    handle = {str(e.id): f"E{n}" for n, e in enumerate(profile.evidence, start=1)}
+    reply = json.loads(_plan_reply(handle[world.evidence_id]))
+    reply["gaps"][0]["evidence_ids"] = [handle[str(answer_id)]]
+    world.stub.replies.append(json.dumps(reply))
+    requested = await world.gapplan.request(account, ref)
+    await world.gapplan.draft(account, requested.id)
+
+    plan = await world.gapplan.get(account, requested.id)
+    assert plan.summary.status is PlanStatus.READY, plan.summary.error_message
+    assert f"answered in [{handle[str(answer_id)]}]" in world.stub.calls[-1].user
+    org = next(g for g in plan.gaps if g.key == ORG_KEY)
+    assert [e.id for e in org.evidence] == [str(answer_id)]
+    assert "Payments built on my ledger RFC." in org.evidence[0].fact
 
 
 async def test_another_user_cannot_read_the_plan(

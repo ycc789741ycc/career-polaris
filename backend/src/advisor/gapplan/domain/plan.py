@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -86,12 +86,17 @@ def assert_draft_valid(
     projects: Sequence[DraftProject],
     shown_keys: Sequence[str],
     dimension_keys: Iterable[str],
+    answers_by_gap: Mapping[str, frozenset[str]] | None = None,
 ) -> None:
     """Every shown gap is explained, and every task closes one of them.
 
     A dimension gap must cite evidence — it is a claim about the user's work.
-    An uncovered requirement has, by definition, nothing to cite.
+    An uncovered requirement has no evidence behind it, except what the user
+    answered about it in Fill the gap: it may cite those answers
+    (``answers_by_gap``, the evidence ids answered for each gap) and nothing
+    else (ADR 0036).
     """
+    answered = answers_by_gap or {}
     shown = set(shown_keys)
     dimensional = set(dimension_keys)
 
@@ -107,6 +112,13 @@ def assert_draft_valid(
             raise PlanError(f"gap {reading.key} has no explanation")
         if reading.key in dimensional and not reading.evidence_ids:
             raise PlanError(f"gap {reading.key} cites no evidence")
+        if reading.key not in dimensional and (
+            other := set(reading.evidence_ids) - answered.get(reading.key, frozenset())
+        ):
+            raise PlanError(
+                f"gap {reading.key} has no evidence but its own answers to cite, "
+                f"and cites {sorted(other)}"
+            )
 
     if not MIN_MILESTONES <= len(milestones) <= MAX_MILESTONES:
         raise PlanError(

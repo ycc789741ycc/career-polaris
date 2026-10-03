@@ -193,6 +193,7 @@ def build(settings: Settings | None = None) -> Container:
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        gapfill=gapfill,
         gateway=gateway,
     )
     resume = create_resume_service(

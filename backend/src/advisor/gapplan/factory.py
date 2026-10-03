@@ -7,6 +7,7 @@ unit of work (ADR 0011).
 from __future__ import annotations
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapFillService
 from advisor.gapplan.infra.unit_of_work import SqlAlchemyGapPlanUnitOfWork
 from advisor.gapplan.service import GapPlanService
 from advisor.profile import ProfileService
@@ -23,6 +24,7 @@ def create_gapplan_service(
     profile: ProfileService,
     assessment: AssessmentService,
     rolemap: RoleMapService,
+    gapfill: GapFillService,
     gateway: AiGateway,
 ) -> GapPlanService:
     return GapPlanService(
@@ -31,5 +33,6 @@ def create_gapplan_service(
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        gapfill=gapfill,
         gateway=gateway,
     )
