@@ -1479,10 +1479,13 @@ key unless the user asks for that spend.
   than old work, and a newer fact wins over an older one it contradicts.
 * The exported PDF looks like the résumé previewed, and Export downloads it
   with no link to click.
+* A user can design a résumé template of their own, from fixed layouts,
+  bundled fonts and checked colours, or start one from another résumé's PDF,
+  whose style is read and whose text is kept nowhere.
 
-Six branches, in this order. The first two were built under
+Eight branches, in this order. The first two were built under
 `epic/no-ticket/own-posting-target`, which is already in mainline. The
-other four are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+other six are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
 
 1. "A posting of your own belongs to Target": done (ADR 0033).
 2. "Uploaded or filled in, evaluated when set as the target": done
@@ -1495,6 +1498,10 @@ other four are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
    when each fact is from, and is told what to do when facts conflict.
 6. "Export what you previewed": the PDF and the preview share fonts, sizes,
    trimming and colours, and Export downloads the file itself.
+7. "Templates of your own": a template is a checked style spec, and a user
+   can design their own from a built-in one.
+8. "Start a template from a file": an uploaded PDF's style is read
+   locally into a draft spec the user reviews in the editor.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -2016,3 +2023,214 @@ Open questions:
   megabytes.
 * Whether old exports should be deleted after a while. Reuse stops most new
   ones, but nothing removes what is already stored.
+
+## Templates of your own
+After "Export what you previewed", a template is data: `_LOOKS` is served by
+`GET /resume-templates`, and the preview and the PDF both draw from it. But
+there are still two templates, a closed `Template` enum, and a check
+constraint (`template IN ('organic', 'plain')`) on `resume.resume`. A user
+who wants another look has no way to get one.
+
+A template stays a set of checked values, never markup. The renderer is safe
+because nothing a user supplies reaches its HTML or CSS unescaped and nothing
+is fetched (ADR 0007), and that holds for a user's template too.
+
+Its own branch, `feature/<ticket>/own-resume-templates`, after "Export what
+you previewed".
+
+1. **A template is a `TemplateSpec`**, a value object in a new
+   `resume/domain/template.py`. Each value is limited to what both the
+   renderer and the preview implement:
+
+   | Value | Allowed |
+   |---|---|
+   | `layout` | `single_column`, `sidebar_left`, `sidebar_right`, `header_band` |
+   | `heading_font`, `body_font` | a font bundled in the worker image and the SPA (`TEMPLATE_FONTS` in `constants.py`): Caprasimo, Figtree, a serif, a monospace |
+   | `accent_color`, `name_color`, `text_color` | hex colours; text and name at least 4.5:1 against white |
+   | `rule` | `none`, `thin`, `thick`, in the accent colour |
+   | `name_size`, `heading_size`, `body_size` | points, each within a range (`TEMPLATE_SIZE_RANGES`) |
+   | `section_order` | an order of summary, experience and skills |
+   | `heading_case` | `upper` or `as_written` |
+   | `bullet` | `dot`, `dash`, `none` |
+
+   Anything outside these is refused with a 422 naming the value. The two
+   built-in looks become `TemplateSpec`s in `constants.py`, and `_LOOKS`
+   goes.
+2. **A user's templates are stored per user.**
+   * `CustomTemplate` (`resume.custom_template`, row-level security) has a
+     name and a `TemplateSpec`, stored as JSON and checked again whenever it
+     is read.
+   * A user keeps at most `RESUME_TEMPLATE_MAX` (default 10) templates.
+   * A résumé uses either a built-in `template` or a `custom_template_id`,
+     exactly one, by check constraint, the way a Target keeps one shape.
+   * Migration 0035 adds the table and the column, and replaces the
+     constraint.
+3. **The routes.**
+   * `GET /resume-templates` lists the built-in templates and then the
+     user's own, each with its spec and `is_built_in`.
+   * `POST /resume-templates` creates one from a spec, which the SPA starts
+     from a built-in one. `PUT /resume-templates/{id}` saves it, and
+     `DELETE /resume-templates/{id}` deletes it.
+   * Deleting a template that résumés use moves them to `organic`. Their
+     exports keep the files already rendered.
+4. **The renderer and the preview implement every layout.**
+   * `render_html(content, spec, options)` builds each layout from the
+     spec. Every value goes into the CSS from a checked enum or a validated
+     number or colour, never as text from the user.
+   * The preview has the same layouts. A sidebar holds the skills and the
+     contact line, and the experience breaks across pages on the main
+     column only.
+5. **An export records the spec it rendered.** An edit to a template after
+   an export must not change a stored PDF's meaning or let an outdated one
+   be reused. So an export stores the spec it rendered, and reuse compares
+   specs, not template ids.
+6. **The SPA's editor.** Under the template picker, "Make your own" opens an
+   editor on a copy of the chosen template: layout, two fonts, three
+   colours, the sizes, the section order, the heading case and the bullet.
+   The preview redraws as each value changes. A colour that fails the
+   contrast check is flagged, and cannot be saved.
+7. **An ADR** (0039): a résumé template is a checked spec, never markup,
+   and a user can keep their own. It amends ADR 0007, which kept the look
+   in the renderer alone. Update the index, `CLAUDE.md`'s Resume Advisor
+   paragraph and `docs/domain_model.md`.
+
+Tests:
+* Unit, `TemplateSpec`:
+  * every value outside its set or range is refused;
+  * a colour under 4.5:1 is refused;
+  * a section order that leaves one out or repeats one is refused.
+* Unit, `render_html`:
+  * each layout renders each section once;
+  * nothing from a spec appears in the CSS except checked values;
+  * the built-in specs render as they did before this branch.
+* Unit, the service:
+  * the template limit is enforced;
+  * deleting a template in use moves its résumés to `organic`;
+  * an export stores the spec, and a change to the spec renders again.
+* Integration:
+  * the template routes under row-level security, where another user's
+    template answers 404;
+  * migration 0035 upgrades and downgrades, and a résumé cannot hold
+    both a template and a custom template.
+* SPA:
+  * the editor redraws the preview;
+  * a failing contrast blocks saving;
+  * a deleted template leaves its résumé on Organic.
+
+What gets harder:
+* Every layout is built twice, in `render_html` and in the preview, with
+  page breaks in both. A fifth layout costs more than a new colour did.
+* A user can make an ugly template. The checks keep one readable, not
+  good-looking.
+* Fonts are what we bundle. A user who wants a particular typeface gets the
+  nearest one on the list.
+* Applicant-tracking systems read a sidebar's text in an order we do not
+  control. The editor says so beside the sidebar layouts.
+
+Open questions:
+* Whether a template can be shared with another user, or published.
+* Whether to allow a photo. It is a request, often, and a risk: an image
+  in the page is a file to store and scan, and many applicant-tracking
+  systems drop it.
+
+## Start a template from a file
+With "Templates of your own" built, a user can design a template, but often
+what they have is an example: someone else's résumé whose look they like.
+Copying that design exactly is not possible, and not wanted:
+* **It would undo the renderer's safety.** Turning an uploaded PDF into
+  HTML or CSS of its own would let a crafted file change the layout, hide
+  text, or reach the network.
+* **Fonts.** A PDF embeds subsets of its fonts, often commercial ones.
+  Taking them out and embedding them again is a licensing question, and
+  the worker sets type only in fonts it has.
+* **Someone else's data.** Another person's résumé carries their name,
+  contact details and work history. None of it should be stored or shown.
+* **No AI.** The AI gateway takes text only (`inputs: dict[str, str]`).
+  Reading a page by eye would need image input from every provider, priced
+  per image, on the user's key.
+
+So the file's style is read locally into a draft `TemplateSpec`, and the
+user reviews it in the editor before anything is saved.
+
+Its own branch, `feature/<ticket>/template-from-file`, after "Templates of
+your own".
+
+1. **Upload.** "Start from a file" in the template editor posts a PDF to
+   `POST /resume-templates/upload`. It is the own-posting path (ADR 0034):
+   * the file goes to object storage, under `TEMPLATE_UPLOAD_MAX_BYTES` and
+     `TEMPLATE_UPLOAD_MAX_PAGES`;
+   * a `TemplateReading` run (`reading`, `ready`, `failed`) is recorded
+     before `resume.read_template` is queued on `docs`, and the editor polls
+     it (ADR 0006);
+   * nothing is parsed in a request handler.
+
+   PDF only: a Word file has no fixed layout to read.
+2. **Reading is local and spends nothing.**
+   * `resume/infra/style_reader.py` walks the first page with pypdf, which
+     is already a dependency, through `kernel.documents`'s guards. It
+     records each run of text: its font name, size, fill colour and
+     position. It never records the text.
+   * A pure rule in `resume/domain/template.py`,
+     `get_template_spec_from_runs`, turns the runs into a spec:
+     * the largest run is the name;
+     * the most common size is the body;
+     * the runs between them are headings;
+     * runs that start at two different x positions across the page give a
+       sidebar, and which side it is on;
+     * a fill colour that is not near black is the accent.
+   * Font names are mapped to the nearest bundled font by kind: serif,
+     sans, display or monospace, read from the name ("Garamond", "Mono",
+     "Bold").
+   * Whatever cannot be read takes the Organic value, and the run lists
+     which values were read and which were defaulted.
+3. **Nothing of the file is kept.** The file is deleted as soon as it is
+   read, whether the reading worked or not. The run keeps only the draft
+   spec and the list of read values. No text, name or font name is stored
+   or logged. A file that cannot be read fails with `unreadable_file`.
+4. **The user reviews it.** The editor opens on the draft: "We read: a left
+   sidebar, a serif heading, a teal accent", with each read value marked
+   and each defaulted one flagged. Nothing is a template until it is saved,
+   through `POST /resume-templates`, under the same checks. A draft that is
+   never saved is deleted with its run after a day.
+5. **An ADR** (0040): a template can start from someone else's résumé,
+   read locally for its style only, and the file and its text are never
+   kept. Update the index and `CLAUDE.md`.
+
+Tests:
+* Unit, `get_template_spec_from_runs`:
+  * one-column and sidebar pages give their layouts;
+  * name, heading and body sizes come out in their order;
+  * font names map to the bundled fonts by kind;
+  * an unreadable value falls back to Organic and is flagged;
+  * every draft passes `TemplateSpec`'s checks.
+* Unit, the reader: from fixture PDFs (one column, a sidebar, a scanned page
+  with no text), runs come out with no text in them, and the scanned page
+  fails as `unreadable_file`.
+* Unit, the service:
+  * the file is deleted after reading, and after a failure;
+  * the run stores no text;
+  * an upload over the limits is refused before it is stored.
+* Integration:
+  * upload, poll and save under row-level security, where another user's
+    run answers 404;
+  * the stored file is gone once the run is `ready`.
+* SPA: the editor opens on the draft, with read and defaulted values marked.
+
+What gets harder:
+* It reads a style, not a copy. A very designed résumé, with photos, icons,
+  charts or three columns, comes out as the nearest of four layouts, and the
+  page has to say so before the upload, not after.
+* Reading a layout from text positions is a heuristic. Some files will be
+  misread, and the review step is the only thing that catches it.
+* Another kind of upload to cap and test. A malformed PDF is parsed on the
+  worker, as résumés and postings of your own already are.
+* A user could upload a résumé they have no right to. Only its style is
+  kept, so nothing of it can be shown or shared, but the upload itself still
+  happens.
+
+Open questions:
+* Whether to read Word files from their styles (fonts, sizes, colours),
+  without a layout.
+* Whether to offer reading the page with the user's model once the gateway
+  takes images, for a closer layout, priced and confirmed like any other
+  spend.
