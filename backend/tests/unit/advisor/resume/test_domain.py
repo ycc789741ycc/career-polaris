@@ -20,8 +20,8 @@ from advisor.resume.domain import (
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_built_in_spec,
     get_download_name,
-    get_template_look,
     mark_edits,
     settle_revision,
 )
@@ -34,6 +34,7 @@ def content(*bullets: Bullet, name: str = "Maya Lin Chen") -> ResumeContent:
 
 
 CITED = Bullet("Owned the retry layer for payments-svc", ("e1",))
+ORGANIC = get_built_in_spec(Template.ORGANIC)
 
 
 # -- the rules ------------------------------------------------------------
@@ -151,7 +152,7 @@ def test_fourteen_short_is_no_longer_partial() -> None:
 
 def test_every_value_is_escaped_in_the_export() -> None:
     hostile = content(Bullet('<script>alert("x")</script>', ("e1",)), name="<b>Maya</b>")
-    html = render_html(hostile, template=Template.ORGANIC, options=Options())
+    html = render_html(hostile, spec=get_built_in_spec(Template.ORGANIC), options=Options())
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
     assert "<b>Maya</b>" not in html
@@ -159,16 +160,18 @@ def test_every_value_is_escaped_in_the_export() -> None:
 
 def test_trim_keeps_three_lines_a_role() -> None:
     long = content(*(Bullet(f"Line {i}", ("e1",)) for i in range(6)))
-    html = render_html(long, template=Template.PLAIN, options=Options(trim=True))
+    html = render_html(long, spec=get_built_in_spec(Template.PLAIN), options=Options(trim=True))
     assert "Line 2" in html
     assert "Line 3" not in html
 
 
 def test_each_template_has_its_own_rule() -> None:
-    organic = render_html(content(CITED), template=Template.ORGANIC, options=Options())
-    plain = render_html(content(CITED), template=Template.PLAIN, options=Options())
-    assert "#c67139" in organic and "#c67139" not in plain
-    assert "#cfcac5" in plain
+    organic = render_html(
+        content(CITED), spec=get_built_in_spec(Template.ORGANIC), options=Options()
+    )
+    plain = render_html(content(CITED), spec=get_built_in_spec(Template.PLAIN), options=Options())
+    assert "3px solid #c67139" in organic and "#c67139" not in plain
+    assert "1px solid #cfcac5" in plain
 
 
 def test_the_prototype_offers_two_templates() -> None:
@@ -176,7 +179,7 @@ def test_the_prototype_offers_two_templates() -> None:
 
 
 def test_the_export_is_a_pdf_rendered_without_fetching_anything() -> None:
-    pdf = render_pdf(render_html(content(CITED), template=Template.ORGANIC, options=Options()))
+    pdf = render_pdf(render_html(content(CITED), spec=ORGANIC, options=Options()))
     assert pdf.startswith(b"%PDF-")
 
 
@@ -190,7 +193,7 @@ def test_an_export_that_tries_to_fetch_something_is_refused() -> None:
 
 
 def test_the_export_sets_type_in_the_design_systems_fonts_with_a_fallback() -> None:
-    html = render_html(content(CITED), template=Template.ORGANIC, options=Options())
+    html = render_html(content(CITED), spec=ORGANIC, options=Options())
 
     assert '"Caprasimo", "DejaVu Sans", serif' in html
     assert '"Figtree", "DejaVu Sans", sans-serif' in html
@@ -198,17 +201,17 @@ def test_the_export_sets_type_in_the_design_systems_fonts_with_a_fallback() -> N
 
 @pytest.mark.parametrize("template", list(Template))
 def test_each_template_is_drawn_from_its_look(template: Template) -> None:
-    look = get_template_look(template)
-    html = render_html(content(CITED), template=template, options=Options())
+    spec = get_built_in_spec(template)
+    html = render_html(content(CITED), spec=spec, options=Options())
 
-    assert f"border-bottom: {look.rule}" in html
-    assert f"color: {look.name_color}" in html
-    assert f"li::marker {{ color: {look.dot_color}; }}" in html
+    assert f"border-bottom: {spec.get_rule_css()}" in html
+    assert f"color: {spec.name_color}" in html
+    assert f"li::marker {{ color: {spec.accent_color}; }}" in html
 
 
 def test_trim_cuts_skills_by_the_shared_limit_too() -> None:
     many = make_content(CITED, skills=tuple(f"Skill {i}" for i in range(20)))
-    html = render_html(many, template=Template.PLAIN, options=Options(trim=True))
+    html = render_html(many, spec=get_built_in_spec(Template.PLAIN), options=Options(trim=True))
 
     assert f"Skill {TRIMMED_SKILLS - 1}<" in html and f"Skill {TRIMMED_SKILLS}<" not in html
 
@@ -216,7 +219,7 @@ def test_trim_cuts_skills_by_the_shared_limit_too() -> None:
 def test_the_pdf_embeds_the_bundled_fonts() -> None:
     """The fonts are installed in the image this runs in, as in the worker's,
     and fontconfig matches them by the family names the CSS asks for."""
-    pdf = render_pdf(render_html(content(CITED), template=Template.ORGANIC, options=Options()))
+    pdf = render_pdf(render_html(content(CITED), spec=ORGANIC, options=Options()))
 
     embedded: set[str] = set()
     for page in PdfReader(io.BytesIO(pdf)).pages:

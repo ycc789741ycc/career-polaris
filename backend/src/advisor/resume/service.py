@@ -10,10 +10,12 @@
   ``AiGateway.stream_structured``).
 * Export renders a version to PDF on the worker's ``docs`` queue and hands back
   a short-lived signed link that downloads the file. An export of a version,
-  template and trim already rendered is reused (ADR 0038).
+  look and trim already rendered is reused (ADR 0038, ADR 0040).
 * A résumé is written again only when the user asks. It records what its latest
   generated version read, and says it is outdated once the evidence or the
   Target has moved on (ADR 0035).
+* A résumé is set in a built-in template or in one of the user's own: a name
+  and a checked ``TemplateSpec``, never markup (ADR 0040).
 
 Every line the model writes must cite Evidence the user owns; a reply that
 does not is rejected as a whole. Coverage of the Target's requirements is
@@ -41,14 +43,17 @@ from advisor.profile import (
     get_evidence_line,
 )
 from advisor.resume.domain import (
+    BUILT_IN_TEMPLATES,
     DEFAULT_PLAN,
     MAX_BULLETS_PER_ROLE,
     MAX_ROLES,
     MAX_SKILLS,
-    TEMPLATE_LOOKS,
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
+    BuiltInTemplate,
     Coverage,
+    CustomTemplate,
+    CustomTemplateFilter,
     Export,
     ExportFilter,
     ExportStatus,
@@ -71,7 +76,8 @@ from advisor.resume.domain import (
     TailoredResume,
     TailoredResumeFilter,
     Template,
-    TemplateLook,
+    TemplateSpec,
+    TemplateSpecError,
     VersionSource,
     assert_plan_valid,
     assert_well_formed,
@@ -83,20 +89,20 @@ from advisor.resume.domain import (
     settle_revision,
 )
 from advisor.resume.domain.constants import (
-    BODY_PT,
-    CONTACT_PT,
-    HEADING_PT,
+    BODY_PT_RANGE,
+    HEADING_PT_RANGE,
     MAX_LINK,
     MAX_SECTION_TITLE,
     MAX_SECTIONS,
     MAX_SUMMARY,
-    NAME_PT,
+    MAX_TEMPLATE_NAME,
+    MIN_CONTRAST,
+    NAME_PT_RANGE,
     PAGE_HEIGHT_MM,
     PAGE_MARGIN_SIDE_MM,
     PAGE_MARGIN_TOP_MM,
     PAGE_WIDTH_MM,
-    SMALL_PT,
-    TITLE_PT,
+    TEMPLATE_FONTS,
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.target import (
@@ -137,6 +143,7 @@ __all__ = [
     "SectionKind",
     "SectionSlot",
     "Template",
+    "TemplateLimitsView",
     "TemplateView",
     "VersionView",
 ]
@@ -254,7 +261,8 @@ class ResumeView:
     summary: ResumeSummaryView
     snapshot: TargetSnapshot | None
     coverage: tuple[CoverageView, ...]
-    template: Template
+    # The template's id: a built-in one's name, or one of the user's own.
+    template: str
     options: Options
     version: VersionView | None
     content: ResumeContent | None
@@ -279,7 +287,8 @@ class ResumeView:
 class ExportView:
     id: uuid.UUID
     version_id: uuid.UUID
-    template: Template
+    # The built-in template it was rendered in; None for one of the user's own.
+    template: Template | None
     status: str
     error_code: str | None
     error_message: str | None
@@ -289,22 +298,34 @@ class ExportView:
 @dataclass(frozen=True, slots=True)
 class TemplateView:
     """One template as the PDF renderer draws it: what the preview reads so it
-    shows the page the PDF will be (ADR 0038). Sizes in points, the page in
-    millimetres."""
+    shows the page the PDF will be (ADR 0038, ADR 0040). Sizes in points, the
+    page in millimetres."""
 
-    look: TemplateLook
+    # A built-in template's name, or the id of one of the user's own.
+    id: str
+    name: str
+    note: str
+    is_built_in: bool
+    spec: TemplateSpec
     page_width_mm: int
     page_height_mm: int
     margin_top_mm: int
     margin_side_mm: int
-    name_pt: float
-    title_pt: float
-    body_pt: float
-    contact_pt: float
-    small_pt: float
-    heading_pt: float
     trimmed_bullets: int
     trimmed_skills: int
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateLimitsView:
+    """What a template of the user's own may set, for the editor."""
+
+    fonts: tuple[str, ...]
+    name_pt_range: tuple[float, float]
+    heading_pt_range: tuple[float, float]
+    body_pt_range: tuple[float, float]
+    min_contrast: float
+    max_name: int
+    max_templates: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,8 +363,10 @@ class ResumeService:
         assessment: AssessmentService,
         gateway: AiGateway,
         object_store: ObjectStore,
+        template_max: int = 10,
     ) -> None:
         self._uow = uow
+        self._template_max = template_max
         self._target = target
         self._profile = profile
         self._assessment = assessment
@@ -380,11 +403,12 @@ class ResumeService:
         }
 
     async def request(
-        self, owner_id: uuid.UUID, ref: TargetRef, *, template: Template, options: Options
+        self, owner_id: uuid.UUID, ref: TargetRef, *, template: str, options: Options
     ) -> ResumeSummaryView:
         """Record the résumé as drafting; the caller queues ``generate``."""
         preview = await self._target.preview(owner_id, ref)
         async with self._uow.for_owner(owner_id) as mine:
+            built_in, own = await _resolve_template(mine, template)
             resume = await mine.resumes.create(
                 TailoredResume.requested(
                     owner_id=owner_id,
@@ -392,7 +416,8 @@ class ResumeService:
                     job_posting_id=ref.opening_uuid,
                     private_job_posting_id=ref.own_posting_uuid,
                     label=preview.label,
-                    template=template,
+                    template=built_in,
+                    custom_template_id=own,
                     options=options,
                     at=utcnow(),
                 )
@@ -567,7 +592,7 @@ class ResumeService:
             summary=_summary(resume, latest_version=versions[0].number if versions else None),
             snapshot=TargetSnapshot.from_dict(resume.snapshot) if resume.snapshot else None,
             coverage=tuple(_coverage_view(c) for c in resume.coverage),
-            template=resume.template,
+            template=_template_id(resume),
             options=resume.options,
             version=_version_view(chosen) if chosen else None,
             content=content,
@@ -585,12 +610,13 @@ class ResumeService:
         owner_id: uuid.UUID,
         resume_id: uuid.UUID,
         *,
-        template: Template,
+        template: str,
         options: Options,
     ) -> None:
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
-            resume.restyle(template=template, options=options, at=utcnow())
+            built_in, own = await _resolve_template(mine, template)
+            resume.restyle(template=built_in, custom_template_id=own, options=options, at=utcnow())
             await mine.resumes.update(resume)
 
     async def save_version(
@@ -763,20 +789,85 @@ class ResumeService:
 
     # -- templates ----------------------------------------------------------
 
-    def templates(self, *, page: int = 1, page_size: int | None = None) -> Page[TemplateView]:
-        """Every template, as the renderer draws it. The same for every user."""
-        return paginate([_template_view(look) for look in TEMPLATE_LOOKS.values()], page, page_size)
+    async def templates(
+        self, owner_id: uuid.UUID, *, page: int = 1, page_size: int | None = None
+    ) -> Page[TemplateView]:
+        """Every template the user can choose, as the renderer draws it: the
+        built-in ones, then their own, oldest first."""
+        async with self._uow.for_owner(owner_id) as mine:
+            own = await mine.templates.get_list(CustomTemplateFilter())
+        views = [_built_in_view(t) for t in BUILT_IN_TEMPLATES.values()]
+        views += [_own_view(t) for t in reversed(own)]
+        return paginate(views, page, page_size)
+
+    def template_limits(self) -> TemplateLimitsView:
+        return TemplateLimitsView(
+            fonts=TEMPLATE_FONTS,
+            name_pt_range=NAME_PT_RANGE,
+            heading_pt_range=HEADING_PT_RANGE,
+            body_pt_range=BODY_PT_RANGE,
+            min_contrast=MIN_CONTRAST,
+            max_name=MAX_TEMPLATE_NAME,
+            max_templates=self._template_max,
+        )
+
+    async def create_template(
+        self, owner_id: uuid.UUID, *, name: str, spec: dict[str, Any]
+    ) -> TemplateView:
+        """Keep a template of the user's own, up to ``template_max`` of them."""
+        async with self._uow.for_owner(owner_id) as mine:
+            if await mine.templates.get_count(CustomTemplateFilter()) >= self._template_max:
+                raise ConflictError(
+                    f"you can keep {self._template_max} templates of your own;"
+                    " delete one to make another"
+                )
+            try:
+                template = CustomTemplate.create(
+                    owner_id=owner_id, name=name, spec=TemplateSpec.from_dict(spec), at=utcnow()
+                )
+            except TemplateSpecError as exc:
+                raise ValidationError(str(exc)) from exc
+            await mine.templates.create(template)
+        return _own_view(template)
+
+    async def update_template(
+        self, owner_id: uuid.UUID, template_id: uuid.UUID, *, name: str, spec: dict[str, Any]
+    ) -> TemplateView:
+        """Change a template of the user's own. Résumés set in it take the new
+        look; a PDF already exported keeps the look it was rendered in."""
+        async with self._uow.for_owner(owner_id) as mine:
+            template = await _owned_template(mine, template_id)
+            try:
+                template.update_design(name=name, spec=TemplateSpec.from_dict(spec), at=utcnow())
+            except TemplateSpecError as exc:
+                raise ValidationError(str(exc)) from exc
+            await mine.templates.update(template)
+        return _own_view(template)
+
+    async def delete_template(self, owner_id: uuid.UUID, template_id: uuid.UUID) -> None:
+        """Delete a template of the user's own; résumés set in it go back to
+        Organic, the default."""
+        async with self._uow.for_owner(owner_id) as mine:
+            template = await _owned_template(mine, template_id)
+            for resume in await mine.resumes.get_list(
+                TailoredResumeFilter(custom_template_id=template_id)
+            ):
+                resume.restyle(template=Template.ORGANIC, options=resume.options, at=utcnow())
+                await mine.resumes.update(resume)
+            await mine.templates.delete(template.id)
 
     # -- export -------------------------------------------------------------
 
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
     ) -> ExportView:
-        """Record an export of one version, in the résumé's template and trim as
+        """Record an export of one version, in the résumé's look and trim as
         they are now; the caller queues ``export`` while it is rendering.
 
-        An export of the same version, template and trim already rendered is
-        returned as it is, and nothing is rendered again (ADR 0038).
+        An export of the same version, look and trim already rendered is
+        returned as it is, and nothing is rendered again (ADR 0038). The look
+        is compared as a spec, so a template edited since renders again
+        (ADR 0040).
         """
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
@@ -785,21 +876,20 @@ class ResumeService:
             )
             if not found:
                 raise NotFoundError("version not found", number=number)
+            spec = (await _spec_of(mine, resume)).to_dict()
             same = ExportFilter(
-                version_id=found[0].id,
-                template=resume.template,
-                trim=resume.options.trim,
-                status=ExportStatus.READY,
+                version_id=found[0].id, trim=resume.options.trim, status=ExportStatus.READY
             )
-            rendered = await mine.exports.get_list(same, page_size=1)
-            if rendered:
-                return _export_view(rendered[0], download_url=None)
+            for rendered in await mine.exports.get_list(same):
+                if rendered.spec == spec:
+                    return _export_view(rendered, download_url=None)
             export = await mine.exports.create(
                 Export(
                     id=uuid.uuid4(),
                     owner_id=owner_id,
                     version_id=found[0].id,
                     template=resume.template,
+                    spec=spec,
                     trim=resume.options.trim,
                     status=ExportStatus.RENDERING,
                     created_at=utcnow(),
@@ -822,7 +912,13 @@ class ResumeService:
             if resume is None:
                 raise NotFoundError("résumé not found", resume_id=str(version.resume_id))
             content = ResumeContent.from_dict(version.content)
-            template = export.template
+            # The look asked for when Export was clicked; an export from before
+            # it was kept is drawn in its built-in template.
+            spec = (
+                TemplateSpec.from_dict(export.spec)
+                if export.spec is not None
+                else BUILT_IN_TEMPLATES[export.template or Template.ORGANIC].spec
+            )
             # The trim asked for when Export was clicked, not whatever it is now.
             options = (
                 resume.options
@@ -835,7 +931,7 @@ class ResumeService:
             )
 
         try:
-            pdf = render_pdf(render_html(content, template=template, options=options))
+            pdf = render_pdf(render_html(content, spec=spec, options=options))
         except (ValueError, OSError) as exc:
             await self._fail_export(
                 owner_id,
@@ -1312,22 +1408,73 @@ def _revision_view(revision: Revision) -> RevisionView:
     )
 
 
-def _template_view(look: TemplateLook) -> TemplateView:
+def _template_view(
+    id: str, *, name: str, note: str, is_built_in: bool, spec: TemplateSpec
+) -> TemplateView:
     return TemplateView(
-        look=look,
+        id=id,
+        name=name,
+        note=note,
+        is_built_in=is_built_in,
+        spec=spec,
         page_width_mm=PAGE_WIDTH_MM,
         page_height_mm=PAGE_HEIGHT_MM,
         margin_top_mm=PAGE_MARGIN_TOP_MM,
         margin_side_mm=PAGE_MARGIN_SIDE_MM,
-        name_pt=NAME_PT,
-        title_pt=TITLE_PT,
-        body_pt=BODY_PT,
-        contact_pt=CONTACT_PT,
-        small_pt=SMALL_PT,
-        heading_pt=HEADING_PT,
         trimmed_bullets=TRIMMED_BULLETS,
         trimmed_skills=TRIMMED_SKILLS,
     )
+
+
+def _built_in_view(template: BuiltInTemplate) -> TemplateView:
+    return _template_view(
+        str(template.template),
+        name=template.name,
+        note=template.note,
+        is_built_in=True,
+        spec=template.spec,
+    )
+
+
+def _own_view(template: CustomTemplate) -> TemplateView:
+    return _template_view(
+        str(template.id), name=template.name, note="", is_built_in=False, spec=template.spec
+    )
+
+
+def _template_id(resume: TailoredResume) -> str:
+    if resume.custom_template_id is not None:
+        return str(resume.custom_template_id)
+    return str(resume.template or Template.ORGANIC)
+
+
+async def _resolve_template(
+    mine: OwnerResumes, template_id: str
+) -> tuple[Template | None, uuid.UUID | None]:
+    """A template id as the résumé stores it: a built-in template, or one of
+    the user's own, which must be theirs."""
+    try:
+        return Template(template_id), None
+    except ValueError:
+        pass
+    try:
+        own_id = uuid.UUID(template_id)
+    except ValueError as exc:
+        raise ValidationError("no such template", template=template_id) from exc
+    return None, (await _owned_template(mine, own_id)).id
+
+
+async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomTemplate:
+    template = await mine.templates.get(template_id)
+    if template is None:
+        raise NotFoundError("template not found", template_id=str(template_id))
+    return template
+
+
+async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
+    if resume.custom_template_id is not None:
+        return (await _owned_template(mine, resume.custom_template_id)).spec
+    return BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:

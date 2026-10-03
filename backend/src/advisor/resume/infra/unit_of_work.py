@@ -22,6 +22,7 @@ from advisor.resume.domain import (
     ResumeVersionSaved,
 )
 from advisor.resume.infra.repositories import (
+    SqlAlchemyCustomTemplateRepository,
     SqlAlchemyExportRepository,
     SqlAlchemyResumeVersionRepository,
     SqlAlchemyRevisionRepository,
@@ -37,6 +38,7 @@ class SqlAlchemyOwnerResumes(OwnerResumes):
         self.versions = SqlAlchemyResumeVersionRepository(session, owner_id=owner_id)
         self.revisions = SqlAlchemyRevisionRepository(session, owner_id=owner_id)
         self.exports = SqlAlchemyExportRepository(session, owner_id=owner_id)
+        self.templates = SqlAlchemyCustomTemplateRepository(session, owner_id=owner_id)
         self.pending: list[ResumeEvent] = []
 
     def record(self, event: ResumeEvent) -> None:

@@ -21,9 +21,12 @@ from advisor.resume.domain.content import (
     mark_edits,
     settle_revision,
 )
+from advisor.resume.domain.custom_template import CustomTemplate
 from advisor.resume.domain.events import ResumeEvent, ResumeTailored, ResumeVersionSaved
 from advisor.resume.domain.export import Export, ExportStatus, get_download_name
 from advisor.resume.domain.repositories import (
+    CustomTemplateFilter,
+    CustomTemplateRepository,
     ExportFilter,
     ExportRepository,
     OwnerResumes,
@@ -52,9 +55,22 @@ from advisor.resume.domain.section import (
     assert_plan_valid,
 )
 from advisor.resume.domain.tailored_resume import ResumeStatus, ResumeVersion, TailoredResume
-from advisor.resume.domain.template_look import TEMPLATE_LOOKS, TemplateLook, get_template_look
+from advisor.resume.domain.template_spec import (
+    BUILT_IN_TEMPLATES,
+    BuiltInTemplate,
+    BulletStyle,
+    HeadingCase,
+    Layout,
+    Rule,
+    TemplateSpec,
+    TemplateSpecError,
+    assert_spec_valid,
+    get_built_in_spec,
+    get_contrast,
+)
 
 __all__ = [
+    "BUILT_IN_TEMPLATES",
     "DEFAULT_PLAN",
     "HEADINGS",
     "MAX_BULLETS_PER_ROLE",
@@ -63,16 +79,22 @@ __all__ = [
     "MAX_TEXT",
     "PARTIAL_WITHIN",
     "SHAPES",
-    "TEMPLATE_LOOKS",
     "TRIMMED_BULLETS",
     "TRIMMED_SKILLS",
+    "BuiltInTemplate",
     "Bullet",
+    "BulletStyle",
     "Coverage",
+    "CustomTemplate",
+    "CustomTemplateFilter",
+    "CustomTemplateRepository",
     "Entry",
     "Export",
     "ExportFilter",
     "ExportRepository",
     "ExportStatus",
+    "HeadingCase",
+    "Layout",
     "Options",
     "Origin",
     "OwnerResumes",
@@ -90,6 +112,7 @@ __all__ = [
     "Revision",
     "RevisionFilter",
     "RevisionRepository",
+    "Rule",
     "Section",
     "SectionKind",
     "SectionShape",
@@ -98,16 +121,19 @@ __all__ = [
     "TailoredResumeFilter",
     "TailoredResumeRepository",
     "Template",
-    "TemplateLook",
+    "TemplateSpec",
+    "TemplateSpecError",
     "Verdict",
     "VersionSource",
     "assert_plan_valid",
+    "assert_spec_valid",
     "assert_well_formed",
     "assert_written_lines_cited",
     "coverage",
+    "get_built_in_spec",
+    "get_contrast",
     "get_download_name",
     "get_planned",
-    "get_template_look",
     "mark_edits",
     "settle_revision",
 ]

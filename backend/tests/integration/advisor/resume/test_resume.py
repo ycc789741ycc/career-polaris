@@ -35,6 +35,7 @@ from advisor.resume import (
     Template,
     create_resume_service,
 )
+from advisor.resume.domain import TemplateSpec
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
@@ -160,6 +161,7 @@ async def world(
         assessment=assessment,
         gateway=gateway,
         object_store=store,
+        template_max=settings.resume_template_max,
     )
 
     stub.replies.append(
@@ -564,3 +566,42 @@ async def test_another_user_cannot_read_the_resume_or_its_export(
     with pytest.raises(NotFoundError):
         await world.resume.get_export(other_account, export.id)
     assert (await world.resume.saved(other_account)).items == ()
+
+
+async def test_a_template_of_your_own_sets_the_pdf_and_is_yours_alone(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """ADR 0040: a checked spec, kept under row-level security, rendered by
+    WeasyPrint in its layout; deleting it moves its résumés to Organic."""
+    spec = {
+        **TemplateSpec().to_dict(),
+        "layout": "sidebar_left",
+        "sidebar_kinds": ["skills"],
+        "heading_font": "DejaVu Serif",
+        "accent_color": "#2a6f97",
+    }
+    mine = await world.resume.create_template(account, name="Two columns", spec=spec)
+    resume_id = await _written(world, account)
+    await world.resume.update_settings(account, resume_id, template=mine.id, options=Options())
+
+    export = await world.resume.request_export(account, resume_id, number=1)
+    await world.resume.export(account, export.id)
+    ready = await world.resume.get_export(account, export.id)
+    key = f"users/{account}/exports/{export.id}.pdf"
+    try:
+        assert ready.status == "ready", ready.error_message
+        assert ready.template is None
+        assert world.store.get(key).startswith(b"%PDF-")
+    finally:
+        world.store.delete(key)
+
+    assert [t.id for t in (await world.resume.templates(other_account)).items] == [
+        "organic",
+        "plain",
+    ]
+    with pytest.raises(NotFoundError):
+        await world.resume.update_template(other_account, uuid.UUID(mine.id), name="x", spec=spec)
+
+    await world.resume.delete_template(account, uuid.UUID(mine.id))
+    assert (await world.resume.get(account, resume_id)).template == "organic"
+    assert [t.id for t in (await world.resume.templates(account)).items] == ["organic", "plain"]

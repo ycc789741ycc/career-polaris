@@ -24,6 +24,7 @@ def create_resume_service(
     assessment: AssessmentService,
     gateway: AiGateway,
     object_store: ObjectStore,
+    template_max: int,
 ) -> ResumeService:
     return ResumeService(
         SqlAlchemyResumeUnitOfWork(database),
@@ -32,4 +33,5 @@ def create_resume_service(
         assessment=assessment,
         gateway=gateway,
         object_store=object_store,
+        template_max=template_max,
     )

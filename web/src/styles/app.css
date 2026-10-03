@@ -654,6 +654,7 @@ select.input { appearance: auto; }
   flex: 0 0 auto;
 }
 .template-thumb span { height: 2px; background: var(--color-neutral-300); border-radius: 2px; }
+.template-color { padding: 2px; width: 64px; cursor: pointer; }
 
 /* The page itself is white: what gets exported, not the app's ground.
  * It is laid out as the PDF's A4 page (ADR 0038): every size is in points of
@@ -673,7 +674,7 @@ select.input { appearance: auto; }
     #d9d0c3 calc(var(--page) - 1px),
     #d9d0c3 var(--page)
   );
-  color: #201e1d;
+  color: var(--text-color, #201e1d);
   font-family: var(--body-font), "DejaVu Sans", sans-serif;
   font-size: calc(var(--pt) * var(--body-pt));
   line-height: 1.5;
@@ -689,6 +690,14 @@ select.input { appearance: auto; }
   padding-bottom: calc(var(--pt) * 10);
   margin-bottom: calc(var(--pt) * 14);
 }
+.resume-page header.band {
+  background: var(--band-color);
+  padding: calc(var(--pt) * 10) calc(var(--pt) * 12);
+}
+/* A sidebar layout's two columns, as the renderer draws them. */
+.resume-columns { display: flex; gap: calc(var(--pt) * 14); }
+.resume-side { width: 30%; flex: 0 0 auto; }
+.resume-main { flex: 1; min-width: 0; }
 .resume-name {
   font-family: var(--heading-font), "DejaVu Sans", serif;
   font-size: calc(var(--pt) * var(--name-pt));
@@ -703,7 +712,7 @@ select.input { appearance: auto; }
 .resume-section {
   font-size: calc(var(--pt) * var(--heading-pt));
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: var(--heading-case, uppercase);
   font-weight: 800;
   color: var(--name-color);
   margin: calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
@@ -716,7 +725,7 @@ select.input { appearance: auto; }
   font-size: calc(var(--pt) * var(--title-pt));
 }
 .resume-when { font-size: calc(var(--pt) * var(--small-pt)); color: #6b6560; white-space: nowrap; }
-.resume-bullets { margin: calc(var(--pt) * 4) 0 0; padding-left: calc(var(--pt) * 12); }
+.resume-bullets { margin: calc(var(--pt) * 4) 0 0; padding-left: calc(var(--pt) * 12); list-style: var(--bullet, disc); }
 .resume-bullets li { margin-bottom: calc(var(--pt) * 3); }
 .resume-bullets li::marker { color: var(--dot-color); }
 .resume-bullet-text[data-rewritten="true"] { background: color-mix(in srgb, #c67139 18%, transparent); }

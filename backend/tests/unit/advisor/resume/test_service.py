@@ -23,66 +23,23 @@ from advisor.resume.domain import (
     Revision,
     SectionKind,
     SectionSlot,
+    TemplateSpec,
     VersionSource,
+    get_built_in_spec,
 )
-from advisor.target import DraftBasis, OutdatedReason, TargetRef, TargetSnapshot
+from advisor.target import OutdatedReason, TargetRef, TargetSnapshot
 from advisor.target.domain import Requirement, RequirementBasis
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 from tests.unit.advisor.resume.builders import get_lines, make_content
-from tests.unit.advisor.resume.fakes import FakeObjectStore, FakeResumeUnitOfWork
+from tests.unit.advisor.resume.fakes import (
+    FakeObjectStore,
+    FakeProfile,
+    FakeResumeUnitOfWork,
+    FakeTarget,
+)
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
-
-
-class FakeTarget:
-    """The Target as it stands now hashes to ``digest``; the comparison is the
-    real one."""
-
-    def __init__(self, digest: str = "d1") -> None:
-        self.digest = digest
-
-    async def preview(self, owner_id: uuid.UUID, ref: TargetRef) -> Any:
-        named = ref.role_id or ref.private_job_posting_id or ""
-        return SimpleNamespace(label=f"Target {named[:8]}")
-
-    async def get_outdated_reasons(
-        self,
-        owner_id: uuid.UUID,
-        ref: TargetRef,
-        *,
-        recorded: DraftBasis | None,
-        profile_version: int,
-    ) -> tuple[OutdatedReason, ...]:
-        if recorded is None:
-            return ()
-        return recorded.get_outdated_reasons(
-            DraftBasis(profile_version=profile_version, target_digest=self.digest)
-        )
-
-
-class FakeProfile:
-    def __init__(self, version: int = 0) -> None:
-        self.current = version
-
-    async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
-        return {"e1"}
-
-    async def snapshot(self, owner_id: uuid.UUID) -> Any:
-        fact = EvidenceView(
-            id="e1",  # type: ignore[arg-type]
-            source=EvidenceSource.GITHUB,
-            reference="GitHub · ledger-sim",
-            fact="40 commits in ledger-sim",
-            observed_on=date(2026, 8, 14),
-            granularity=EvidenceGranularity.SUMMARY,
-            tally=40,
-            subject="ledger-sim",
-        )
-        return SimpleNamespace(evidence=(fact,), version=self.current)
-
-    async def version(self, owner_id: uuid.UUID) -> int:
-        return self.current
 
 
 def _service(
@@ -243,17 +200,17 @@ async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
     await service.update_settings(
         OWNER, resume_id, template=Template.PLAIN, options=Options(trim=False)
     )
-    rendered: list[tuple[Template, Options]] = []
+    rendered: list[tuple[TemplateSpec, Options]] = []
 
-    def render_html(content: Any, *, template: Template, options: Options) -> str:
-        rendered.append((template, options))
+    def render_html(content: Any, *, spec: TemplateSpec, options: Options) -> str:
+        rendered.append((spec, options))
         return "<p>page</p>"
 
     monkeypatch.setattr(resume_service, "render_html", render_html)
     await service.export(OWNER, requested.id)
 
-    [(template, options)] = rendered
-    assert template is Template.ORGANIC and options.trim is True
+    [(spec, options)] = rendered
+    assert spec == get_built_in_spec(Template.ORGANIC) and options.trim is True
 
 
 async def test_a_ready_export_downloads_under_the_persons_name_and_the_role() -> None:
@@ -271,12 +228,16 @@ async def test_a_ready_export_downloads_under_the_persons_name_and_the_role() ->
     assert done.download_url.endswith(f"?as=Maya Lin Chen — {label}.pdf")
 
 
-def test_every_template_is_listed_as_the_renderer_draws_it() -> None:
-    listed = _service(FakeResumeUnitOfWork()).templates()
+async def test_every_built_in_template_is_listed_as_the_renderer_draws_it() -> None:
+    listed = await _service(FakeResumeUnitOfWork()).templates(OWNER)
 
-    assert [t.look.template for t in listed.items] == [Template.ORGANIC, Template.PLAIN]
+    assert [t.id for t in listed.items] == ["organic", "plain"]
     organic = listed.items[0]
-    assert (organic.look.rule, organic.look.heading_font) == ("3px solid #c67139", "Caprasimo")
+    assert organic.is_built_in
+    assert (organic.spec.get_rule_css(), organic.spec.heading_font) == (
+        "3px solid #c67139",
+        "Caprasimo",
+    )
     assert (organic.trimmed_bullets, organic.trimmed_skills) == (3, 12)
     assert (organic.page_width_mm, organic.page_height_mm) == (210, 297)
 

@@ -20,6 +20,7 @@ from advisor.resume.domain import (
     assert_plan_valid,
     assert_well_formed,
     assert_written_lines_cited,
+    get_built_in_spec,
     get_planned,
 )
 from advisor.resume.infra.render import render_html
@@ -144,7 +145,7 @@ def test_content_is_laid_out_as_its_plan() -> None:
 def test_each_kind_prints_under_its_heading_and_an_empty_one_not_at_all() -> None:
     html = render_html(
         _with(*EVERY_KIND, Section(SectionKind.CUSTOM, title="Awards")),
-        template=Template.ORGANIC,
+        spec=get_built_in_spec(Template.ORGANIC),
         options=Options(),
     )
 
@@ -165,6 +166,6 @@ def test_trim_cuts_every_shape_by_the_shared_limits() -> None:
     lines = tuple(Bullet(f"Line {i}", ("e1",)) for i in range(5))
     content = _with(Section(SectionKind.CUSTOM, title="Volunteering", bullets=lines))
 
-    html = render_html(content, template=Template.PLAIN, options=Options(trim=True))
+    html = render_html(content, spec=get_built_in_spec(Template.PLAIN), options=Options(trim=True))
 
     assert "Line 2" in html and "Line 3" not in html

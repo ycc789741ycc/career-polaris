@@ -17,3 +17,7 @@ The conversion also rewrites each file's name table and weight class: the
 web subsets name Figtree "Figtree Light", which fontconfig would not match to
 "Figtree". Both families are SIL Open Font License 1.1; the licences sit
 beside the files.
+
+A template may also name DejaVu Serif or DejaVu Sans Mono (ADR 0040). Those
+come from the image's `fonts-dejavu-core` package, not from here; the SPA
+hosts Latin subsets of the same files (`web/src/styles/fonts/dejavu-*`).

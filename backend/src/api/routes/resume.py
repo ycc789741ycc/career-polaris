@@ -25,12 +25,14 @@ from api.schemas.resume import (
     ResumeSummary,
     ResumeSummaryPage,
     ResumeTemplate,
+    ResumeTemplateLimits,
     ResumeTemplatePage,
     ResumeVersion,
     RevisionRequest,
     SectionRequest,
     SettingsRequest,
     TailoredResume,
+    TemplateRequest,
     VersionRequest,
     revision_event,
 )
@@ -165,9 +167,39 @@ async def apply_revision(
 
 @router.get("/resume-templates")
 async def templates(user: CurrentUser, deps: Deps, paging: Paging) -> ResumeTemplatePage:
-    """Every template as the PDF renderer draws it, for the preview (ADR 0038)."""
-    found = deps.resume.templates(page=paging.page, page_size=paging.page_size)
+    """Every template the user can choose, the built-in ones first, as the PDF
+    renderer draws it, for the preview (ADR 0038, ADR 0040)."""
+    found = await deps.resume.templates(user, page=paging.page, page_size=paging.page_size)
     return ResumeTemplatePage.of(found, ResumeTemplate.from_view)
+
+
+@router.get("/resume-templates/limits")
+async def template_limits(user: CurrentUser, deps: Deps) -> ResumeTemplateLimits:
+    """What a template of the user's own may set."""
+    return ResumeTemplateLimits.from_view(deps.resume.template_limits())
+
+
+@router.post("/resume-templates", status_code=201)
+async def create_template(body: TemplateRequest, user: CurrentUser, deps: Deps) -> ResumeTemplate:
+    """Keeps a template of the user's own: checked values, never markup."""
+    template = await deps.resume.create_template(user, name=body.name, spec=body.spec.model_dump())
+    return ResumeTemplate.from_view(template)
+
+
+@router.put("/resume-templates/{template_id}")
+async def update_template(
+    template_id: uuid.UUID, body: TemplateRequest, user: CurrentUser, deps: Deps
+) -> ResumeTemplate:
+    template = await deps.resume.update_template(
+        user, template_id, name=body.name, spec=body.spec.model_dump()
+    )
+    return ResumeTemplate.from_view(template)
+
+
+@router.delete("/resume-templates/{template_id}", status_code=204)
+async def delete_template(template_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Résumés set in it go back to Organic."""
+    await deps.resume.delete_template(user, template_id)
 
 
 @router.post("/tailored-resumes/{resume_id}/exports", status_code=202)
