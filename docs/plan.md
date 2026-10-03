@@ -1473,16 +1473,20 @@ key unless the user asks for that spend.
   When what it read has changed since, the Advisor says it is outdated, and
   regenerating it is a cost the user confirms, like an analysis or a
   rebuild.
+* A plan can cite what the user answered in Fill the gap, for every gap
+  the answer was about, including a requirement nothing else covers.
 
-Three branches, in this order. The first two were built under
-`epic/no-ticket/own-posting-target`, which is already in mainline. The third
-is cut from `epic/<ticket>/phase-9`, which is cut from mainline:
+Four branches, in this order. The first two were built under
+`epic/no-ticket/own-posting-target`, which is already in mainline. The
+other two are cut from `epic/<ticket>/phase-9`, which is cut from mainline:
 
 1. "A posting of your own belongs to Target": done (ADR 0033).
 2. "Uploaded or filled in, evaluated when set as the target": done
    (ADR 0034).
 3. "Regenerate the plan and résumé only when asked": submitting answers in
    Fill the gap stops rewriting them.
+4. "A plan cites what you answered": a gap the user answered about can cite
+   that answer, including a requirement with no other evidence.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -1623,3 +1627,114 @@ Open questions:
 * Whether Strengths should say the same. An assessment already records the
   profile version it read, so "Your evidence changed since this analysis"
   would cost nothing to show.
+
+## A plan cites what you answered
+Fill the gap asks about the Target's gaps, and each answer is stored as
+`user_answer` evidence. `GapQuestion` keeps the gap it asked about
+(`gap_key`) and the evidence its answer became (`evidence_id`). A plan drafted
+after the answers sees them in its evidence block, because `_draft` reads the
+profile again. But the answers barely reach the plan:
+* **The model doesn't know which answer belongs to which gap.** Each answer
+  is just another line in the evidence block ("Your answer: question —
+  reply"), among every commit, issue and résumé line.
+* **An uncovered requirement (`req:`) cites nothing.** `gap_plan` v1 says
+  such a gap "has no evidence behind it by definition; cite nothing for
+  it". So the questions Fill the gap asks about exactly these gaps can never
+  be cited where they apply. The `why` can only say there is no evidence,
+  next to an answer that says otherwise.
+* **The rule is only in the prompt.** `assert_draft_valid` requires a
+  citation on a `dim:` gap but checks nothing on a `req:` gap. Any
+  evidence id the user owns would pass there.
+
+The gaps themselves still come from the fit, which comes from the last
+analysis. An answer does not move a score or close a gap until the user
+re-analyses, and this step does not change that.
+
+Its own branch, `feature/<ticket>/plan-cites-answers`, after "Regenerate the
+plan and résumé only when asked". That branch is what makes a plan read new
+answers at all: it is outdated by `evidence`, and the user regenerates it.
+
+1. **`gapfill` says which answers are about which gap.**
+   * `GapFillService.get_answers(owner_id, ref)` reads the answered
+     questions of every set for that Target. It returns `GapAnswerView`s
+     (`gap_key`, `evidence_id`, `answered_at`), newest first.
+   * An answer whose evidence has since been deleted is left out. That can
+     only happen through a reset; answers are not tied to a source the user
+     can disconnect.
+   * `gapplan` already sits above `gapfill`
+     (`gapplan | resume | activity → gapfill → target`). The import-linter
+     contracts need no change.
+2. **The prompt is told which answers go with which gap.**
+   * In the gaps block, a gap with answers lists their handles:
+     `- req:kubernetes — no evidence at all for: … (worth 6 fit points;
+     answered in [e41], [e42])`. This works the same for `dim:` and `req:`.
+   * The answers stay in the evidence block too, so that their text is
+     there to read.
+   * A gap the user answered no question about is shown as today.
+3. **`gap_plan` v2.**
+   * A `req:` gap cites only the answers listed beside it, and cites nothing
+     when none are listed.
+   * A `dim:` gap still cites evidence from the evidence block, the answers
+     listed beside it included.
+   * When an answer says the person already does what a gap asks for, the
+     `why` says so and says that a re-analysis will count it. The plan does
+     not have to give that gap a task: every task must still close a gap,
+     but not every gap must have a task, as today.
+4. **The rule is checked, not just asked for.**
+   * `assert_draft_valid` gains `answers_by_gap: Mapping[str,
+     frozenset[str]]`, the evidence ids answered for each gap.
+   * A `req:` gap that cites anything not among its own answers is rejected
+     as `PlanInvalidError`, like a gap left unexplained. A `dim:` gap keeps
+     its rule.
+   * `assert_citations_exist` still runs over every citation, so an answer
+     deleted while the model runs is still caught.
+5. **The plan shows it.** A `req:` gap's stored `evidence` lists the
+   answers it cites, as a `dim:` gap's does. `GapView` and the schema
+   change nothing. The SPA already shows a gap's evidence, so the plan tab
+   shows "Your answer" under that requirement with no change.
+6. **The estimate needs no change.** The gateway prices the rendered prompt,
+   and the handles add a few tokens per answered gap.
+7. **An ADR** (0036) amends ADR 0023: an answer is evidence for the gap it
+   was asked about, and an uncovered requirement may cite it. Update the
+   index, `docs/domain_model.md` and `CLAUDE.md`'s Fill the gap bullet.
+
+Tests:
+* Unit, `assert_draft_valid`:
+  * a `req:` gap citing its own answer passes;
+  * a `req:` gap citing another gap's answer, or any other evidence, is
+    rejected;
+  * a `req:` gap with no answers that cites nothing passes;
+  * a `dim:` gap still needs a citation.
+* Unit, `get_answers`:
+  * only answered questions are returned, from every set for that Target
+    and none from another Target's;
+  * the newest come first.
+* Unit, the gapplan service, with a fake gateway that records its inputs:
+  * the gaps block lists each answered gap's handles;
+  * a draft citing an answer on a `req:` gap stores it in that gap's
+    evidence.
+* Integration: submit answers, regenerate the plan, and the `req:` gap
+  answered about cites the answer under row-level security. Another user's
+  answers are never listed.
+
+What gets harder:
+* An answer can explain away a gap that the plan still lists, at the same
+  score and worth the same fit points, until the user re-analyses. The
+  `why` says so, but the ranking does not change.
+* An answer cited by a plan is the user's own word, not their work. A gap
+  explained by one has weaker support than one explained by a commit, and
+  the plan doesn't show the difference beyond the "Your answer" label.
+* A `req:` key is a slug of the requirement's statement. A rebuild that
+  rewords a requirement gives it a new key, and the earlier answers are no
+  longer listed beside it, though they stay in the evidence block.
+* One more read of `gapfill` on every draft, and `gapplan` now needs
+  `GapFillService` in its factory.
+
+Open questions:
+* Whether `resume_write` and `resume_revise` should get the same pairing,
+  so a requirement's coverage can rest on an answer. Coverage is decided by
+  the fit's scores, so it would show as covered only after a re-analysis.
+* Whether an answer to an uncovered requirement should count toward the fit
+  with no re-analysis at all: a local rule that marks the requirement
+  covered at low confidence. That changes what a fit means, so it would need
+  its own ADR.
