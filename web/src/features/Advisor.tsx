@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useActivity } from "../shell/activity";
 import {
   AdvisorJobCard,
@@ -40,9 +40,17 @@ import {
 } from "../shell/navigation";
 import { useShell } from "../shell/ShellContext";
 import { useToast } from "../shell/toast";
+import {
+  getPreviousTargets,
+  getStoredTargets,
+  type PreviousTarget,
+  recordTargetUse,
+} from "./advisorTarget";
+import { AdvisorNoTarget } from "./AdvisorNoTarget";
 import { FillTheGap } from "./FillTheGap";
 import { GapPlan } from "./GapPlan";
 import { OwnRole, statusLine, useOwnPostings } from "./OwnRole";
+import { PreviousTargets } from "./PreviousTargets";
 import { Resume } from "./Resume";
 import { Credit, pickBand } from "./Roles";
 import type { AdvisorTarget } from "./target";
@@ -52,14 +60,18 @@ import { useAsync } from "./useAsync";
  * The Advisor: Fill the gap first, then either the gap plan or the tailored
  * résumé, for one Target (ADR 0023).
  *
- * The Target is carried in the hash: what the role map selected — one role,
- * and optionally one opening in it (ADR 0022) — or a role the user brought
- * themselves (Phase 8). That one comes from "Use your own role" (the `own`
- * tab): it is added there, never on the role map, and set as the target
+ * The Target is carried in the hash: a role from the role map — and an
+ * opening in it, for a Target set before ADR 0049 — or a role the user
+ * brought themselves (Phase 8). That one comes from "Use your own role" (the
+ * `own` tab): it is added there, never on the role map, and set as the target
  * there, which reads and scores it (ADR 0034).
+ *
+ * No Target exists until the user sets one (ADR 0050). Until then the Advisor
+ * is "No target yet"; the Target last worked against is remembered in this
+ * browser, and the ones before it are offered again as Previous targets.
  */
 export function Advisor({ tab }: { tab: AdvisorTab }) {
-  const { focus, navigate } = useShell();
+  const { focus, navigate, account } = useShell();
   const flash = useToast();
   const picked = roleFocus(focus);
   const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
@@ -82,30 +94,6 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     () => api.items<ResumeSummaryPage>("/tailored-resumes"),
     [],
   );
-
-  if (!focus && tab !== "own") {
-    return (
-      <section>
-        <EmptyState title="Pick a target first">
-          Select a role on the role map — or one of its openings — and press the
-          target button at the bottom of the map. Nothing there you want? Use a
-          role of your own: upload its job description or fill it in. The
-          Advisor then plans a route to it and writes your résumé for it.
-          <span className="row" style={{ marginTop: 14, gap: 10 }}>
-            <Button onClick={() => navigate("roles")}>
-              Pick from role map
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => navigate("advisor", { tab: "own" })}
-            >
-              Use your own role
-            </Button>
-          </span>
-        </EmptyState>
-      </section>
-    );
-  }
 
   const failed =
     roles.error ??
@@ -131,6 +119,21 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     : "posting" in focus
       ? ownTargetFor(focus.posting, own.data)
       : targetFor(focus, roles.data, fits.data, openings.data);
+  const previous = getPreviousTargets({
+    history: getStoredTargets(account).history,
+    plans: plans.data,
+    resumes: resumes.data,
+    roles: roles.data,
+    fits: fits.data,
+    own: own.data,
+    current: target?.ref ?? null,
+  });
+
+  /** Work against a Target again: what was written for it opens as it was. */
+  function switchTo(entry: PreviousTarget) {
+    recordTargetUse(account, entry.ref, entry.label);
+    navigate("advisor", { tab: "gaps", focus: focusOf(entry.ref) });
+  }
 
   if (tab === "own") {
     return (
@@ -162,8 +165,21 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     navigate("advisor", { focus: focusOf(ref) });
   }
 
+  if (!focus) {
+    return (
+      <AdvisorNoTarget
+        roles={roles.data}
+        fits={fits.data}
+        previous={previous}
+        onOpenMap={() => navigate("roles")}
+        onAddOwn={() => navigate("advisor", { tab: "own" })}
+        onUseAgain={switchTo}
+      />
+    );
+  }
+
   if (!target) {
-    if (focus && "posting" in focus) {
+    if ("posting" in focus) {
       const posting = own.data.find(
         (p) => p.private_job_posting_id === focus.posting,
       );
@@ -226,9 +242,11 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
       tab={tab}
       plans={plans.data}
       resumes={resumes.data}
+      previous={previous}
       onPlansChanged={() => void plans.reload()}
       onResumesChanged={() => void resumes.reload()}
       onRevisit={revisit}
+      onSwitch={switchTo}
     />
   );
 }
@@ -239,19 +257,23 @@ function Aimed({
   tab,
   plans,
   resumes,
+  previous,
   onPlansChanged,
   onResumesChanged,
   onRevisit,
+  onSwitch,
 }: {
   target: AdvisorTarget;
   tab: AdvisorTab;
   plans: PlanSummary[];
   resumes: ResumeSummary[];
+  previous: PreviousTarget[];
   onPlansChanged: () => void;
   onResumesChanged: () => void;
   onRevisit: (ref: TargetRef) => void;
+  onSwitch: (target: PreviousTarget) => void;
 }) {
-  const { navigate, setTarget } = useShell();
+  const { navigate, setTarget, account } = useShell();
   const { activity, refresh, settled } = useActivity();
   // The Advisor's jobs for this Target, from the one poll the shell runs
   // (ADR 0042): a tab whose job runs shows its card, every tab its spinner.
@@ -280,6 +302,19 @@ function Aimed({
     );
   };
 
+  // Working against it is using it: it is the Target the Advisor opens on
+  // next time, and the newest of the previous ones after another is set.
+  const refKey = useMemo(
+    () =>
+      `${target.ref.role_id ?? ""}:${target.ref.job_posting_id ?? ""}:${target.ref.private_job_posting_id ?? ""}`,
+    [target.ref],
+  );
+  useEffect(() => {
+    recordTargetUse(account, target.ref, target.label);
+    // Once per Target: the component is keyed on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, refKey]);
+
   // The header's chip names the Target both tabs are aimed at.
   useEffect(() => {
     setTarget(
@@ -292,8 +327,10 @@ function Aimed({
     <section>
       <TargetBanner
         target={target}
+        previous={previous}
         onPickFromMap={() => navigate("roles")}
         onUseOwn={() => navigate("advisor", { tab: "own" })}
+        onSwitch={onSwitch}
       />
 
       <div
@@ -370,12 +407,16 @@ function Aimed({
 /** "Your target role": the one thing every number on this page is about. */
 function TargetBanner({
   target,
+  previous,
   onPickFromMap,
   onUseOwn,
+  onSwitch,
 }: {
   target: AdvisorTarget;
+  previous: PreviousTarget[];
   onPickFromMap: () => void;
   onUseOwn: () => void;
+  onSwitch: (target: PreviousTarget) => void;
 }) {
   const where = [target.company, target.location, target.postingTitle]
     .filter(Boolean)
@@ -430,6 +471,7 @@ function TargetBanner({
             <Button variant="secondary" onClick={onUseOwn}>
               Use your own role
             </Button>
+            <PreviousTargets previous={previous} onSwitch={onSwitch} />
           </div>
         </div>
       </div>

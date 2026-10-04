@@ -18,6 +18,7 @@ import {
   roleLine,
   statusLine,
 } from "./OwnRole";
+import { getStoredTargets } from "./advisorTarget";
 
 function own(overrides: Partial<OwnPosting> = {}): OwnPosting {
   return {
@@ -79,6 +80,7 @@ function renderOwnRole(postings: OwnPosting[] = [own()]) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
     setHeading: vi.fn(),
   };
   render(
@@ -181,6 +183,12 @@ describe("bringing a role of your own", () => {
       posted(sent, "/own-postings/j1/target?write_questions=true"),
     ).toBeDefined();
     expect(reload).toHaveBeenCalled();
+    // The target from now on, even while it is still being scored.
+    expect(getStoredTargets("maya@example.com").current).toEqual({
+      role_id: null,
+      job_posting_id: null,
+      private_job_posting_id: "j1",
+    });
   });
 
   it("skips the confirmation when the fit is current and costs nothing", async () => {

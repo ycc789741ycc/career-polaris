@@ -1,6 +1,6 @@
-# Career Advisor — Domain Concepts & Design Decisions
+# CareerPolaris — Domain Concepts & Design Decisions
 
-This summarizes the design review of the "Career Advisor — current layout" canvas (last updated 3 Oct 2026, evening). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
+This summarizes the design review of the "CareerPolaris — current layout" canvas (formerly "Career Advisor"; last updated 4 Oct 2026). Use it as the spec when revising the code. Sample data (Maya Chen, Northwind Pay, etc.) is illustrative only.
 
 ## 1. User journey (forward-only)
 
@@ -28,7 +28,7 @@ This summarizes the design review of the "Career Advisor — current layout" can
 | **Analysis run / Role map run** | A background job with visible progress | status, steps (done / running / waiting), progress %, ETA, cost estimate, cancellable |
 | **Market role** | A role found by the role map worker (system only) | title, fit %, annual pay band, hiring bar (reported or AI estimate), openings, per-dimension requirement levels |
 | **Own role (custom role)** | A role the user brings themselves, **never shown on the role map** | job title (required), company?, requirements? (or parsed from an uploaded JD file), source: `uploaded_jd` \| `filled_in`, added date |
-| **Target role** | The single role the Advisor works against | reference to a Market role (+ opening) **or** an Own role |
+| **Target role** | The single role the Advisor works against; **none until the user sets one** | reference to a Market role **or** an Own role; history of previous targets |
 | **Gap** | A requirement of the target role that the evidence doesn't fully cover | title, status: `partial` \| `no_evidence`, fit-point impact |
 | **Follow-up question** | Generated per gap to collect missing evidence | gap, question text, "asked because" reason, answer type (choice / free text), answer |
 | **Gap plan** | Plan to close the gaps to the target role | gaps ranked by fit impact, milestones & tasks, stepping-stone roles, projects |
@@ -64,8 +64,8 @@ This summarizes the design review of the "Career Advisor — current layout" can
   - **"How you fit each skill"**, sorted biggest gap first. Each row: name, "you X · asks Y", a signed gap chip (−23 terracotta / +14 green). Bar = track; fill = your score (terracotta if below the target, green if you meet it); hatched segment from your score to the target = shortfall; 3px dark tick at the target. Legend above the rows. Each bar has an aria-label ("{skill}: you X, role asks Y").
   - "What this role asks for" (collapsible).
   - No "no evidence" callout on this card.
-- Top matched openings list (no subscribe action).
-- Sticky "Advisor target" bar → "Target this role" opens Fill the gap.
+- **"Openings for this role"**: postings for the selected role only, newest first (company, posting title + link, location, pay, posted date), "See all {n} openings". **No per-opening match %**: fit is computed on the role, not on openings. No subscribe action.
+- Sticky "Advisor target" bar → "Target this role" sets the target and opens Fill the gap. Without this click, no target is set.
 - **Removed:** custom role entry ("Add to Role Map"), Subscribe buttons, "Roles to watch", "Roles to analyse", "Markets you are looking in", market filter pills.
 
 ## 6. 04 Advisor
@@ -74,6 +74,8 @@ The Advisor always works against **one target role**.
 
 - Every Advisor page opens with a **"Your target role" banner**: title, "at {company} · {location} · {posting}", fit today, salary band, "Everything on this page is measured against this one role", and two buttons: **"Pick from role map"** and **"Use your own role"**.
 - No company/opening picker inside the Advisor pages.
+- **No target until the user sets one.** A target exists only after "Target this role" on the role map or "Set as target" on an own role. Until then, opening the Advisor (e.g. from the sidebar) shows a **No target yet** screen: the step tabs are locked, and three cards let the user pick from the role map, use their own role, or reuse a previous target.
+- The banner also has **"Previous targets"**: switching back to an earlier target restores its saved answers, gap plan and résumé versions with no new AI calls.
 - Navigation is a fork, not a linear sequence:
   **First:** Fill the gap → **Then, either:** Gap plan | Résumé
 
@@ -150,3 +152,9 @@ Sources ─► Facts ─► Strength analysis run (scores, confidence, profile c
                             ▼
                  Gap plan  |  Résumé   (regenerated from updated facts)
 ```
+
+## 9. Brand
+
+- App name: **CareerPolaris**. Polaris is the guiding star; the app helps write the résumé and reach the next career milestone.
+- App icon: terracotta (`#c67139`) rounded square; a cream (`#f5ead8`) path climbs from a dot (your evidence) to a peach (`#ffe1d0`) four-point star (the target role). SVG viewBox 0 0 100 100: `rect rx=24`; path `M27 73 C 27 54, 50 62, 50 46 S 63 34, 66 31` stroke 7, round caps; circle (27,73) r 7.5; star `M74 13 L78 22 L87 26 L78 30 L74 39 L70 30 L61 26 L70 22 Z`.
+- Variants: on card, light/reversed, dark, green. The sidebar shows a 28px icon + "CareerPolaris".

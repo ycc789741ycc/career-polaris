@@ -1,4 +1,8 @@
-# Job Searching Advisor
+# CareerPolaris
+
+Formerly Job Searching Advisor: the repository, the `jsa-*` images, `jsa_net`
+and the compose projects keep the old name on purpose, because renaming them
+would break every running stack for no change a user sees.
 
 Turns the work someone has actually done — GitHub, Jira, their résumé — into a
 picture of where they stand (a skill radar) and what is worth aiming at (a role
@@ -274,12 +278,13 @@ queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
 Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
-aimed at what the role map has selected: a role, and optionally one of its
-openings. That selection is carried in the hash (`?role=`, plus `&opening=`),
-so neither tab picks a Target of its own; the Advisor's "Your target role"
-banner only links back. The role map has exactly one control that aims the
-Advisor — the sticky "Advisor target" bar; picking a bubble or an opening only
-selects.
+aimed at the Target the user set: a role from the map (and, for a Target set
+before ADR 0049, one of its openings), or a role of their own. It is carried in
+the hash (`?role=`, plus `&opening=`, or `?posting=`) and remembered in the
+browser (ADR 0050), so neither tab picks a Target of its own; the Advisor's
+"Your target role" banner only links back, or switches to a previous target. The role map has exactly one control that aims the
+Advisor — the sticky "Advisor target" bar, at the selected role (ADR 0049);
+picking a bubble only selects.
 
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé
@@ -494,9 +499,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   (`SkillGap.weight`, which `closing_lifts` honours). `compute_fits` stores
   them as `PostingFit`s with the opening's `role_id`,
   replaced per role by each build as a cache. `GET /matched-postings` ranks a
-  role's openings by them (`fit_basis: "posting"`); Top matched openings asks
-  for the selected role's with `one_per_company=true`, and reloads on every
-  pick. A Target with an opening plans against `rolemap.opening_fit`
+  role's openings by them (`fit_basis: "posting"`) for the Advisor; since
+  ADR 0049 the role map lists them newest first, with no fit. A Target with an opening plans against `rolemap.opening_fit`
   (`RequirementBasis.OPENING`), or the role's fit before one exists.
 - **A role's name is one job title.** `role_extraction` v2 tells the model to
   leave out where or how a role is worked, gender tags and company or team
@@ -505,9 +509,9 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   backstop; migration 0029 applied it to the names already stored.
 - **The role map shows roles and openings only.** 03 Roles no longer lists
   the recommended roles that did not make the map, and does not call
-  `GET /role-candidates`. Each Top matched opening reads "title · company",
-  with pay, location and any credit beneath; the role it is in is the one
-  selected, so no row names it.
+  `GET /role-candidates`. Each opening names its company, then its posting,
+  place, pay and any credit; the role it is in is the one selected, so no row
+  names it (ADR 0049).
 
 ## Phase 9 scope
 
@@ -628,10 +632,9 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   (`EvidenceDisclosure`: "Show evidence (n)", "Evidence ▾"). Each gap of a
   plan has a bar of its fit points out of `lift_scale` (10, or the plan's
   largest lift), and the plan's header names the `answer_count` its draft
-  read. The Résumé has three columns — Saved résumés, Template + Export,
-  Sections and Revise with AI on the left; the page with "Save as vN" in the
-  middle; the requirements on the right — stacking page first when narrow,
-  and "Regenerate résumé" with its last-generated line on the Write-for card.
+  read. The Résumé had three columns until Phase 11, which made it two (see
+  there); "Regenerate résumé" with its last-generated line is on the
+  Write-for card.
 
 ## Phase 10 scope
 
@@ -678,3 +681,34 @@ uploaded one (`docs/plan.md`), one branch per step under
   Contact details are typed `ContactItem`s (ADR 0048, migration 0042), read
   from the model's line by `get_contact_items` and drawn with the inline SVG
   icons in `CONTACT_ICONS`, which `GET /resume-templates/limits` also serves.
+
+## Phase 11 scope
+
+The 4 October prototype (`docs/plan.md`), one branch per step under
+`epic/no-ticket/update-prototype`:
+
+- **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
+  versions) in the sidebar and on sign-in, and `web/public/icon.svg` as the
+  favicon. Internal names (`jsa-*`, `jsa_net`) stay.
+- **Openings for this role** (ADR 0049). The role map lists the selected
+  role's openings newest first (`GET /matched-postings?order=newest`,
+  `posted_on`), ten at a time with "See all n openings", and no fit per
+  opening. No row selects an opening: "Target this role" aims at the role.
+  Opening fits (ADR 0032) are still computed for Targets that name one.
+- **No target until one is chosen** (ADR 0050). The current Target and its
+  history live in `localStorage` per account (`features/advisorTarget.ts`),
+  written by "Target this role", "Set as target", "Use again" and every
+  Advisor visit. Entering the Advisor from elsewhere opens the stored Target
+  (`getArrivalFocus`), never the role map's selection, or `AdvisorNoTarget`
+  (steps locked, three ways in). "Previous targets" on the banner
+  (`PreviousTargets`) joins that history with `/gap-plans` and
+  `/tailored-resumes`; switching only navigates. No backend change.
+- **The Résumé in two columns** (no ADR). The tools on the left as three
+  collapsible cards — Layout (template, fonts, options, Sections; open),
+  Revise with AI (open) and Coverage (the requirements; closed) — and the page
+  on the right, with "Save as vN" and Export as PDF beneath it; stacked page
+  first below 1240px. Saved résumés became the Version list on the Write-for
+  card, one entry per saved résumé; another target's goes through
+  `onRevisit`. Older versions of one résumé are not listed: a version carries
+  no content to read back.
+

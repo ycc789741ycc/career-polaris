@@ -16,6 +16,7 @@ from advisor.rolemap.domain import (
     MAX_ROLE_TITLE,
     MAX_STRENGTHS,
     MIN_MATCHES,
+    MatchOrder,
 )
 from advisor.rolemap.factory import create_rolemap_service
 from advisor.rolemap.service import (
@@ -51,6 +52,7 @@ __all__ = [
     "CandidateInput",
     "FitView",
     "MarketWait",
+    "MatchOrder",
     "MatchedPostingView",
     "PostingFitResultView",
     "PostingFitView",

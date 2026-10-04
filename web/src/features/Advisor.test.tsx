@@ -15,6 +15,7 @@ import { ActivityContext } from "../shell/activity";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { Advisor, focusOf, ownTargetFor, targetFor } from "./Advisor";
+import { getStoredTargets } from "./advisorTarget";
 import { page } from "../test/page";
 import { cancelPath, jobTab, jobWord } from "./AdvisorJobs";
 
@@ -169,6 +170,7 @@ function renderAdvisor(
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
     setHeading: vi.fn(),
   };
   render(
@@ -192,21 +194,119 @@ function renderAdvisor(
 describe("the Advisor's one target role", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.localStorage.clear();
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks for a target from the map or a role of your own, when nothing is aimed", async () => {
+  it("is No target yet until a target is set: its steps locked, three ways to set one", async () => {
     const user = userEvent.setup();
     const shell = renderAdvisor(null);
 
-    expect(screen.getByText("Pick a target first")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Use your own role" }));
-    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "own" });
-    await user.click(
-      screen.getByRole("button", { name: "Pick from role map" }),
+    expect(
+      await screen.findByRole("heading", {
+        name: "Pick a target to get started",
+      }),
+    ).toBeInTheDocument();
+    const steps = screen.getByRole("navigation", {
+      name: "Advisor steps (locked until a target is chosen)",
+    });
+    expect(within(steps).queryAllByRole("button")).toHaveLength(0);
+    expect(within(steps).getByText("Résumé")).toHaveAttribute(
+      "aria-disabled",
+      "true",
     );
+    // The best fit on the map, as the first way in.
+    expect(
+      screen.getByText("Best fit on your map").parentElement,
+    ).toHaveTextContent("Staff Backend Engineer81%");
+    await user.click(screen.getByRole("button", { name: "Open role map" }));
     expect(shell.navigate).toHaveBeenCalledWith("roles");
+    await user.click(screen.getByRole("button", { name: "Add your own role" }));
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "own" });
+  });
+
+  it("uses a previous target again without asking the AI for anything", async () => {
+    const user = userEvent.setup();
+    const shell = renderAdvisor(null);
+
+    const previous = await screen.findByRole("list", {
+      name: "Previous targets",
+    });
+    expect(previous).toHaveTextContent(
+      "From the role map · last used 20 Sep 2026",
+    );
+    expect(previous).toHaveTextContent("Your own role · filled in");
+    await user.click(
+      within(previous).getByRole("button", {
+        name: "Use Principal Engineer again",
+      }),
+    );
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      tab: "gaps",
+      focus: { role: "r3" },
+    });
+    const writes = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.filter(([, init]) => init?.method && init.method !== "GET");
+    expect(writes).toEqual([]);
+    expect(getStoredTargets("maya@example.com").current).toEqual({
+      role_id: "r3",
+      job_posting_id: null,
+      private_job_posting_id: null,
+    });
+  });
+
+  it("remembers the target it works against, for the sidebar's next visit", async () => {
+    renderAdvisor({ role: "r1" });
+
+    await screen.findByRole("region", { name: "Your target role" });
+    expect(getStoredTargets("maya@example.com").current).toEqual({
+      role_id: "r1",
+      job_posting_id: null,
+      private_job_posting_id: null,
+    });
+  });
+
+  it("switches back to a previous target from the banner", async () => {
+    const user = userEvent.setup();
+    const shell = renderAdvisor({ role: "r1" });
+
+    const banner = await screen.findByRole("region", {
+      name: "Your target role",
+    });
+    await user.click(
+      within(banner).getByRole("button", { name: "Previous targets (2) ▾" }),
+    );
+    const menu = screen.getByRole("region", { name: "Previous targets" });
+    expect(menu).toHaveTextContent("Switch back to a role you targeted before");
+    expect(menu).toHaveTextContent("No new AI calls, so no cost.");
+    const option = within(menu).getByRole("button", {
+      name: /Principal Engineer/,
+    });
+    expect(option).toHaveTextContent("Role map");
+    expect(option).toHaveTextContent("64%");
+    await user.click(option);
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      tab: "gaps",
+      focus: { role: "r3" },
+    });
+  });
+
+  it("closes Previous targets on Escape", async () => {
+    const user = userEvent.setup();
+    renderAdvisor({ role: "r1" });
+
+    const toggle = await screen.findByRole("button", {
+      name: "Previous targets (2) ▾",
+    });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("region", { name: "Previous targets" }),
+    ).not.toBeInTheDocument();
+    expect(toggle).toHaveFocus();
   });
 
   it("brings a role of your own on its own tab, even with nothing aimed", async () => {

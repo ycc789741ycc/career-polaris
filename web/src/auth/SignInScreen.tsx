@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { AppIcon } from "../components/AppIcon";
 import { Button, ErrorNote, Field } from "../components/ui";
 import { useAuth } from "./AuthProvider";
 import { googleStartUrl, signInMethods } from "./session";
@@ -75,12 +76,8 @@ export function SignInScreen() {
           className="brand"
           style={{ padding: 0, marginBottom: 36, fontSize: 20 }}
         >
-          <span
-            className="brand-dot"
-            style={{ width: 32, height: 32 }}
-            aria-hidden="true"
-          />
-          Job Searching Advisor
+          <AppIcon size={32} />
+          CareerPolaris
         </div>
         <h1 style={{ fontSize: 44, lineHeight: 1.08, marginBottom: 16 }}>
           Your next role, read from the work you already did.

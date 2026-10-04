@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(
-        title="Job Searching Advisor",
+        title="CareerPolaris",
         version="0.1.0",
         lifespan=lifespan,
     )

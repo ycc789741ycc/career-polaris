@@ -15,7 +15,14 @@ import type { AdvisorTarget } from "./target";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import { startDownload } from "./download";
-import { citeLine, pageStyle, Resume, trimmedNote } from "./Resume";
+import {
+  citeLine,
+  coverageStatus,
+  pageStyle,
+  Resume,
+  savedLine,
+  trimmedNote,
+} from "./Resume";
 
 vi.mock("./download", () => ({ startDownload: vi.fn() }));
 
@@ -308,6 +315,7 @@ function defaults(call: Call): unknown {
 
 function renderResume(saved: ResumeSummary[] = [summary]) {
   const onChanged = vi.fn();
+  const onRevisit = vi.fn();
   const shell: Shell = {
     status: {
       me: null,
@@ -326,6 +334,7 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
     setHeading: vi.fn(),
   };
   render(
@@ -335,12 +344,12 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
           target={matched}
           saved={saved}
           onChanged={onChanged}
-          onRevisit={vi.fn()}
+          onRevisit={onRevisit}
         />
       </ToastProvider>
     </ShellContext.Provider>,
   );
-  return { shell, onChanged };
+  return { shell, onChanged, onRevisit };
 }
 
 describe("résumé screen", () => {
@@ -349,7 +358,7 @@ describe("résumé screen", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("is laid out as the prototype: tools, page, then requirements collapsed", async () => {
+  it("is laid out as the prototype: the tools beside the page, coverage collapsed", async () => {
     serve((call) =>
       call.url.startsWith("/tailored-resumes/cost-estimate")
         ? {
@@ -362,13 +371,23 @@ describe("résumé screen", () => {
     renderResume();
 
     await screen.findByRole("article", { name: "Résumé" });
-    const tools = document.querySelector(".resume-col-tools")!;
-    const text = tools.textContent ?? "";
-    const order = ["Saved résumés", "Template", "Sections", "Revise with"].map(
-      (heading) => text.indexOf(heading),
-    );
-    expect(order.every((at) => at >= 0)).toBe(true);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
+    const tools = screen.getByRole("complementary", { name: "Résumé tools" });
+    const cards = [...tools.querySelectorAll(":scope > details")];
+    expect(
+      cards.map((card) => card.querySelector("summary > span")?.textContent),
+    ).toEqual(["Layout", "Revise with AI", "Coverage"]);
+    // Layout and Revise open, Coverage closed, as the prototype has them.
+    expect(cards.map((card) => card.hasAttribute("open"))).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(within(cards[0] as HTMLElement).getByText("Template")).toBeVisible();
+    expect(
+      within(cards[0] as HTMLElement).getByRole("region", { name: "Sections" }),
+    ).toBeInTheDocument();
+    // No third column: the requirements are the Coverage card.
+    expect(document.querySelector(".resume-col-requirements")).toBeNull();
 
     // "Regenerate résumé" sits on the Write-for card, with what it costs.
     expect(
@@ -381,13 +400,58 @@ describe("résumé screen", () => {
     ).toBeInTheDocument();
 
     // Each requirement's evidence is collapsed behind "Evidence ▾".
-    const requirements = document.querySelector(".resume-col-requirements")!;
+    const requirements = cards[2]!.querySelector(".tool-card-body")!;
     const disclosures = requirements.querySelectorAll("details");
     expect(disclosures.length).toBeGreaterThan(0);
     disclosures.forEach((d) => expect(d).not.toHaveAttribute("open"));
     expect(
       within(requirements as HTMLElement).getAllByText("Evidence ▾").length,
     ).toBe(disclosures.length);
+  });
+
+  it("picks a saved résumé from the Version list, and moves to its target", async () => {
+    serve(defaults);
+    const user = userEvent.setup();
+    const elsewhere: ResumeSummary = {
+      ...summary,
+      id: "res-2",
+      target: { role_id: null, private_job_posting_id: "j1" },
+      label: "Principal Engineer · Halden Labs",
+      latest_version: 3,
+      updated_at: "2026-09-12T10:00:00Z",
+    };
+    const { onRevisit } = renderResume([summary, elsewhere]);
+
+    await screen.findByRole("article", { name: "Résumé" });
+    const versions = screen.getByRole("combobox", { name: "Version" });
+    expect(versions).toHaveValue("res-1");
+    expect(
+      within(versions).getByRole("option", {
+        name: "Principal Engineer · Halden Labs · v3 · edited 12 Sep 2026",
+      }),
+    ).toBeInTheDocument();
+    await user.selectOptions(versions, "res-2");
+    expect(onRevisit).toHaveBeenCalledWith(elsewhere);
+  });
+
+  it("exports from beside the page, once the edits are saved", async () => {
+    serve(defaults);
+    renderResume();
+
+    await screen.findByRole("article", { name: "Résumé" });
+    const actions = document.querySelector(
+      ".resume-col-page .resume-page-actions",
+    );
+    expect(
+      within(actions as HTMLElement).getByRole("button", {
+        name: "Export as PDF",
+      }),
+    ).toBeEnabled();
+    expect(
+      within(actions as HTMLElement).getByRole("button", {
+        name: /^Save as v\d+$/,
+      }),
+    ).toBeDisabled();
   });
 
   it("opens the latest résumé with cited lines and coverage", async () => {
@@ -1260,6 +1324,31 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
 
     expect(calls.find((c) => c.url.includes("/sections/estimate"))?.url).toBe(
       "/tailored-resumes/res-1/sections/estimate?kind=custom&title=Volunteering",
+    );
+  });
+});
+
+describe("the tool cards' summaries", () => {
+  it("counts the requirements by verdict", () => {
+    expect(
+      coverageStatus([
+        { verdict: "covered" },
+        { verdict: "partial" },
+        { verdict: "gap" },
+      ]),
+    ).toBe("1 covered · 1 partial · 1 gap");
+    expect(coverageStatus([{ verdict: "gap" }, { verdict: "gap" }])).toBe(
+      "0 covered · 0 partial · 2 gaps",
+    );
+    expect(coverageStatus([])).toBe("Once written");
+  });
+
+  it("names a saved résumé by its target, version and day, or what it is doing", () => {
+    expect(savedLine(summary)).toBe(
+      `${matched.label} · v1 · edited 20 Sep 2026`,
+    );
+    expect(savedLine({ ...summary, status: "drafting" })).toBe(
+      `${matched.label} · writing…`,
     );
   });
 });

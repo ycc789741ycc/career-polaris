@@ -15,8 +15,8 @@ body{margin:0}
 </helmet>
 <aside style="width: 246px; height: 100%; min-height: 900px; box-sizing: border-box; background: #ebddc5; color: #201e1d; font-family: Figtree, system-ui, sans-serif; display: flex; flex-direction: column">
 <div style="display: flex; align-items: center; gap: 10px; padding: 22px 22px 16px; font-family: Caprasimo, system-ui, sans-serif; font-size: 18px">
-<span style="width: 22px; height: 22px; border-radius: 999px; background: #c67139; flex: 0 0 auto"></span>
-Job Searching Advisor
+<span style="flex: 0 0 auto; display: inline-flex"><svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="26" fill="#c67139"></rect><path d="M27 73 C 27 54, 50 62, 50 46 S 63 34, 66 31" fill="none" stroke="#f5ead8" stroke-width="7" stroke-linecap="round"></path><circle cx="27" cy="73" r="7.5" fill="#f5ead8"></circle><path d="M74 13 L78 22 L87 26 L78 30 L74 39 L70 30 L61 26 L70 22 Z" fill="#ffe1d0"></path></svg></span>
+CareerPolaris
 </div>
 <nav aria-label="Screens">
 <div style="display: flex; flex-direction: column; gap: 3px; padding: 6px 12px 10px">
@@ -40,10 +40,13 @@ Job Searching Advisor
 </nav>
 </aside>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"current":{"editor":"enum","options":["sources","strengths","roles","advisor","model"],"default":"sources"},"$preview":{"width":246,"height":900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"current":{"editor":"enum","options":["sources","strengths","roles","advisor","model"],"default":"sources"},"target":{"editor":"enum","options":["set","none"],"default":"set"},"$preview":{"width":246,"height":900}}'>
 class Component extends DCLogic {
   renderVals() {
     const current = this.props.current ?? 'sources';
+    // No target is set until the user clicks "Target this role" (role map) or "Set as target" (own role),
+    // so outside the Advisor the link opens the no-target screen. The no-target screen passes target="none".
+    const advisorHref = (current === 'advisor' && this.props.target !== 'none') ? 'Gaps.dc.html' : 'AdvisorNoTarget.dc.html';
     const look = (on) => on
       ? { current: 'page', bg: '#ffe1d0', fg: '#643312', weight: 700 }
       : { current: undefined, bg: 'transparent', fg: '#201e1d', weight: 500 };
@@ -51,7 +54,7 @@ class Component extends DCLogic {
       { id: 'sources', num: '01', label: 'Sources', href: 'Main.dc.html' },
       { id: 'strengths', num: '02', label: 'Strengths', href: 'Strengths.dc.html' },
       { id: 'roles', num: '03', label: 'Role map', href: 'Roles.dc.html' },
-      { id: 'advisor', num: '04', label: 'Advisor', href: 'Gaps.dc.html' }
+      { id: 'advisor', num: '04', label: 'Advisor', href: advisorHref }
     ];
     return {
       items: journey.map((item) => ({ ...item, hasFlag: !!item.flag, ...look(item.id === current) })),

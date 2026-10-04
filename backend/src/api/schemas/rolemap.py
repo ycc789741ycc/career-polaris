@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from datetime import date
 from typing import Any, Literal
 
 from advisor.rolemap import (
@@ -179,8 +180,8 @@ class Fit(ApiModel):
 
 
 class MatchedPosting(ApiModel):
-    """An opening inside one of the user's roles, ranked by its own fit,
-    worked out locally from its role's (Phase 8)."""
+    """An opening inside one of the user's roles, with its own fit, worked
+    out locally from its role's (Phase 8)."""
 
     posting_id: uuid.UUID
     role_id: uuid.UUID
@@ -199,6 +200,9 @@ class MatchedPosting(ApiModel):
     # The job site whose API found this opening, to be named beside its link
     # wherever the opening is shown (ADR 0025); null for an employer's board.
     credited_to: str | None
+    # The day it was posted, as its source states it, else the day it was
+    # first fetched.
+    posted_on: date | None = None
 
     @classmethod
     def from_view(cls, m: MatchedPostingView) -> MatchedPosting:
@@ -215,6 +219,7 @@ class MatchedPosting(ApiModel):
             fit_basis=m.fit_basis,
             source_kind=m.source_kind,
             credited_to=m.credited_to,
+            posted_on=m.posted_on,
         )
 
 

@@ -130,6 +130,24 @@ export function placeFromHash(hash: string): Place {
   return { screen, tab, focus };
 }
 
+/**
+ * The selection a navigate() lands with. One it names wins; otherwise it
+ * stays with the screen, except that entering the Advisor from elsewhere —
+ * the sidebar, the header — opens the Target last set there, or none, and
+ * never the role map's selection: a bubble picked is not a Target until
+ * "Target this role" makes it one. Pure.
+ */
+export function getArrivalFocus(
+  from: Place,
+  next: Screen,
+  named: Focus | null | undefined,
+  storedTarget: Focus | null,
+): Focus | null {
+  if (named !== undefined) return named;
+  if (next === "advisor" && from.screen !== "advisor") return storedTarget;
+  return from.focus;
+}
+
 /** The hash for a location; the tab shows only on the Advisor. */
 export function hashFor({
   screen,

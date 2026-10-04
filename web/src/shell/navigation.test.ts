@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SCREEN,
   JOURNEY,
+  getArrivalFocus,
   hashFor,
   metaOf,
   placeFromHash,
@@ -84,5 +85,50 @@ describe("the Advisor's tabs", () => {
     for (const tab of ["gaps", "plan", "resume", "own"] as const) {
       expect(placeFromHash(hashFor({ screen: "advisor", tab })).tab).toBe(tab);
     }
+  });
+});
+
+describe("where the Advisor opens", () => {
+  const onMap = {
+    screen: "roles" as const,
+    tab: "gaps" as const,
+    focus: { role: "r2" },
+  };
+
+  it("opens on the target last set, never the role map's selection", () => {
+    expect(
+      getArrivalFocus(onMap, "advisor", undefined, { role: "r1" }),
+    ).toEqual({
+      role: "r1",
+    });
+  });
+
+  it("opens on no target when none was ever set", () => {
+    expect(getArrivalFocus(onMap, "advisor", undefined, null)).toBeNull();
+  });
+
+  it("goes where it is sent: Target this role names its role", () => {
+    expect(getArrivalFocus(onMap, "advisor", { role: "r2" }, null)).toEqual({
+      role: "r2",
+    });
+  });
+
+  it("keeps its target from tab to tab", () => {
+    const inAdvisor = {
+      screen: "advisor" as const,
+      tab: "gaps" as const,
+      focus: { role: "r1" },
+    };
+    expect(
+      getArrivalFocus(inAdvisor, "advisor", undefined, { role: "r9" }),
+    ).toEqual({
+      role: "r1",
+    });
+  });
+
+  it("carries the selection between the other screens as before", () => {
+    expect(getArrivalFocus(onMap, "strengths", undefined, null)).toEqual({
+      role: "r2",
+    });
   });
 });

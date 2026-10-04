@@ -21,6 +21,7 @@ from advisor.rolemap import (
     BuildRequestView,
     BuildRunView,
     FitView,
+    MatchOrder,
     RoleCandidateView,
     RoleView,
 )
@@ -37,6 +38,7 @@ class FakeRoleMap:
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
         self.one_per_company: list[bool | None] = []
+        self.orders: list[MatchOrder] = []
 
     async def estimate_fits(self, owner_id: uuid.UUID, **kw: Any) -> dict[str, Any]:
         self.priced.append(kw)
@@ -69,9 +71,11 @@ class FakeRoleMap:
         limit: int | None,
         role_id: uuid.UUID | None,
         one_per_company: bool | None = None,
+        order: MatchOrder = MatchOrder.FIT,
     ) -> list[Any]:
         self.matched_for.append(role_id)
         self.one_per_company.append(one_per_company)
+        self.orders.append(order)
         return []
 
     async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
@@ -370,6 +374,7 @@ def test_matched_postings_can_be_narrowed_to_one_role(
     assert response.json()["items"] == []
     assert rolemap.matched_for == [ROLE_ID]
     assert rolemap.one_per_company == [None]
+    assert rolemap.orders == [MatchOrder.FIT]
 
 
 def test_top_matched_asks_for_one_opening_per_company_in_the_selected_role(
@@ -382,6 +387,24 @@ def test_top_matched_asks_for_one_opening_per_company_in_the_selected_role(
 
     assert response.status_code == 200
     assert (rolemap.matched_for, rolemap.one_per_company) == ([ROLE_ID], [True])
+
+
+def test_openings_for_a_role_can_be_listed_newest_first(
+    client: TestClient, rolemap: FakeRoleMap
+) -> None:
+    response = client.get(
+        "/matched-postings",
+        params={"role_id": str(ROLE_ID), "order": "newest", "page_size": 10},
+    )
+
+    assert response.status_code == 200
+    assert rolemap.orders == [MatchOrder.NEWEST]
+
+
+def test_an_unknown_order_is_refused(client: TestClient) -> None:
+    response = client.get("/matched-postings", params={"order": "salary"})
+
+    assert response.status_code == 422
 
 
 def test_the_roles_are_drawn_with_the_openings_they_have_now(client: TestClient) -> None:

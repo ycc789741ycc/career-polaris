@@ -3226,3 +3226,91 @@ Fixed on the epic, each on its own branch:
   over its template's from the Template panel (ADR 0047, migration 0041).
 * **Contact details were plain text.** They are typed items drawn with icons,
   edited in place (ADR 0048, migration 0042).
+
+# Phase 11
+The 4 October prototype: the app gets its name, and the Advisor works against
+a target only once the user has chosen one.
+* The app is called **CareerPolaris**, with an icon: a path climbing from a
+  dot (your evidence) to a star (the target role).
+* No target exists until the user clicks "Target this role" on the role map,
+  or "Set as target" on a role of their own. Until then the Advisor shows
+  **No target yet**, with its tabs locked, and offers the role map, a role of
+  their own, or a previous target.
+* "Previous targets" on the target banner switches back to a role targeted
+  before, restoring its answers, plan and résumé with no AI call.
+* The role map lists "Openings for this role", newest first and without a
+  fit per opening, because the fit is scored on the role.
+* The Résumé has two columns: the tools, collapsible, beside the page.
+
+Four branches, in this order, each cut from `epic/no-ticket/update-prototype`,
+which carries the prototype:
+
+1. "CareerPolaris": the name and icon.
+2. "Openings for this role": newest first, paged, no fit per opening.
+3. "No target until one is chosen": the target rule, No target yet and
+   Previous targets.
+4. "The Résumé in two columns".
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR where a decision is costly to reverse,
+and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
+
+## CareerPolaris
+* The sidebar and the sign-in screen show the icon and the name; the browser
+  tab reads CareerPolaris, with the icon as its favicon (`web/public/icon.svg`).
+  `AppIcon` draws the mark in its four colour versions.
+* The API's OpenAPI title is CareerPolaris.
+* The repository, the `jsa-*` images, `jsa_net` and the compose projects keep
+  the old name: renaming them would break every running stack for nothing a
+  user sees. No ADR, because a name is easy to change back.
+
+## Openings for this role
+ADR 0049.
+* The role map's "Top matched openings" becomes "Openings for this role":
+  every open posting in the selected role, newest first, ten at a time, with
+  "See all n openings" paging through the rest.
+* A row shows the company, the posting with its link, place, pay, credit and
+  how long ago it was posted (`posted_on`: the source's day, else the first
+  fetch). It shows no fit, because the fit is scored on the role.
+* `GET /matched-postings` takes `order=fit|newest`; the Advisor keeps `fit`.
+* No row selects an opening, so "Target this role" aims at the role only. A
+  Target that names an opening, set before, still works, and opening fits are
+  still computed for it.
+
+What gets harder: a new Target can no longer name one opening from the map,
+yet every build still works out opening fits.
+
+## No target until one is chosen
+ADR 0050.
+* No Target exists until the user sets one: "Target this role" on the role
+  map, "Set as target" on a role of their own, or a previous target used
+  again. Picking a bubble only selects it.
+* The sidebar's Advisor link opens the Target last set, or **No target yet**:
+  the steps locked, and three cards — the role map (with its best fit), a role
+  of your own, and up to three previous targets with "Use again".
+* "Previous targets (n)" on the target banner lists the others, each with
+  where it came from, when it was last used and its fit. Switching back
+  restores its answers, plan and résumé, and posts nothing.
+* The current Target and the history are kept in the browser, per account,
+  and joined with the Targets the server has plans and résumés for.
+
+What gets harder: the current Target does not follow the user to another
+device, and a Target with only answers is remembered only where it was set.
+
+## The Résumé in two columns
+No ADR: a layout is easy to change back.
+* The tools sit beside the page as three collapsible cards: **Layout**
+  (template, fonts, options and Sections; open), **Revise with AI** (open,
+  saying how many proposals wait) and **Coverage** (the requirements and
+  their evidence; closed, counting covered, partial and gaps).
+* "Save as vN" and "Export as PDF" sit beneath the page. The export still
+  waits for unsaved edits to be saved.
+* The Saved résumés panel became the **Version** list on the Write-for card:
+  one entry per saved résumé, with its version and the day it was edited.
+  Choosing another target's switches to that target.
+* Below 1240px the page comes first and the tools follow.
+
+Not yet: listing the older versions of one résumé. A `ResumeVersion` carries
+no content and no route reads one back, so the list shows each résumé's
+latest only, where the prototype shows v3 and v2 of one.
+

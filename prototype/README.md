@@ -1,6 +1,6 @@
-# Career Advisor — design prototypes
+# CareerPolaris — design prototypes
 
-Exported from the "Career Advisor — current layout" design canvas (3 Oct 2026).
+Exported from the "CareerPolaris — current layout" design canvas (4 Oct 2026).
 These files are the **design reference** for the UI. Match their layout, copy and behaviour; don't ship them as-is.
 
 ## Contents
@@ -11,7 +11,8 @@ These files are the **design reference** for the UI. Match their layout, copy an
 | `screens/StrengthsBuilding.dc.html` | 02 Strengths — analysing (full waiting screen) |
 | `screens/Strengths.dc.html` | 02 Strengths (radar, confidence, profile confidence, Re-analyse) |
 | `screens/RolesBuilding.dc.html` | 03 Role map — building (full waiting screen) |
-| `screens/Roles.dc.html` | 03 Role map (Rebuild, market map, Selected role fit card, Advisor target bar) |
+| `screens/Roles.dc.html` | 03 Role map (Rebuild, market map, Selected role fit card, Openings for this role, Advisor target bar) |
+| `screens/AdvisorNoTarget.dc.html` | 04 Advisor — No target yet (tabs locked; pick from role map / own role / previous target) |
 | `screens/CustomTarget.dc.html` | 04 Advisor — Your own role (upload JD or fill in, My roles list) |
 | `screens/Gaps.dc.html` | 04 Advisor — Fill the gap (questions + Submit answers) |
 | `screens/GapsBuilding.dc.html` | 04 Advisor — Fill the gap while questions are being written (inline progress) |
@@ -21,14 +22,16 @@ These files are the **design reference** for the UI. Match their layout, copy an
 | `screens/Resume.dc.html` | 04 Advisor — Résumé (Regenerate, Sections panel, AI revise, collapsed evidence) |
 | `screens/ResumeBuilding.dc.html` | 04 Advisor — Résumé while it is being written (inline progress) |
 | `screens/Model.dc.html` | System configuration: AI & model |
-| `screens/Sidebar.dc.html` | Shared sidebar nav component |
+| `screens/Sidebar.dc.html` | Shared sidebar nav component (app icon + name; Advisor link goes to No target yet until a target is set) |
+| `screens/AppIcon.dc.html` | App icon: sizes, sidebar lockup, colour variants |
 | `canvas.json` | Board index: titles, order, sizes, and the design-rules sticky note |
-| `career-advisor-domain-spec.md` | Domain model, flow and decisions. **Read this first.** |
+| `careerpolaris-domain-spec.md` | Domain model, flow and decisions. **Read this first.** |
 
 ## Click-through flow
 
 Sources → "Analyze with AI" → Strengths (analysing) → Strengths → "Match me to roles" → Role map (building) → Role map → "Target this role" → Fill the gap (preparing) → Fill the gap → Gap plan | Résumé.
-From any Advisor page: "Use your own role" → Your own role → "Set as target" → Fill the gap (preparing).
+Sidebar → Advisor with no target set → No target yet → Open role map | Add your own role | Use again (previous target).
+From any Advisor page: "Previous targets" switches back to an earlier target (restores saved work, no AI calls). "Use your own role" → Your own role → "Set as target" → Fill the gap (preparing).
 "Generate gap plan" → Gap plan (drafting). "Regenerate résumé" → Résumé (writing) → Gap plan tab → Gap plan while résumé is writing.
 
 ## How to read a `.dc.html` file

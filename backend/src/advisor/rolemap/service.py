@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -52,6 +52,7 @@ from advisor.rolemap.domain import (
     HiringBar,
     LineageEntry,
     MatchCandidate,
+    MatchOrder,
     PlacementOutcome,
     PostingFit,
     PostingFitFilter,
@@ -373,6 +374,8 @@ class MatchedPostingView:
     # `posting`: the opening's own fit; `role`: its role's, before a build has
     # worked the opening's out.
     fit_basis: str = "role"
+    # The day it was posted, else first fetched; None when not known.
+    posted_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1161,6 +1164,7 @@ class RoleMapService:
         limit: int | None = DEFAULT_MATCHES,
         role_id: uuid.UUID | None = None,
         one_per_company: bool | None = None,
+        order: MatchOrder = MatchOrder.FIT,
     ) -> list[MatchedPostingView]:
         """The best openings inside the user's roles, or inside one of them:
         the openings a Target in that role can name (ADR 0022).
@@ -1173,6 +1177,9 @@ class RoleMapService:
         matched" names different companies. Unset, it holds across all roles
         and not for one role's list (``role_id``), which keeps every opening,
         as its bubble counts them and the Advisor can aim at any.
+
+        ``order`` is fit by default; the role map asks for the newest first,
+        because it shows no fit per opening (ADR 0049).
         """
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
         opening_fits = await self._opening_fit_scores(owner_id, role_id)
@@ -1195,12 +1202,13 @@ class RoleMapService:
                         company_name=posting.company_name,
                         title=posting.title,
                         fit=own if own is not None else fit_by_role.get(role.id),
+                        posted_on=posting.posted_on,
                     )
                 )
 
         distinct = role_id is None if one_per_company is None else one_per_company
         try:
-            ranked = rank_matches(candidates, limit=limit, one_per_company=distinct)
+            ranked = rank_matches(candidates, limit=limit, one_per_company=distinct, order=order)
         except ValueError as exc:
             raise ValidationError(str(exc), limit=limit) from exc
 
@@ -1221,6 +1229,7 @@ class RoleMapService:
                     source_kind=posting.source_kind,
                     credited_to=posting.credited_to,
                     fit_basis=("posting" if (role.id, str(posting.id)) in opening_fits else "role"),
+                    posted_on=posting.posted_on,
                 )
             )
         return matched
