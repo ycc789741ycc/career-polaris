@@ -746,6 +746,28 @@ select.input { appearance: auto; }
 .resume-summary { margin: 0; }
 .resume-job { margin-bottom: calc(var(--pt) * 10); }
 .resume-job-head { display: flex; justify-content: space-between; gap: calc(var(--pt) * 12); }
+.resume-job-side { display: inline-flex; align-items: flex-start; gap: 6px; }
+/* An entry's remove control: quiet until the entry is pointed at or the
+ * control has focus, so the page still reads as it will print. */
+.resume-remove-entry {
+  all: unset;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-neutral-700);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.resume-job:hover .resume-remove-entry,
+.resume-remove-entry:focus-visible { opacity: 1; }
+.resume-remove-entry:hover { background: var(--color-accent-200); color: var(--color-accent-800); }
+.resume-remove-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+@media (hover: none) { .resume-remove-entry { opacity: 1; } }
 .resume-job-title {
   font-family: var(--heading-font), "DejaVu Sans", serif;
   font-size: calc(var(--pt) * var(--title-pt));

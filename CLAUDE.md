@@ -716,4 +716,7 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   each a Latin 400/700 subset hosted by the SPA and installed in the worker
   image. Migration 0043 widens the résumé's font checks; `test_fonts.py`
   checks fontconfig finds each by name.
+- **Remove one entry.** Each entry on the résumé page has a × beside its
+  dates (`resume-remove-entry`) that drops it from the draft; saving the
+  version keeps the change. A section may be left with no entries.
 

@@ -1347,13 +1347,31 @@ function ResumePage({
                   onChange={(org) => editEntry(at, section, e, { org })}
                 />
               </span>
-              <Editable
-                className="resume-when"
-                value={entry.when}
-                label="When"
-                placeholder="When"
-                onChange={(when) => editEntry(at, section, e, { when })}
-              />
+              <span className="resume-job-side">
+                <Editable
+                  className="resume-when"
+                  value={entry.when}
+                  label="When"
+                  placeholder="When"
+                  onChange={(when) => editEntry(at, section, e, { when })}
+                />
+                {/* Takes the whole entry off the page; it is gone once the
+                    version is saved. Never printed. */}
+                <button
+                  type="button"
+                  className="resume-remove-entry"
+                  aria-label={`Remove ${entry.title} from ${heading}`}
+                  title="Remove this entry"
+                  onClick={() =>
+                    editSection(at, {
+                      ...section,
+                      entries: section.entries.filter((_, i) => i !== e),
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </span>
             </div>
             <Editable
               as="div"
