@@ -3391,17 +3391,24 @@ Droplet budget, to confirm with `make stats` before the phase is called done:
 There is no domain yet. Until there is one, the edge is served at
 `<droplet-ip>.sslip.io`, with a Let's Encrypt certificate for that name.
 
-Four branches, in this order, each cut from `epic/no-ticket/hybrid-deploy`,
+Five branches, in this order, each cut from `epic/no-ticket/hybrid-deploy`,
 which is cut from mainline:
 
 1. "Run the app in two places": one image and one compose file, with what
    each place starts chosen in its `.env`.
 2. "Know when the compute side is away": the SPA says that work is waiting
    for the processing machine instead of reporting it lost.
-3. "The edge on the droplet": the proxy, TLS, the firewall, Spaces and
-   backups.
-4. "Release one image to both places": CI builds, tests, scans and pushes the
+3. "The edge on the droplet": the proxy, TLS, the firewall, per-IP limits,
+   Spaces and backups.
+4. "Limit what one account can do": per-user and per-IP quotas the proxy
+   cannot see, kept in Postgres.
+5. "Release one image to both places": CI builds, tests, scans and pushes the
    image; each place pulls it by digest.
+
+There is no separate API gateway (Kong, Tyk, APISIX): it would take 100–500 MB
+of the droplet and is one more thing to run. Caddy limits what it can see, a
+client's address and its request, and the app limits what only it can see,
+the account.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR where a decision is costly to reverse,
@@ -3479,6 +3486,24 @@ when a job starts.
   name.
 * **Firewall.** A DigitalOcean Cloud Firewall allows 22, 80 and 443, plus the
   tunnel's UDP port if WireGuard is used. SSH takes keys only.
+* **Limits at the edge, per client address.** The api has none today: the
+  only limit is the sign-in lockout, which counts failures per account, so a
+  flood spread over many accounts never trips it. Every `/auth/register` and
+  `/auth/sign-in` runs Argon2id (19 MiB, two passes), and enough of them use
+  up the one vCPU. Caddy therefore:
+  * caps a request body a little above the largest upload
+    (`RESUME_MAX_BYTES`), so an oversized one is refused before uvicorn reads
+    it;
+  * sets read, header and idle timeouts, so a slow client cannot hold one of
+    uvicorn's few connections;
+  * allows `/api/v1/auth/*` about 10 requests a minute per address;
+  * allows everything else about 300 a minute per address. The SPA polls
+    `GET /activity` every two seconds while work runs, so a tight limit here
+    would lock out real users.
+
+  Rate limiting is a Caddy plugin (`caddy-ratelimit`), so the Caddy image is
+  built with `xcaddy` in CI, with Caddy and the plugin pinned, like the app's
+  images. Each limit is an optional `EDGE_*` setting in `.env`.
 * **Spaces.** One private bucket, created ahead of time, and a key scoped to
   it. `S3_ENDPOINT_URL` and `S3_PUBLIC_ENDPOINT_URL` both name the Spaces
   regional endpoint. The `create_bucket` fallback in `kernel/storage` stays for
@@ -3496,13 +3521,45 @@ when a job starts.
   users. The crawler fetches from the operator's home address, and the
   politeness rules (per-host caps, backing off after a 429 or 403) are
   unchanged.
+* **Later, with a domain.** Put Cloudflare's free proxy in front. It hides
+  the droplet's address and absorbs floods the droplet would fall over to
+  before Caddy could refuse them, which nothing on the droplet can do.
+
+## Limit what one account can do
+ADR: quotas live in the app, counted in Postgres, because only the app knows
+the account.
+* **The real client address.** uvicorn runs with `--proxy-headers` and
+  trusts `X-Forwarded-For` from Caddy's address only
+  (`FORWARDED_ALLOW_IPS`, required on the edge). Otherwise every request
+  looks as if it came from Caddy, and a client could also forge the header.
+* **A limiter in `kernel`.** A fixed-window counter in a table of its own,
+  keyed on what is limited and on whom (an account or an address), and
+  incremented in the request's own transaction. A refusal raises the existing
+  `RateLimitedError`, which answers 429 with `Retry-After` in the usual error
+  envelope. It needs no new datastore, because Postgres is already on the
+  droplet.
+* **What is limited.** Each limit is an optional setting:
+  * accounts created per address per day: there is no address verification
+    yet (`architecture.md` open question 3), so a script could otherwise sign
+    up thousands of accounts;
+  * uploads per account per day: résumés, roles of the user's own and
+    template files, each parsed on the operator's machine;
+  * connector syncs per account per hour.
+
+  AI work needs no new limit. Each job already runs one of a kind per Target
+  at a time, spends the user's own key, and stops at their budget.
+* **The SPA** shows a 429's message and when to try again, rather than a
+  generic error.
+* **Unit tests** for the window rule. Integration tests show each limit
+  refusing the request after the allowed count, and the count starting again
+  in the next window.
 
 ## Release one image to both places
 * **CI** runs `make build-app`, `lint`, `typecheck`, both test tiers and
-  `scan`, then pushes the prod images to GHCR by digest. Neither the droplet
-  nor the operator's machine builds anything: a single vCPU would take a very
-  long time to install torch and build the SPA, and could run out of memory
-  doing it.
+  `scan`, then pushes the prod images and the Caddy image to GHCR by digest.
+  Neither the droplet nor the operator's machine builds anything: a single
+  vCPU would take a very long time to install torch and build the SPA, and
+  could run out of memory doing it.
 * **`make pull-app`** pulls a given digest and tags it `jsa-*:prod`. Compose
   keeps `pull_policy: never`, so `start-app` still runs only what was pulled
   and checked.
