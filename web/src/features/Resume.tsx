@@ -36,6 +36,7 @@ import { CostConfirm } from "./CostConfirm";
 import { startDownload } from "./download";
 import {
   isEmptySection,
+  SECTION_HEADINGS,
   sectionHeading,
   SectionsPanel,
 } from "./ResumeSections";
@@ -1025,6 +1026,18 @@ function ResumePage({
       ...content,
       sections: content.sections.map((s, i) => (i === at ? next : s)),
     });
+  const editEntry = (
+    at: number,
+    section: ResumeSection,
+    index: number,
+    patch: Partial<ResumeSection["entries"][number]>,
+  ) =>
+    editSection(at, {
+      ...section,
+      entries: section.entries.map((it, i) =>
+        i === index ? { ...it, ...patch } : it,
+      ),
+    });
 
   const lines = (bullets: ResumeBullet[]) =>
     trim ? bullets.slice(0, look.trimmed_bullets) : bullets;
@@ -1075,7 +1088,19 @@ function ResumePage({
     hasSidebar && (spec.sidebar_kinds as string[]).includes(section.kind);
   const contact = (
     <div className="resume-contact">
-      {[content.headline, content.contact].filter(Boolean).join(" · ")}
+      <Editable
+        value={content.headline}
+        label="Headline"
+        placeholder="Headline"
+        onChange={(headline) => edit({ headline })}
+      />
+      {content.headline && content.contact ? " · " : " "}
+      <Editable
+        value={content.contact}
+        label="Contact"
+        placeholder="Email, phone, links"
+        onChange={(next) => edit({ contact: next })}
+      />
     </div>
   );
   // A hidden section is kept and never printed (ADR 0043).
@@ -1110,7 +1135,25 @@ function ResumePage({
     }
     return (
       <section key={key} aria-label={heading}>
-        <div className="resume-section">{heading}</div>
+        <Editable
+          as="div"
+          className="resume-section"
+          value={heading}
+          label={`Heading of ${heading}`}
+          onChange={(next) =>
+            editSection(at, {
+              ...section,
+              // Cleared, or back to the kind's own: no override. A section of
+              // the user's own keeps a heading.
+              title:
+                !next || next === SECTION_HEADINGS[section.kind]
+                  ? section.kind === "custom"
+                    ? section.title
+                    : null
+                  : next,
+            })
+          }
+        />
         {section.kind === "summary" && (
           <p
             className="resume-summary"
@@ -1131,11 +1174,39 @@ function ResumePage({
           <section key={`${entry.title}-${e}`} className="resume-job">
             <div className="resume-job-head">
               <span className="resume-job-title">
-                {[entry.title, entry.org].filter(Boolean).join(" — ")}
+                <Editable
+                  value={entry.title}
+                  label="Title"
+                  placeholder="Title"
+                  onChange={(title) =>
+                    // An entry always has a title; clearing it keeps the old.
+                    title && editEntry(at, section, e, { title })
+                  }
+                />
+                {entry.org ? " — " : " "}
+                <Editable
+                  value={entry.org}
+                  label="Organisation"
+                  placeholder="Organisation"
+                  onChange={(org) => editEntry(at, section, e, { org })}
+                />
               </span>
-              <span className="resume-when">{entry.when}</span>
+              <Editable
+                className="resume-when"
+                value={entry.when}
+                label="When"
+                placeholder="When"
+                onChange={(when) => editEntry(at, section, e, { when })}
+              />
             </div>
-            {entry.link && <div className="resume-when">{entry.link}</div>}
+            <Editable
+              as="div"
+              className="resume-when"
+              value={entry.link}
+              label="Link"
+              placeholder="Link"
+              onChange={(link) => editEntry(at, section, e, { link })}
+            />
             {bulletList(entry.bullets, (next) =>
               editSection(at, {
                 ...section,
@@ -1152,19 +1223,40 @@ function ResumePage({
               ? section.items.slice(0, look.trimmed_skills)
               : section.items
             ).map((item, index) => (
-              <span
-                key={item}
+              <Editable
+                key={`${index}-${item}`}
                 className="resume-skill"
-                data-lead={
+                value={item}
+                label={`${heading} item`}
+                lead={
                   showSources &&
                   reorder &&
                   section.kind === "skills" &&
                   index < 3
                 }
-              >
-                {item}
-              </span>
+                onChange={(next) =>
+                  editSection(at, {
+                    ...section,
+                    // Cleared to nothing, it goes.
+                    items: next
+                      ? section.items.map((it, i) => (i === index ? next : it))
+                      : section.items.filter((_, i) => i !== index),
+                  })
+                }
+              />
             ))}
+            <button
+              type="button"
+              className="resume-add-line"
+              onClick={() =>
+                editSection(at, {
+                  ...section,
+                  items: [...section.items, "New item"],
+                })
+              }
+            >
+              + Add
+            </button>
           </div>
         )}
         {section.bullets.length > 0 &&
@@ -1430,4 +1522,41 @@ export function lastGeneratedLine(
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Text edited in place on the page: saved on blur when it changed, trimmed.
+ * Empty, it shows its placeholder, which the page never prints. */
+function Editable({
+  as: Tag = "span",
+  value,
+  label,
+  placeholder,
+  className,
+  lead,
+  onChange,
+}: {
+  as?: "span" | "div";
+  value: string;
+  label: string;
+  placeholder?: string;
+  className?: string;
+  lead?: boolean;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <Tag
+      className={className}
+      contentEditable
+      suppressContentEditableWarning
+      aria-label={label}
+      data-placeholder={placeholder}
+      data-lead={lead}
+      onBlur={(event) => {
+        const next = (event.currentTarget.textContent ?? "").trim();
+        if (next !== value) onChange(next);
+      }}
+    >
+      {value}
+    </Tag>
+  );
 }

@@ -737,6 +737,13 @@ select.input { appearance: auto; }
   background: #f3f1ee;
   color: #3d3a36;
 }
+/* A field on the page left empty shows what goes there; the PDF prints
+ * nothing for it. */
+.resume-page [contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #b3aba3;
+  font-style: italic;
+}
 .resume-skill[data-lead="true"] { background: #f2e3d7; color: #8a4a20; }
 /* App annotations, never part of the PDF: shown only on request, and set
  * apart so they read as the app's, not the page's. */

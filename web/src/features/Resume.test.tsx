@@ -522,6 +522,72 @@ describe("résumé screen", () => {
     );
   });
 
+  it("edits the headline, a heading, an entry's fields and a skill in place", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const type = (label: string, text: string) => {
+      const field = screen.getByLabelText(label);
+      field.textContent = text;
+      fireEvent.blur(field);
+    };
+    type("Headline", "Staff Backend Engineer");
+    type("Contact", "maya@example.com · Berlin");
+    type("Heading of Experience", "Work history");
+    type("Title", "Senior Backend Engineer");
+    type("Organisation", "Kestrel");
+    type("When", "2021 — now");
+    type("Link", "kestrel.example");
+    // Renamed, the heading's own label follows it.
+    expect(screen.getByLabelText("Heading of Work history")).toBeTruthy();
+    const [go] = screen.getAllByLabelText("Skills item");
+    go!.textContent = "Golang";
+    fireEvent.blur(go!);
+    const [, postgres] = screen.getAllByLabelText("Skills item");
+    postgres!.textContent = "";
+    fireEvent.blur(postgres!);
+
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    expect(body.content.headline).toBe("Staff Backend Engineer");
+    expect(body.content.contact).toBe("maya@example.com · Berlin");
+    const work = experience(body.content);
+    expect(work.title).toBe("Work history");
+    expect(work.entries[0]).toMatchObject({
+      title: "Senior Backend Engineer",
+      org: "Kestrel",
+      when: "2021 — now",
+      link: "kestrel.example",
+    });
+    const skills = body.content.sections.find((s) => s.kind === "skills")!;
+    expect(skills.items).toEqual(["Golang", "Kafka", "gRPC"]);
+  });
+
+  it("puts a cleared heading back to its kind's own", async () => {
+    serve(defaults);
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const renamed = screen.getByLabelText("Heading of Summary");
+    renamed.textContent = "Profile";
+    fireEvent.blur(renamed);
+    const cleared = screen.getByLabelText("Heading of Profile");
+    cleared.textContent = "";
+    fireEvent.blur(cleared);
+
+    expect(screen.getByLabelText("Heading of Summary")).toHaveTextContent(
+      "Summary",
+    );
+  });
+
   it("writes for the target it is aimed at once the price is confirmed", async () => {
     const calls = serve((call) => {
       if (call.url.startsWith("/tailored-resumes/cost-estimate"))

@@ -494,7 +494,11 @@ async def test_a_write_fills_every_section_and_keeps_each_ones_place_and_state()
         resume_id,
         content=replace(
             make_content(Bullet("x", ("e1",))),
-            sections=(replace(skills, is_shown=False), summary, experience),
+            sections=(
+                replace(skills, is_shown=False),
+                replace(summary, title="Profile"),
+                experience,
+            ),
         ).to_dict(),
     )
     await service.redraft(OWNER, resume_id)
@@ -512,6 +516,9 @@ async def test_a_write_fills_every_section_and_keeps_each_ones_place_and_state()
         (SectionKind.EXPERIENCE, True),
         (SectionKind.SIDE_PROJECTS, False),
     ]
+    # The heading the user gave Summary survives the rewrite.
+    summary_now = view.content.get_section(SectionSlot(SectionKind.SUMMARY))
+    assert summary_now is not None and summary_now.heading == "Profile"
     side = view.content.get_section(SectionSlot(SectionKind.SIDE_PROJECTS))
     assert side is not None and side.entries[0].bullets[0].evidence_ids == ("e1",)
     assert view.section_plan == view.content.get_plan()

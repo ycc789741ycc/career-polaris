@@ -205,6 +205,24 @@ def settle_revision(
     )
 
 
+def get_headings_kept(content: ResumeContent, previous: ResumeContent | None) -> ResumeContent:
+    """``content`` with each built-in section that has no heading of its own
+    taking the one the user gave the same section in ``previous``: a rewrite
+    by the model never undoes a renamed heading. Pure."""
+    if previous is None:
+        return content
+    given = {s.slot: s.title for s in previous.sections if s.title}
+    return replace(
+        content,
+        sections=tuple(
+            replace(s, title=given[s.slot])
+            if not s.title and s.kind is not SectionKind.CUSTOM and s.slot in given
+            else s
+            for s in content.sections
+        ),
+    )
+
+
 def get_proposal_layout(
     current: ResumeContent,
     proposed: ResumeContent,
@@ -222,6 +240,7 @@ def get_proposal_layout(
         replace(section, is_shown=states.get(section.slot, True) if wanted is None else wanted)
         for section, wanted in zip(proposed.sections, asked, strict=True)
     )
+    laid_out = get_headings_kept(replace(proposed, sections=laid_out), current).sections
     kept = {s.slot for s in laid_out}
     left_out = tuple(
         s for s in current.sections if s.kind is not SectionKind.CUSTOM and s.slot not in kept
