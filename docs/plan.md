@@ -2958,6 +2958,8 @@ Open questions:
   `answers` naming no requirement before it.
 * The rows stored on the résumé carry the answers, so a revision sees the
   pairing of its last write.
+* Amended by ADR 0046 after the first real résumé failed: a claim nothing
+  backs is now dropped from its line, not the whole write rejected.
 
 Phase 9's "A plan cites what you answered" left this as an open question.
 The answers do reach the résumé today, but they cannot help it where they

@@ -87,7 +87,6 @@ from advisor.resume.domain import (
     TemplateSpec,
     TemplateSpecError,
     VersionSource,
-    assert_gap_claims_answered,
     assert_plan_valid,
     assert_well_formed,
     assert_written_lines_cited,
@@ -845,11 +844,10 @@ class ResumeService:
                     )
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
-                proposal = get_claims_settled(proposal, (c.requirement for c in coverage_rows))
+                proposal = _claims_settled(proposal, coverage_rows, resume_id=resume_id)
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
-                    assert_gap_claims_answered(proposal, _gaps_of(coverage_rows))
                 except ResumeError as exc:
                     raise OutputInvalidError(f"the proposed revision was rejected: {exc}") from exc
                 await self._assert_owned(owner_id, proposal, message)
@@ -1215,11 +1213,10 @@ class ResumeService:
             content = get_planned(_content_of(result.value), plan).with_citations(handles.resolve)
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
-        content = get_claims_settled(content, (c.requirement for c in coverage_rows))
+        content = _claims_settled(content, coverage_rows, resume_id=resume_id)
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
-            assert_gap_claims_answered(content, _gaps_of(coverage_rows))
         except ResumeError as exc:
             raise OutputInvalidError(f"the written résumé was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
@@ -1328,11 +1325,10 @@ class ResumeService:
             sections=tuple(written if s.slot == slot else s for s in current.sections),
         )
         rows = [_coverage_view(c) for c in resume.coverage]
-        content = get_claims_settled(content, (c.requirement for c in rows))
+        content = _claims_settled(content, rows, resume_id=resume_id)
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
-            assert_gap_claims_answered(content, _gaps_of(rows))
         except ResumeError as exc:
             raise OutputInvalidError(f"the written section was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
@@ -1641,9 +1637,26 @@ def _answers_by_requirement(
     return result
 
 
-def _gaps_of(rows: tuple[CoverageView, ...] | list[CoverageView]) -> dict[str, list[str]]:
-    """Each requirement marked gap, with the answers it may be claimed from."""
-    return {r.requirement: [a.id for a in r.answers] for r in rows if r.verdict == "gap"}
+def _claims_settled(
+    content: ResumeContent,
+    rows: tuple[CoverageView, ...] | list[CoverageView],
+    *,
+    resume_id: uuid.UUID,
+) -> ResumeContent:
+    """The content with every claim nothing backs dropped (ADR 0046), and how
+    many were, logged: a claim the model made that the answers could not
+    carry is worth knowing about, but not worth the user's whole write."""
+    settled = get_claims_settled(
+        content,
+        (r.requirement for r in rows),
+        {r.requirement: [a.id for a in r.answers] for r in rows if r.verdict == "gap"},
+    )
+    dropped = sum(1 for b in content.bullets() if b.answers is not None) - sum(
+        1 for b in settled.bullets() if b.answers is not None
+    )
+    if dropped:
+        log.info("resume.claims_dropped", resume_id=str(resume_id), count=dropped)
+    return settled
 
 
 def _coverage_row(row: Coverage, notes: dict[str, EvidenceNote]) -> CoverageView:

@@ -657,10 +657,11 @@ uploaded one (`docs/plan.md`), one branch per step under
   `gapfill.get_answers`; each coverage row carries the answers to its gap
   (`dim:` or `req:` key, `target.gap_key_for_*`), stored on the résumé and
   listed in the prompts as "answered in [E41]". `resume_write` and
-  `resume_revise` are v5: a gap may be claimed only from its own answers, and
-  `assert_gap_claims_answered` checks every write, proposal and filled
-  section (`get_claims_settled` drops an `answers` naming no requirement).
-  The verdict stays a gap; the requirements panel says "Answered by you".
+  `resume_revise` are v5: a gap may be claimed only from its own answers.
+  Every write, proposal and filled section runs `get_claims_settled`, which
+  drops a claim (`answers`) that names no requirement or a gap its citations
+  do not rest on alone, keeping the line (ADR 0046). The verdict stays a gap;
+  the requirements panel says "Answered by you".
 - **Record the career timeline** (ADR 0045). `skill_assessment` v5 reports
   the `positions` résumé lines and answers state, and is no longer given the
   stored timeline. They are checked (`profile.assert_position_readings_valid`:
