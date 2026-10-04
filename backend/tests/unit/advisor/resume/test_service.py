@@ -335,7 +335,11 @@ def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
         tally=40,
         subject="PAY",
     )
-    profile = SimpleNamespace(positions=(), evidence=(fact,))
+    profile = SimpleNamespace(
+        positions=(),
+        evidence=(fact,),
+        accounts=(SimpleNamespace(source="github", account="mayalin"),),
+    )
 
     inputs = resume_service._write_inputs(
         profile,  # type: ignore[arg-type]
@@ -350,8 +354,9 @@ def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
 
     assert inputs["sections"] == "- experience\n- custom: Awards"
     assert inputs["evidence"] == "[E1] (jira, latest 2026-08-14) Jira · PAY: 40 issues done in PAY"
-    assert resume_service._WRITE == ("resume_write", "v3")
-    assert resume_service._REVISE == ("resume_revise", "v3")
+    assert inputs["accounts"] == "- github: mayalin"
+    assert resume_service._WRITE == ("resume_write", "v4")
+    assert resume_service._REVISE == ("resume_revise", "v4")
 
 
 # --- sections you choose (ADR 0039) -------------------------------------------
@@ -417,14 +422,117 @@ async def test_moving_and_removing_sections_saves_a_version_and_the_plan() -> No
         content=replace(current, sections=(experience, summary)).to_dict(),
     )
 
-    assert uow.store.resumes[resume_id].section_plan == (
-        SectionSlot(SectionKind.EXPERIENCE),
-        SectionSlot(SectionKind.SUMMARY),
-    )
+    plan = uow.store.resumes[resume_id].section_plan
+    assert plan[:2] == (SectionSlot(SectionKind.EXPERIENCE), SectionSlot(SectionKind.SUMMARY))
+    # Every other kind is still held, hidden (ADR 0043).
+    assert len(plan) == 8 and not any(s.is_shown for s in plan[2:])
     with pytest.raises(ValidationError, match="experience"):
         await service.save_version(
             OWNER, resume_id, content=replace(current, sections=(summary,)).to_dict()
         )
+
+
+class WriteGateway:
+    """Writes the whole résumé from ``sections``, and records what it saw."""
+
+    def __init__(self, sections: list[dict[str, Any]]) -> None:
+        self.sections = sections
+        self.inputs: list[dict[str, str]] = []
+
+    async def run(self, owner_id: uuid.UUID, *, inputs: dict[str, str], **kwargs: Any) -> Any:
+        self.inputs.append(inputs)
+        reply = {"name": "Maya Lin Chen", "sections": self.sections}
+        return SimpleNamespace(
+            value=kwargs["output_schema"].model_validate(reply),
+            model_id="claude-opus-5",
+            template_version="resume_write@v4",
+        )
+
+
+class SnapshotTarget(FakeTarget):
+    async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+        return TargetSnapshot.from_dict(SNAPSHOT)
+
+
+class NoAssessment:
+    async def latest(self, owner_id: uuid.UUID) -> None:
+        return None
+
+
+async def test_a_write_fills_every_section_and_keeps_each_ones_place_and_state() -> None:
+    cited = {"text": "Built the ledger simulator", "evidence_ids": ["E1"]}
+    gateway = WriteGateway(
+        [
+            {"kind": "summary", "text": "Builds payment systems."},
+            {
+                "kind": "experience",
+                "entries": [
+                    {"title": "Payments platform, backend", "org": "kestrel", "bullets": [cited]}
+                ],
+            },
+            {"kind": "skills", "items": ["Go"]},
+            {"kind": "side_projects", "entries": [{"title": "ledger-sim", "bullets": [cited]}]},
+        ]
+    )
+    uow = FakeResumeUnitOfWork()
+    service = ResumeService(
+        uow,
+        target=SnapshotTarget(),  # type: ignore[arg-type]
+        profile=FakeProfile(),  # type: ignore[arg-type]
+        assessment=NoAssessment(),  # type: ignore[arg-type]
+        gateway=gateway,  # type: ignore[arg-type]
+        object_store=FakeObjectStore(),  # type: ignore[arg-type]
+    )
+    resume_id = await _ready(uow, service)
+    # Skills moved first and hidden; the rest as an older résumé had them.
+    summary, experience, skills = make_content(Bullet("x", ("e1",))).sections
+    await service.save_version(
+        OWNER,
+        resume_id,
+        content=replace(
+            make_content(Bullet("x", ("e1",))),
+            sections=(replace(skills, is_shown=False), summary, experience),
+        ).to_dict(),
+    )
+    await service.redraft(OWNER, resume_id)
+
+    await service.generate(OWNER, resume_id)
+
+    view = await service.get(OWNER, resume_id)
+    assert view.summary.status == "ready" and view.content is not None
+    asked = gateway.inputs[0]["sections"].splitlines()
+    assert asked[:3] == ["- skills", "- summary", "- experience"] and len(asked) == 8
+    assert gateway.inputs[0]["accounts"] == "- github: mayalin"
+    assert [(s.kind, s.is_shown) for s in view.content.sections[:4]] == [
+        (SectionKind.SKILLS, False),
+        (SectionKind.SUMMARY, True),
+        (SectionKind.EXPERIENCE, True),
+        (SectionKind.SIDE_PROJECTS, False),
+    ]
+    side = view.content.get_section(SectionSlot(SectionKind.SIDE_PROJECTS))
+    assert side is not None and side.entries[0].bullets[0].evidence_ids == ("e1",)
+    assert view.section_plan == view.content.get_plan()
+
+
+async def test_showing_a_section_is_an_edit_that_spends_nothing() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)  # no gateway: nothing here may call a model
+    resume_id = await _ready(uow, service)
+    current = (await service.get(OWNER, resume_id)).content
+    assert current is not None
+
+    shown = replace(
+        current,
+        sections=tuple(
+            replace(s, is_shown=True) if s.kind is SectionKind.EDUCATION else s
+            for s in current.sections
+        ),
+    )
+    await service.save_version(OWNER, resume_id, content=shown.to_dict())
+
+    plan = uow.store.resumes[resume_id].section_plan
+    assert next(s for s in plan if s == EDUCATION).is_shown
+    assert uow.store.resumes[resume_id].status is ResumeStatus.READY
 
 
 async def test_adding_a_section_fills_only_it_and_keeps_every_other_line() -> None:
@@ -449,14 +557,17 @@ async def test_adding_a_section_fills_only_it_and_keeps_every_other_line() -> No
     priced = await service.estimate_section(OWNER, resume_id, EDUCATION)
     asked = await service.request_section(OWNER, resume_id, EDUCATION)
     assert priced["cost_usd"] == "0.02" and asked.status == "filling"
-    assert uow.store.resumes[resume_id].section_plan[-1] == EDUCATION
+    # Shown in its place among the sections the résumé holds.
+    plan = uow.store.resumes[resume_id].section_plan
+    assert next(s for s in plan if s == EDUCATION).is_shown
 
     await service.fill_section(OWNER, resume_id, EDUCATION)
 
     after = await service.get(OWNER, resume_id)
     assert after.summary.status == "ready" and after.content is not None and before is not None
-    assert after.content.sections[:3] == before.sections
-    education = after.content.sections[3]
+    assert after.content.sections[:3] == before.sections[:3]
+    education = after.content.get_section(EDUCATION)
+    assert education is not None and education.is_shown
     assert education.entries[0].bullets[0].evidence_ids == ("e1",)
     assert gateway.inputs[0]["section"] == "education"
 
@@ -470,7 +581,9 @@ async def test_a_section_nothing_supports_is_saved_empty() -> None:
     await service.fill_section(OWNER, resume_id, EDUCATION)
 
     view = await service.get(OWNER, resume_id)
-    assert view.content is not None and view.content.sections[-1].is_empty
+    assert view.content is not None
+    education = view.content.get_section(EDUCATION)
+    assert education is not None and education.is_empty
     assert view.versions[0].number == 2
 
 
@@ -492,7 +605,7 @@ async def test_a_section_already_there_or_while_busy_is_refused() -> None:
     service = _service(uow, gateway=SectionGateway({"kind": "education"}))
     resume_id = await _ready(uow, service)
 
-    with pytest.raises(ValidationError, match="already has"):
+    with pytest.raises(ValidationError, match="already has lines"):
         await service.request_section(OWNER, resume_id, SectionSlot(SectionKind.SKILLS))
     with pytest.raises(ValidationError, match="heading"):
         await service.request_section(OWNER, resume_id, SectionSlot(SectionKind.CUSTOM))
@@ -532,7 +645,7 @@ async def test_a_redraft_cancelled_goes_back_to_its_last_version() -> None:
 
     stored = uow.store.resumes[resume_id]
     assert stored.status is ResumeStatus.READY
-    assert stored.section_plan == make_content(Bullet("x", ("e1",))).get_plan()
+    assert stored.section_plan[:3] == make_content(Bullet("x", ("e1",))).get_plan()
     with pytest.raises(ConflictError):
         await service.cancel(OWNER, resume_id)
 

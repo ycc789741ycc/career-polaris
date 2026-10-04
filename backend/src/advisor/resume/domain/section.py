@@ -1,9 +1,10 @@
-"""A résumé's sections: which there are, in what order, and what each holds
-(ADR 0039).
+"""A résumé's sections: which there are, in what order, which are shown, and
+what each holds (ADR 0039, ADR 0043).
 
-A résumé is a header and an ordered list of sections the user chooses.
-Experience is always among them; every other kind appears at most once, and a
-few custom sections carry the user's own heading. Each kind has one shape:
+A résumé is a header and an ordered list of sections. It holds one of every
+built-in kind, written together, and a few custom sections carrying the user's
+own heading; each is shown or hidden, and only the shown ones print. Experience
+is always shown. Each kind has one shape:
 
 * text — the summary;
 * entries — experience, side projects, open source, education, talks and
@@ -19,13 +20,14 @@ wherever it sits, so a line the model wrote cites its evidence in any section.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
 from advisor.resume.domain.constants import (
     MAX_BULLETS_PER_ROLE,
     MAX_CUSTOM_SECTIONS,
+    MAX_HELD_SECTIONS,
     MAX_ITEM,
     MAX_LINK,
     MAX_ROLES,
@@ -152,20 +154,29 @@ class Entry:
 
 @dataclass(frozen=True, slots=True)
 class SectionSlot:
-    """A section's place in a résumé's plan: its kind, and a custom one's
-    heading."""
+    """A section's place in a résumé's plan: its kind, a custom one's heading,
+    and whether it is shown. Two slots are the same section whatever their
+    state, so ``is_shown`` takes no part in equality."""
 
     kind: SectionKind
     title: str | None = None
+    is_shown: bool = field(default=True, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"kind": str(self.kind), "title": self.title}
+        return {"kind": str(self.kind), "title": self.title, "is_shown": self.is_shown}
+
+    def update_shown(self, is_shown: bool) -> SectionSlot:
+        return replace(self, is_shown=is_shown)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> SectionSlot:
         kind = SectionKind(data["kind"])
         title = data.get("title")
-        return cls(kind, str(title) if kind is SectionKind.CUSTOM and title else None)
+        return cls(
+            kind,
+            str(title) if kind is SectionKind.CUSTOM and title else None,
+            is_shown=bool(data.get("is_shown", True)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +190,8 @@ class Section:
     entries: tuple[Entry, ...] = ()
     items: tuple[str, ...] = ()
     bullets: tuple[Bullet, ...] = ()
+    # Hidden sections are kept, written like the rest, and never printed.
+    is_shown: bool = True
 
     @property
     def shape(self) -> SectionShape:
@@ -192,7 +205,11 @@ class Section:
 
     @property
     def slot(self) -> SectionSlot:
-        return SectionSlot(self.kind, self.title if self.kind is SectionKind.CUSTOM else None)
+        return SectionSlot(
+            self.kind,
+            self.title if self.kind is SectionKind.CUSTOM else None,
+            is_shown=self.is_shown,
+        )
 
     @property
     def is_empty(self) -> bool:
@@ -221,6 +238,7 @@ class Section:
             "entries": [e.to_dict() for e in self.entries],
             "items": list(self.items),
             "bullets": [b.to_dict() for b in self.bullets],
+            "is_shown": self.is_shown,
         }
 
     @classmethod
@@ -234,30 +252,58 @@ class Section:
             entries=tuple(Entry.from_dict(e) for e in data.get("entries", []) or []),
             items=tuple(str(i) for i in data.get("items", []) or []),
             bullets=tuple(Bullet.from_dict(b) for b in data.get("bullets", []) or []),
+            is_shown=bool(data.get("is_shown", True)),
         )
 
     @classmethod
     def create_empty(cls, slot: SectionSlot) -> Section:
-        return cls(kind=slot.kind, title=slot.title)
+        return cls(kind=slot.kind, title=slot.title, is_shown=slot.is_shown)
 
 
-# A new résumé's sections, as before sections could be chosen.
+# Every built-in kind, in the order a résumé holds the ones it does not show.
+BUILT_IN_KINDS: tuple[SectionKind, ...] = tuple(
+    k for k in SectionKind if k is not SectionKind.CUSTOM
+)
+
+# What a new résumé shows, in order, as before sections could be chosen.
+DEFAULT_SHOWN: tuple[SectionKind, ...] = (
+    SectionKind.SUMMARY,
+    SectionKind.EXPERIENCE,
+    SectionKind.SKILLS,
+)
+
+# A new résumé's sections: the defaults shown, every other kind written and
+# hidden after them (ADR 0043).
 DEFAULT_PLAN: tuple[SectionSlot, ...] = (
-    SectionSlot(SectionKind.SUMMARY),
-    SectionSlot(SectionKind.EXPERIENCE),
-    SectionSlot(SectionKind.SKILLS),
+    *(SectionSlot(k) for k in DEFAULT_SHOWN),
+    *(SectionSlot(k, is_shown=False) for k in BUILT_IN_KINDS if k not in DEFAULT_SHOWN),
 )
 
 
+def get_full_plan(plan: Iterable[SectionSlot]) -> tuple[SectionSlot, ...]:
+    """``plan`` with every built-in kind it lacks appended, hidden, so a
+    résumé holds them all. Pure."""
+    slots = tuple(plan)
+    present = {s.kind for s in slots}
+    return (
+        *slots,
+        *(SectionSlot(k, is_shown=False) for k in BUILT_IN_KINDS if k not in present),
+    )
+
+
 def assert_plan_valid(plan: Iterable[SectionSlot]) -> None:
-    """Experience once, every other kind at most once, a few custom sections
-    each with a heading, and not too many in all."""
+    """Experience once and shown, every other kind at most once, a few custom
+    sections each with a heading, and not too many shown."""
     slots = list(plan)
-    if len(slots) > MAX_SECTIONS:
-        raise ResumeError(f"a résumé has at most {MAX_SECTIONS} sections")
+    if len(slots) > MAX_HELD_SECTIONS:
+        raise ResumeError(f"a résumé holds at most {MAX_HELD_SECTIONS} sections")
+    if sum(1 for s in slots if s.is_shown) > MAX_SECTIONS:
+        raise ResumeError(f"a résumé shows at most {MAX_SECTIONS} sections")
     kinds = [s.kind for s in slots]
     if kinds.count(SectionKind.EXPERIENCE) != 1:
         raise ResumeError("a résumé always has its experience, once")
+    if not next(s for s in slots if s.kind is SectionKind.EXPERIENCE).is_shown:
+        raise ResumeError("a résumé always shows its experience")
     for kind in SectionKind:
         if kind is not SectionKind.CUSTOM and kinds.count(kind) > 1:
             raise ResumeError(f"a résumé has one {HEADINGS[kind].lower()} section")

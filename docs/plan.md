@@ -2798,6 +2798,17 @@ passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
 `README.md` and `docs/architecture.md` saying what is built.
 
 ## Every section, written at once from the sources
+**Done** (ADR 0043, migration 0039). As planned, with these details:
+
+* `SectionSlot.is_shown` takes no part in equality, so a slot finds its
+  section shown or hidden. `get_full_plan` appends the kinds a plan lacks; the
+  view, every saved plan and a cancel all hold every kind.
+* "Fill from your sources" is offered on any empty section, not only on one
+  that predates this branch: nothing records which is which, and the price is
+  shown first.
+* `expected_output_tokens` is 6,000 for both prompts, set from the reply's
+  shape; it was not measured on real profiles (no live model here).
+
 A user who connected GitHub and Jira but uploaded no résumé gets a résumé
 with an empty Experience section. Three things add up to that:
 * **Nothing ever writes the career timeline.** `profile.career_position`

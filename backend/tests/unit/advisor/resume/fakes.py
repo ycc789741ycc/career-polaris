@@ -209,7 +209,15 @@ class FakeProfile:
             tally=40,
             subject="ledger-sim",
         )
-        return SimpleNamespace(evidence=(fact,), version=self.current)
+        return SimpleNamespace(
+            evidence=(fact,),
+            version=self.current,
+            positions=(),
+            accounts=(SimpleNamespace(source="github", account="mayalin"),),
+        )
+
+    async def base_resume_text(self, owner_id: uuid.UUID) -> str | None:
+        return None
 
     async def version(self, owner_id: uuid.UUID) -> int:
         return self.current

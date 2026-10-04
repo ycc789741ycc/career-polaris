@@ -76,7 +76,8 @@ class ExportRequest(RequestModel):
 
 
 class SectionRequest(RequestModel):
-    """A section to add to the résumé, filled from the sources (ADR 0039)."""
+    """A section to fill from the sources: an empty one the résumé holds,
+    shown once filled, or a new one of the user's own (ADR 0039, ADR 0043)."""
 
     kind: SectionKind
     # A section of the user's own needs its heading; no other kind takes one.
@@ -131,18 +132,22 @@ class ResumeSection(ApiModel):
     entries: list[ResumeEntry]
     items: list[str]
     bullets: list[ResumeBullet]
+    # A hidden section is kept and written like the rest, and never printed
+    # (ADR 0043). Experience is always shown.
+    is_shown: bool
 
 
 class ResumeSectionSlot(ApiModel):
     kind: SectionKindName
     title: str | None
+    is_shown: bool
 
 
 class ResumeContent(ApiModel):
     name: str
     headline: str
     contact: str
-    # In order (ADR 0039).
+    # Every section, in order, shown or hidden (ADR 0039, ADR 0043).
     sections: list[ResumeSection]
 
     @classmethod
@@ -308,7 +313,7 @@ class TailoredResume(ResumeSummary):
             is_outdated=resume.is_outdated,
             outdated_by=[str(r) for r in resume.outdated_by],
             section_plan=[
-                ResumeSectionSlot(kind=str(slot.kind), title=slot.title)
+                ResumeSectionSlot(kind=str(slot.kind), title=slot.title, is_shown=slot.is_shown)
                 for slot in resume.section_plan
             ],
         )

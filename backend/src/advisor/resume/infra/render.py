@@ -44,6 +44,8 @@ def render_html(content: ResumeContent, *, spec: TemplateSpec, options: Options)
     body = f'"{spec.body_font}", "{FALLBACK_FONT}", sans-serif'
     title_pt, contact_pt, small_pt = spec.get_derived_pt()
     contact = escape(" · ".join(p for p in (content.headline, content.contact) if p))
+    # A hidden section is kept in the résumé and never printed (ADR 0043).
+    content = content.get_shown()
     main = [s for s in content.sections if not spec.is_in_sidebar(s.kind)]
     side = [s for s in content.sections if spec.is_in_sidebar(s.kind)]
     main_html = "".join(_section(s, trim=options.trim) for s in main)

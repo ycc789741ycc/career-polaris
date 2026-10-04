@@ -81,14 +81,20 @@ class Resume(Base, OwnedMixin):
     # first write, and on résumés written before they were recorded.
     profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # The sections every new version is written to, in order: [{kind, title}]
-    # (ADR 0039).
+    # The sections every new version is written to, in order, each shown or
+    # hidden: [{kind, title, is_shown}] (ADR 0039, ADR 0043).
     section_plan: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=sql_text(
-            """'[{"kind": "summary", "title": null}, {"kind": "experience", "title": null},"""
-            """ {"kind": "skills", "title": null}]'::jsonb"""
+            """'[{"kind": "summary", "title": null, "is_shown": true},"""
+            """ {"kind": "experience", "title": null, "is_shown": true},"""
+            """ {"kind": "skills", "title": null, "is_shown": true},"""
+            """ {"kind": "side_projects", "title": null, "is_shown": false},"""
+            """ {"kind": "open_source", "title": null, "is_shown": false},"""
+            """ {"kind": "education", "title": null, "is_shown": false},"""
+            """ {"kind": "talks_and_writing", "title": null, "is_shown": false},"""
+            """ {"kind": "certifications", "title": null, "is_shown": false}]'::jsonb"""
         ),
     )
     # Where the job running on it has got (ADR 0042).
