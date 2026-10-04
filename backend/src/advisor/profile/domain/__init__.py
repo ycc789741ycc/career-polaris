@@ -27,7 +27,14 @@ from advisor.profile.domain.repositories import (
     SourceConnectionRepository,
 )
 from advisor.profile.domain.resume_file import ResumeFile, ResumeStatus
-from advisor.profile.domain.timeline import CareerPosition, Position, total_experience_months
+from advisor.profile.domain.timeline import (
+    CareerPosition,
+    Position,
+    PositionReading,
+    TimelineError,
+    assert_position_readings_valid,
+    total_experience_months,
+)
 
 __all__ = [
     "CareerPosition",
@@ -43,6 +50,7 @@ __all__ = [
     "EvidenceSource",
     "OwnerProfile",
     "Position",
+    "PositionReading",
     "ProfileEvent",
     "ProfileUnitOfWork",
     "ProfileUpdated",
@@ -58,7 +66,9 @@ __all__ = [
     "SourceConnectionFilter",
     "SourceConnectionRepository",
     "SourceSynced",
+    "TimelineError",
     "assert_citations_exist",
+    "assert_position_readings_valid",
     "get_date_label",
     "get_shown_date",
     "total_experience_months",

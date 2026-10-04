@@ -3102,6 +3102,14 @@ Open questions:
   editor rather than saved silently.
 
 ## Record the career timeline
+**Done** (ADR 0045, migration 0040). As planned, with these details:
+
+* The new column is `skill_assessment_id`, named after the entity in full as
+  the design guideline requires.
+* A reply that reports no positions empties the timeline, as any other
+  reading replaces it.
+* Its integration test needs migration 0040 on the database it runs against.
+
 The timeline has every reader it needs and no writer (see "Every section,
 written at once from the sources"):
 * **The résumé writer** is given `timeline` and gets "(no positions

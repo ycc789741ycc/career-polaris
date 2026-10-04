@@ -14,7 +14,10 @@ from advisor.profile.domain import (
     EvidenceGranularity,
     EvidenceSource,
     Position,
+    PositionReading,
+    TimelineError,
     assert_citations_exist,
+    assert_position_readings_valid,
     total_experience_months,
 )
 
@@ -142,3 +145,38 @@ def test_a_raw_id_is_not_a_handle_even_when_the_evidence_is_real() -> None:
 def test_an_id_given_no_handle_is_shown_as_itself() -> None:
     gone = uuid.uuid4()
     assert CitationHandles([uuid.uuid4()]).handle(gone) == str(gone)
+
+
+# -- the timeline as the analysis read it (ADR 0045) ---------------------------
+
+TODAY = date(2026, 10, 12)
+
+
+def _reading(
+    *cites: str, started: date = date(2022, 3, 1), ended: date | None = None, title: str = "Eng"
+) -> PositionReading:
+    return PositionReading(title, "Kestrel", started, ended, cites)
+
+
+def test_a_position_cites_what_states_it_and_lies_in_the_past() -> None:
+    assert_position_readings_valid(
+        [_reading("r1"), _reading("a1", ended=date(2024, 1, 1))],
+        citable={"r1", "a1"},
+        as_of=TODAY,
+    )
+
+
+@pytest.mark.parametrize(
+    ("reading", "match"),
+    [
+        (_reading("g1"), "does not state a position"),
+        (_reading(), "cites nothing"),
+        (_reading("r1", started=date(2027, 1, 1)), "future"),
+        (_reading("r1", ended=date(2027, 1, 1)), "future"),
+        (_reading("r1", ended=date(2021, 1, 1)), "ends before"),
+        (_reading("r1", title=" "), "title and a company"),
+    ],
+)
+def test_a_position_read_wrongly_is_refused(reading: PositionReading, match: str) -> None:
+    with pytest.raises(TimelineError, match=match):
+        assert_position_readings_valid([reading], citable={"r1", "a1"}, as_of=TODAY)

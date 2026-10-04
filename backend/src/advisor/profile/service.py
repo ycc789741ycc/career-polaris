@@ -13,6 +13,7 @@ from datetime import date, datetime
 from fnmatch import fnmatchcase
 
 from advisor.profile.domain import (
+    CareerPosition,
     CareerPositionFilter,
     CitationError,
     CitationHandles,
@@ -21,6 +22,7 @@ from advisor.profile.domain import (
     EvidenceGranularity,
     EvidenceSource,
     OwnerProfile,
+    PositionReading,
     ProfileUnitOfWork,
     ProfileUpdated,
     ProfileVersion,
@@ -31,7 +33,9 @@ from advisor.profile.domain import (
     SourceConnection,
     SourceConnectionFilter,
     SourceSynced,
+    TimelineError,
     assert_citations_exist,
+    assert_position_readings_valid,
     get_date_label,
     get_shown_date,
     total_experience_months,
@@ -59,11 +63,14 @@ __all__ = [
     "EvidenceSource",
     "EvidenceView",
     "PendingSourceView",
+    "PositionReading",
     "ProfileService",
     "ProfileSnapshot",
     "ResumeFileView",
     "SourceProcessingView",
+    "TimelineError",
     "assert_citations_exist",
+    "assert_position_readings_valid",
     "get_evidence_line",
 ]
 
@@ -602,6 +609,34 @@ class ProfileService:
                 if c.external_account
             ),
         )
+
+    async def replace_positions(
+        self,
+        owner_id: uuid.UUID,
+        skill_assessment_id: uuid.UUID,
+        readings: Sequence[PositionReading],
+    ) -> None:
+        """Replace the whole career timeline with what one analysis read
+        (ADR 0045). The caller checked the readings with
+        ``assert_position_readings_valid``. A reading of the evidence, not new
+        evidence: no profile version moves."""
+        async with self._uow.for_owner(owner_id) as mine:
+            for old in await mine.positions.get_list(CareerPositionFilter()):
+                await mine.positions.delete(old.id)
+            for reading in readings:
+                await mine.positions.create(
+                    CareerPosition(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        title=reading.title,
+                        company=reading.company,
+                        started_on=reading.started_on,
+                        ended_on=reading.ended_on,
+                        evidence_ids=reading.evidence_ids,
+                        skill_assessment_id=skill_assessment_id,
+                    )
+                )
+        log.info("profile.positions_replaced", count=len(readings))
 
     async def version(self, owner_id: uuid.UUID) -> int:
         """The profile's current version: bumped by every change to its evidence."""

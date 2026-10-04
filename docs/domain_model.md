@@ -196,7 +196,7 @@ v3 draws the answers going **straight from Questions to the Profile** ("Feedback
 ### 2.7 Evidence, snapshots and confidence
 - **Evidence** is `{ source, reference, fact, observedAt }`.
   - `source` is `github | jira | resume | user_answer`. The prototype shows the last as "Your answers" / "Your answer" (it was `self_reported` in the code).
-  - **CareerProfile** is the career timeline plus the Evidence set: facts only. Evidence carries no confidence of its own.
+  - **CareerProfile** is the career timeline plus the Evidence set: facts only. Evidence carries no confidence of its own. The timeline is the latest analysis's reading of the résumé lines and answers that state each position, cited to them, and replaced by every successful analysis; it moves no profile version ([ADR 0045](decisions/0045-read-the-career-timeline-in-the-analysis.md)).
   - **A fact is read with its date** ([ADR 0037](decisions/0037-read-each-fact-with-its-date.md)). The date says when the work happened (one item), the newest item of a tally (a summary), or when the fact was stated (a résumé line, by its file's upload; an answer, by the day it was given). Every analysis and Advisor prompt sees it, newest first, and is told that a newer fact wins over an older one it contradicts.
 - **The Assessment and RoleFit are immutable snapshots.** Each references the profile version and market snapshot it came from, and records the model used.
 - **Confidence per dimension** says how sure a score is, as a separate value from the score itself. 02 Strengths lists dimensions "least certain first". It marks thin evidence and points to Sources: *"Connect more sources, like Jira, to add more."*
