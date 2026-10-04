@@ -632,10 +632,9 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   (`EvidenceDisclosure`: "Show evidence (n)", "Evidence ▾"). Each gap of a
   plan has a bar of its fit points out of `lift_scale` (10, or the plan's
   largest lift), and the plan's header names the `answer_count` its draft
-  read. The Résumé has three columns — Saved résumés, Template + Export,
-  Sections and Revise with AI on the left; the page with "Save as vN" in the
-  middle; the requirements on the right — stacking page first when narrow,
-  and "Regenerate résumé" with its last-generated line on the Write-for card.
+  read. The Résumé had three columns until Phase 11, which made it two (see
+  there); "Regenerate résumé" with its last-generated line is on the
+  Write-for card.
 
 ## Phase 10 scope
 
@@ -704,4 +703,12 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   (steps locked, three ways in). "Previous targets" on the banner
   (`PreviousTargets`) joins that history with `/gap-plans` and
   `/tailored-resumes`; switching only navigates. No backend change.
+- **The Résumé in two columns** (no ADR). The tools on the left as three
+  collapsible cards — Layout (template, fonts, options, Sections; open),
+  Revise with AI (open) and Coverage (the requirements; closed) — and the page
+  on the right, with "Save as vN" and Export as PDF beneath it; stacked page
+  first below 1240px. Saved résumés became the Version list on the Write-for
+  card, one entry per saved résumé; another target's goes through
+  `onRevisit`. Older versions of one résumé are not listed: a version carries
+  no content to read back.
 

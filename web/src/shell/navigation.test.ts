@@ -89,10 +89,16 @@ describe("the Advisor's tabs", () => {
 });
 
 describe("where the Advisor opens", () => {
-  const onMap = { screen: "roles" as const, tab: "gaps" as const, focus: { role: "r2" } };
+  const onMap = {
+    screen: "roles" as const,
+    tab: "gaps" as const,
+    focus: { role: "r2" },
+  };
 
   it("opens on the target last set, never the role map's selection", () => {
-    expect(getArrivalFocus(onMap, "advisor", undefined, { role: "r1" })).toEqual({
+    expect(
+      getArrivalFocus(onMap, "advisor", undefined, { role: "r1" }),
+    ).toEqual({
       role: "r1",
     });
   });
@@ -108,8 +114,14 @@ describe("where the Advisor opens", () => {
   });
 
   it("keeps its target from tab to tab", () => {
-    const inAdvisor = { screen: "advisor" as const, tab: "gaps" as const, focus: { role: "r1" } };
-    expect(getArrivalFocus(inAdvisor, "advisor", undefined, { role: "r9" })).toEqual({
+    const inAdvisor = {
+      screen: "advisor" as const,
+      tab: "gaps" as const,
+      focus: { role: "r1" },
+    };
+    expect(
+      getArrivalFocus(inAdvisor, "advisor", undefined, { role: "r9" }),
+    ).toEqual({
       role: "r1",
     });
   });
@@ -120,4 +132,3 @@ describe("where the Advisor opens", () => {
     });
   });
 });
-

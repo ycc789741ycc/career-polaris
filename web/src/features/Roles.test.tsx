@@ -86,40 +86,42 @@ function serve(overrides: Record<string, unknown> = {}) {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,
     },
-    "/matched-postings?role_id=r1&one_per_company=false&order=newest&page=1&page_size=10": page([
-      {
-        posting_id: "p1",
-        role_id: "r1",
-        role_name: "Backend Engineer",
-        title: "Staff Engineer, Ledger",
-        company_name: "Northwind Pay",
-        location: "Berlin",
-        url: null,
-        salary: { min: 165_000, max: 190_000, currency: "EUR" },
-        fit: 62,
-        fit_basis: "posting",
-        source_kind: "atsBoard",
-        credited_to: null,
-        posted_on: "2026-10-02",
-      },
-    ]),
-    "/matched-postings?role_id=r2&one_per_company=false&order=newest&page=1&page_size=10": page([
-      {
-        posting_id: "p2",
-        role_id: "r2",
-        role_name: "Platform Engineer",
-        title: "Platform Engineer, Clusters",
-        company_name: "Kestrel Labs",
-        location: "Remote, Worldwide",
-        url: "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
-        salary: null,
-        fit: 84,
-        fit_basis: "posting",
-        source_kind: "publicApi",
-        credited_to: "Himalayas",
-        posted_on: null,
-      },
-    ]),
+    "/matched-postings?role_id=r1&one_per_company=false&order=newest&page=1&page_size=10":
+      page([
+        {
+          posting_id: "p1",
+          role_id: "r1",
+          role_name: "Backend Engineer",
+          title: "Staff Engineer, Ledger",
+          company_name: "Northwind Pay",
+          location: "Berlin",
+          url: null,
+          salary: { min: 165_000, max: 190_000, currency: "EUR" },
+          fit: 62,
+          fit_basis: "posting",
+          source_kind: "atsBoard",
+          credited_to: null,
+          posted_on: "2026-10-02",
+        },
+      ]),
+    "/matched-postings?role_id=r2&one_per_company=false&order=newest&page=1&page_size=10":
+      page([
+        {
+          posting_id: "p2",
+          role_id: "r2",
+          role_name: "Platform Engineer",
+          title: "Platform Engineer, Clusters",
+          company_name: "Kestrel Labs",
+          location: "Remote, Worldwide",
+          url: "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
+          salary: null,
+          fit: 84,
+          fit_basis: "posting",
+          source_kind: "publicApi",
+          credited_to: "Himalayas",
+          posted_on: null,
+        },
+      ]),
     "/role-map": {
       market_data_at: "2026-09-30T12:00:00+00:00",
       built_for_locations: ["Berlin"],
@@ -312,7 +314,8 @@ describe("the role map's one Advisor target", () => {
       credited_to: null,
       posted_on: "2026-10-01",
     });
-    const base = "/matched-postings?role_id=r1&one_per_company=false&order=newest";
+    const base =
+      "/matched-postings?role_id=r1&one_per_company=false&order=newest";
     serve({
       [`${base}&page=1&page_size=10`]: {
         items: Array.from({ length: 10 }, (_, i) => opening(i + 1)),
@@ -334,7 +337,9 @@ describe("the role map's one Advisor target", () => {
     );
     const pages = screen.getByRole("navigation", { name: "Openings pages" });
     expect(pages).toHaveTextContent("Page 1 of 2");
-    expect(within(pages).getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(
+      within(pages).getByRole("button", { name: "Previous" }),
+    ).toBeDisabled();
     await user.click(within(pages).getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Company 12")).toBeInTheDocument();
     expect(screen.queryByText("Company 1")).not.toBeInTheDocument();

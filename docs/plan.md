@@ -3297,3 +3297,20 @@ ADR 0050.
 What gets harder: the current Target does not follow the user to another
 device, and a Target with only answers is remembered only where it was set.
 
+## The Résumé in two columns
+No ADR: a layout is easy to change back.
+* The tools sit beside the page as three collapsible cards: **Layout**
+  (template, fonts, options and Sections; open), **Revise with AI** (open,
+  saying how many proposals wait) and **Coverage** (the requirements and
+  their evidence; closed, counting covered, partial and gaps).
+* "Save as vN" and "Export as PDF" sit beneath the page. The export still
+  waits for unsaved edits to be saved.
+* The Saved résumés panel became the **Version** list on the Write-for card:
+  one entry per saved résumé, with its version and the day it was edited.
+  Choosing another target's switches to that target.
+* Below 1240px the page comes first and the tools follow.
+
+Not yet: listing the older versions of one résumé. A `ResumeVersion` carries
+no content and no route reads one back, so the list shows each résumé's
+latest only, where the prototype shows v3 and v2 of one.
+

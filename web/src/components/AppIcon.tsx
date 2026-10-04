@@ -42,7 +42,9 @@ export function AppIcon({
       height={size}
       viewBox="0 0 100 100"
       data-variant={variant}
-      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
+      {...(label
+        ? { role: "img", "aria-label": label }
+        : { "aria-hidden": true })}
       style={{ flex: "0 0 auto" }}
     >
       <rect width="100" height="100" rx="24" fill={colours.tile} />

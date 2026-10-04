@@ -5,7 +5,7 @@ import type {
   ResumeSectionSlot,
   SectionKind,
 } from "../api/types";
-import { Button, Eyebrow } from "../components/ui";
+import { Button } from "../components/ui";
 
 /**
  * A résumé's sections (ADR 0039, ADR 0043): every one it holds, in order,
@@ -156,10 +156,17 @@ export function SectionsPanel({
   };
 
   return (
-    <div className="panel panel-tight" role="region" aria-label="Sections">
-      <Eyebrow>Sections</Eyebrow>
+    <div role="region" aria-label="Sections" style={{ marginTop: 18 }}>
+      <div className="row-between" style={{ alignItems: "baseline" }}>
+        <span className="field-label" style={{ margin: 0 }}>
+          Sections
+        </span>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Drag to reorder
+        </span>
+      </div>
       <p className="subcopy" style={{ fontSize: 12.5, margin: "4px 0 4px" }}>
-        Every section is written; show the ones you want. Drag to reorder.
+        Every section is written; show the ones you want.
       </p>
       <ul className="section-list">
         {content.sections.map((section, index) => {
