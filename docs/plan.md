@@ -2777,8 +2777,11 @@ uploaded one, and what they answer in Fill the gap reaches it.
   those answers.
 * The Résumé's requirements panel shows which requirements rest on the
   user's own answers.
+* The career timeline is recorded: each analysis reads the positions the
+  user's résumé and answers state, so the résumé writer and the next
+  analysis know their roles, employers and years of experience.
 
-Two branches, in this order, each cut from `epic/<ticket>/phase-10`, which
+Three branches, in this order, each cut from `epic/<ticket>/phase-10`, which
 is cut from mainline:
 
 1. "Every section, written at once from the sources": the writer no longer
@@ -2787,6 +2790,8 @@ is cut from mainline:
 2. "A résumé cites what you answered": a requirement the user answered
    about can be written from that answer, including one with no other
    evidence.
+3. "Record the career timeline": the analysis reports the positions the
+   evidence states, and they are stored as the profile's timeline.
 
 The definition of done is Phase 5's: tests in the right tier, every gate
 passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
@@ -2926,11 +2931,9 @@ What gets harder:
 * Migration 0039 rewrites stored JSON again, as 0035 did.
 
 Open questions:
-* Whether to record the career timeline at all. Parsing positions from a
-  résumé locally is unreliable, and asking the model spends the user's key
-  on an upload; the analysis, already a confirmed spend that reads the
-  résumé's lines, could report them. Until then `timeline` stays empty, and
-  the analysis judges seniority without it.
+* The career timeline stays empty until "Record the career timeline". Until
+  then these rules are the only way Experience is written without a résumé,
+  and they stay the rule for a user whose evidence states no position.
 * Whether a section the evidence left empty should be shown as an empty
   row in the panel, or listed apart as "nothing to write".
 
@@ -3076,3 +3079,102 @@ Open questions:
   need its own ADR (Phase 9 left the same question for the fit).
 * Whether a manual edit that claims a gap should be warned about in the
   editor rather than saved silently.
+
+## Record the career timeline
+The timeline has every reader it needs and no writer (see "Every section,
+written at once from the sources"):
+* **The résumé writer** is given `timeline` and gets "(no positions
+  recorded)" every time, so it learns roles and employers only from the
+  uploaded résumé's raw text, and Experience is only as good as the model's
+  reading of it.
+* **The analysis** is given the timeline and "Total experience, overlaps
+  counted once" (`assessment/service.py`, `_timeline_block`) to judge
+  seniority, and gets nothing, even for a user who uploaded a résumé.
+* **`GET /profile`** returns `positions` and `total_experience_months`,
+  always empty. The SPA reads neither.
+
+Where positions should come from:
+* **Not from the résumé parser.** `resume_parser` is local and splits text
+  into lines on purpose. Reading titles, employers and date ranges out of
+  free-form résumés locally is unreliable.
+* **Not from a model call on upload.** Uploading spends nothing today, and
+  must not start spending the user's key without asking.
+* **From the analysis.** It is already a confirmed spend, already reads
+  every résumé line and answer, and is the first reader of the timeline.
+
+Its own branch, `feature/<ticket>/career-timeline`, after "A résumé cites
+what you answered".
+
+1. **`skill_assessment` v5 reports the positions.**
+   * The reply gains `positions`: `title`, `company`, `started_on` and
+     `ended_on` (`YYYY-MM`, `ended_on` null for a current one), and
+     `evidence_ids`.
+   * A position is reported only when the evidence states it: a résumé
+     line or an answer. It is never inferred from a GitHub organisation or
+     a Jira site, which say where work happened, not what the job was.
+   * The newer fact wins, as ADR 0037's rules on time already say: an answer
+     that corrects a résumé's title or dates replaces it.
+   * The prompt no longer gets the stored timeline. It works the positions
+     out from the evidence first and judges seniority from them, so a run
+     never just confirms the last run's reading.
+2. **The positions are checked, not trusted.**
+   * Every cited id must be the user's, and must be `resume` or
+     `user_answer` evidence; any other citation rejects the whole reply, as
+     an invented id does today.
+   * Dates must parse, start no later than they end, and end no later than
+     today. A position that breaks these rejects the reply too, so a bad
+     reading never half-lands.
+3. **The analysis stores them.**
+   * `CareerPosition` gains `evidence_ids` and `assessment_id`.
+   * `ProfileService.replace_positions(owner_id, assessment_id, positions)`
+     replaces the whole timeline, in the same success path that records the
+     analysis. A failed analysis leaves the last timeline as it was.
+   * `assessment` already reads `profile`; the import-linter contracts need
+     no change. `profile` keeps owning its table.
+   * Replacing the timeline does not bump the profile version: it is a
+     reading of the evidence, not new evidence. A résumé written before it
+     is still outdated by `evidence` when the evidence that changed it
+     arrived.
+   * Migration 0040 adds both columns. Existing rows: none.
+4. **The readers use it, unchanged.** `_timeline_block` and `_write_inputs`
+   already format positions; `total_experience_months` already merges
+   overlaps. With a timeline, `resume_write` v4's rule that roles come from
+   it applies, and Experience gets real titles and employers even when the
+   uploaded résumé's layout reads badly as text.
+5. **Nothing new on screen.** Sources lists facts and nothing the analysis
+   made of them, so the timeline does not appear there. `GET /profile`
+   keeps returning it.
+6. **The estimate** rises by the positions' output tokens. Set
+   `expected_output_tokens` from the fixture profiles.
+7. **An ADR** (0045): the career timeline is the analysis's reading of the
+   evidence, cited to résumé lines and answers, replaced by each successful
+   analysis. Update the index, `docs/domain_model.md` and `CLAUDE.md`.
+
+Tests:
+* Unit, the position rules:
+  * a position citing a résumé line or an answer passes;
+  * one citing GitHub or Jira evidence, or an id the user lacks, rejects
+    the reply;
+  * a start after its end, or an end in the future, rejects the reply.
+* Unit, the assessment service, with a fake gateway:
+  * a successful run replaces the timeline with the reply's positions;
+  * a failed run leaves it as it was;
+  * the prompt is not given the stored timeline.
+* Integration: an analysis of a user with an uploaded résumé stores their
+  positions under row-level security, `GET /profile` returns them with the
+  months merged, and another user's timeline is never read.
+
+What gets harder:
+* The timeline changes only when the user re-analyses. A résumé uploaded
+  after the last analysis is in the evidence the writer reads, but not in
+  the timeline, until then.
+* A position is a model's reading, cited but not checked against the text
+  it cites. A wrong title or date reaches the résumé's Experience, and the
+  user cannot correct the timeline except through an answer and a
+  re-analysis.
+* Every analysis spends a little more, for the positions.
+
+Open questions:
+* Whether the user should see and correct the timeline. Sources is the
+  wrong place by the journey's rule; Strengths, which shows what the
+  analysis made, may be the right one.
