@@ -66,10 +66,15 @@ set_value JIRA_OAUTH_CLIENT_SECRET "$(pw)"
 set_value JIRA_API_BASE_URL https://api.atlassian.com
 set_value JIRA_OAUTH_BASE_URL https://auth.atlassian.com
 set_value WEB_API_BASE_URL http://localhost:21470
+# The release job pushes to this repository owner's packages; a pull request
+# has no owner's registry to push to and leaves it blank.
+if [ -n "${GITHUB_REPOSITORY_OWNER:-}" ]; then
+  set_value RELEASE_REGISTRY "ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+fi
 
 # Optional settings that are off while blank: Google sign-in, and the tunnel,
 # proxy and backups CI never runs. Every other blank is a missing CI value.
-MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+)=$'
+MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+|RELEASE_REGISTRY)=$'
 blank=$(grep -E '^[A-Z_]+=$' .env | grep -vE "$MAY_BE_BLANK" || true)
 if [ -n "$blank" ]; then
   echo "These variables from .env.example have no CI value yet:"

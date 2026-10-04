@@ -3626,6 +3626,19 @@ the account.
   in the next window.
 
 ## Release one image to both places
+**Done** (ADR 0055). Where the build differs from the plan below:
+
+* The compute machine may be an arm64 Mac, and the droplet is amd64, so a
+  release is multi-platform. The release job builds the prod images for both
+  platforms with buildx (arm64 under QEMU) and pushes them; their manifest
+  digests go in `release.env`. Only the amd64 image is what the gates ran
+  against; the arm64 one is the same Dockerfile and commit.
+* `make pull-app RELEASE=release.env` takes the file CI writes, not a single
+  digest: there are three images.
+* CI's push trigger named `main` and `develop`, which this repository does
+  not have, so CI never ran on a push to `master`. It now does, and only
+  such a push is released.
+
 * **CI** runs `make build-app`, `lint`, `typecheck`, both test tiers and
   `scan`, then pushes the prod images and the Caddy image to GHCR by digest.
   Neither the droplet nor the operator's machine builds anything: a single

@@ -5,12 +5,19 @@
 #
 # MODE=prod throughout, stated rather than left to the default: prod is the only
 # mode CI or any deployed environment may use. The dev image is never built here.
+#
+# A push to master that passes every gate is released (ADR 0055): the prod
+# images for every platform the app runs on, pushed to GHCR, and release.env
+# naming each by digest, which the droplet and the compute machine pull.
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -60,3 +67,50 @@ jobs:
       - name: Stop
         if: always()
         run: make stop-app MODE=prod || true; make stop-infra || true
+
+  release:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create the environment file
+        run: ./.github/workflows/ci-env.sh
+
+      # Building arm64 on an amd64 runner: emulated, so slow, but the same
+      # Dockerfiles and the same make target as anywhere else.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the release
+        run: make push-app
+
+      - name: Say which release this is
+        run: |
+          {
+            echo "### Release ${GITHUB_SHA::12}"
+            echo
+            echo 'Pull it on the droplet, then on the compute machine:'
+            echo "    make pull-app RELEASE=release.env"
+            echo
+            echo '```'
+            cat release.env
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ github.sha }}
+          path: release.env

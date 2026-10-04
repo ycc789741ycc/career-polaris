@@ -60,6 +60,7 @@ new record that supersedes the old one.
 | [0052](0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md) | Work waits for the processing machine instead of being reported lost | Accepted |
 | [0053](0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md) | Caddy is the edge, with per-address limits and no API gateway | Accepted |
 | [0054](0054-limit-each-account-and-each-sign-up-address-in-postgres.md) | Each account, and each sign-up address, is limited in Postgres | Accepted |
+| [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -76,7 +76,7 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache backup-db restore-db
+        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -86,6 +86,7 @@ help:
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
+	@echo "  push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -296,6 +297,20 @@ clean-up-cache:
 	find . -mindepth 1 \( $(KEEP_OUT) \) -prune -o -type f -name '*.py[cod]' -print -exec rm -f {} +
 	rm -rf web/dist
 	find backend -mindepth 1 -depth -type d -empty -not -path '*/.venv/*' -print -exec rmdir {} \;
+
+# --- releases (ADR 0055) -----------------------------------------------------
+
+# CI only, after every gate has passed: builds the prod images for every
+# platform in RELEASE_PLATFORMS, pushes them to RELEASE_REGISTRY and writes
+# release.env, each image by digest. Needs a buildx builder that can build
+# those platforms.
+push-app: require-env
+	@infra/push-release.sh
+
+# On the droplet and the compute machine, in place of build-app: pulls the
+# release CI pushed, by digest, and tags it jsa-*:prod for start-app.
+pull-app:
+	@infra/pull-release.sh "$(RELEASE)"
 
 # --- backups ----------------------------------------------------------------
 
