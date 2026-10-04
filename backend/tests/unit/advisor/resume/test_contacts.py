@@ -70,3 +70,14 @@ def test_each_detail_prints_with_its_icon_inline_and_fetches_nothing() -> None:
     assert "github.com/mayalin" in html
     assert not re.search(r"(?:src|href)=", html)
     assert ResumeContent.from_dict(content.to_dict()) == content
+
+
+def test_the_headline_prints_on_its_own_line_above_the_details() -> None:
+    content = replace(
+        make_content(), headline="Staff Backend Engineer", contacts=get_contact_items(LINE)
+    )
+
+    html = render_html(content, spec=get_built_in_spec(Template.ORGANIC), options=Options())
+
+    headline = html.index('<div class="headline">Staff Backend Engineer</div>')
+    assert headline < html.index('<span class="contact-item">')

@@ -710,9 +710,11 @@ select.input { appearance: auto; }
   line-height: 1.1;
   color: var(--name-color);
 }
+/* The headline takes a line of its own, above the details, as the PDF has
+ * it. */
+.resume-headline { display: block; margin: 0 0 calc(var(--pt) * 2); }
 /* A contact detail: its icon, which is also the menu of kinds laid over
  * it, then its text (ADR 0048). */
-.resume-headline { margin-right: calc(var(--pt) * 10); }
 .resume-contact-item {
   display: inline-flex;
   align-items: center;
