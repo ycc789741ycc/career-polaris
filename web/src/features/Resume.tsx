@@ -1335,6 +1335,23 @@ function ResumePage({
         )}
         {section.entries.map((entry, e) => (
           <section key={`${entry.title}-${e}`} className="resume-job">
+            {/* Takes the whole entry off the page, from the margin left of its
+                title, so the title stays where the PDF prints it. Gone once the
+                version is saved. Never printed. */}
+            <button
+              type="button"
+              className="resume-remove-entry"
+              aria-label={`Remove ${entry.title} from ${heading}`}
+              title="Remove this entry"
+              onClick={() =>
+                editSection(at, {
+                  ...section,
+                  entries: section.entries.filter((_, i) => i !== e),
+                })
+              }
+            >
+              ×
+            </button>
             <div className="resume-job-head">
               <span className="resume-job-title">
                 <Editable
@@ -1354,31 +1371,13 @@ function ResumePage({
                   onChange={(org) => editEntry(at, section, e, { org })}
                 />
               </span>
-              <span className="resume-job-side">
-                <Editable
-                  className="resume-when"
-                  value={entry.when}
-                  label="When"
-                  placeholder="When"
-                  onChange={(when) => editEntry(at, section, e, { when })}
-                />
-                {/* Takes the whole entry off the page; it is gone once the
-                    version is saved. Never printed. */}
-                <button
-                  type="button"
-                  className="resume-remove-entry"
-                  aria-label={`Remove ${entry.title} from ${heading}`}
-                  title="Remove this entry"
-                  onClick={() =>
-                    editSection(at, {
-                      ...section,
-                      entries: section.entries.filter((_, i) => i !== e),
-                    })
-                  }
-                >
-                  ×
-                </button>
-              </span>
+              <Editable
+                className="resume-when"
+                value={entry.when}
+                label="When"
+                placeholder="When"
+                onChange={(when) => editEntry(at, section, e, { when })}
+              />
             </div>
             <Editable
               as="div"

@@ -599,11 +599,16 @@ describe("résumé screen", () => {
     renderResume();
 
     const page = await screen.findByRole("article", { name: "Résumé" });
-    await user.click(
-      within(page).getByRole("button", {
-        name: "Remove Backend Engineer from Experience",
-      }),
-    );
+    const remove = within(page).getByRole("button", {
+      name: "Remove Backend Engineer from Experience",
+    });
+    // On the left of the entry's title.
+    expect(
+      remove.compareDocumentPosition(
+        within(page).getAllByLabelText("Title")[0]!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await user.click(remove);
 
     // Gone from the page, and nothing saved until asked.
     expect(

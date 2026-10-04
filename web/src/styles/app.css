@@ -744,28 +744,41 @@ select.input { appearance: auto; }
   margin: calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
 }
 .resume-summary { margin: 0; }
-.resume-job { margin-bottom: calc(var(--pt) * 10); }
+.resume-job { position: relative; margin-bottom: calc(var(--pt) * 10); }
 .resume-job-head { display: flex; justify-content: space-between; gap: calc(var(--pt) * 12); }
-.resume-job-side { display: inline-flex; align-items: flex-start; gap: 6px; }
-/* An entry's remove control: quiet until the entry is pointed at or the
- * control has focus, so the page still reads as it will print. */
+/* An entry's remove control, in the page's margin left of its title, so the
+ * title sits where the PDF prints it. Quiet until the entry is pointed at or
+ * the control has focus, so the page still reads as it will print. */
 .resume-remove-entry {
   all: unset;
-  cursor: pointer;
-  width: 18px;
-  height: 18px;
-  line-height: 18px;
-  text-align: center;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  left: -34px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
+  border: 1px solid var(--color-neutral-300);
+  background: #ffffff;
   font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--color-neutral-700);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-neutral-800);
+  cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease;
 }
 .resume-job:hover .resume-remove-entry,
 .resume-remove-entry:focus-visible { opacity: 1; }
-.resume-remove-entry:hover { background: var(--color-accent-200); color: var(--color-accent-800); }
+.resume-remove-entry:hover {
+  background: var(--color-accent-200);
+  border-color: var(--color-accent);
+  color: var(--color-accent-800);
+}
 .resume-remove-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 @media (hover: none) { .resume-remove-entry { opacity: 1; } }
 .resume-job-title {
