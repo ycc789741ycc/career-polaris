@@ -184,7 +184,9 @@ class Section:
     """One section. Only the fields of its kind's shape are used."""
 
     kind: SectionKind
-    # A custom section's heading; None for every other kind.
+    # The heading the user gave it: a custom section's own, or one that
+    # renames a built-in kind ("Work history" for experience). None keeps the
+    # kind's heading.
     title: str | None = None
     text: str = ""
     entries: tuple[Entry, ...] = ()
@@ -199,9 +201,7 @@ class Section:
 
     @property
     def heading(self) -> str:
-        if self.kind is SectionKind.CUSTOM:
-            return self.title or ""
-        return HEADINGS[self.kind]
+        return (self.title or "").strip() or HEADINGS[self.kind]
 
     @property
     def slot(self) -> SectionSlot:
@@ -247,7 +247,7 @@ class Section:
         title = data.get("title")
         return cls(
             kind=kind,
-            title=str(title) if kind is SectionKind.CUSTOM and title is not None else None,
+            title=str(title) if title else None,
             text=str(data.get("text", "") or ""),
             entries=tuple(Entry.from_dict(e) for e in data.get("entries", []) or []),
             items=tuple(str(i) for i in data.get("items", []) or []),
@@ -321,6 +321,8 @@ def assert_plan_valid(plan: Iterable[SectionSlot]) -> None:
 
 def assert_section_well_formed(section: Section) -> None:
     where = section.heading or "a section"
+    if len(section.title or "") > MAX_SECTION_TITLE:
+        raise ResumeError(f"a heading has at most {MAX_SECTION_TITLE} characters")
     if section.shape is SectionShape.TEXT and len(section.text) > MAX_SUMMARY:
         raise ResumeError(f"{where} is too long")
     if section.shape is SectionShape.ENTRIES:

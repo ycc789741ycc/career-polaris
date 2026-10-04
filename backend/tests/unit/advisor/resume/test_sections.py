@@ -23,6 +23,7 @@ from advisor.resume.domain import (
     assert_written_lines_cited,
     get_built_in_spec,
     get_full_plan,
+    get_headings_kept,
     get_planned,
     get_proposal_layout,
 )
@@ -260,3 +261,48 @@ def test_trim_cuts_every_shape_by_the_shared_limits() -> None:
     html = render_html(content, spec=get_built_in_spec(Template.PLAIN), options=Options(trim=True))
 
     assert "Line 2" in html and "Line 3" not in html
+
+
+# -- headings the user gives a section ----------------------------------------
+
+
+def test_a_built_in_section_can_be_renamed_and_stays_the_same_section() -> None:
+    renamed = Section(SectionKind.EXPERIENCE, title="Work history")
+
+    assert renamed.heading == "Work history"
+    assert renamed.slot == EXPERIENCE
+    assert Section.from_dict(renamed.to_dict()) == renamed
+    assert Section(SectionKind.EXPERIENCE, title="  ").heading == "Experience"
+    with pytest.raises(ResumeError, match="at most 60"):
+        assert_well_formed(_with(Section(SectionKind.EDUCATION, title="x" * 61)))
+
+
+def test_a_rewrite_keeps_the_headings_the_user_gave() -> None:
+    before = _with(Section(SectionKind.EDUCATION, title="Schooling"))
+    rewritten = _with(Section(SectionKind.EDUCATION))
+
+    kept = get_headings_kept(rewritten, before)
+
+    education = kept.get_section(SectionSlot(SectionKind.EDUCATION))
+    assert education is not None and education.heading == "Schooling"
+    # A heading the rewrite set itself stands; nothing to keep from nothing.
+    own = _with(Section(SectionKind.EDUCATION, title="Degrees"))
+    assert get_headings_kept(own, before) == own
+    assert get_headings_kept(rewritten, None) == rewritten
+
+
+def test_a_renamed_heading_prints_and_a_chat_proposal_keeps_it() -> None:
+    current = _with(Section(SectionKind.EDUCATION, title="Schooling"))
+    proposed = _with(Section(SectionKind.EDUCATION))
+
+    laid_out = get_proposal_layout(current, proposed, [None] * len(proposed.sections))
+
+    html = render_html(laid_out, spec=get_built_in_spec(Template.PLAIN), options=Options())
+    assert "<h2>Schooling</h2>" not in html  # empty sections print nothing
+    education = laid_out.get_section(SectionSlot(SectionKind.EDUCATION))
+    assert education is not None and education.heading == "Schooling"
+    filled = _with(
+        Section(SectionKind.EDUCATION, title="Schooling", entries=(Entry("BSc", "TU Berlin"),))
+    )
+    printed = render_html(filled, spec=get_built_in_spec(Template.PLAIN), options=Options())
+    assert "<h2>Schooling</h2>" in printed and "<h2>Education</h2>" not in printed

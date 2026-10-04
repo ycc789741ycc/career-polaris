@@ -31,10 +31,10 @@ export const SECTION_HEADINGS: Record<SectionKind, string> = {
 
 const MAX_CUSTOM = 3;
 
+/** The heading a section prints under: the one the user gave it, or its
+ * kind's. Pure. */
 export function sectionHeading(section: ResumeSectionSlot): string {
-  return section.kind === "custom"
-    ? (section.title ?? "")
-    : SECTION_HEADINGS[section.kind];
+  return section.title?.trim() || SECTION_HEADINGS[section.kind];
 }
 
 export function emptySection(slot: ResumeSectionSlot): ResumeSection {

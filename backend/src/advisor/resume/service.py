@@ -94,6 +94,7 @@ from advisor.resume.domain import (
     get_claims_settled,
     get_download_name,
     get_full_plan,
+    get_headings_kept,
     get_planned,
     get_proposal_layout,
     get_template_spec_from_runs,
@@ -1187,6 +1188,8 @@ class ResumeService:
             # Every section, shown or not; one written before a résumé held
             # them all takes the kinds it lacks, hidden (ADR 0043).
             plan = get_full_plan((await _owned(mine, resume_id)).section_plan)
+            latest = await _latest_version(mine, resume_id)
+        previous = ResumeContent.from_dict(latest.content) if latest else None
         result = await self._gateway.run(
             owner_id,
             on_progress=self._writing(owner_id, resume_id),
@@ -1210,7 +1213,9 @@ class ResumeService:
         try:
             # Written to the plan: its sections, in its order, each shown or
             # hidden as it was, and no others.
-            content = get_planned(_content_of(result.value), plan).with_citations(handles.resolve)
+            content = get_headings_kept(
+                get_planned(_content_of(result.value), plan), previous
+            ).with_citations(handles.resolve)
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
         content = _claims_settled(content, coverage_rows, resume_id=resume_id)
@@ -1314,8 +1319,10 @@ class ResumeService:
         if written.kind is not slot.kind:
             raise OutputInvalidError("the reply wrote a different section than was asked for")
         try:
-            # The slot's own heading, whatever the reply called it.
-            written = replace(written, title=slot.title, is_shown=True).update_bullets(
+            # The slot's own heading, or the one the user renamed it to.
+            kept = current.get_section(slot)
+            heading = slot.title or (kept.title if kept else None)
+            written = replace(written, title=heading, is_shown=True).update_bullets(
                 lambda b: replace(b, evidence_ids=handles.resolve(b.evidence_ids))
             )
         except CitationError as exc:

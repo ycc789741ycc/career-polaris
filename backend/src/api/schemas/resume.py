@@ -126,7 +126,8 @@ class ResumeSection(ApiModel):
     ``items`` for skills and certifications, ``bullets`` for a custom one."""
 
     kind: SectionKindName
-    # A custom section's heading; null for every other kind.
+    # The heading the user gave it: a custom section's own, or one renaming a
+    # built-in kind. Null keeps the kind's heading.
     title: str | None
     text: str
     entries: list[ResumeEntry]
