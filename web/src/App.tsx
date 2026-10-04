@@ -5,7 +5,8 @@ import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
 import { AiSettings } from "./features/AiSettings";
-import { Advisor } from "./features/Advisor";
+import { Advisor, focusOf } from "./features/Advisor";
+import { getStoredTargets } from "./features/advisorTarget";
 import { Connect } from "./features/Connect";
 import {
   completeCallback,
@@ -14,6 +15,7 @@ import {
 import { Roles } from "./features/Roles";
 import { Strengths } from "./features/Strengths";
 import {
+  getArrivalFocus,
   hashFor,
   metaOf,
   placeFromHash,
@@ -86,12 +88,24 @@ function Shell() {
   const [callback, setCallback] = useState<CallbackOutcome | null>(null);
   const handled = useRef(false);
 
+  // navigate() reads the account's stored Target without re-creating itself.
+  const account = useRef(email);
+  useEffect(() => {
+    account.current = email;
+  }, [email]);
+
   const navigate = useCallback((next: Screen, to: NavigateTo = {}) => {
     const from = current.current;
+    const stored = getStoredTargets(account.current).current;
     const place: Place = {
       screen: next,
       tab: to.tab ?? from.tab,
-      focus: to.focus === undefined ? from.focus : to.focus,
+      focus: getArrivalFocus(
+        from,
+        next,
+        to.focus,
+        stored ? focusOf(stored) : null,
+      ),
     };
     current.current = place;
     setPlace(place);
@@ -146,6 +160,7 @@ function Shell() {
   const shell = useMemo(
     () => ({
       status,
+      account: email,
       navigate,
       focus,
       setFocus,
@@ -154,7 +169,7 @@ function Shell() {
       setTarget,
       setHeading,
     }),
-    [status, navigate, focus, setFocus, refresh, target],
+    [status, email, navigate, focus, setFocus, refresh, target],
   );
   const me = status.me;
 

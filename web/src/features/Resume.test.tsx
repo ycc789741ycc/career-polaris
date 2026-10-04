@@ -326,6 +326,7 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
     setHeading: vi.fn(),
   };
   render(

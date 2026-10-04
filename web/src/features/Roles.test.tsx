@@ -17,6 +17,7 @@ import {
   signed,
 } from "./Roles";
 import { page } from "../test/page";
+import { getStoredTargets } from "./advisorTarget";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   return {
@@ -166,6 +167,7 @@ function renderRoles(focus: Focus | null, activity: Activity | null = null) {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
   };
   render(
     <ShellContext.Provider value={shell}>
@@ -223,6 +225,10 @@ describe("the role map's one Advisor target", () => {
     expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
       role_id: "r2",
       job_posting_id: null,
+    });
+    // It is the Advisor's target from now on, for the sidebar's next visit.
+    expect(getStoredTargets("maya@example.com").current).toMatchObject({
+      role_id: "r2",
     });
   });
 
