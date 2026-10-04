@@ -12,11 +12,19 @@ subset), converted to TTF so the preview and the PDF set the same type:
 | `caprasimo-latin-400-normal.ttf` | Caprasimo | 400 |
 | `figtree-latin-400-normal.ttf` | Figtree | 400 |
 | `figtree-latin-800-normal.ttf` | Figtree | 800, ExtraBold |
+| `inter-latin-{400,700}-normal.ttf` | Inter | 400, 700 |
+| `lato-latin-{400,700}-normal.ttf` | Lato | 400, 700 |
+| `source-serif-4-latin-{400,700}-normal.ttf` | Source Serif 4 | 400, 700 |
+| `merriweather-latin-{400,700}-normal.ttf` | Merriweather | 400, 700 |
+| `eb-garamond-latin-{400,700}-normal.ttf` | EB Garamond | 400, 700 |
+| `ibm-plex-mono-latin-{400,700}-normal.ttf` | IBM Plex Mono | 400, 700 |
 
 The conversion also rewrites each file's name table and weight class: the
 web subsets name Figtree "Figtree Light", which fontconfig would not match to
-"Figtree". Both families are SIL Open Font License 1.1; the licences sit
-beside the files.
+"Figtree". The six families from Inter on are Fontsource's Latin TTFs as
+published, except Merriweather, whose name table says "Merriweather Light
+18pt" and is rewritten to "Merriweather". Every family here is SIL Open Font
+License 1.1; the licences sit beside the files.
 
 A template may also name DejaVu Serif or DejaVu Sans Mono (ADR 0040). Those
 come from the image's `fonts-dejavu-core` package, not from here; the SPA

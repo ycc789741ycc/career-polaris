@@ -59,6 +59,12 @@ const FONT_PHRASES: Record<ResumeTemplateSpec["heading_font"], string> = {
   Figtree: "a sans-serif",
   "DejaVu Serif": "a serif",
   "DejaVu Sans Mono": "a monospaced",
+  Inter: "a sans-serif",
+  Lato: "a sans-serif",
+  "Source Serif 4": "a serif",
+  Merriweather: "a serif",
+  "EB Garamond": "a serif",
+  "IBM Plex Mono": "a monospaced",
 };
 
 /** What a reading found, in a sentence: "We read: a left sidebar, a serif

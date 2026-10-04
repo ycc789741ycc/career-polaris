@@ -711,4 +711,9 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   card, one entry per saved résumé; another target's goes through
   `onRevisit`. Older versions of one résumé are not listed: a version carries
   no content to read back.
+- **More fonts.** `TEMPLATE_FONTS` is ten families: the four before, plus
+  Inter, Lato, Source Serif 4, Merriweather, EB Garamond and IBM Plex Mono,
+  each a Latin 400/700 subset hosted by the SPA and installed in the worker
+  image. Migration 0043 widens the résumé's font checks; `test_fonts.py`
+  checks fontconfig finds each by name.
 
