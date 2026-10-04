@@ -1,4 +1,8 @@
-# Job Searching Advisor
+# CareerPolaris
+
+Formerly Job Searching Advisor: the repository, the `jsa-*` images, `jsa_net`
+and the compose projects keep the old name on purpose, because renaming them
+would break every running stack for no change a user sees.
 
 Turns the work someone has actually done — GitHub, Jira, their résumé — into a
 picture of where they stand (a skill radar) and what is worth aiming at (a role
@@ -678,3 +682,12 @@ uploaded one (`docs/plan.md`), one branch per step under
   Contact details are typed `ContactItem`s (ADR 0048, migration 0042), read
   from the model's line by `get_contact_items` and drawn with the inline SVG
   icons in `CONTACT_ICONS`, which `GET /resume-templates/limits` also serves.
+
+## Phase 11 scope
+
+The 4 October prototype (`docs/plan.md`), one branch per step under
+`epic/no-ticket/update-prototype`:
+
+- **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
+  versions) in the sidebar and on sign-in, and `web/public/icon.svg` as the
+  favicon. Internal names (`jsa-*`, `jsa_net`) stay.
