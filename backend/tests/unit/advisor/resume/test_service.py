@@ -187,6 +187,49 @@ async def test_an_unchanged_export_is_reused_and_a_changed_one_rendered_again() 
     assert trimmed.status == plain.status == "rendering"
 
 
+async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
+    """Fonts of its own over its template's (ADR 0047): the view says so, and
+    an export renders and stores them, so it is not mistaken for the last."""
+    uow = FakeResumeUnitOfWork()
+    store = FakeObjectStore()
+    service = _service(uow, store)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    before = await service.request_export(OWNER, resume_id, number=1)
+    await service.export(OWNER, before.id)
+
+    await service.update_settings(
+        OWNER,
+        resume_id,
+        template=Template.ORGANIC,
+        options=Options(),
+        heading_font="DejaVu Serif",
+    )
+
+    view = await service.get(OWNER, resume_id)
+    assert (view.heading_font, view.body_font) == ("DejaVu Serif", None)
+    after = await service.request_export(OWNER, resume_id, number=1)
+    assert after.id != before.id
+    stored = uow.store.exports[after.id].spec
+    assert stored is not None
+    assert (stored["heading_font"], stored["body_font"]) == ("DejaVu Serif", "Figtree")
+    # Left out, they go back to the template's.
+    await service.update_settings(OWNER, resume_id, template=Template.ORGANIC, options=Options())
+    assert (await service.get(OWNER, resume_id)).heading_font is None
+
+
+async def test_a_font_the_resume_cannot_set_is_refused() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+
+    with pytest.raises(ValidationError, match="Comic Sans"):
+        await service.update_settings(
+            OWNER, resume_id, template=Template.ORGANIC, options=Options(), body_font="Comic Sans"
+        )
+    assert uow.store.resumes[resume_id].body_font is None
+
+
 async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

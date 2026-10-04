@@ -97,6 +97,7 @@ from advisor.resume.domain import (
     get_headings_kept,
     get_planned,
     get_proposal_layout,
+    get_spec_with_fonts,
     get_template_spec_from_runs,
     mark_edits,
     settle_revision,
@@ -307,6 +308,9 @@ class ResumeView:
     # The sections every new version is written to, in order (ADR 0039).
     # While one is being filled it is already here, and empty in the content.
     section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
+    # Its own fonts over its template's; None keeps the template's (ADR 0047).
+    heading_font: str | None = None
+    body_font: str | None = None
 
     @property
     def is_outdated(self) -> bool:
@@ -713,6 +717,8 @@ class ResumeService:
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
             section_plan=get_full_plan(resume.section_plan),
+            heading_font=resume.heading_font,
+            body_font=resume.body_font,
         )
 
     # -- editing ------------------------------------------------------------
@@ -724,11 +730,20 @@ class ResumeService:
         *,
         template: str,
         options: Options,
+        heading_font: str | None = None,
+        body_font: str | None = None,
     ) -> None:
+        """Its template, options and own fonts, all at once: fonts left out
+        go back to the template's (ADR 0047)."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             built_in, own = await _resolve_template(mine, template)
-            resume.restyle(template=built_in, custom_template_id=own, options=options, at=utcnow())
+            now = utcnow()
+            resume.restyle(template=built_in, custom_template_id=own, options=options, at=now)
+            try:
+                resume.update_fonts(heading_font=heading_font, body_font=body_font, at=now)
+            except TemplateSpecError as exc:
+                raise ValidationError(str(exc)) from exc
             await mine.resumes.update(resume)
 
     async def save_version(
@@ -1829,9 +1844,12 @@ async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomT
 
 
 async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
+    """The look the résumé is set in: its template's, in its own fonts."""
     if resume.custom_template_id is not None:
-        return (await _owned_template(mine, resume.custom_template_id)).spec
-    return BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
+        spec = (await _owned_template(mine, resume.custom_template_id)).spec
+    else:
+        spec = BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
+    return get_spec_with_fonts(spec, resume.heading_font, resume.body_font)
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:

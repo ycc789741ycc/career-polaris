@@ -63,6 +63,8 @@ def resume(row: models.Resume) -> TailoredResume:
         stage=ResumeStage(row.stage) if row.stage else None,
         progress=row.progress,
         estimated_cost_usd=row.estimated_cost_usd,
+        heading_font=row.heading_font,
+        body_font=row.body_font,
     )
 
 
@@ -96,6 +98,8 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.stage = str(entity.stage) if entity.stage else None
     row.progress = entity.progress
     row.estimated_cost_usd = entity.estimated_cost_usd
+    row.heading_font = entity.heading_font
+    row.body_font = entity.body_font
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:

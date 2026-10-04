@@ -669,3 +669,9 @@ uploaded one (`docs/plan.md`), one branch per step under
   anything is stored, then `ProfileService.replace_positions` replaces the
   timeline with them, citing `evidence_ids` and the `skill_assessment_id`.
   No profile version moves. Migration 0040.
+- **Found while testing Phase 10.** The left column takes a share of a wide
+  screen and the layout stacks below 1240px. Headline, contact, section
+  headings (a built-in section may take its own `title`, kept through
+  `get_headings_kept`), entry fields and list items are edited in place. A
+  résumé may set its own `heading_font` and `body_font` over its template's
+  (ADR 0047, `get_spec_with_fonts`, migration 0041), from the Template panel.

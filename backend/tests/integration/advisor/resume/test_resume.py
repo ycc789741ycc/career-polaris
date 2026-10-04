@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 from botocore.exceptions import ClientError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.gapfill import Answer, GapFillService, create_gapfill_service
@@ -744,3 +745,28 @@ async def test_a_gap_the_user_answered_about_is_claimed_from_the_answer_alone(
     assert written.content is not None
     line = next(b for b in written.content.bullets() if b.text.startswith("Wrote the ledger RFC"))
     assert (line.answers, line.evidence_ids) == (None, (world.evidence_id,))
+
+
+async def test_a_resume_keeps_its_own_fonts_and_the_database_refuses_others(
+    world: World, account: uuid.UUID, database: Database
+) -> None:
+    """ADR 0047, migration 0041."""
+    resume_id = await _written(world, account)
+
+    await world.resume.update_settings(
+        account,
+        resume_id,
+        template=Template.PLAIN,
+        options=Options(),
+        heading_font="DejaVu Serif",
+        body_font="DejaVu Sans Mono",
+    )
+
+    view = await world.resume.get(account, resume_id)
+    assert (view.heading_font, view.body_font) == ("DejaVu Serif", "DejaVu Sans Mono")
+    with pytest.raises(IntegrityError, match="ck_resume_body_font"):
+        async with database.for_user(account) as session:
+            await session.execute(
+                text("UPDATE resume.resume SET body_font = 'Comic Sans' WHERE id = :id"),
+                {"id": resume_id},
+            )

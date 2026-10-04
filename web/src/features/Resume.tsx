@@ -133,6 +133,9 @@ export function Resume({
     reorder: true,
     trim: false,
   });
+  // This résumé's own fonts over its template's; null keeps the template's
+  // (ADR 0047).
+  const [fonts, setFonts] = useState<ResumeFonts>(NO_FONTS);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplateLook[]>([]);
@@ -150,8 +153,18 @@ export function Resume({
 
   const chosen =
     templates.find((t) => t.id === template) ?? templates[0] ?? null;
-  // While a template is being edited, the page previews it.
-  const look = editor && preview ? withSpec(editor.from, preview) : chosen;
+  // While a template is being edited, the page previews it; otherwise the
+  // chosen one, in the résumé's own fonts.
+  const look =
+    editor && preview
+      ? withSpec(editor.from, preview)
+      : chosen && (fonts.heading_font || fonts.body_font)
+        ? withSpec(chosen, {
+            ...chosen.spec,
+            heading_font: fonts.heading_font ?? chosen.spec.heading_font,
+            body_font: fonts.body_font ?? chosen.spec.body_font,
+          })
+        : chosen;
 
   // What writing it again costs, priced up front for the Write-for card.
   const [regenerateCost, setRegenerateCost] = useState<PlanEstimate | null>(
@@ -264,6 +277,7 @@ export function Resume({
     setDraft(next.content);
     setTemplate(next.template);
     setOptions(next.options);
+    setFonts({ heading_font: next.heading_font, body_font: next.body_font });
     setExchanges(
       next.revisions.map((r) => ({
         request: r.request,
@@ -402,14 +416,17 @@ export function Resume({
   async function changeSettings(
     nextTemplate: ResumeTemplate,
     nextOptions: ResumeOptions,
+    nextFonts: ResumeFonts = fonts,
   ) {
     setTemplate(nextTemplate);
     setOptions(nextOptions);
+    setFonts(nextFonts);
     if (!resume || resume.status !== "ready") return;
     try {
       await api.put(`/tailored-resumes/${resume.id}/settings`, {
         template: nextTemplate,
         options: nextOptions,
+        ...nextFonts,
       });
     } catch (caught) {
       setError(messageOf(caught));
@@ -699,6 +716,36 @@ export function Resume({
                   </Button>
                 </div>
               )
+            )}
+            {chosen && limits && !editor && (
+              <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                {FONT_PICKERS.map(({ key, label }) => (
+                  <label key={key} className="font-picker">
+                    <span className="field-label">{label}</span>
+                    <select
+                      className="input"
+                      value={fonts[key] ?? ""}
+                      disabled={resume?.status !== "ready"}
+                      onChange={(event) =>
+                        void changeSettings(template, options, {
+                          ...fonts,
+                          [key]: (event.target.value ||
+                            null) as ResumeFonts["heading_font"],
+                        })
+                      }
+                    >
+                      <option value="">
+                        Template&apos;s ({chosen.spec[key]})
+                      </option>
+                      {limits.fonts.map((font) => (
+                        <option key={font} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
             )}
             <div className="stack" style={{ gap: 10, marginTop: 16 }}>
               {OPTION_LABELS.map(({ key, label }) => (
@@ -1560,3 +1607,13 @@ function Editable({
     </Tag>
   );
 }
+
+type ResumeFonts = Pick<TailoredResume, "heading_font" | "body_font">;
+
+const NO_FONTS: ResumeFonts = { heading_font: null, body_font: null };
+
+/** The two fonts a résumé can set over its template's (ADR 0047). */
+const FONT_PICKERS: { key: keyof ResumeFonts; label: string }[] = [
+  { key: "heading_font", label: "Titles in" },
+  { key: "body_font", label: "Text in" },
+];

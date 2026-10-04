@@ -58,6 +58,10 @@ class ResumeRequest(TargetFields):
 class SettingsRequest(RequestModel):
     template: TemplateId
     options: OptionsBody
+    # The résumé's own fonts over its template's; null, or left out, keeps the
+    # template's (ADR 0047).
+    heading_font: FontName | None = None
+    body_font: FontName | None = None
 
 
 class VersionRequest(RequestModel):
@@ -262,6 +266,9 @@ class TailoredResume(ResumeSummary):
     outdated_by: list[OutdatedReasonName]
     # The sections every new version is written to, in order (ADR 0039).
     section_plan: list[ResumeSectionSlot]
+    # Its own fonts over its template's; null keeps the template's (ADR 0047).
+    heading_font: FontName | None
+    body_font: FontName | None
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
@@ -324,6 +331,8 @@ class TailoredResume(ResumeSummary):
                 ResumeSectionSlot(kind=str(slot.kind), title=slot.title, is_shown=slot.is_shown)
                 for slot in resume.section_plan
             ],
+            heading_font=resume.heading_font,
+            body_font=resume.body_font,
         )
 
 

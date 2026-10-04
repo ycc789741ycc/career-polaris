@@ -2890,6 +2890,10 @@ export interface components {
         };
         /** SettingsRequest */
         SettingsRequest: {
+            /** Body Font */
+            body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            /** Heading Font */
+            heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             options: components["schemas"]["OptionsBody"];
             /** Template */
             template: string;
@@ -2947,6 +2951,8 @@ export interface components {
         };
         /** TailoredResume */
         TailoredResume: {
+            /** Body Font */
+            body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             content: components["schemas"]["ResumeContent"] | null;
             /** Coverage */
             coverage: components["schemas"]["Coverage"][];
@@ -2957,6 +2963,8 @@ export interface components {
             evidence: {
                 [key: string]: components["schemas"]["EvidenceNote"];
             };
+            /** Heading Font */
+            heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             /**
              * Id
              * Format: uuid

@@ -11,6 +11,7 @@ from typing import Any
 
 from advisor.resume.domain.content import Options, Template, VersionSource
 from advisor.resume.domain.section import DEFAULT_PLAN, SectionSlot
+from advisor.resume.domain.template_spec import assert_fonts_valid
 
 
 class ResumeStatus(StrEnum):
@@ -69,6 +70,10 @@ class TailoredResume:
     # 0 to 1, never going backwards within one job.
     progress: float = 0.0
     estimated_cost_usd: Decimal | None = None
+    # This résumé's own fonts over its template's (ADR 0047); None keeps the
+    # template's.
+    heading_font: str | None = None
+    body_font: str | None = None
 
     @classmethod
     def requested(
@@ -205,6 +210,16 @@ class TailoredResume:
         self.template = template
         self.custom_template_id = custom_template_id
         self.options = options
+        self.updated_at = at
+
+    def update_fonts(
+        self, *, heading_font: str | None, body_font: str | None, at: datetime
+    ) -> None:
+        """Set in fonts of its own over its template's; None keeps the
+        template's (ADR 0047)."""
+        assert_fonts_valid(heading_font, body_font)
+        self.heading_font = heading_font
+        self.body_font = body_font
         self.updated_at = at
 
     def touched(self, at: datetime) -> None:
