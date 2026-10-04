@@ -1193,7 +1193,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists every section, prints only the shown ones, and hiding one saves a version", async () => {
+  it("lists every section, prints only the shown ones, and hiding one waits for Save", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -1220,6 +1220,14 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
 
     expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
+    // Hidden on the page at once, and saved only when the user asks.
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    expect(
+      screen.getByText("You have unsaved edits.", { exact: false }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
     );
@@ -1245,6 +1253,10 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     const panel = await screen.findByRole("region", { name: "Sections" });
     const row = within(panel).getAllByRole("listitem")[3]!;
     await user.click(within(row).getByRole("button", { name: "Show" }));
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
@@ -1258,7 +1270,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
   });
 
-  it("moves a section with the keyboard and saves the new order", async () => {
+  it("moves a section with the keyboard, and saves the new order when asked", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -1270,6 +1282,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     const handle = await screen.findByRole("button", { name: "Move Summary" });
     handle.focus();
     await user.keyboard("{ArrowDown}");
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
@@ -1282,6 +1295,28 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
       "open_source",
       "education",
     ]);
+  });
+
+  it("asks to save first before filling a section over unsaved changes", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    const rows = within(panel).getAllByRole("listitem");
+    await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
+    await user.click(
+      within(rows[4]!).getByRole("button", {
+        name: "Empty — fill from your sources",
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Save your changes first: a section is filled into the saved version.",
+      ),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/sections/estimate"))).toBe(false);
   });
 
   it("prices filling an empty section before filling it", async () => {
