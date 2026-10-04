@@ -40,8 +40,14 @@ needs Docker and `make`, and nothing else.
    - **The backups**, e.g. `careerpolaris-backups`, with its own
      limited-access key, and a lifecycle rule that expires objects after the
      number of days you want to keep, for example 30.
-3. **Images.** CI pushes the prod images to GHCR by digest (Phase 12,
-   "Release one image to both places"). Neither machine builds anything.
+3. **Images.** Every push to `master` that passes CI is released (ADR 0055).
+   - CI builds the prod images for amd64 and arm64 and pushes them to
+     `ghcr.io/<owner>/jsa-{backend,web,proxy}`.
+   - The run's summary, and its `release-<sha>` artifact, hold `release.env`,
+     which names each image by digest.
+   - Neither machine builds anything. If the packages are private, give each
+     machine a classic token with only `read:packages`, once:
+     `docker login ghcr.io -u <user>`.
 
 ## 2. The droplet
 
@@ -73,7 +79,7 @@ needs Docker and `make`, and nothing else.
 
    ```
    make build-infra          # pulls Postgres and Tailscale
-   make pull-app DIGEST=…    # the release's images (Phase 12, step 5)
+   make pull-app RELEASE=release.env   # the release's images, by digest
    make start-infra          # Postgres, then the tunnel forwards 5432 to it
    make start-app            # migrates, then api, web and Caddy
    ```
@@ -141,7 +147,7 @@ Raise a limit in `.env` if one sits near it or reports `oom_killed=true`.
 
    ```
    make build-infra          # pulls Tailscale
-   make pull-app DIGEST=…    # the same release the droplet runs
+   make pull-app RELEASE=release.env   # the same release the droplet runs
    make start-infra          # the tunnel, then waits until Postgres answers through it
    make start-app            # migrates (nothing pending: the edge did), then worker and crawler
    ```
@@ -151,9 +157,11 @@ rules (per-host caps, backing off after a 429 or 403) do not change.
 
 ## 4. A release
 
-1. **Edge first.** Run `make pull-app DIGEST=…`, then `make stop-app`, then
-   `make start-app`. That migrates under the lock.
-2. **Then compute,** with the same digest. A compute machine still on the
+Copy the run's `release.env` to both machines, next to `.env`.
+
+1. **Edge first.** Run `make pull-app RELEASE=release.env`, then
+   `make stop-app`, then `make start-app`. That migrates under the lock.
+2. **Then compute,** with the same `release.env`. A compute machine still on the
    previous image refuses to start against the newer schema, and says which
    release to run.
 
