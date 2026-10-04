@@ -807,12 +807,23 @@ export function Resume({
             <div className="panel">
               <h3>This résumé could not be written</h3>
               <ErrorNote error={resume.error?.message ?? "Writing failed."} />
-              {(resume.error?.code?.startsWith("ai_credential") ||
-                resume.error?.code === "ai_budget_exceeded") && (
-                <Button variant="ghost" onClick={() => navigate("model")}>
-                  Open AI &amp; model
+              <div className="row" style={{ marginTop: 12, gap: 8 }}>
+                {/* Written again as the same résumé, priced first. */}
+                <Button
+                  busy={busy}
+                  onClick={() =>
+                    void price(resume.target, resume.label, resume.id)
+                  }
+                >
+                  Try again
                 </Button>
-              )}
+                {(resume.error?.code?.startsWith("ai_credential") ||
+                  resume.error?.code === "ai_budget_exceeded") && (
+                  <Button variant="ghost" onClick={() => navigate("model")}>
+                    Open AI &amp; model
+                  </Button>
+                )}
+              </div>
             </div>
           ) : draft && look ? (
             <>
