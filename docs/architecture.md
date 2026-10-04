@@ -2,7 +2,7 @@
 
 This doc turns the domain model in [`domain_model.md`](domain_model.md) into an architecture. It covers what gets deployed separately, who owns which data, where secrets can be decrypted, where untrusted input enters, how modules talk to each other, and the decisions behind all of it.
 
-**Constraints:** modular monolith plus workers · Python backend, TypeScript client · managed PaaS · solo or small-team MVP · local embedding model for matching postings · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
+**Constraints:** modular monolith plus workers · Python backend, TypeScript client · a 1 vCPU / 2 GB droplet plus the operator's own machine ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md)) · solo or small-team MVP · local embedding model for matching postings · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
 > **This describes the v3 design** (domain decisions 21–28), which the code now follows. [`plan.md`](plan.md) Phase 5 records the steps that got it there, and what each left for later.
 
@@ -13,7 +13,7 @@ flowchart LR
   subgraph Client
     SPA["web: React + Vite SPA (TS)"]
   end
-  subgraph PaaS
+  subgraph Units["Backend units (where each runs: below)"]
     API["api: FastAPI modular monolith"]
     W["worker: job runner (queues: ai, sync, docs, notify)"]
     C["crawler: market crawler"]
@@ -43,6 +43,43 @@ flowchart LR
 | `api` | HTTP + SSE, routers for every module, résumé chat streaming | **AI key only** (for chat streaming) | User's LLM provider |
 | `worker` | Queued and scheduled jobs: `ai` (assessment, the per-user role map of the top k recommended roles, fit, reading and scoring postings of the user's own, gap-fill questions, gap plans per Target, résumé writing, difficulty estimates), `sync` (connectors, résumé parsing — **no AI**, domain decision 18), `docs` (résumé PDF export with WeasyPrint, ADR 0007), `notify` (interview prompts — not built yet) | AI key (`ai` queue), connector OAuth tokens (`sync` queue) | LLM provider, GitHub/Jira/LinkedIn, personal sites, email |
 | `crawler` | Fetches only the sources a role-map build is waiting for ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) — company boards, and searches of a public job API for the roles analyses recommend ([ADR 0025](decisions/0025-search-himalayas-for-the-candidate-roles.md)) — looking every few seconds: parse, normalize, dedup, embed, replace a search's result list or expire a board's missing postings, then mark them fetched. Backs off a host that refuses it, caps each host's requests per day, and once a day retires idle searches and thins postings nothing holds | **None** | Public job boards and job APIs (SSRF-guarded) |
+
+| `proxy` | Caddy on 80/443, the only unit on the internet: TLS for `SITE_HOSTNAME`, `/api/*` to the api and the rest to `web`, a cap on request bodies, timeouts for slow clients, and limits per client address ([ADR 0053](decisions/0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md)) | **None** | Let's Encrypt |
+
+### Where each unit runs ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md))
+
+```mermaid
+flowchart LR
+  subgraph EDGE["Droplet: 1 vCPU, 2 GB (edge, proxy, tunnel)"]
+    P["proxy: Caddy"] --> A["api"]
+    P --> W2["web"]
+    A --> PG[("Postgres")]
+    T1["tunnel"] -- "5432 only" --> PG
+  end
+  subgraph COMPUTE["Operator's machine (compute, tunnel)"]
+    WK["worker"]
+    CR["crawler"]
+    T2["tunnel"]
+  end
+  Browser -- "HTTPS" --> P
+  WK & CR --> T2 -- "Tailscale, dialled out" --> T1
+  A & WK --> SP[("Spaces")]
+```
+
+- **What runs where** is `COMPOSE_PROFILES` in each place's `.env`. There is
+  one image and one pair of compose files. Development and CI run
+  `edge,compute,local` on one machine, with MinIO in place of Spaces.
+- **The compute machine may be off.** The queue and the outbox are in
+  Postgres on the edge, so work waits for it. The worker and the crawler each
+  write a heartbeat to `presence.process`. Lost-work limits and a build's
+  market deadline count only the time the process they need has been up,
+  and `GET /activity` reports `processing`
+  ([ADR 0052](decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)).
+- **Migrations.** Both places migrate when they start, under an advisory
+  lock. An image older than the schema refuses to start.
+- **Releases.** CI pushes multi-platform images, and each place pulls them by
+  digest ([ADR 0055](decisions/0055-release-multi-platform-images-by-digest-from-ci.md)).
+- **Runbook:** [`deploy.md`](deploy.md).
 
 **Why the crawler is its own unit:**
 - It has a different trust level: it parses hostile HTML from the internet.
@@ -236,13 +273,13 @@ flowchart TB
 
 ## 3. Data boundaries
 
-**One Postgres database:** a schema per module (above), plus `outbox` and `procrastinate`.
+**One Postgres database:** a schema per module (above), plus `outbox`, `procrastinate`, `presence` (heartbeats, [ADR 0052](decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)) and `limits` (counters per account and address, [ADR 0054](decisions/0054-limit-each-account-and-each-sign-up-address-in-postgres.md)).
 
 ### Database roles (least privilege)
 | Role | Used by | Access |
 |---|---|---|
 | `app_rw` | api, worker | All module schemas. `market`: read-only, except inserts into `market.interview_contribution` and writes to `market.crawl_source` (materialized from target locations and custom-role companies) |
-| `crawler_rw` | crawler | `market.crawl_source` (read/update status; baseline rows are loaded by `migrate`, not the crawler), `market.job_posting`, `market.company`, `market.posting_embedding`; insert into `outbox`. **No access to any user schema.** |
+| `crawler_rw` | crawler | `market.crawl_source` (read/update status; baseline rows are loaded by `migrate`, not the crawler), `market.job_posting`, `market.company`, `market.posting_embedding`; insert into `outbox`; its own heartbeat row in `presence.process`. **No access to any user schema.** |
 | `aggregator` | worker, aggregation job only | Read `market.interview_contribution`, write `market.interview_difficulty_agg` |
 | `migrator` | Alembic in CI/CD | DDL |
 
@@ -276,11 +313,13 @@ flowchart TB
 |---|---|---|---|
 | User's LLM API key (`ProviderCredential`) | `identity.provider_credential`, envelope-encrypted | `kernel.ai_gateway` in `api` and `worker` | `web`, `crawler`, logs |
 | Connector OAuth tokens (GitHub, Jira, LinkedIn) | `profile.source_connection`, envelope-encrypted | `profile.infra.connectors` in `worker` (`sync` queue) | `web`, `api` handlers, `crawler`, logs |
-| Master encryption key | PaaS secret on `api` and `worker` only | `kernel.crypto` | `crawler` |
+| Master encryption key | `.env` (mode 600) on the droplet, for `api`, and on the compute machine, for `worker`, only ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md)) | `kernel.crypto` | `crawler`, `proxy` |
+| Tunnel auth key (`TUNNEL_AUTH_KEY`) | each place's `.env`, for the `tunnel` container only | Tailscale | every app container |
 | Session signing secret (`AUTH_JWT_SECRET`) | api environment | `kernel.auth`, and the Google sign-in attempt cookie's HMAC | Everything else |
 | Google OAuth client secret | api environment | `advisor.identity`'s Google adapter, for the code exchange only | `worker`, `crawler`, `web`, logs |
 | Google's ID-token signing keys | Google (api fetches the public JWKS) | n/a | Everything else |
 
+- **The compute machine is inside the trust boundary.** It holds the master key, connector tokens and a migrator credential, so it runs with disk encryption and no other users ([`deploy.md`](deploy.md)).
 - **Envelope encryption:** each record has its own data key (AES-GCM), wrapped by the master key. Moving to a cloud KMS (AWS/GCP) later only replaces the master-key wrapper; the schema doesn't change.
 - **Write-only API:** credentials can be set, tested, replaced or deleted. Reads return only provider, model and the last 4 characters.
 - **Minimal key lifetime:** decrypt only for the duration of a call, keep the key only in memory, and scrub it from logs, traces and error reports.
@@ -329,6 +368,8 @@ flowchart LR
 
 | Trigger | Unit | Flow |
 |---|---|---|
+| Every `PRESENCE_HEARTBEAT_SECONDS` | worker, crawler | each process refreshes its row in `presence.process` from a thread of its own, and deletes it on a clean stop. One silent for four beats reads as away: activity stops counting its work towards lost, and the SPA says processing is offline ([ADR 0052](decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)) |
+| Nightly, from the droplet's crontab | edge (`make backup-db`) | `pg_dump --format=custom` from the Postgres container, streamed into the backup bucket; the bucket's lifecycle rule expires old dumps ([ADR 0053](decisions/0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md)) |
 | Every `CRAWL_DUE_POLL_SECONDS` | crawler | fetch every due `crawl_source` (one a build waits for) → normalize → dedup → store: a board expires what it no longer lists, a search replaces its result list → embed → clear `due_at`. A host that answered 429/403 is skipped until its pause ends, and one past its daily ceiling until tomorrow; their sources stay due ([ADR 0027](decisions/0027-fetch-the-market-only-when-a-build-needs-it.md)) |
 | Daily | crawler | retire searches no build has needed in `MARKET_SOURCE_IDLE_DAYS` and empty their lists → thin postings nothing holds that nobody has seen in `POSTING_THIN_AFTER_DAYS` (description and embedding dropped, row kept) |
 | A build is asked for (analysis finished, or Rebuild) | worker / api | `rolemap.request_build` → `market.request_sources(titles, places)` marks what it reads that isn't fresh as due → nothing due: queue `rolemap.recluster`; otherwise the build waits and `rolemap.await_market` (`sync`, as its owner) checks every poll until its sources are fetched or `MARKET_WAIT_SECONDS` pass → recluster: searched postings go to the candidate whose search found them, board postings by embedding, the ten best by a local fit estimate are named and their requirements read → `RoleMapBuildFinished` → compute fits once |
@@ -419,7 +460,7 @@ flowchart LR
 
 | # | Question | Status |
 |---|---|---|
-| 1 | **PaaS choice** (Fly.io / Render / Railway) | **Still open.** Phase 1 runs on local Docker Compose, so the decision is deferred. It affects per-service secrets — the master key must be settable on `api` and `worker` only — and whether one Playwright-capable worker image fits the memory limit. |
+| 1 | **Where it runs** (was: PaaS choice) | **Answered in Phase 12: a DigitalOcean droplet and the operator's own machine** ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md)). The droplet runs the light, always-on part: Caddy, `web`, `api` and Postgres. The operator's machine runs the worker and the crawler, which hold the embedding model, over a Tailscale tunnel. Per-service secrets stay as they were: each service is given only its own configuration, and the crawler none. |
 | 2 | **Auth provider** | **Answered: our own email and password, in `identity`** — see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md), which supersedes the earlier choice of Clerk (it needs an external account). Argon2id hashes, time-based lockout after 5 failures, 15-minute access tokens held in memory, and rotating 30-day refresh tokens in an httpOnly `SameSite=Strict` cookie, stored hashed. A reused refresh token revokes its whole chain. `kernel/auth` verifies through a `SigningKeyResolver`, so moving to a hosted OpenID provider later is a wiring change, not a rewrite. **Not yet built, both blocked on Q3:** address verification and password reset. |
 | 3 | **Email delivery** for digests and prompts | **Still open — and now on the critical path.** Beyond interview-report prompts (Phase 2), owning sign-in means address verification and password reset both need it. Until then, anyone can register an address they do not own, and a forgotten password cannot be recovered. |
 
