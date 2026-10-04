@@ -362,6 +362,52 @@ describe("résumé screen", () => {
     ).toBeDisabled();
   });
 
+  it("writes a failed résumé again once priced", async () => {
+    let regenerated = false;
+    const calls = serve((call) => {
+      if (call.url.startsWith("/tailored-resumes/cost-estimate"))
+        return { cost_usd: "0.05", model_id: "claude-opus-5" };
+      if (call.url === "/tailored-resumes/res-1/regenerate") {
+        regenerated = true;
+        return { ...summary, status: "drafting" };
+      }
+      if (call.url === "/tailored-resumes/res-1")
+        return regenerated
+          ? { ...resume, status: "drafting" }
+          : {
+              ...resume,
+              status: "failed",
+              error: {
+                code: "ai_output_invalid",
+                message: "the written résumé was rejected",
+              },
+              version: null,
+              versions: [],
+              content: null,
+            };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    expect(
+      await screen.findByText("This résumé could not be written"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
+
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: "/tailored-resumes/res-1/regenerate",
+      body: undefined,
+    });
+  });
+
   it("regenerates an outdated résumé as its next version once priced", async () => {
     let regenerated = false;
     const calls = serve((call) => {
