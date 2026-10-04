@@ -115,6 +115,9 @@ export function Resume({
   );
   const [resume, setResume] = useState<TailoredResume | null>(null);
   const [draft, setDraft] = useState<ResumeContent | null>(null);
+  // The drafts before each unsaved edit, newest last, for Undo. Saving or
+  // opening another résumé starts it again.
+  const [undoStack, setUndoStack] = useState<ResumeContent[]>([]);
   const [estimate, setEstimate] = useState<{
     ref: Ref;
     label: string;
@@ -273,9 +276,48 @@ export function Resume({
     flash("Template deleted.");
   }
 
+  /** An edit to the draft, remembered so Undo can take it back. */
+  function editDraft(next: ResumeContent) {
+    if (draft && !isSameContent(draft, next)) {
+      setUndoStack((stack) => getStackWith(stack, draft));
+    }
+    setDraft(next);
+  }
+
+  /** Back to the draft before the last unsaved edit. */
+  function undo() {
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setDraft(previous);
+  }
+
+  // Cmd/Ctrl+Z undoes the last edit while no field is being typed in: a line
+  // being edited keeps the browser's own undo.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "z" || event.shiftKey) return;
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const at = document.activeElement as HTMLElement | null;
+      if (
+        at &&
+        (at.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(at.tagName))
+      ) {
+        return;
+      }
+      if (undoStack.length === 0) return;
+      event.preventDefault();
+      undo();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
   function show(next: TailoredResume) {
     setResume(next);
     setDraft(next.content);
+    setUndoStack([]);
     setTemplate(next.template);
     setOptions(next.options);
     setFonts({ heading_font: next.heading_font, body_font: next.body_font });
@@ -318,6 +360,14 @@ export function Resume({
 
   async function priceSection(slot: ResumeSectionSlot) {
     if (!resume) return;
+    if (dirty) {
+      // A section is filled into the saved version, so unsaved changes
+      // would be written over when it lands.
+      setError(
+        "Save your changes first: a section is filled into the saved version.",
+      );
+      return;
+    }
     if (!status.credential) {
       flash("Sections are filled on your model — add a key.");
       navigate("model");
@@ -384,6 +434,7 @@ export function Resume({
       setEstimate(null);
       setResume(null);
       setDraft(null);
+      setUndoStack([]);
       setExchanges([]);
       setResumeId(created.id);
       onChanged();
@@ -530,6 +581,7 @@ export function Resume({
     if (entry.id !== resumeId) {
       setResume(null);
       setDraft(null);
+      setUndoStack([]);
       setExchanges([]);
       setResumeId(entry.id);
     }
@@ -783,10 +835,9 @@ export function Resume({
                         : null
                     }
                     busy={busy || resume.status === "filling"}
-                    onChange={(next) => {
-                      setDraft(next);
-                      void saveVersion(next);
-                    }}
+                    // Show, hide, move and remove change the draft only; the
+                    // user saves the version when it reads as they want.
+                    onChange={editDraft}
                     onAdd={(slot) => void priceSection(slot)}
                   />
                 )}
@@ -957,7 +1008,7 @@ export function Resume({
                 trim={options.trim}
                 reorder={options.reorder}
                 showSources={showSources}
-                onChange={setDraft}
+                onChange={editDraft}
               />
               <div className="resume-page-actions">
                 <Button
@@ -966,6 +1017,18 @@ export function Resume({
                   onClick={() => void saveVersion(draft)}
                 >
                   Save as v{nextVersion}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={undoStack.length === 0}
+                  onClick={undo}
+                  aria-label={
+                    undoStack.length > 0
+                      ? `Undo (${undoStack.length} unsaved ${undoStack.length === 1 ? "edit" : "edits"})`
+                      : "Undo"
+                  }
+                >
+                  ↶ Undo
                 </Button>
                 <Button
                   variant="secondary"
@@ -996,6 +1059,23 @@ export function Resume({
       </div>
     </section>
   );
+}
+
+/** How many edits Undo can take back. */
+const UNDO_LIMIT = 50;
+
+/** The undo stack with one more draft on top, the oldest dropped past the
+ * limit. Pure. */
+export function getStackWith(
+  stack: ResumeContent[],
+  draft: ResumeContent,
+): ResumeContent[] {
+  return [...stack, draft].slice(-UNDO_LIMIT);
+}
+
+/** Whether two drafts read the same. Pure. */
+function isSameContent(a: ResumeContent, b: ResumeContent): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** "Northwind Pay · v3 · edited 27 Sep 2026", one saved résumé in the
@@ -1328,6 +1408,23 @@ function ResumePage({
         )}
         {section.entries.map((entry, e) => (
           <section key={`${entry.title}-${e}`} className="resume-job">
+            {/* Takes the whole entry off the page, from the margin left of its
+                title, so the title stays where the PDF prints it. Gone once the
+                version is saved. Never printed. */}
+            <button
+              type="button"
+              className="resume-remove-entry"
+              aria-label={`Remove ${entry.title} from ${heading}`}
+              title="Remove this entry"
+              onClick={() =>
+                editSection(at, {
+                  ...section,
+                  entries: section.entries.filter((_, i) => i !== e),
+                })
+              }
+            >
+              ×
+            </button>
             <div className="resume-job-head">
               <span className="resume-job-title">
                 <Editable

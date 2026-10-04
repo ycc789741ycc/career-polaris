@@ -18,6 +18,7 @@ import { startDownload } from "./download";
 import {
   citeLine,
   coverageStatus,
+  getStackWith,
   pageStyle,
   Resume,
   savedLine,
@@ -587,6 +588,105 @@ describe("résumé screen", () => {
     expect(
       calls.some((c) => c.url === "/tailored-resumes" && c.method === "POST"),
     ).toBe(false);
+  });
+
+  it("removes one entry from a section, kept until the version is saved", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const remove = within(page).getByRole("button", {
+      name: "Remove Backend Engineer from Experience",
+    });
+    // On the left of the entry's title.
+    expect(
+      remove.compareDocumentPosition(
+        within(page).getAllByLabelText("Title")[0]!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await user.click(remove);
+
+    // Gone from the page, and nothing saved until asked.
+    expect(
+      within(page).queryByText("Owned the retry layer for payments-svc"),
+    ).toBeNull();
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
+    );
+    const body = saved?.body as { content: ResumeContent };
+    expect(experience(body.content).entries).toEqual([]);
+  });
+
+  it("undoes unsaved edits one at a time, back to the saved version", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const undo = screen.getByRole("button", { name: "Undo" });
+    expect(undo).toBeDisabled();
+
+    // Two edits: a line rewritten, then the entry removed.
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    line.textContent = "Owned the retry layer, end to end";
+    fireEvent.blur(line);
+    await user.click(
+      within(page).getByRole("button", {
+        name: "Remove Backend Engineer from Experience",
+      }),
+    );
+    expect(within(page).queryByText(/Owned the retry layer/)).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Undo (2 unsaved edits)" }),
+    );
+    expect(
+      within(page).getByText("Owned the retry layer, end to end"),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Undo (1 unsaved edit)" }),
+    );
+    expect(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    // Back where it was saved: nothing to save, and nothing was sent.
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeDisabled();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("undoes the last edit with the keyboard when no line is being typed in", async () => {
+    serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    await user.click(
+      within(page).getByRole("button", {
+        name: "Remove Backend Engineer from Experience",
+      }),
+    );
+    (document.activeElement as HTMLElement | null)?.blur();
+    await user.keyboard("{Control>}z{/Control}");
+
+    expect(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    ).toBeInTheDocument();
   });
 
   it("saves an edited line as a new version", async () => {
@@ -1161,7 +1261,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists every section, prints only the shown ones, and hiding one saves a version", async () => {
+  it("lists every section, prints only the shown ones, and hiding one waits for Save", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -1188,6 +1288,14 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
 
     expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
+    // Hidden on the page at once, and saved only when the user asks.
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    expect(
+      screen.getByText("You have unsaved edits.", { exact: false }),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
     );
@@ -1213,6 +1321,10 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     const panel = await screen.findByRole("region", { name: "Sections" });
     const row = within(panel).getAllByRole("listitem")[3]!;
     await user.click(within(row).getByRole("button", { name: "Show" }));
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
@@ -1226,7 +1338,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
   });
 
-  it("moves a section with the keyboard and saves the new order", async () => {
+  it("moves a section with the keyboard, and saves the new order when asked", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -1238,6 +1350,7 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     const handle = await screen.findByRole("button", { name: "Move Summary" });
     handle.focus();
     await user.keyboard("{ArrowDown}");
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
@@ -1250,6 +1363,28 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
       "open_source",
       "education",
     ]);
+  });
+
+  it("asks to save first before filling a section over unsaved changes", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    const rows = within(panel).getAllByRole("listitem");
+    await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
+    await user.click(
+      within(rows[4]!).getByRole("button", {
+        name: "Empty — fill from your sources",
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        "Save your changes first: a section is filled into the saved version.",
+      ),
+    ).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/sections/estimate"))).toBe(false);
   });
 
   it("prices filling an empty section before filling it", async () => {
@@ -1350,5 +1485,17 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+describe("the undo stack", () => {
+  it("keeps the newest fifty drafts", () => {
+    let stack: ResumeContent[] = [];
+    for (let i = 0; i < 55; i += 1) {
+      stack = getStackWith(stack, { ...resume.content!, name: `Draft ${i}` });
+    }
+    expect(stack).toHaveLength(50);
+    expect(stack[0]!.name).toBe("Draft 5");
+    expect(stack[49]!.name).toBe("Draft 54");
   });
 });

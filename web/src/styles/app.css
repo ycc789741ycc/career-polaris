@@ -710,9 +710,11 @@ select.input { appearance: auto; }
   line-height: 1.1;
   color: var(--name-color);
 }
+/* The headline takes a line of its own, above the details, as the PDF has
+ * it. */
+.resume-headline { display: block; margin: 0 0 calc(var(--pt) * 2); }
 /* A contact detail: its icon, which is also the menu of kinds laid over
  * it, then its text (ADR 0048). */
-.resume-headline { margin-right: calc(var(--pt) * 10); }
 .resume-contact-item {
   display: inline-flex;
   align-items: center;
@@ -742,8 +744,43 @@ select.input { appearance: auto; }
   margin: calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
 }
 .resume-summary { margin: 0; }
-.resume-job { margin-bottom: calc(var(--pt) * 10); }
+.resume-job { position: relative; margin-bottom: calc(var(--pt) * 10); }
 .resume-job-head { display: flex; justify-content: space-between; gap: calc(var(--pt) * 12); }
+/* An entry's remove control, in the page's margin left of its title, so the
+ * title sits where the PDF prints it. Quiet until the entry is pointed at or
+ * the control has focus, so the page still reads as it will print. */
+.resume-remove-entry {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  left: -34px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-neutral-300);
+  background: #ffffff;
+  font-family: var(--font-body);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-neutral-800);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.resume-job:hover .resume-remove-entry,
+.resume-remove-entry:focus-visible { opacity: 1; }
+.resume-remove-entry:hover {
+  background: var(--color-accent-200);
+  border-color: var(--color-accent);
+  color: var(--color-accent-800);
+}
+.resume-remove-entry:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+@media (hover: none) { .resume-remove-entry { opacity: 1; } }
 .resume-job-title {
   font-family: var(--heading-font), "DejaVu Sans", serif;
   font-size: calc(var(--pt) * var(--title-pt));
@@ -1635,8 +1672,10 @@ select.input { appearance: auto; }
 .resume-layout {
   display: grid;
   gap: 24px;
-  /* The tools beside the page: a share of a wide screen, up to a point. */
-  grid-template-columns: minmax(300px, min(28%, 380px)) minmax(0, 1fr);
+  /* The tools beside the page: never under the prototype's 360px, so the
+   * template pair, the font pickers and the section rows keep their lines,
+   * and a share of a wider screen beyond that. The page takes the rest. */
+  grid-template-columns: minmax(360px, min(32%, 460px)) minmax(0, 1fr);
   grid-template-areas: "tools page";
   align-items: start;
 }

@@ -80,7 +80,18 @@ FALLBACK_FONT = "DejaVu Sans"
 
 # Every font a template may name: bundled in the worker image and hosted by
 # the SPA, so the PDF and the preview set the same type (ADR 0040).
-TEMPLATE_FONTS = ("Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono")
+TEMPLATE_FONTS = (
+    "Caprasimo",
+    "Figtree",
+    "DejaVu Serif",
+    "DejaVu Sans Mono",
+    "Inter",
+    "Lato",
+    "Source Serif 4",
+    "Merriweather",
+    "EB Garamond",
+    "IBM Plex Mono",
+)
 
 # Type sizes a template may set, in points: (smallest, largest).
 NAME_PT_RANGE = (16.0, 30.0)
