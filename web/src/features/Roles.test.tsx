@@ -46,7 +46,7 @@ function fit(roleId: string, score: number, gaps: Fit["gaps"] = []): Fit {
   };
 }
 
-function serve() {
+function serve(overrides: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/roles": page([
       role("r1", "Backend Engineer", {
@@ -85,7 +85,7 @@ function serve() {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,
     },
-    "/matched-postings?role_id=r1&one_per_company=true&page_size=10": page([
+    "/matched-postings?role_id=r1&one_per_company=false&order=newest&page=1&page_size=10": page([
       {
         posting_id: "p1",
         role_id: "r1",
@@ -99,9 +99,10 @@ function serve() {
         fit_basis: "posting",
         source_kind: "atsBoard",
         credited_to: null,
+        posted_on: "2026-10-02",
       },
     ]),
-    "/matched-postings?role_id=r2&one_per_company=true&page_size=10": page([
+    "/matched-postings?role_id=r2&one_per_company=false&order=newest&page=1&page_size=10": page([
       {
         posting_id: "p2",
         role_id: "r2",
@@ -115,6 +116,7 @@ function serve() {
         fit_basis: "posting",
         source_kind: "publicApi",
         credited_to: "Himalayas",
+        posted_on: null,
       },
     ]),
     "/role-map": {
@@ -129,6 +131,7 @@ function serve() {
       model_id: "claude-opus-5",
       rate_is_published: true,
     },
+    ...overrides,
   };
   vi.stubGlobal(
     "fetch",
@@ -238,16 +241,15 @@ describe("the role map's one Advisor target", () => {
     expect(bar).toHaveTextContent("Platform Engineer");
   });
 
-  it("aims at an opening picked in its role", async () => {
+  it("aims at the role, even when the hash still names an opening in it", async () => {
     const user = userEvent.setup();
     const shell = renderRoles({ role: "r1", opening: "p1" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
-    expect(
-      await within(bar).findByText("Backend Engineer · Northwind Pay"),
-    ).toBeInTheDocument();
+    expect(bar).toHaveTextContent("Backend Engineer");
+    expect(bar).not.toHaveTextContent("Northwind Pay");
     await user.click(
-      within(bar).getByRole("button", { name: "Target this opening" }),
+      within(bar).getByRole("button", { name: "Target this role" }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",
@@ -256,42 +258,88 @@ describe("the role map's one Advisor target", () => {
     await vi.waitFor(() =>
       expect(shell.navigate).toHaveBeenCalledWith("advisor", {
         tab: "gaps",
-        focus: { role: "r1", opening: "p1" },
+        focus: { role: "r1" },
       }),
     );
   });
 
-  it("selects an opening when its row is picked", async () => {
-    const user = userEvent.setup();
+  it("lists the selected role's openings newest first, with no fit and nothing to pick", async () => {
     const shell = renderRoles({ role: "r1" });
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Staff Engineer, Ledger · Northwind Pay",
-      }),
-    );
-    expect(shell.setFocus).toHaveBeenCalledWith({ role: "r1", opening: "p1" });
-  });
-
-  it("lists the selected role's openings in Top matched, by their own fit", async () => {
-    renderRoles({ role: "r1" });
-
     expect(
-      await screen.findByRole("heading", {
-        name: "Top matched openings in Backend Engineer",
-      }),
+      await screen.findByRole("heading", { name: "Openings for this role" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Staff Engineer, Ledger/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "1 open posting for Backend Engineer in Berlin and Remote EU, newest first. Your fit is scored on the role, so it is the same for every opening.",
+      ),
+    ).toBeInTheDocument();
+    const [row] = within(
+      screen.getByRole("list", { name: "Openings for this role" }),
+    ).getAllByRole("listitem");
+    expect(row).toHaveTextContent("Northwind Pay");
+    expect(row).toHaveTextContent("Staff Engineer, Ledger");
+    expect(row).not.toHaveTextContent("%");
+    expect(
+      screen.queryByRole("button", { name: /Staff Engineer, Ledger/ }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/Platform Engineer, Clusters/),
     ).not.toBeInTheDocument();
+    expect(shell.setFocus).not.toHaveBeenCalled();
+  });
+
+  it("pages through every opening once asked to see them all", async () => {
+    const user = userEvent.setup();
+    const opening = (n: number) => ({
+      posting_id: `p${n}`,
+      role_id: "r1",
+      role_name: "Backend Engineer",
+      title: `Opening ${n}`,
+      company_name: `Company ${n}`,
+      location: "Berlin",
+      url: null,
+      salary: null,
+      fit: 62,
+      fit_basis: "posting",
+      source_kind: "atsBoard",
+      credited_to: null,
+      posted_on: "2026-10-01",
+    });
+    const base = "/matched-postings?role_id=r1&one_per_company=false&order=newest";
+    serve({
+      [`${base}&page=1&page_size=10`]: {
+        items: Array.from({ length: 10 }, (_, i) => opening(i + 1)),
+        page: 1,
+        page_size: 10,
+        total: 12,
+      },
+      [`${base}&page=2&page_size=10`]: {
+        items: [opening(11), opening(12)],
+        page: 2,
+        page_size: 10,
+        total: 12,
+      },
+    });
+    renderRoles({ role: "r1" });
+
+    await user.click(
+      await screen.findByRole("button", { name: "See all 12 openings" }),
+    );
+    const pages = screen.getByRole("navigation", { name: "Openings pages" });
+    expect(pages).toHaveTextContent("Page 1 of 2");
+    expect(within(pages).getByRole("button", { name: "Previous" })).toBeDisabled();
+    await user.click(within(pages).getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Company 12")).toBeInTheDocument();
+    expect(screen.queryByText("Company 1")).not.toBeInTheDocument();
+    expect(pages).toHaveTextContent("Page 2 of 2");
   });
 
   it("names the currency and the year on every salary", async () => {
     renderRoles({ role: "r1" });
 
     expect(
-      await screen.findByText(/EUR 165k–190k a year · Berlin/),
+      await screen.findByText(/Berlin · EUR 165k–190k a year/),
     ).toBeInTheDocument();
     expect(screen.getByText("Annual pay").parentElement).toHaveTextContent(
       "EUR 70k–90k",
@@ -308,9 +356,7 @@ describe("the role map's one Advisor target", () => {
     renderRoles({ role: "r2" });
 
     expect(
-      await screen.findByRole("heading", {
-        name: "Top matched openings in Platform Engineer",
-      }),
+      await screen.findByText(/open posting for Platform Engineer/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Platform Engineer, Clusters/)).toBeInTheDocument();
     expect(
@@ -572,11 +618,11 @@ describe("what the role map leaves out", () => {
   it("names each opening by its title and company, never its role", async () => {
     renderRoles({ role: "r1" });
 
-    const row = await screen.findByRole("button", {
-      name: "Staff Engineer, Ledger · Northwind Pay",
-    });
-    expect(row).toHaveTextContent("Staff Engineer, Ledger · Northwind Pay");
-    expect(row).toHaveTextContent("Berlin");
+    const [row] = within(
+      await screen.findByRole("list", { name: "Openings for this role" }),
+    ).getAllByRole("listitem");
+    expect(row).toHaveTextContent("Northwind Pay");
+    expect(row).toHaveTextContent("Staff Engineer, Ledger · Berlin");
     expect(row).not.toHaveTextContent("Backend Engineer");
   });
 });

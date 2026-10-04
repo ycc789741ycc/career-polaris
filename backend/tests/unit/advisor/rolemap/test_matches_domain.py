@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
-from advisor.rolemap.domain import MAX_MATCHES, MatchCandidate, rank_matches
+from advisor.rolemap.domain import MAX_MATCHES, MatchCandidate, MatchOrder, rank_matches
 
 
 def candidate(
-    posting: str, *, fit: int | None, role: str = "Backend", company: str = "Acme"
+    posting: str,
+    *,
+    fit: int | None,
+    role: str = "Backend",
+    company: str = "Acme",
+    posted_on: date | None = None,
 ) -> MatchCandidate:
     return MatchCandidate(
         posting_id=posting,
@@ -17,7 +24,32 @@ def candidate(
         company_name=company,
         title=posting,
         fit=fit,
+        posted_on=posted_on,
     )
+
+
+def test_the_newest_come_first_when_asked_and_undated_ones_last() -> None:
+    ranked = rank_matches(
+        [
+            candidate("undated", fit=99),
+            candidate("old", fit=90, posted_on=date(2026, 8, 1)),
+            candidate("new", fit=40, posted_on=date(2026, 9, 30)),
+        ],
+        limit=None,
+        order=MatchOrder.NEWEST,
+    )
+    assert [c.posting_id for c in ranked] == ["new", "old", "undated"]
+
+
+def test_openings_posted_the_same_day_are_broken_the_same_way_every_time() -> None:
+    day = date(2026, 9, 1)
+    same = [
+        candidate("z", fit=10, company="Zeta", posted_on=day),
+        candidate("y", fit=90, company="alpha", posted_on=day),
+    ]
+    first = rank_matches(same, order=MatchOrder.NEWEST)
+    assert [c.posting_id for c in first] == ["y", "z"]
+    assert rank_matches(list(reversed(same)), order=MatchOrder.NEWEST) == first
 
 
 def test_the_best_fitting_role_comes_first_and_unscored_roles_last() -> None:

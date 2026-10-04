@@ -22,7 +22,6 @@ import {
   EmptyState,
   ErrorNote,
   Eyebrow,
-  FitBadge,
   Loading,
   SkillFitBar,
   StatTile,
@@ -38,7 +37,7 @@ import {
   isMapComing,
   RunProgress,
 } from "./RunProgress";
-import { dayLabel } from "./time";
+import { dayLabel, postedLabel } from "./time";
 import { messageOf, useAsync } from "./useAsync";
 
 /**
@@ -126,44 +125,41 @@ export function Roles() {
   const activeRole = (roles.data ?? []).find((role) => role.id === activeId);
   const activeFit = activeId ? fitByRole.get(activeId) : undefined;
   const activeBand = activeRole ? pickBand(activeRole.salary_bands) : null;
-  // The selected role's best openings, each ranked by its own fit (Phase 8),
-  // one per company; picking another role reloads them.
-  const matched = useAsync<MatchedPosting[]>(
+  // "Openings for this role": every posting in the selected role, newest
+  // first, ten at a time (ADR 0049). The first ten show until "See all" pages
+  // through the rest; picking another role starts again at its first page.
+  const [paging, setPaging] = useState<{ roleId: string; page: number } | null>(
+    null,
+  );
+  const isPaged = paging !== null && paging.roleId === activeId;
+  const openingsPage = isPaged ? paging.page : 1;
+  const openings = useAsync<MatchedPostingPage | null>(
     () =>
       activeId
-        ? api.items<MatchedPostingPage>(
+        ? api.get<MatchedPostingPage>(
             `/matched-postings?${new URLSearchParams({
               role_id: activeId,
-              one_per_company: "true",
-              page_size: "10",
+              one_per_company: "false",
+              order: "newest",
+              page: String(openingsPage),
+              page_size: String(OPENINGS_PAGE_SIZE),
             })}`,
           )
-        : Promise.resolve([]),
-    [activeId, settled.roleMap, settled.analysis],
+        : Promise.resolve(null),
+    [activeId, openingsPage, settled.roleMap, settled.analysis],
   );
-  // An opening picked in "Top matched openings", while its role is selected.
-  const pickedOpening =
-    pickedId && focus?.opening
-      ? (matched.data ?? []).find(
-          (m) => m.posting_id === focus.opening && m.role_id === pickedId,
-        )
-      : undefined;
+  const openingsTotal = openings.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(openingsTotal / OPENINGS_PAGE_SIZE));
 
   // The one thing the Advisor will be aimed at (ADR 0022): the role shown as
-  // selected — the best fit until the user picks one — and the opening in it,
-  // if one is picked.
+  // selected, the best fit until the user picks one. An opening is aimed at
+  // only from a target set before (ADR 0049): the map lists them, unranked.
   const aim: { focus: Focus; label: string; what: string } | null = activeRole
-    ? pickedOpening
-      ? {
-          focus: { role: activeRole.id, opening: pickedOpening.posting_id },
-          label: `${activeRole.name} · ${pickedOpening.company_name}`,
-          what: "opening",
-        }
-      : {
-          focus: { role: activeRole.id },
-          label: activeRole.name,
-          what: "role",
-        }
+    ? {
+        focus: { role: activeRole.id },
+        label: activeRole.name,
+        what: "role",
+      }
     : null;
 
   const analysing = activity?.analysis?.status === "running";
@@ -507,103 +503,61 @@ export function Roles() {
         </AutoGrid>
       )}
 
-      {(matched.data ?? []).length > 0 && (
+      {activeRole && (openings.data?.items ?? []).length > 0 && (
         <div className="panel" style={{ marginTop: 20 }}>
-          <h3>
-            Top matched openings{activeRole ? ` in ${activeRole.name}` : ""}
-          </h3>
+          <h3>Openings for this role</h3>
           <p className="subcopy">
-            The selected role&apos;s open postings, the best one from each
-            company, ranked by how well you fit each opening: the role&apos;s
-            requirements, weighed by how much that opening asks for each. Pick
-            one to aim the Advisor at it.
+            {openingsLine(
+              openingsTotal,
+              activeRole.name,
+              scope.data?.target_locations ?? [],
+            )}
           </p>
-          <div className="stack" style={{ gap: 8, marginTop: 12 }}>
-            {(matched.data ?? []).map((match, index) => (
-              <div
-                key={`${match.role_id}:${match.posting_id}`}
-                className="row opening-row"
-                role="button"
-                tabIndex={0}
-                aria-pressed={pickedOpening?.posting_id === match.posting_id}
-                aria-label={`${match.title} · ${match.company_name}`}
-                onClick={() =>
-                  setFocus({ role: match.role_id, opening: match.posting_id })
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setFocus({
-                      role: match.role_id,
-                      opening: match.posting_id,
-                    });
-                  }
-                }}
-                style={{
-                  gap: 14,
-                  flexWrap: "nowrap",
-                  padding: "11px 14px",
-                  borderRadius: 999,
-                  background: "var(--color-bg)",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-heading)",
-                    fontSize: 13,
-                    width: 26,
-                    color: "var(--color-neutral-700)",
-                  }}
-                >
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <FitBadge fit={match.fit} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {match.url ? (
-                      <a href={match.url} rel="noreferrer" target="_blank">
-                        {match.title}
-                      </a>
-                    ) : (
-                      match.title
-                    )}{" "}
-                    · {match.company_name}
-                  </div>
-                  <div
-                    className="subcopy"
-                    style={{
-                      fontSize: 12.5,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {[
-                      match.salary
-                        ? annualPay(
-                            match.salary.currency,
-                            match.salary.min,
-                            match.salary.max,
-                          )
-                        : null,
-                      match.location,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    <Credit to={match.credited_to} url={match.url} />
-                  </div>
-                </div>
-              </div>
+          <ul className="openings-list" aria-label="Openings for this role">
+            {(openings.data?.items ?? []).map((match) => (
+              <OpeningRow key={match.posting_id} match={match} />
             ))}
-          </div>
+          </ul>
+          {isPaged ? (
+            <nav
+              className="row"
+              aria-label="Openings pages"
+              style={{ gap: 10, marginTop: 12, alignItems: "center" }}
+            >
+              <Button
+                variant="secondary"
+                disabled={openingsPage <= 1}
+                onClick={() =>
+                  setPaging({ roleId: activeRole.id, page: openingsPage - 1 })
+                }
+              >
+                Previous
+              </Button>
+              <span className="subcopy" style={{ margin: 0 }}>
+                Page {openingsPage} of {pageCount}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={openingsPage >= pageCount}
+                onClick={() =>
+                  setPaging({ roleId: activeRole.id, page: openingsPage + 1 })
+                }
+              >
+                Next
+              </Button>
+            </nav>
+          ) : (
+            openingsTotal > OPENINGS_PAGE_SIZE && (
+              <button
+                type="button"
+                className="link-button"
+                style={{ marginTop: 10 }}
+                onClick={() => setPaging({ roleId: activeRole.id, page: 1 })}
+              >
+                See all {openingsTotal} openings
+              </button>
+            )
+          )}
         </div>
       )}
 
@@ -626,6 +580,71 @@ export function Roles() {
   );
 }
 
+/** One opening: its company, then the posting, where and what it pays, and
+ * how long ago it was posted. No fit: it is the role's (ADR 0049). */
+function OpeningRow({ match }: { match: MatchedPosting }) {
+  return (
+    <li className="opening-row">
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>
+          {match.company_name}
+        </div>
+        <div className="subcopy" style={{ fontSize: 12.5, marginTop: 2 }}>
+          {match.url ? (
+            <a href={match.url} rel="noreferrer" target="_blank">
+              {match.title}
+            </a>
+          ) : (
+            match.title
+          )}
+          {[
+            match.location,
+            match.salary
+              ? annualPay(
+                  match.salary.currency,
+                  match.salary.min,
+                  match.salary.max,
+                )
+              : null,
+          ]
+            .filter(Boolean)
+            .map((part) => ` · ${part}`)
+            .join("")}
+          <Credit to={match.credited_to} url={match.url} />
+        </div>
+      </div>
+      {match.posted_on && (
+        <span className="subcopy" style={{ flex: "0 0 auto", fontSize: 12 }}>
+          {postedLabel(match.posted_on)}
+        </span>
+      )}
+    </li>
+  );
+}
+
+const OPENINGS_PAGE_SIZE = 10;
+
+/** "38 open postings for Staff Backend Engineer in Berlin and Remote EU,
+ * newest first. …" Pure. */
+export function openingsLine(
+  total: number,
+  roleName: string,
+  places: readonly string[],
+): string {
+  const count = `${total.toLocaleString("en")} open ${
+    total === 1 ? "posting" : "postings"
+  } for ${roleName}`;
+  const where = places.length > 0 ? ` in ${listed(places)}` : "";
+  return `${count}${where}, newest first. Your fit is scored on the role, so it is the same for every opening.`;
+}
+
+/** "Berlin", "Berlin and Remote EU", "A, B and C". Pure. */
+function listed(places: readonly string[]): string {
+  return places.length === 1
+    ? places[0]!
+    : `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}`;
+}
+
 /** "1,284 open postings in Berlin and Remote EU". Pure. */
 export function scopeLine(scope: MarketScope): string {
   const count = `${scope.open_posting_count.toLocaleString("en")} open ${
@@ -633,11 +652,7 @@ export function scopeLine(scope: MarketScope): string {
   }`;
   const places = scope.target_locations;
   if (places.length === 0) return `${count} in the platform's baseline.`;
-  const named =
-    places.length === 1
-      ? places[0]
-      : `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}`;
-  return `${count} in ${named}.`;
+  return `${count} in ${listed(places)}.`;
 }
 
 /**

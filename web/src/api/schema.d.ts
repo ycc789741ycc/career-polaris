@@ -667,12 +667,12 @@ export interface paths {
         };
         /**
          * Matched Postings
-         * @description The openings inside the user's roles, best first. ``role_id`` keeps one
-         *     role's; "Top matched openings" asks for the selected role's with
-         *     ``one_per_company=true&page_size=10``, and the Advisor for all of them.
-         *     Each is ranked by its own fit, worked out locally from its role's by the
-         *     last build; no AI runs to produce it. ``one_per_company`` defaults to true
-         *     across all roles and false for one role.
+         * @description The openings inside the user's roles. ``role_id`` keeps one role's;
+         *     "Openings for this role" asks for the selected role's with
+         *     ``order=newest`` ten at a time (ADR 0049), and the Advisor for all of
+         *     them by fit. A fit is each opening's own, worked out locally from its
+         *     role's by the last build; no AI runs to produce it. ``one_per_company``
+         *     defaults to true across all roles and false for one role.
          */
         get: operations["matched_postings_api_v1_matched_postings_get"];
         put?: never;
@@ -1915,9 +1915,15 @@ export interface components {
             target_locations: string[];
         };
         /**
+         * MatchOrder
+         * @description How a list of openings is ordered.
+         * @enum {string}
+         */
+        MatchOrder: "fit" | "newest";
+        /**
          * MatchedPosting
-         * @description An opening inside one of the user's roles, ranked by its own fit,
-         *     worked out locally from its role's (Phase 8).
+         * @description An opening inside one of the user's roles, with its own fit, worked
+         *     out locally from its role's (Phase 8).
          */
         MatchedPosting: {
             /** Company Name */
@@ -1934,6 +1940,8 @@ export interface components {
             fit_basis: "role" | "posting";
             /** Location */
             location: string | null;
+            /** Posted On */
+            posted_on?: string | null;
             /**
              * Posting Id
              * Format: uuid
@@ -5135,6 +5143,7 @@ export interface operations {
             query?: {
                 role_id?: string | null;
                 one_per_company?: boolean | null;
+                order?: components["schemas"]["MatchOrder"];
                 /** @description 1-based. */
                 page?: number;
                 /** @description Omit it for the whole list, on page 1. */
