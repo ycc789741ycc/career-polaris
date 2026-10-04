@@ -277,36 +277,38 @@ def coverage(
     return tuple(result)
 
 
-def get_claims_settled(content: ResumeContent, requirements: Iterable[str]) -> ResumeContent:
-    """The content with every line's ``answers`` cleared where it names no
-    requirement of the Target: a misnamed requirement is not an invented
-    claim, and is dropped rather than rejected. Pure."""
+def get_claims_settled(
+    content: ResumeContent,
+    requirements: Iterable[str],
+    gaps: Mapping[str, Iterable[str]],
+) -> ResumeContent:
+    """The content with a line's ``answers`` — the requirement it claims —
+    cleared wherever nothing backs the claim (ADR 0046). Pure.
+
+    A claim is dropped, the line kept, when it names no requirement of the
+    Target, or names one marked gap that the line's citations do not rest on
+    alone: ``gaps`` maps each gap to the evidence the user's answers about it
+    became (ADR 0044), and a gap nobody answered about maps to none. The line
+    still cites the user's own evidence, which is what guards against an
+    invented fact; only the claim that it meets the requirement goes. A line
+    the user wrote keeps its claim."""
     known = set(requirements)
+    allowed = {requirement: frozenset(ids) for requirement, ids in gaps.items()}
+
+    def is_backed(bullet: Bullet) -> bool:
+        if bullet.answers is None:
+            return True
+        if bullet.answers not in known:
+            return False
+        if bullet.origin is not Origin.WRITTEN or bullet.answers not in allowed:
+            return True
+        answers = allowed[bullet.answers]
+        return bool(answers) and bool(bullet.evidence_ids) and set(bullet.evidence_ids) <= answers
+
     return replace(
         content,
         sections=tuple(
-            s.update_bullets(
-                lambda b: b if b.answers is None or b.answers in known else replace(b, answers=None)
-            )
+            s.update_bullets(lambda b: b if is_backed(b) else replace(b, answers=None))
             for s in content.sections
         ),
     )
-
-
-def assert_gap_claims_answered(content: ResumeContent, gaps: Mapping[str, Iterable[str]]) -> None:
-    """A written line claiming a requirement marked gap cites only the
-    evidence the user's answers about that gap became, and at least one of
-    it (ADR 0044). ``gaps`` maps each gap requirement to those ids; a gap
-    nobody answered about maps to none, so nothing may claim it. A line the
-    user wrote is theirs and is not checked."""
-    allowed = {requirement: frozenset(ids) for requirement, ids in gaps.items()}
-    for bullet in content.bullets():
-        if bullet.origin is not Origin.WRITTEN or bullet.answers not in allowed:
-            continue
-        answers = allowed[bullet.answers]
-        if not answers:
-            raise ResumeError(f"a line claims {bullet.answers!r}, a gap nothing was answered about")
-        if not bullet.evidence_ids or not set(bullet.evidence_ids) <= answers:
-            raise ResumeError(
-                f"a line claims the gap {bullet.answers!r} from something other than its answers"
-            )

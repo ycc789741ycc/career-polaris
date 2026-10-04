@@ -734,9 +734,13 @@ async def test_a_gap_the_user_answered_about_is_claimed_from_the_answer_alone(
     claimed = [b for b in view.content.bullets() if b.answers == ORG]
     assert [b.evidence_ids for b in claimed] == [(answer_id,)]
 
-    # Claiming the same gap from other evidence is refused as a whole.
+    # Claiming the same gap from other evidence keeps the line and drops the
+    # claim (ADR 0046).
     world.stub.replies.append(_claiming_org(cited, org_cites=cited))
     again = await world.resume.request(account, ref, template=Template.ORGANIC, options=Options())
     await world.resume.generate(account, again.id)
-    refused = await world.resume.get(account, again.id)
-    assert (refused.summary.status, refused.summary.error_code) == ("failed", "ai_output_invalid")
+    written = await world.resume.get(account, again.id)
+    assert written.summary.status == "ready", written.summary.error_message
+    assert written.content is not None
+    line = next(b for b in written.content.bullets() if b.text.startswith("Wrote the ledger RFC"))
+    assert (line.answers, line.evidence_ids) == (None, (world.evidence_id,))

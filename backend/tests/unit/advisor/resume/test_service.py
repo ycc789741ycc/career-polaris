@@ -570,15 +570,24 @@ async def test_a_gap_is_written_from_what_the_user_answered_about_it() -> None:
     assert (row.verdict, [a.id for a in row.answers]) == ("gap", ["e1"])
 
 
-async def test_a_gap_nobody_answered_about_cannot_be_claimed() -> None:
+async def test_a_claim_on_a_gap_nobody_answered_about_is_dropped_not_the_resume() -> None:
+    """The model labelling a cited line with a gap it cannot back costs the
+    label, not the write the user paid for (ADR 0046)."""
     uow = FakeResumeUnitOfWork()
     service = _writer(uow, _claiming_reliability(), FakeGapFill())
     resume_id = await _resume(service)
 
     await service.generate(OWNER, resume_id)
 
-    stored = uow.store.resumes[resume_id]
-    assert (stored.status, stored.error_code) == (ResumeStatus.FAILED, "ai_output_invalid")
+    view = await service.get(OWNER, resume_id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert view.content is not None
+    [line] = list(view.content.bullets())
+    assert (line.text, line.evidence_ids, line.answers) == (
+        "Ran the incident reviews for payments",
+        ("e1",),
+        None,
+    )
 
 
 async def test_showing_a_section_is_an_edit_that_spends_nothing() -> None:
