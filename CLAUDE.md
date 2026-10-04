@@ -282,8 +282,8 @@ aimed at what the role map has selected: a role, and optionally one of its
 openings. That selection is carried in the hash (`?role=`, plus `&opening=`),
 so neither tab picks a Target of its own; the Advisor's "Your target role"
 banner only links back. The role map has exactly one control that aims the
-Advisor — the sticky "Advisor target" bar; picking a bubble or an opening only
-selects.
+Advisor — the sticky "Advisor target" bar, at the selected role (ADR 0049);
+picking a bubble only selects.
 
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé
@@ -498,9 +498,8 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   (`SkillGap.weight`, which `closing_lifts` honours). `compute_fits` stores
   them as `PostingFit`s with the opening's `role_id`,
   replaced per role by each build as a cache. `GET /matched-postings` ranks a
-  role's openings by them (`fit_basis: "posting"`); Top matched openings asks
-  for the selected role's with `one_per_company=true`, and reloads on every
-  pick. A Target with an opening plans against `rolemap.opening_fit`
+  role's openings by them (`fit_basis: "posting"`) for the Advisor; since
+  ADR 0049 the role map lists them newest first, with no fit. A Target with an opening plans against `rolemap.opening_fit`
   (`RequirementBasis.OPENING`), or the role's fit before one exists.
 - **A role's name is one job title.** `role_extraction` v2 tells the model to
   leave out where or how a role is worked, gender tags and company or team
@@ -509,9 +508,9 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   backstop; migration 0029 applied it to the names already stored.
 - **The role map shows roles and openings only.** 03 Roles no longer lists
   the recommended roles that did not make the map, and does not call
-  `GET /role-candidates`. Each Top matched opening reads "title · company",
-  with pay, location and any credit beneath; the role it is in is the one
-  selected, so no row names it.
+  `GET /role-candidates`. Each opening names its company, then its posting,
+  place, pay and any credit; the role it is in is the one selected, so no row
+  names it (ADR 0049).
 
 ## Phase 9 scope
 
@@ -691,3 +690,9 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 - **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
   versions) in the sidebar and on sign-in, and `web/public/icon.svg` as the
   favicon. Internal names (`jsa-*`, `jsa_net`) stay.
+- **Openings for this role** (ADR 0049). The role map lists the selected
+  role's openings newest first (`GET /matched-postings?order=newest`,
+  `posted_on`), ten at a time with "See all n openings", and no fit per
+  opening. No row selects an opening: "Target this role" aims at the role.
+  Opening fits (ADR 0032) are still computed for Targets that name one.
+

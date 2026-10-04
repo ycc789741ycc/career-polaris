@@ -54,7 +54,7 @@ from advisor.rolemap.domain.lineage import (
     overlap,
     reconcile,
 )
-from advisor.rolemap.domain.matches import MatchCandidate, rank_matches
+from advisor.rolemap.domain.matches import MatchCandidate, MatchOrder, rank_matches
 from advisor.rolemap.domain.repositories import (
     BuildRunFilter,
     BuildRunRepository,
@@ -122,6 +122,7 @@ __all__ = [
     "LineageEntryFilter",
     "LineageEntryRepository",
     "MatchCandidate",
+    "MatchOrder",
     "OwnerRoleMap",
     "PlacementOutcome",
     "PostingFit",

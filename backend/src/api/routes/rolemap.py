@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 
-from advisor.rolemap import BuildRunView
+from advisor.rolemap import BuildRunView, MatchOrder
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
 from api.schemas.common import Accepted
@@ -108,15 +108,16 @@ async def matched_postings(
     paging: Paging,
     role_id: Annotated[uuid.UUID | None, Query()] = None,
     one_per_company: Annotated[bool | None, Query()] = None,
+    order: Annotated[MatchOrder, Query()] = MatchOrder.FIT,
 ) -> MatchedPostingPage:
-    """The openings inside the user's roles, best first. ``role_id`` keeps one
-    role's; "Top matched openings" asks for the selected role's with
-    ``one_per_company=true&page_size=10``, and the Advisor for all of them.
-    Each is ranked by its own fit, worked out locally from its role's by the
-    last build; no AI runs to produce it. ``one_per_company`` defaults to true
-    across all roles and false for one role."""
+    """The openings inside the user's roles. ``role_id`` keeps one role's;
+    "Openings for this role" asks for the selected role's with
+    ``order=newest`` ten at a time (ADR 0049), and the Advisor for all of
+    them by fit. A fit is each opening's own, worked out locally from its
+    role's by the last build; no AI runs to produce it. ``one_per_company``
+    defaults to true across all roles and false for one role."""
     ranked = await deps.rolemap.matched_postings(
-        user, limit=None, role_id=role_id, one_per_company=one_per_company
+        user, limit=None, role_id=role_id, one_per_company=one_per_company, order=order
     )
     return MatchedPostingPage.of(
         paginate(ranked, paging.page, paging.page_size), MatchedPosting.from_view

@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 
 from advisor.market.baseline import BASELINE_SOURCES, BaselineSource
@@ -159,6 +159,9 @@ class PostingView:
     # The job site this opening must be credited to wherever it is shown, with
     # its link (ADR 0025); None when the link is the employer's own.
     credited_to: str | None = None
+    # The day it was posted, as its source states it, else the day it was
+    # first fetched; None for a pasted JD.
+    posted_on: date | None = None
 
 
 class CrawlIngest:
@@ -606,4 +609,5 @@ def _shared_posting_view(posting: JobPosting, company_name: str) -> PostingView:
         company_id=posting.company_id,
         source_kind=posting.source_kind,
         credited_to=credited_source(posting.url),
+        posted_on=posting.posted_on or posting.first_seen_at.date(),
     )

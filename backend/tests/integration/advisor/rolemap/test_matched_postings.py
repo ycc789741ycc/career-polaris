@@ -1,8 +1,9 @@
 """The role map's "Top matched" list, against a real database (ADR 0028).
 
 What is worth proving: expired postings, retired roles and pasted JDs stay
-out; the order follows the role's fit; and the map counts, for each role,
-exactly the openings this list can show for it.
+out; the order follows the role's fit, or the posting date when asked for
+the newest first; and the map counts, for each role, exactly the openings
+this list can show for it.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from advisor.market import (
     create_market_service,
 )
 from advisor.market.infra.models import CrawlSource
-from advisor.rolemap import FitView, create_rolemap_service
+from advisor.rolemap import FitView, MatchOrder, create_rolemap_service
 from advisor.rolemap.infra.models import Role, RoleMember
 from kernel.ai_gateway import AiGateway
 from kernel.config import Settings
@@ -33,7 +34,9 @@ from tests.integration.places import WINDOWS, store_target_locations
 pytestmark = pytest.mark.integration
 
 
-def _posting(title: str, company: str, market: str) -> NormalizedPosting:
+def _posting(
+    title: str, company: str, market: str, posted_on: date = date(2026, 9, 1)
+) -> NormalizedPosting:
     return NormalizedPosting(
         external_id=title,
         company_name=company,
@@ -42,7 +45,7 @@ def _posting(title: str, company: str, market: str) -> NormalizedPosting:
         description=f"You will work on {title}.",
         url=f"https://boards.test/{title}",
         source_kind=SourceKind.ATS_BOARD,
-        posted_on=date(2026, 9, 1),
+        posted_on=posted_on,
         salary=None,
     )
 
@@ -82,7 +85,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             source_id,
             [
                 _posting(f"Backend A {tag}", northwind, market_name),
-                _posting(f"Backend B {tag}", kestrel, market_name),
+                _posting(f"Backend B {tag}", kestrel, market_name, date(2026, 9, 5)),
                 _posting(f"Backend Gone {tag}", kestrel, market_name),
                 _posting(f"Platform {tag}", kestrel, market_name),
                 _posting(f"Retired {tag}", northwind, market_name),
@@ -93,7 +96,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             source_id,
             [
                 _posting(f"Backend A {tag}", northwind, market_name),
-                _posting(f"Backend B {tag}", kestrel, market_name),
+                _posting(f"Backend B {tag}", kestrel, market_name, date(2026, 9, 5)),
                 _posting(f"Platform {tag}", kestrel, market_name),
                 _posting(f"Retired {tag}", northwind, market_name),
             ],
@@ -158,6 +161,16 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
         ]
         assert [m.title for m in await rolemap.matched_postings(account, limit=1)] == [
             f"Platform {tag}"
+        ]
+
+        # The role map lists one role's openings newest first, each with the
+        # day it was posted.
+        newest = await rolemap.matched_postings(
+            account, limit=None, role_id=backend, order=MatchOrder.NEWEST
+        )
+        assert [(m.title, m.posted_on) for m in newest] == [
+            (f"Backend B {tag}", date(2026, 9, 5)),
+            (f"Backend A {tag}", date(2026, 9, 1)),
         ]
 
         # The map draws the same roles, each counting the openings Top matched

@@ -3263,3 +3263,20 @@ and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
 * The repository, the `jsa-*` images, `jsa_net` and the compose projects keep
   the old name: renaming them would break every running stack for nothing a
   user sees. No ADR, because a name is easy to change back.
+
+## Openings for this role
+ADR 0049.
+* The role map's "Top matched openings" becomes "Openings for this role":
+  every open posting in the selected role, newest first, ten at a time, with
+  "See all n openings" paging through the rest.
+* A row shows the company, the posting with its link, place, pay, credit and
+  how long ago it was posted (`posted_on`: the source's day, else the first
+  fetch). It shows no fit, because the fit is scored on the role.
+* `GET /matched-postings` takes `order=fit|newest`; the Advisor keeps `fit`.
+* No row selects an opening, so "Target this role" aims at the role only. A
+  Target that names an opening, set before, still works, and opening fits are
+  still computed for it.
+
+What gets harder: a new Target can no longer name one opening from the map,
+yet every build still works out opening fits.
+
