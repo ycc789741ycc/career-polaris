@@ -4,6 +4,12 @@
 # `start-app` stay independent and neither can start the other.
 #
 # Image tags are pinned — never `latest` — and every value comes from .env.
+#
+# Which services run here is the COMPOSE_PROFILES setting in .env, so one file
+# serves every place the app runs (docs/decisions/0051):
+#   edge     Postgres, beside the api that reads it on every request
+#   tunnel   the private link between the edge and the compute side
+#   local    MinIO, for development and CI; a deployment uses Spaces
 
 # Its own compose project, separate from the app's. Sharing one project name
 # would make `stop-app --remove-orphans` treat these services as orphans of the
@@ -28,19 +34,36 @@ x-logging: &logging
 services:
   postgres:
     <<: *logging
+    profiles: ["edge"]
+    restart: unless-stopped
     mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
     memswap_limit: ${POSTGRES_MEM_LIMIT:-1g}
     cpus: ${POSTGRES_CPUS:-2.0}
     pids_limit: 512
     image: pgvector/pgvector:0.8.6-pg16-bookworm
+    # Sized per place in .env: the defaults are Postgres's own, and a 2 GB
+    # droplet sets smaller ones.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
     environment:
       POSTGRES_USER: ${POSTGRES_SUPERUSER:?POSTGRES_SUPERUSER is required}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      # Published for a human with a database client. Services reach Postgres by
-      # its service name on jsa_net, not through this port.
-      - "${POSTGRES_PUBLISHED_PORT:-21472}:5432"
+      # Published for a human with a database client, and for the tunnel to
+      # forward to: services on this host reach Postgres by its service name on
+      # jsa_net. Loopback only, because Docker's own iptables rules go ahead of
+      # ufw, and the compute side comes in through the tunnel, never the
+      # internet.
+      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PUBLISHED_PORT:-21472}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -51,6 +74,8 @@ services:
 
   objectstore:
     <<: *logging
+    profiles: ["local"]
+    restart: unless-stopped
     mem_limit: ${OBJECTSTORE_MEM_LIMIT:-1g}
     memswap_limit: ${OBJECTSTORE_MEM_LIMIT:-1g}
     cpus: ${OBJECTSTORE_CPUS:-1.0}
@@ -65,8 +90,8 @@ services:
     ports:
       # Published so a browser can follow a presigned URL, which is signed
       # against S3_PUBLIC_ENDPOINT_URL.
-      - "${S3_PUBLISHED_PORT:-21473}:9000"
-      - "${S3_CONSOLE_PUBLISHED_PORT:-21474}:9001"
+      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${S3_PUBLISHED_PORT:-21473}:9000"
+      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${S3_CONSOLE_PUBLISHED_PORT:-21474}:9001"
     volumes:
       - objectdata:/data
     healthcheck:
@@ -75,6 +100,46 @@ services:
       timeout: 5s
       retries: 20
 
+  # The private link between the edge and the compute side. It joins the
+  # host's own network, so the host gets the tunnel's address and its routes:
+  # every container here reaches the other side through it, and the other side
+  # reaches only what `infra/tunnel-up.sh` forwards — Postgres, on the edge.
+  # The compute side opens no inbound port; it dials out.
+  tunnel:
+    <<: *logging
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    mem_limit: ${TUNNEL_MEM_LIMIT:-128m}
+    memswap_limit: ${TUNNEL_MEM_LIMIT:-128m}
+    cpus: ${TUNNEL_CPUS:-0.5}
+    pids_limit: 128
+    image: tailscale/tailscale:v1.102.5
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      # Checked by infra/tunnel-up.sh when this profile runs. Not `:?` here:
+      # compose reads the whole file in every place, including those that
+      # run no tunnel.
+      TS_AUTHKEY: ${TUNNEL_AUTH_KEY:-}
+      TS_HOSTNAME: ${TUNNEL_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      # Containers keep Docker's DNS: the other side is named by its tunnel
+      # address in .env, never by a tunnel-only name.
+      TS_ACCEPT_DNS: "false"
+      # Where the CLI below and infra/tunnel-up.sh reach the daemon.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+    volumes:
+      - tunnelstate:/var/lib/tailscale
+    healthcheck:
+      test: ["CMD", "tailscale", "--socket=/var/run/tailscale/tailscaled.sock", "status", "--peers=false"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
 volumes:
   pgdata:
   objectdata:
+  tunnelstate:

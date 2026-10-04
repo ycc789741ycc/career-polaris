@@ -12,6 +12,13 @@
 #
 # The network is created by `start-infra`, which is why `start-app` needs infra
 # to be up and cannot bring it up itself.
+#
+# Which services run here is the COMPOSE_PROFILES setting in .env
+# (docs/decisions/0051):
+#   edge     api and web: light, always on, beside Postgres
+#   compute  worker and crawler: the embedding model, PDF renders and syncs
+# Development and CI name both. `migrate` is in neither: `make migrate` runs it
+# wherever the app starts, under a lock.
 
 # Its own compose project, separate from infra's, so --remove-orphans here can
 # only ever affect application containers.
@@ -70,6 +77,7 @@ services:
   # Verifies tokens, serves HTTP, starts connector OAuth. Holds the master key.
   api:
     <<: [*backend, *long-running]
+    profiles: ["edge"]
     mem_limit: ${API_MEM_LIMIT:-768m}
     memswap_limit: ${API_MEM_LIMIT:-768m}
     cpus: ${API_CPUS:-1.0}
@@ -83,11 +91,15 @@ services:
       - --port
       - "8000"
     ports:
-      - "${API_PUBLISHED_PORT:-21470}:8000"
+      # Loopback only: Docker's iptables rules go ahead of ufw, so 0.0.0.0
+      # would serve the api over plain HTTP to the internet on any host with a
+      # public address. A deployment's proxy reaches it on jsa_net.
+      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${API_PUBLISHED_PORT:-21470}:8000"
 
   # Runs AI jobs and connector syncs. Holds the master key and connector tokens.
   worker:
     <<: [*backend, *long-running]
+    profiles: ["compute"]
     mem_limit: ${WORKER_MEM_LIMIT:-2g}
     memswap_limit: ${WORKER_MEM_LIMIT:-2g}
     cpus: ${WORKER_CPUS:-2.0}
@@ -105,6 +117,7 @@ services:
   # genuinely all it needs.
   crawler:
     <<: [*backend, *long-running]
+    profiles: ["compute"]
     mem_limit: ${CRAWLER_MEM_LIMIT:-2g}
     memswap_limit: ${CRAWLER_MEM_LIMIT:-2g}
     cpus: ${CRAWLER_CPUS:-1.0}
@@ -142,6 +155,7 @@ services:
   # reaches the browser, so it receives nothing else.
   web:
     <<: [*hardened, *long-running]
+    profiles: ["edge"]
     mem_limit: ${WEB_MEM_LIMIT:-512m}
     memswap_limit: ${WEB_MEM_LIMIT:-512m}
     cpus: ${WEB_CPUS:-0.5}
@@ -153,7 +167,7 @@ services:
     environment:
       WEB_API_BASE_URL: ${WEB_API_BASE_URL:?WEB_API_BASE_URL is required}
     ports:
-      - "${WEB_PUBLISHED_PORT:-21471}:8080"
+      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${WEB_PUBLISHED_PORT:-21471}:8080"
 
 volumes:
   modelcache:

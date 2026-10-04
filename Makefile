@@ -18,6 +18,12 @@
 #         bind-mounted, reloading on save. Local only.
 # Tests and gates ignore MODE: they always run the `test` stage, never mounted,
 # which `build-app` builds in either mode. The app itself never reads MODE.
+#
+# Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
+# (docs/decisions/0051): `edge` (api, web, Postgres), `compute` (worker,
+# crawler), `tunnel` (the link between them) and `local` (MinIO). Development
+# and CI name them all but `tunnel`. Builds and `stop-app` cover every profile;
+# starts run only this place's.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -36,6 +42,8 @@ else
 COMPOSE_APP  := $(COMPOSE_BASE)
 endif
 COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE)
+# Every profile, whatever this place runs: what builds, stops and reports use.
+ALL_PROFILES  := --profile '*'
 
 # One tag per mode, plus the test image both modes build.
 MODE_IMAGES        := jsa-backend:$(MODE) jsa-web:$(MODE)
@@ -63,7 +71,8 @@ PYTEST_FILTER :=
 VITEST_FILTER :=
 endif
 
-.PHONY: help require-env check-mode require-mode-images build-infra build-app \
+.PHONY: help require-env check-mode require-mode-images require-app-services \
+        require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache
@@ -94,46 +103,64 @@ require-mode-images: check-mode
 	    echo "ERROR: $$image is missing. Run: make build-app MODE=$(MODE)"; exit 1; }; \
 	done
 
+# A place whose COMPOSE_PROFILES selects nothing would start nothing and say
+# nothing; fail instead, with what to set.
+require-app-services: require-env
+	@[ -n "$$($(COMPOSE_BASE) config --services 2>/dev/null | grep -vx migrate)" ] || { \
+	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no app service."; \
+	  echo "  Set edge, compute, or both (development: edge,compute,local)."; exit 1; }
+
+require-infra-services: require-env
+	@[ -n "$$($(COMPOSE_INFRA) config --services 2>/dev/null)" ] || { \
+	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no infra service."; \
+	  echo "  Set edge, tunnel or local (development: edge,compute,local)."; exit 1; }
+
 # --- build ------------------------------------------------------------------
 
-build-infra: require-env
+# This place's infra only: a compute machine has no use for Postgres's image.
+build-infra: require-infra-services
 	$(COMPOSE_INFRA) pull
 
 # The images for the requested mode, plus the `test` stage the test tiers and
 # gates run in — built whichever mode was asked for.
 build-app: require-env check-mode
-	$(COMPOSE_APP) build
+	$(COMPOSE_APP) $(ALL_PROFILES) build
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
 	docker build --target test -t $(WEB_TEST_IMAGE) web
 	docker pull $(SCANNER_IMAGE)
 
 # --- start / stop -----------------------------------------------------------
 
-start-infra: require-env
+# jsa_net is created here even where no infra service joins it (a compute
+# machine runs only the tunnel, on the host's network), because the app's
+# compose file expects it.
+start-infra: require-infra-services
+	@infra/tunnel-up.sh check
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || docker network create $(NETWORK) >/dev/null
 	$(COMPOSE_INFRA) up -d
 	@echo "Waiting for infra to report healthy..."
 	@infra/wait-for-healthy.sh
-	@echo "Bootstrapping least-privilege database roles..."
+	@infra/tunnel-up.sh
 	@infra/bootstrap-roles.sh
 
 # Both modes migrate first: pending migrations run to completion BEFORE any
 # container serves traffic, and a failed migration fails the start. Starting
 # one mode replaces the other, since both run the same services.
-start-app: require-env require-mode-images migrate
+start-app: require-app-services require-mode-images migrate
 	$(COMPOSE_APP) up -d --no-build
-	@echo "MODE=$(MODE): api on $$($(COMPOSE_APP) port api 8000)," \
-	      "web on $$($(COMPOSE_APP) port web 8080)"
+	@echo "MODE=$(MODE), running here:"
+	@$(COMPOSE_APP) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
 
 # Stops whichever mode is running: both run the same services in one project.
 stop-app: require-env check-mode
-	$(COMPOSE_BASE) down --remove-orphans
+	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
 
 # Preserves data on purpose. Use `make clean-up-infra` to discard volumes.
 stop-infra: require-env
-	$(COMPOSE_INFRA) stop
+	$(COMPOSE_INFRA) $(ALL_PROFILES) stop
 
 logs: require-env
-	$(COMPOSE_BASE) logs --tail 100 -f
+	$(COMPOSE_BASE) $(ALL_PROFILES) logs --tail 100 -f
 
 # --- resource usage ---------------------------------------------------------
 
@@ -142,7 +169,7 @@ logs: require-env
 # Then restarts and OOM kills: a non-zero count means a limit is too tight or
 # something leaks — raise the *_MEM_LIMIT in .env, or find the leak.
 stats: require-env
-	@ids="$$($(COMPOSE_INFRA) ps -q) $$($(COMPOSE_BASE) ps -q)"; \
+	@ids="$$($(COMPOSE_INFRA) $(ALL_PROFILES) ps -q) $$($(COMPOSE_BASE) $(ALL_PROFILES) ps -q)"; \
 	 [ -n "$${ids// /}" ] || { echo "Nothing is running. Run: make start-infra"; exit 1; }; \
 	 docker stats --no-stream \
 	   --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.PIDs}}' $$ids; \
@@ -269,5 +296,5 @@ clean-up-cache:
 clean-up-infra: require-env
 	@read -p "This deletes all local infra volumes. Type 'yes' to continue: " ok; \
 	 [ "$$ok" = "yes" ] || { echo "aborted"; exit 1; }
-	$(COMPOSE_BASE) down --remove-orphans
-	$(COMPOSE_INFRA) down -v
+	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
+	$(COMPOSE_INFRA) $(ALL_PROFILES) down -v
