@@ -724,4 +724,8 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   the Sections panel change the draft only, like any edit on the page;
   "Save as vN" keeps them. Filling a section is refused while there are
   unsaved changes, because it is written into the saved version.
+- **Undo.** Every edit to the résumé draft goes through `editDraft`, which
+  keeps the drafts before it (`getStackWith`, at most 50); "↶ Undo" and
+  Cmd/Ctrl+Z (outside a field being typed in) step back. Saving or opening
+  another résumé clears it.
 

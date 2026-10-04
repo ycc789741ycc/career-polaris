@@ -18,6 +18,7 @@ import { startDownload } from "./download";
 import {
   citeLine,
   coverageStatus,
+  getStackWith,
   pageStyle,
   Resume,
   savedLine,
@@ -624,6 +625,68 @@ describe("résumé screen", () => {
     );
     const body = saved?.body as { content: ResumeContent };
     expect(experience(body.content).entries).toEqual([]);
+  });
+
+  it("undoes unsaved edits one at a time, back to the saved version", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const undo = screen.getByRole("button", { name: "Undo" });
+    expect(undo).toBeDisabled();
+
+    // Two edits: a line rewritten, then the entry removed.
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    line.textContent = "Owned the retry layer, end to end";
+    fireEvent.blur(line);
+    await user.click(
+      within(page).getByRole("button", {
+        name: "Remove Backend Engineer from Experience",
+      }),
+    );
+    expect(within(page).queryByText(/Owned the retry layer/)).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Undo (2 unsaved edits)" }),
+    );
+    expect(
+      within(page).getByText("Owned the retry layer, end to end"),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Undo (1 unsaved edit)" }),
+    );
+    expect(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    // Back where it was saved: nothing to save, and nothing was sent.
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeDisabled();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("undoes the last edit with the keyboard when no line is being typed in", async () => {
+    serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    await user.click(
+      within(page).getByRole("button", {
+        name: "Remove Backend Engineer from Experience",
+      }),
+    );
+    (document.activeElement as HTMLElement | null)?.blur();
+    await user.keyboard("{Control>}z{/Control}");
+
+    expect(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    ).toBeInTheDocument();
   });
 
   it("saves an edited line as a new version", async () => {
@@ -1422,5 +1485,17 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+describe("the undo stack", () => {
+  it("keeps the newest fifty drafts", () => {
+    let stack: ResumeContent[] = [];
+    for (let i = 0; i < 55; i += 1) {
+      stack = getStackWith(stack, { ...resume.content!, name: `Draft ${i}` });
+    }
+    expect(stack).toHaveLength(50);
+    expect(stack[0]!.name).toBe("Draft 5");
+    expect(stack[49]!.name).toBe("Draft 54");
   });
 });
