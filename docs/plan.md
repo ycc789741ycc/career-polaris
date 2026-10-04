@@ -3512,6 +3512,24 @@ when a job starts.
   reads `queued`, not `stale`.
 
 ## The edge on the droplet
+**Done** (ADR 0053). Where the build differs from the plan below:
+
+* The proxy is an app service with a profile of its own, `proxy`, not infra:
+  it is built (`proxy/`, Caddy plus `caddy-ratelimit`), and released and
+  scanned like the app's images. The droplet runs `edge,proxy,tunnel`.
+* Spaces needed a code change: `ObjectStore.ensure_bucket` listed every
+  bucket, which a key limited to one bucket may not do. It now asks
+  `HeadBucket` about its own.
+* No lifecycle rule expires exports. They live under each user's prefix,
+  which a rule cannot match, and an unchanged export is reused, so an
+  expired file would leave a link to nothing.
+* The per-address limits came into this step from "Limit what one account
+  can do", as planned. They were checked against stub upstreams: the
+  eleventh `/auth/*` request in a minute gets 429 with `Retry-After: 60`,
+  and a body over the cap gets 413.
+* The firewall, swap, SSH and the operator's machine are in `docs/deploy.md`,
+  the runbook for both places. They are not code.
+
 * **Caddy, one origin.** A pinned Caddy image in infra on the edge serves
   `/api/*` to `api` and everything else to `web`. It holds the only public
   ports, 80 and 443. `SITE_HOSTNAME` (required) is the name it gets a

@@ -67,9 +67,9 @@ set_value JIRA_API_BASE_URL https://api.atlassian.com
 set_value JIRA_OAUTH_BASE_URL https://auth.atlassian.com
 set_value WEB_API_BASE_URL http://localhost:21470
 
-# Optional settings that are off while blank: Google sign-in, and the tunnel
-# CI never runs. Every other blank is a missing CI value.
-MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME)=$'
+# Optional settings that are off while blank: Google sign-in, and the tunnel,
+# proxy and backups CI never runs. Every other blank is a missing CI value.
+MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+)=$'
 blank=$(grep -E '^[A-Z_]+=$' .env | grep -vE "$MAY_BE_BLANK" || true)
 if [ -n "$blank" ]; then
   echo "These variables from .env.example have no CI value yet:"

@@ -17,6 +17,7 @@
 # (docs/decisions/0051):
 #   edge     api and web: light, always on, beside Postgres
 #   compute  worker and crawler: the embedding model, PDF renders and syncs
+#   proxy    Caddy, the only thing on the internet: the droplet alone
 # Development and CI name both. `migrate` is in neither: `make migrate` runs it
 # wherever the app starts, under a lock.
 
@@ -170,5 +171,48 @@ services:
     ports:
       - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${WEB_PUBLISHED_PORT:-21471}:8080"
 
+  # The edge (ADR 0053): TLS for SITE_HOSTNAME, one origin for the SPA and
+  # the api, a cap on request bodies, timeouts for slow clients, and limits
+  # per client address. Its own profile, so development never binds 80/443.
+  proxy:
+    <<: [*hardened, *long-running]
+    profiles: ["proxy"]
+    mem_limit: ${PROXY_MEM_LIMIT:-128m}
+    memswap_limit: ${PROXY_MEM_LIMIT:-128m}
+    cpus: ${PROXY_CPUS:-0.5}
+    pids_limit: 128
+    build:
+      context: ./proxy
+      target: prod
+    image: jsa-proxy:prod
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    # Ports 80 and 443 without root or a capability.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    environment:
+      # Required where this runs; start-proxy refuses to start without it.
+      SITE_HOSTNAME: ${SITE_HOSTNAME:-}
+      EDGE_MAX_BODY_SIZE: ${EDGE_MAX_BODY_SIZE:-11MB}
+      EDGE_AUTH_REQUESTS_PER_MINUTE: ${EDGE_AUTH_REQUESTS_PER_MINUTE:-10}
+      EDGE_REQUESTS_PER_MINUTE: ${EDGE_REQUESTS_PER_MINUTE:-300}
+      EDGE_READ_HEADER_TIMEOUT: ${EDGE_READ_HEADER_TIMEOUT:-10s}
+      EDGE_READ_BODY_TIMEOUT: ${EDGE_READ_BODY_TIMEOUT:-120s}
+      EDGE_IDLE_TIMEOUT: ${EDGE_IDLE_TIMEOUT:-2m}
+    ports:
+      # Public on purpose, and the only service that is.
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Certificates and the ACME account: keep them, or every restart asks
+      # Let's Encrypt again and soon hits its rate limit.
+      - proxydata:/data
+      - proxyconfig:/config
+
 volumes:
   modelcache:
+  proxydata:
+  proxyconfig:

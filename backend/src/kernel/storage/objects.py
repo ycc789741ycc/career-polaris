@@ -87,12 +87,18 @@ class ObjectStore:
         second or two behind the process that needs it. That is an ordinary
         start-up condition, not a failure — but a persistent one still fails the
         start rather than leaving uploads broken at the first request.
+
+        Asks about this one bucket, never for the list of them: a deployment's
+        key is scoped to its bucket (ADR 0051), and may not list the account's.
         """
         last: Exception | None = None
         for attempt in range(attempts):
             try:
-                existing = {b["Name"] for b in self._client.list_buckets().get("Buckets", [])}
-                if self._bucket not in existing:
+                try:
+                    self._client.head_bucket(Bucket=self._bucket)
+                except ClientError as exc:
+                    if not _is_missing(exc):
+                        raise
                     self._client.create_bucket(Bucket=self._bucket)
                 return
             except (BotoCoreError, ClientError) as exc:
@@ -131,3 +137,9 @@ def attachment_disposition(filename: str) -> str:
     ascii_name = filename.encode("ascii", "ignore").decode("ascii").replace('"', "")
     ascii_name = ascii_name.replace("\\", "").strip() or "download"
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
+def _is_missing(error: ClientError) -> bool:
+    """HeadBucket answers a missing bucket with a bare 404."""
+    code = str(error.response.get("Error", {}).get("Code", ""))
+    return code in {"404", "NoSuchBucket", "NotFound"}
