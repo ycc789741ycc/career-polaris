@@ -3416,6 +3416,25 @@ and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
 `architecture.md` open question 1 (the choice of platform) gets its answer.
 
 ## Run the app in two places
+**Done** (ADR 0051). Where the build differs from the plan below:
+
+* One `PUBLISHED_BIND_ADDRESS` (default `127.0.0.1`) for every published
+  port, not one per port. Postgres stays on loopback on the droplet too:
+  `infra/tunnel-up.sh` has Tailscale forward the tunnel's port 5432 to it
+  (`tailscale serve`). Binding the tunnel's address directly would fail at
+  boot whenever Docker started Postgres before the tunnel had that address.
+* The tunnel is its own profile, `tunnel`, which both deployed places name
+  and development does not. MinIO is in `local`.
+* That each profile starts only its services is checked with
+  `docker compose config --services` for each place, not by an integration
+  test: the tests run inside a container and never drive compose.
+* Infra services restart with the host (`restart: unless-stopped`); without
+  it a droplet reboot left Postgres down.
+* Found while building it: a fresh database could not migrate past 0013,
+  whose clean-up named a column today's metadata no longer has. Fixed on
+  `bugfix/no-ticket/fresh-database-migrations`, since every new install, the
+  droplet's among them, starts from a fresh database.
+
 ADR: running in two places, and why each process lives where it does.
 * **Compose profiles.** `compose.yaml` puts `api` and `web` in the `edge`
   profile, and `worker` and `crawler` in the `compute` profile. Each place

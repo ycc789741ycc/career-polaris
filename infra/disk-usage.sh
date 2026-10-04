@@ -11,13 +11,15 @@ set -a; . ./"${ENV_FILE:-.env}"; set +a
 
 COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
 
-for service in postgres objectstore; do
-  if [ -z "$("${COMPOSE[@]}" ps -q --status running "$service")" ]; then
-    echo "ERROR: $service is not running. Run: make start-infra"
-    exit 1
-  fi
-done
+running() { [ -n "$("${COMPOSE[@]}" ps -q --status running "$1" 2>/dev/null)" ]; }
 
+# Each place runs part of the infra (COMPOSE_PROFILES): report what is here.
+if ! running postgres && ! running objectstore; then
+  echo "ERROR: neither Postgres nor MinIO runs here. Run: make start-infra"
+  exit 1
+fi
+
+if running postgres; then
 echo "== Free space on the disk holding the volumes =="
 "${COMPOSE[@]}" exec -T postgres df -h /var/lib/postgresql/data
 
@@ -47,5 +49,9 @@ SELECT n.nspname || '.' || c.relname                  AS relation,
  LIMIT 15;
 SQL
 
-echo "== Object storage, by bucket =="
-"${COMPOSE[@]}" exec -T objectstore sh -c 'du -sh /data/* 2>/dev/null || echo "(no buckets)"'
+fi
+
+if running objectstore; then
+  echo "== Object storage, by bucket =="
+  "${COMPOSE[@]}" exec -T objectstore sh -c 'du -sh /data/* 2>/dev/null || echo "(no buckets)"'
+fi

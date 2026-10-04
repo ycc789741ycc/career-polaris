@@ -56,6 +56,7 @@ new record that supersedes the old one.
 | [0048](0048-draw-contact-details-as-typed-items-with-icons.md) | Contact details are typed items, drawn with icons | Accepted |
 | [0049](0049-list-a-roles-openings-newest-first-without-a-fit.md) | The role map lists a role's openings newest first, without a fit | Accepted |
 | [0050](0050-keep-the-advisors-target-in-the-browser.md) | The Advisor's target is kept in the browser | Accepted |
+| [0051](0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md) | The edge runs on a droplet, the heavy work on the operator's machine | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
