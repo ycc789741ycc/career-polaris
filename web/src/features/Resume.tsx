@@ -44,7 +44,7 @@ import {
 import { EvidenceDisclosure } from "./EvidenceDisclosure";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { TemplateEditor, withSpec } from "./ResumeTemplates";
-import { ago } from "./time";
+import { dayLabel } from "./time";
 import { messageOf } from "./useAsync";
 
 type Ref = TargetRef;
@@ -551,6 +551,28 @@ export function Resume({
             ? `${resume.label}${resume.snapshot?.fit != null ? ` · ${resume.snapshot.fit}% fit` : ""}`
             : `${target.label}${target.fit !== null ? ` · ${target.fit}% fit` : ""}`}
         </div>
+        {saved.length > 0 && (
+          <label className="row resume-version" style={{ marginTop: 12 }}>
+            <span className="field-label" style={{ margin: 0 }}>
+              Version
+            </span>
+            <select
+              className="input"
+              value={resumeId ?? ""}
+              onChange={(event) => {
+                const entry = saved.find((r) => r.id === event.target.value);
+                if (entry) open(entry);
+              }}
+            >
+              {!resumeId && <option value="">None for this target yet</option>}
+              {saved.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {savedLine(entry)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {resume?.status === "ready" && (
           <div className="row" style={{ marginTop: 14, gap: 12 }}>
             <Button
@@ -609,228 +631,253 @@ export function Resume({
       )}
 
       <div className="resume-layout">
-        <div className="stack resume-col-tools" style={{ gap: 18 }}>
-          <div className="panel panel-tight">
-            <Eyebrow style={{ marginBottom: 12 }}>Saved résumés</Eyebrow>
-            {saved.length === 0 ? (
-              <p className="subcopy" style={{ marginTop: 0 }}>
-                None yet. Each one you write is kept here, with every version.
-              </p>
-            ) : (
-              saved.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="history-row inset"
-                  aria-current={entry.id === resumeId ? "true" : undefined}
-                  style={{ marginBottom: 6 }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="history-name">{entry.label}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {entry.status === "drafting"
-                        ? "Writing…"
-                        : entry.status === "failed"
-                          ? "Writing failed"
-                          : `Saved ${ago(entry.updated_at)} · v${entry.latest_version ?? 1}`}
-                    </div>
-                  </div>
-                  <Button variant="ghost" onClick={() => open(entry)}>
-                    Open
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="panel panel-tight">
-            <Eyebrow style={{ marginBottom: 12 }}>Template</Eyebrow>
-            <div className="stack" style={{ gap: 10 }}>
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="template-pick"
-                  aria-pressed={template === t.id}
-                  onClick={() => void changeSettings(t.id, options)}
-                >
-                  <span className="template-thumb" aria-hidden="true">
-                    <span
-                      style={{
-                        height: 5,
-                        background: t.spec.accent_color,
-                        width: "100%",
-                      }}
-                    />
-                    <span />
-                    <span />
-                    <span style={{ width: "70%" }} />
-                  </span>
-                  <span>
-                    <span
-                      style={{
-                        display: "block",
-                        fontFamily: "var(--font-heading)",
-                        fontSize: 15,
-                      }}
-                    >
-                      {t.name}
-                    </span>
-                    <span className="subcopy" style={{ fontSize: 12.5 }}>
-                      {t.is_built_in ? t.note : "Your own."}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-            {editor && limits ? (
-              <TemplateEditor
-                key={`${editor.from.id}:${editor.editing}`}
-                limits={limits}
-                from={editor.from}
-                editing={editor.editing}
-                onPreview={setPreview}
-                onSaved={templateSaved}
-                onDeleted={templateDeleted}
-                onClose={closeEditor}
-              />
-            ) : (
-              chosen &&
-              limits && (
-                <div className="row" style={{ gap: 4, marginTop: 8 }}>
-                  {!chosen.is_built_in && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => openEditor(chosen, true)}
-                    >
-                      Change {chosen.name}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    disabled={
-                      templates.filter((t) => !t.is_built_in).length >=
-                      limits.max_templates
-                    }
-                    onClick={() => openEditor(chosen, false)}
+        <aside className="stack resume-col-tools" aria-label="Résumé tools">
+          <details className="tool-card" open>
+            <summary>
+              <span>Layout</span>
+              <span className="tool-card-status">
+                {layoutStatus(chosen?.name ?? null, draft)}
+              </span>
+            </summary>
+            <div className="tool-card-body">
+              <div className="field-label" style={{ marginBottom: 8 }}>
+                Template
+              </div>
+              <div className="template-grid">
+                {templates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="template-pick"
+                    aria-pressed={template === t.id}
+                    onClick={() => void changeSettings(t.id, options)}
                   >
-                    Make your own
-                  </Button>
-                </div>
-              )
-            )}
-            {chosen && limits && !editor && (
-              <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                {FONT_PICKERS.map(({ key, label }) => (
-                  <label key={key} className="font-picker">
-                    <span className="field-label">{label}</span>
-                    <select
-                      className="input"
-                      value={fonts[key] ?? ""}
-                      disabled={resume?.status !== "ready"}
-                      onChange={(event) =>
-                        void changeSettings(template, options, {
-                          ...fonts,
-                          [key]: (event.target.value ||
-                            null) as ResumeFonts["heading_font"],
-                        })
-                      }
-                    >
-                      <option value="">
-                        Template&apos;s ({chosen.spec[key]})
-                      </option>
-                      {limits.fonts.map((font) => (
-                        <option key={font} value={font}>
-                          {font}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    <span className="template-thumb" aria-hidden="true">
+                      <span
+                        style={{
+                          height: 5,
+                          background: t.spec.accent_color,
+                          width: "100%",
+                        }}
+                      />
+                      <span />
+                      <span />
+                      <span style={{ width: "70%" }} />
+                    </span>
+                    <span>
+                      <span
+                        style={{
+                          display: "block",
+                          fontFamily: "var(--font-heading)",
+                          fontSize: 15,
+                        }}
+                      >
+                        {t.name}
+                      </span>
+                      <span className="subcopy" style={{ fontSize: 12.5 }}>
+                        {t.is_built_in ? t.note : "Your own."}
+                      </span>
+                    </span>
+                  </button>
                 ))}
               </div>
-            )}
-            <div className="stack" style={{ gap: 10, marginTop: 16 }}>
-              {OPTION_LABELS.map(({ key, label }) => (
-                <RoundCheck
-                  key={key}
-                  checked={options[key]}
-                  onChange={(on) =>
-                    void changeSettings(template, { ...options, [key]: on })
-                  }
-                >
-                  {label}
-                </RoundCheck>
-              ))}
+              {editor && limits ? (
+                <TemplateEditor
+                  key={`${editor.from.id}:${editor.editing}`}
+                  limits={limits}
+                  from={editor.from}
+                  editing={editor.editing}
+                  onPreview={setPreview}
+                  onSaved={templateSaved}
+                  onDeleted={templateDeleted}
+                  onClose={closeEditor}
+                />
+              ) : (
+                chosen &&
+                limits && (
+                  <div className="row" style={{ gap: 4, marginTop: 8 }}>
+                    {!chosen.is_built_in && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => openEditor(chosen, true)}
+                      >
+                        Change {chosen.name}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      disabled={
+                        templates.filter((t) => !t.is_built_in).length >=
+                        limits.max_templates
+                      }
+                      onClick={() => openEditor(chosen, false)}
+                    >
+                      Make your own
+                    </Button>
+                  </div>
+                )
+              )}
+              {chosen && limits && !editor && (
+                <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                  {FONT_PICKERS.map(({ key, label }) => (
+                    <label key={key} className="font-picker">
+                      <span className="field-label">{label}</span>
+                      <select
+                        className="input"
+                        value={fonts[key] ?? ""}
+                        disabled={resume?.status !== "ready"}
+                        onChange={(event) =>
+                          void changeSettings(template, options, {
+                            ...fonts,
+                            [key]: (event.target.value ||
+                              null) as ResumeFonts["heading_font"],
+                          })
+                        }
+                      >
+                        <option value="">
+                          Template&apos;s ({chosen.spec[key]})
+                        </option>
+                        {limits.fonts.map((font) => (
+                          <option key={font} value={font}>
+                            {font}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div className="stack" style={{ gap: 10, marginTop: 16 }}>
+                {OPTION_LABELS.map(({ key, label }) => (
+                  <RoundCheck
+                    key={key}
+                    checked={options[key]}
+                    onChange={(on) =>
+                      void changeSettings(template, { ...options, [key]: on })
+                    }
+                  >
+                    {label}
+                  </RoundCheck>
+                ))}
+              </div>
+              {draft &&
+                resume &&
+                (resume.status === "ready" || resume.status === "filling") && (
+                  <SectionsPanel
+                    content={draft}
+                    added={added}
+                    filling={
+                      resume.status === "filling"
+                        ? // The one being filled is shown in the plan and still
+                          // empty in the content.
+                          (resume.section_plan.find(
+                            (slot) =>
+                              slot.is_shown &&
+                              !resume.content?.sections.some(
+                                (s) =>
+                                  s.kind === slot.kind &&
+                                  (s.title ?? null) === (slot.title ?? null) &&
+                                  !isEmptySection(s),
+                              ),
+                          ) ?? null)
+                        : null
+                    }
+                    busy={busy || resume.status === "filling"}
+                    onChange={(next) => {
+                      setDraft(next);
+                      void saveVersion(next);
+                    }}
+                    onAdd={(slot) => void priceSection(slot)}
+                  />
+                )}
             </div>
-            <Button
-              block
-              busy={exporting?.status === "rendering"}
-              disabled={!resume?.version || dirty}
-              onClick={() => void exportPdf()}
-            >
-              {exporting?.status === "rendering"
-                ? "Rendering…"
-                : "Export as PDF"}
-            </Button>
-            {exporting?.status === "failed" && (
-              <ErrorNote error={exporting.error?.message ?? "Export failed."} />
-            )}
-            <p className="subcopy" style={{ fontSize: 12.5, marginTop: 10 }}>
-              {dirty
-                ? "Save this version first — the export is of a saved version."
-                : resume?.snapshot
-                  ? `Show where each line came from to see the lines rewritten for ${resume.snapshot.role_name ?? resume.snapshot.title} and the sources behind them. Neither prints.`
-                  : "The export is a white, printable page in the template you pick."}
-            </p>
-          </div>
-
-          {draft &&
-            resume &&
-            (resume.status === "ready" || resume.status === "filling") && (
-              <SectionsPanel
-                content={draft}
-                added={added}
-                filling={
-                  resume.status === "filling"
-                    ? // The one being filled is shown in the plan and still
-                      // empty in the content.
-                      (resume.section_plan.find(
-                        (slot) =>
-                          slot.is_shown &&
-                          !resume.content?.sections.some(
-                            (s) =>
-                              s.kind === slot.kind &&
-                              (s.title ?? null) === (slot.title ?? null) &&
-                              !isEmptySection(s),
-                          ),
-                      ) ?? null)
-                    : null
+          </details>
+          <details className="tool-card" open>
+            <summary>
+              <span>Revise with AI</span>
+              <span className="tool-card-status">
+                {reviseStatus(exchanges, model)}
+              </span>
+            </summary>
+            <div className="tool-card-body">
+              <ChatPanel
+                model={model}
+                target={
+                  resume?.snapshot?.role_name ?? resume?.snapshot?.title ?? null
                 }
-                busy={busy || resume.status === "filling"}
-                onChange={(next) => {
-                  setDraft(next);
-                  void saveVersion(next);
-                }}
-                onAdd={(slot) => void priceSection(slot)}
+                enabled={resume?.status === "ready" && !!draft}
+                exchanges={exchanges}
+                onSend={(message) => void send(message)}
+                onApply={(revisionId) => void apply(revisionId)}
+                onDismiss={(index) =>
+                  setExchanges((all) =>
+                    all.map((e, i) =>
+                      i === index ? { ...e, hasProposal: false } : e,
+                    ),
+                  )
+                }
               />
-            )}
-          <ChatPanel
-            model={model}
-            target={
-              resume?.snapshot?.role_name ?? resume?.snapshot?.title ?? null
-            }
-            enabled={resume?.status === "ready" && !!draft}
-            exchanges={exchanges}
-            onSend={(message) => void send(message)}
-            onApply={(revisionId) => void apply(revisionId)}
-            onDismiss={(index) =>
-              setExchanges((all) =>
-                all.map((e, i) =>
-                  i === index ? { ...e, hasProposal: false } : e,
-                ),
-              )
-            }
-          />
-        </div>
+            </div>
+          </details>
+          <details className="tool-card tool-card-coverage">
+            <summary>
+              <span>Coverage</span>
+              <span className="tool-card-status">
+                {coverageStatus(resume?.coverage ?? [])}
+              </span>
+            </summary>
+            <div className="tool-card-body">
+              {!resume || resume.coverage.length === 0 ? (
+                <p
+                  className="callout-note"
+                  style={{ fontSize: 13, margin: "10px 0 0" }}
+                >
+                  Once a résumé is written, each of their requirements shows
+                  here as covered, partial or a gap, with the work that backs
+                  it.
+                </p>
+              ) : (
+                <>
+                  <p
+                    className="callout-note"
+                    style={{ fontSize: 13, margin: "6px 0 10px" }}
+                  >
+                    Open a requirement to see the evidence behind it.
+                  </p>
+                  <div className="divided">
+                    {resume.coverage.map((row) => (
+                      <div key={row.requirement} className="requirement-row">
+                        <div
+                          className="row"
+                          style={{
+                            gap: 8,
+                            flexWrap: "nowrap",
+                            alignItems: "baseline",
+                          }}
+                        >
+                          <VerdictBadge verdict={row.verdict} />
+                          <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                            {row.requirement}
+                          </span>
+                          {row.verdict === "gap" && row.answers.length > 0 && (
+                            // Still a gap until a re-analysis counts it; the
+                            // page may claim it from the answer (ADR 0044).
+                            <span className="chip">Answered by you</span>
+                          )}
+                        </div>
+                        <EvidenceDisclosure
+                          compact
+                          evidence={[...row.evidence, ...row.answers]}
+                          empty="Nothing in your sources speaks to this yet."
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </details>
+        </aside>
 
         <div className="resume-col-page">
           {!resume ? (
@@ -912,82 +959,87 @@ export function Resume({
                 showSources={showSources}
                 onChange={setDraft}
               />
-              <div className="row" style={{ marginTop: 12, gap: 10 }}>
+              <div className="resume-page-actions">
                 <Button
-                  variant="secondary"
                   busy={busy}
                   disabled={!dirty}
                   onClick={() => void saveVersion(draft)}
                 >
                   Save as v{nextVersion}
                 </Button>
-                <span className="resume-annotation" style={{ margin: 0 }}>
+                <Button
+                  variant="secondary"
+                  busy={exporting?.status === "rendering"}
+                  disabled={!resume.version || dirty}
+                  onClick={() => void exportPdf()}
+                >
+                  {exporting?.status === "rendering"
+                    ? "Rendering…"
+                    : "Export as PDF"}
+                </Button>
+                <span className="resume-annotation resume-page-note">
                   {dirty
-                    ? "You have unsaved edits."
+                    ? "You have unsaved edits. Save this version first — the export is of a saved version."
                     : "Click any line to edit it in place."}
                 </span>
               </div>
+              {exporting?.status === "failed" && (
+                <ErrorNote
+                  error={exporting.error?.message ?? "Export failed."}
+                />
+              )}
             </>
           ) : draft ? (
             <Loading what="the template" />
           ) : null}
         </div>
-
-        <div className="stack resume-col-requirements" style={{ gap: 18 }}>
-          <div className="callout" style={{ padding: 22 }}>
-            <Eyebrow>Their requirements → your evidence</Eyebrow>
-            {!resume || resume.coverage.length === 0 ? (
-              <p
-                className="callout-note"
-                style={{ fontSize: 13, margin: "10px 0 0" }}
-              >
-                Once a résumé is written, each of their requirements shows here
-                as covered, partial or a gap, with the work that backs it.
-              </p>
-            ) : (
-              <>
-                <p
-                  className="callout-note"
-                  style={{ fontSize: 13, margin: "6px 0 10px" }}
-                >
-                  Open a requirement to see the evidence behind it.
-                </p>
-                <div className="divided">
-                  {resume.coverage.map((row) => (
-                    <div key={row.requirement} className="requirement-row">
-                      <div
-                        className="row"
-                        style={{
-                          gap: 8,
-                          flexWrap: "nowrap",
-                          alignItems: "baseline",
-                        }}
-                      >
-                        <VerdictBadge verdict={row.verdict} />
-                        <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                          {row.requirement}
-                        </span>
-                        {row.verdict === "gap" && row.answers.length > 0 && (
-                          // Still a gap until a re-analysis counts it; the
-                          // page may claim it from the answer (ADR 0044).
-                          <span className="chip">Answered by you</span>
-                        )}
-                      </div>
-                      <EvidenceDisclosure
-                        compact
-                        evidence={[...row.evidence, ...row.answers]}
-                        empty="Nothing in your sources speaks to this yet."
-                      />
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
       </div>
     </section>
   );
+}
+
+/** "Northwind Pay · v3 · edited 27 Sep 2026", one saved résumé in the
+ * Version list. Pure. */
+export function savedLine(entry: ResumeSummary): string {
+  if (entry.status === "drafting") return `${entry.label} · writing…`;
+  if (entry.status === "failed") return `${entry.label} · writing failed`;
+  return `${entry.label} · v${entry.latest_version ?? 1} · edited ${dayLabel(entry.updated_at)}`;
+}
+
+/** "Organic · 4 sections": the Layout card's summary. Pure. */
+export function layoutStatus(
+  templateName: string | null,
+  content: ResumeContent | null,
+): string {
+  const shown = content?.sections.filter((s) => s.is_shown).length ?? 0;
+  return [
+    templateName,
+    content ? `${shown} ${shown === 1 ? "section" : "sections"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** "1 proposal waiting", or the model the chat writes on. Pure. */
+export function reviseStatus(exchanges: Exchange[], model: string): string {
+  const waiting = exchanges.filter(
+    (e) => e.hasProposal && e.revisionId && !e.applied,
+  ).length;
+  if (waiting === 0) return model;
+  return `${waiting} ${waiting === 1 ? "proposal" : "proposals"} waiting`;
+}
+
+/** "1 covered · 1 partial · 1 gap": the Coverage card's summary. Pure. */
+export function coverageStatus(
+  coverage: readonly { verdict: string }[],
+): string {
+  if (coverage.length === 0) return "Once written";
+  const count = (verdict: string) =>
+    coverage.filter((row) => row.verdict === verdict).length;
+  const gaps = count("gap");
+  return `${count("covered")} covered · ${count("partial")} partial · ${gaps} ${
+    gaps === 1 ? "gap" : "gaps"
+  }`;
 }
 
 /** The page's custom properties, from the template as the renderer draws
@@ -1498,21 +1550,13 @@ function ChatPanel({
 
   return (
     <div
-      className="panel panel-tight"
-      style={{ display: "flex", flexDirection: "column", minHeight: 420 }}
+      role="region"
+      aria-label={`Revise with ${model}`}
+      style={{ display: "flex", flexDirection: "column" }}
     >
-      <div className="row" style={{ flexWrap: "nowrap" }}>
-        <span className="ai-badge" aria-hidden="true">
-          AI
-        </span>
-        <div>
-          <div style={{ fontSize: 14.5, fontWeight: 700 }}>
-            Revise with {model}
-          </div>
-          <div className="muted" style={{ fontSize: 12 }}>
-            Writes from your sources to fit {target ?? "the role you pick"}
-          </div>
-        </div>
+      <div className="muted" style={{ fontSize: 12 }}>
+        {model} · writes from your sources to fit{" "}
+        {target ?? "the role you pick"}; proposals apply only when you say so
       </div>
 
       <div className="chat-log" aria-live="polite">
