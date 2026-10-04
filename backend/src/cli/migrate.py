@@ -27,7 +27,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 from cli import apply_job_schema, seed_baseline
-from kernel.jobs.app import _psycopg_dsn
+from kernel.db import get_psycopg_dsn
 
 # The same constant in every place; it names this lock and nothing else.
 MIGRATION_LOCK_KEY = 0x4A53_414D_4947
@@ -43,7 +43,7 @@ def main() -> None:
     url = _get_migrator_url()
     config = Config("alembic.ini")
     known = {script.revision for script in ScriptDirectory.from_config(config).walk_revisions()}
-    with migration_lock(_psycopg_dsn(url)):
+    with migration_lock(get_psycopg_dsn(url)):
         assert_schema_known(_get_applied_revisions(url), known)
         command.upgrade(config, "head")
         asyncio.run(apply_job_schema.main())

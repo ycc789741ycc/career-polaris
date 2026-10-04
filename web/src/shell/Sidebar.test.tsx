@@ -7,6 +7,7 @@ import { ActivityContext } from "./activity";
 import { initialsOf } from "./PageHeader";
 import type { ShellStatus } from "./ShellContext";
 import { Sidebar } from "./Sidebar";
+import { ONLINE } from "../test/activity";
 
 const credential: Credential = {
   provider: "anthropic",
@@ -99,6 +100,7 @@ describe("sidebar while work runs", () => {
           activity: {
             syncing: [],
             advisor_jobs: [],
+            processing: ONLINE,
             parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
             analysis: null,
             role_map: {

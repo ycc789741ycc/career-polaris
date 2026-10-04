@@ -183,6 +183,16 @@ class Settings(BaseSettings):
     # before it is treated as lost (a worker that died mid-job), so it stops
     # blocking the stages after it (ADR 0018).
     job_stale_after_seconds: int = Field(default=900, gt=0, alias="JOB_STALE_AFTER_SECONDS")
+    # How often the worker and the crawler say they are up (ADR 0052). One
+    # silent for PRESENCE_MISSED_BEATS of these reads as away: the machine it
+    # runs on may be off, and its work waits instead of being reported lost.
+    presence_heartbeat_seconds: float = Field(
+        default=10.0, gt=0, le=60, alias="PRESENCE_HEARTBEAT_SECONDS"
+    )
+
+    @property
+    def presence_away_after_seconds(self) -> float:
+        return self.presence_heartbeat_seconds * PRESENCE_MISSED_BEATS
 
     @field_validator("log_level")
     @classmethod
@@ -268,6 +278,11 @@ class Settings(BaseSettings):
                 "`api` and `worker` only — never on `crawler`."
             )
         return self.master_encryption_key
+
+
+# Beats a process may miss before it reads as away: one late beat is a busy
+# moment, not a machine gone.
+PRESENCE_MISSED_BEATS = 4
 
 
 class MissingSecretError(RuntimeError):

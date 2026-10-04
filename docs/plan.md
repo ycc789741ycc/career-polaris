@@ -3465,6 +3465,26 @@ ADR: running in two places, and why each process lives where it does.
   applies) and that each profile starts only its services.
 
 ## Know when the compute side is away
+**Done** (ADR 0052, migration 0044). Where the build differs from the plan
+below:
+
+* Procrastinate's heartbeat says whether a worker is up but not since when,
+  and the crawler has no grant on the job schema. So the worker and the
+  crawler each beat into `presence.process` (`kernel.presence`), from a
+  thread, because the crawler's embeddings and the worker's renders block the
+  event loop.
+* The limit does not count from when a worker picks a run up. It counts only
+  the time the worker has been up: from the later of the run's start and the
+  worker's return. That is one rule in `activity` instead of a new column
+  and write in every job of five components, and the user sees the same
+  thing. A run waiting for the machine therefore reads as running, with
+  "Waiting for the processing machine to come back" on the running bar, not
+  as `queued`.
+* `GET /activity` says `processing` as two booleans and two last-seen times,
+  not `online | away`: the crawler and the worker can be away apart.
+* The notice is in `CostConfirm`, which every priced action shares. Export,
+  which is not priced, shows it only on the running bar.
+
 ADR: work waits for the processing machine, and the stale limit counts from
 when a job starts.
 * **Who is online.** Procrastinate 3 records a heartbeat per worker

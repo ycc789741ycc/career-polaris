@@ -9,10 +9,12 @@ import {
   useActivity,
 } from "./activity";
 import { ToastProvider } from "./toast";
+import { AWAY, ONLINE } from "../test/activity";
 
 const IDLE: Activity = {
   syncing: [],
   advisor_jobs: [],
+  processing: ONLINE,
   parsing: [],
   analysis: null,
   role_map: null,
@@ -63,11 +65,45 @@ function renderShell() {
 }
 
 describe("what is running", () => {
+  it("leads with the processing machine when it is away and work waits", () => {
+    const lines = describeWork(
+      { ...IDLE, analysis: run("running"), processing: AWAY },
+      "claude-opus-5",
+    );
+
+    expect(lines).toEqual([
+      "Waiting for the processing machine to come back",
+      "Analysing your strengths on claude-opus-5",
+    ]);
+  });
+
+  it("says nothing of the machine when nothing waits for it", () => {
+    expect(
+      describeWork({ ...IDLE, processing: AWAY }, "claude-opus-5"),
+    ).toEqual([]);
+  });
+
+  it("says a build waits for the market search to come back", () => {
+    const lines = describeWork(
+      {
+        ...IDLE,
+        role_map: { ...run("waiting"), waiting_for: "market" },
+        processing: { ...ONLINE, is_crawler_online: false },
+      },
+      "claude-opus-5",
+    );
+
+    expect(lines).toEqual([
+      "Role map waiting for the market search to come back online",
+    ]);
+  });
+
   it("names every piece of work in journey order", () => {
     const lines = describeWork(
       {
         syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
         advisor_jobs: [],
+        processing: ONLINE,
         parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
         analysis: run("running"),
         role_map: run("waiting"),
@@ -171,6 +207,7 @@ describe("the running bar on a screen with its own waiting screen", () => {
   const activity = {
     syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
     advisor_jobs: [],
+    processing: ONLINE,
     parsing: [],
     analysis: {
       status: "running" as const,

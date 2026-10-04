@@ -18,6 +18,7 @@ import {
 } from "./Roles";
 import { page } from "../test/page";
 import { getStoredTargets } from "./advisorTarget";
+import { ONLINE } from "../test/activity";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   return {
@@ -455,6 +456,7 @@ describe("the role map while an analysis runs", () => {
     renderRoles(null, {
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [],
       analysis: { status: "running", ...running },
       role_map: null,
@@ -477,6 +479,7 @@ describe("the role map while an analysis runs", () => {
     renderRoles(null, {
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [],
       analysis: null,
       role_map: { status: "waiting", waiting_for: "market", ...running },
@@ -494,6 +497,7 @@ describe("the role map while an analysis runs", () => {
     renderRoles(null, {
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [],
       analysis: null,
       role_map: { status: "running", ...running },

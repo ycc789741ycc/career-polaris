@@ -18,6 +18,7 @@ import { Advisor, focusOf, ownTargetFor, targetFor } from "./Advisor";
 import { getStoredTargets } from "./advisorTarget";
 import { page } from "../test/page";
 import { cancelPath, jobTab, jobWord } from "./AdvisorJobs";
+import { ONLINE } from "../test/activity";
 
 function role(id: string, name: string, overrides: Partial<Role> = {}): Role {
   return {
@@ -539,6 +540,7 @@ describe("Advisor jobs in the background (ADR 0042)", () => {
         estimated_cost_usd: "0.031",
       },
     ],
+    processing: ONLINE,
   };
 
   it("keeps the gap plan open while the résumé is written, with a spinner and a notice", async () => {

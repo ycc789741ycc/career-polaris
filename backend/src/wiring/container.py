@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
-from functools import lru_cache
+from functools import lru_cache, partial
 
 from advisor.activity import ActivityService
 from advisor.assessment import AssessmentService, create_assessment_service
@@ -38,6 +38,7 @@ from kernel.ai_gateway import AiGateway
 from kernel.auth import ALGORITHM, JwksResolver, StaticSecretResolver, TokenVerifier
 from kernel.config import Settings, get_settings, must
 from kernel.db import Database
+from kernel.presence import PresenceView, get_presence
 from kernel.storage import ObjectStore
 
 # Google rotates its signing keys over days; an hour keeps the fetch rare while
@@ -80,6 +81,12 @@ class Container:
                 algorithms=(ALGORITHM,),
             )
         return self._verifier
+
+    async def get_presence(self) -> PresenceView:
+        """Whether the worker and the crawler are up (ADR 0052)."""
+        return await get_presence(
+            self.database, away_after_seconds=self.settings.presence_away_after_seconds
+        )
 
     @property
     def google_sign_in(self) -> GoogleSignIn | None:
@@ -213,6 +220,9 @@ def build(settings: Settings | None = None) -> Container:
         profile=profile,
         assessment=assessment,
         rolemap=rolemap,
+        get_presence=partial(
+            get_presence, database, away_after_seconds=settings.presence_away_after_seconds
+        ),
         stale_after_seconds=settings.job_stale_after_seconds,
     )
 
