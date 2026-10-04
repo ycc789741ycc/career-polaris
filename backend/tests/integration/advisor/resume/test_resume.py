@@ -770,3 +770,22 @@ async def test_a_resume_keeps_its_own_fonts_and_the_database_refuses_others(
                 text("UPDATE resume.resume SET body_font = 'Comic Sans' WHERE id = :id"),
                 {"id": resume_id},
             )
+
+
+async def test_a_resume_can_set_each_of_the_fonts_added_later(
+    world: World, account: uuid.UUID
+) -> None:
+    """Migration 0043 widened the database's check to the whole list."""
+    resume_id = await _written(world, account)
+
+    for heading, body in (("Merriweather", "Inter"), ("EB Garamond", "IBM Plex Mono")):
+        await world.resume.update_settings(
+            account,
+            resume_id,
+            template=Template.PLAIN,
+            options=Options(),
+            heading_font=heading,
+            body_font=body,
+        )
+        view = await world.resume.get(account, resume_id)
+        assert (view.heading_font, view.body_font) == (heading, body)

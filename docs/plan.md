@@ -3314,3 +3314,19 @@ Not yet: listing the older versions of one résumé. A `ResumeVersion` carries
 no content and no route reads one back, so the list shows each résumé's
 latest only, where the prototype shows v3 and v2 of one.
 
+## More fonts
+* A résumé or a template may set six more families: Inter and Lato (sans),
+  Source Serif 4, Merriweather and EB Garamond (serif), and IBM Plex Mono —
+  ten in all (`TEMPLATE_FONTS`). Each is Fontsource's Latin subset, 400 and
+  700, SIL OFL 1.1: WOFF2 for the preview (`web/src/styles/fonts`), TTF in
+  the worker image (`backend/assets/fonts`), so the PDF sets what the preview
+  shows (ADR 0038). Merriweather's name table is rewritten so fontconfig
+  finds it by name.
+* Migration 0043 widens the résumé's font checks. A unit test asks
+  fontconfig in the app image for every listed family by name, and another
+  holds the API's `FontName` to the domain's list.
+
+What gets harder: every family adds about 100 KB to the worker image and the
+SPA, and a family a PDF names is still mapped only by kind when a template is
+read from a file (ADR 0041).
+

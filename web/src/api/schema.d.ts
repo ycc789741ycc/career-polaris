@@ -2622,7 +2622,7 @@ export interface components {
                 [key: string]: string;
             };
             /** Fonts */
-            fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono")[];
+            fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono")[];
             /** Heading Pt Range */
             heading_pt_range: [
                 number,
@@ -2916,9 +2916,9 @@ export interface components {
         /** SettingsRequest */
         SettingsRequest: {
             /** Body Font */
-            body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Heading Font */
-            heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             options: components["schemas"]["OptionsBody"];
             /** Template */
             template: string;
@@ -2977,7 +2977,7 @@ export interface components {
         /** TailoredResume */
         TailoredResume: {
             /** Body Font */
-            body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             content: components["schemas"]["ResumeContent"] | null;
             /** Coverage */
             coverage: components["schemas"]["Coverage"][];
@@ -2989,7 +2989,7 @@ export interface components {
                 [key: string]: components["schemas"]["EvidenceNote"];
             };
             /** Heading Font */
-            heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /**
              * Id
              * Format: uuid
@@ -3119,7 +3119,7 @@ export interface components {
              * @default Figtree
              * @enum {string}
              */
-            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono";
             /** Body Pt */
             body_pt: number;
             /**
@@ -3139,7 +3139,7 @@ export interface components {
              * @default Caprasimo
              * @enum {string}
              */
-            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono";
             /** Heading Pt */
             heading_pt: number;
             /**
@@ -3205,7 +3205,7 @@ export interface components {
              * Body Font
              * @enum {string}
              */
-            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono";
             /** Body Pt */
             body_pt: number;
             /**
@@ -3222,7 +3222,7 @@ export interface components {
              * Heading Font
              * @enum {string}
              */
-            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono";
+            heading_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono";
             /** Heading Pt */
             heading_pt: number;
             /**

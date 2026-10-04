@@ -36,7 +36,18 @@ TemplateName = Literal["organic", "plain"]
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 TemplateId = Annotated[str, Field(pattern=rf"^(organic|plain|{_UUID})$")]
 LayoutName = Literal["single_column", "sidebar_left", "sidebar_right", "header_band"]
-FontName = Literal["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"]
+FontName = Literal[
+    "Caprasimo",
+    "Figtree",
+    "DejaVu Serif",
+    "DejaVu Sans Mono",
+    "Inter",
+    "Lato",
+    "Source Serif 4",
+    "Merriweather",
+    "EB Garamond",
+    "IBM Plex Mono",
+]
 RuleName = Literal["none", "thin", "thick"]
 HeadingCaseName = Literal["upper", "as_written"]
 BulletName = Literal["dot", "dash", "none"]
