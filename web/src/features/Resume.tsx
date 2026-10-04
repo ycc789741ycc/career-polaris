@@ -318,6 +318,14 @@ export function Resume({
 
   async function priceSection(slot: ResumeSectionSlot) {
     if (!resume) return;
+    if (dirty) {
+      // A section is filled into the saved version, so unsaved changes
+      // would be written over when it lands.
+      setError(
+        "Save your changes first: a section is filled into the saved version.",
+      );
+      return;
+    }
     if (!status.credential) {
       flash("Sections are filled on your model — add a key.");
       navigate("model");
@@ -783,10 +791,9 @@ export function Resume({
                         : null
                     }
                     busy={busy || resume.status === "filling"}
-                    onChange={(next) => {
-                      setDraft(next);
-                      void saveVersion(next);
-                    }}
+                    // Show, hide, move and remove change the draft only; the
+                    // user saves the version when it reads as they want.
+                    onChange={setDraft}
                     onAdd={(slot) => void priceSection(slot)}
                   />
                 )}

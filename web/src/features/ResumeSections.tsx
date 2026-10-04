@@ -166,7 +166,8 @@ export function SectionsPanel({
         </span>
       </div>
       <p className="subcopy" style={{ fontSize: 12.5, margin: "4px 0 4px" }}>
-        Every section is written; show the ones you want.
+        Every section is written; show the ones you want, then save the version
+        to keep the change.
       </p>
       <ul className="section-list">
         {content.sections.map((section, index) => {

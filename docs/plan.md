@@ -3336,3 +3336,11 @@ read from a file (ADR 0041).
   until the entry is pointed at. It takes the whole entry off the draft; the
   entry is gone once "Save as vN" saves the version. Nothing prints it.
 
+## Sections saved on request
+* Show, Hide, moving and removing a section no longer save a version at
+  once. They change the draft, as an edit on the page does, and "Save as vN"
+  keeps them; until then the page says there are unsaved edits.
+* "Fill from your sources" asks the user to save first while the draft has
+  unsaved changes: a filled section lands in the saved version and would
+  write over them.
+

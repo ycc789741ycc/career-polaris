@@ -588,7 +588,7 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   text, entries, list, bullets); Experience always, every other kind once, up
   to three custom ones. `Resume.section_plan` is what each version is written
   to, and every saved version sets it. The Sections panel moves and removes
-  sections as edits saved as versions; adding one is priced
+  sections as edits to the draft, saved as a version on request (Phase 11); adding one is priced
   (`/sections/estimate`), sets the résumé `filling`, and `resume.fill_section`
   writes that section only (`resume_section` v1). `resume_write` and
   `resume_revise` are v3. Migration 0035 moved stored content into sections.
@@ -651,7 +651,7 @@ uploaded one (`docs/plan.md`), one branch per step under
   accounts as `ProfileSnapshot.accounts`): without a timeline or an uploaded
   résumé, Experience is one entry per place the work was done, never an
   invented title, and repositories split into experience, open source and
-  side projects. Show and Hide are free edits saved as versions; only shown
+  side projects. Show and Hide are free edits (since Phase 11 kept in the draft until the user saves the version); only shown
   sections print (`ResumeContent.get_shown`). `resume_revise` v4 keeps a
   section's state unless asked (`get_proposal_layout`). "Fill from your
   sources" (`POST /tailored-resumes/{id}/sections`, priced) fills an empty
@@ -719,4 +719,8 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 - **Remove one entry.** Each entry on the résumé page has a × beside its
   dates (`resume-remove-entry`) that drops it from the draft; saving the
   version keeps the change. A section may be left with no entries.
+- **Sections saved on request.** Show, Hide, moving and removing a section in
+  the Sections panel change the draft only, like any edit on the page;
+  "Save as vN" keeps them. Filling a section is refused while there are
+  unsaved changes, because it is written into the saved version.
 
