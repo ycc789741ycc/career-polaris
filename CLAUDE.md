@@ -37,6 +37,13 @@ make start-infra          # compose up, wait healthy, then the least-privilege D
 make start-app            # runs migrations to completion first, then api/worker/crawler/web
 ```
 
+What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051): `edge`
+(api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
+them), `proxy` (Caddy, ADR 0053) and `local` (MinIO). Development and CI run
+`edge,compute,local`; the droplet `edge,proxy,tunnel`; the compute machine
+`compute,tunnel` (`docs/deploy.md`). Builds, `stop-app` and `stop-infra` cover
+every profile; starts run only this place's, and fail if it selects nothing.
+
 `build-app`, `start-app` and `stop-app` take `MODE=dev|prod`, default `prod`;
 any other value fails. Each Dockerfile has three stages, each with its own tag:
 
@@ -97,8 +104,9 @@ host.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
-`logs`, `stats`, `disk-usage`, `clean-up-cache`, and `clean-up-infra` (the only
-destructive one).
+`logs`, `stats`, `disk-usage`, `backup-db`, `push-app` (CI's release) and
+`pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
+two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
   downloaded models in `.cache/` and `web/dist`. It never touches `.env`, `tmp/`,
@@ -145,7 +153,7 @@ backend/src/
   wiring/     composition root shared by every deployable: container, crawl (the
               crawler's own narrow wiring), queue (task registration), models
   kernel/     technical kernel, no domain: db, outbox, jobs, auth, crypto,
-              storage, ai_gateway, fetch, embeddings
+              storage, ai_gateway, fetch, embeddings, presence, limits
   advisor/    the application, one component per capability: identity · profile ·
               market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the component's ONLY importable surface
@@ -159,6 +167,8 @@ backend/src/
               market/crawling/  board adapters, discovery, politeness, one crawl run
 backend/tests/{unit,integration}/   each mirrors src/
 web/          React + Vite SPA, on the prototype's Organic design system (ADR 0004)
+proxy/        Caddy plus caddy-ratelimit, the edge on the droplet (ADR 0053)
+infra/        infra compose, DB roles, health wait, tunnel, backups, releases
 ```
 
 The backend is packaged by component, as the design guideline requires (its ADR
@@ -729,3 +739,58 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   Cmd/Ctrl+Z (outside a field being typed in) step back. Saving or opening
   another résumé clears it.
 
+## Phase 12 scope
+
+Hybrid deployment (`docs/plan.md`), one branch per step under
+`epic/no-ticket/hybrid-deploy`; `docs/deploy.md` is the runbook:
+
+- **Two places** (ADR 0051). A DigitalOcean droplet (1 vCPU, 2 GB) runs
+  `edge,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
+  operator's machine runs `compute,tunnel`: the worker and the crawler, which
+  hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
+  forwards only 5432 to Postgres on loopback; the compute side dials out). Files
+  are in Spaces; MinIO is `local` only. Every published port binds to
+  `PUBLISHED_BIND_ADDRESS` (`127.0.0.1`), because Docker goes around `ufw`;
+  infra restarts with its host; Postgres's memory is `POSTGRES_*` settings.
+  Both places migrate under an advisory lock (`cli.migrate.migration_lock`),
+  and an image older than the schema refuses (`SchemaAheadError`). Found on
+  the way: a fresh database could not migrate past 0013.
+- **Work waits for the compute machine** (ADR 0052). The worker and the
+  crawler beat into `presence.process` (`kernel.presence`, a thread with its
+  own connection; migration 0044), every `PRESENCE_HEARTBEAT_SECONDS`.
+  `Staleness.is_stale(…, online_since=)` counts only the time the worker has
+  been up; `BuildRun.is_market_wait_over` only the crawler's. `GET /activity`
+  carries `processing`; `CostConfirm` says "Processing is offline; this
+  starts when it is back", the running bar leads with the machine, and the
+  shell asks every 30 s while it is away. The DSN helper is
+  `kernel.db.get_psycopg_dsn`.
+- **Caddy at the edge** (ADR 0053). `proxy/` builds Caddy 2.11.6 with
+  `caddy-ratelimit` (pinned by commit), non-root, read-only, no capabilities
+  (the unprivileged-port sysctl opens 80/443). One origin for
+  `SITE_HOSTNAME` (`<ip>.sslip.io` until there is a domain): `/api/*` to the
+  api, the rest to `web`. `EDGE_MAX_BODY_SIZE` (413), header/body/idle
+  timeouts, and per address `EDGE_AUTH_REQUESTS_PER_MINUTE` on `/api/v1/auth/*`
+  and `EDGE_REQUESTS_PER_MINUTE` on everything (429, `Retry-After`). No API
+  gateway. `make lint` validates the Caddyfile. `ObjectStore.ensure_bucket`
+  asks `HeadBucket`, because a Spaces key scoped to one bucket may not list.
+  `make backup-db` / `restore-db` move `pg_dump` through a second bucket
+  (`BACKUP_S3_*`) with the pinned AWS CLI image.
+- **Limits per account and address** (ADR 0054). `kernel.limits.Limiter`
+  counts a fixed window per limit and subject in `limits.counter` (a digest,
+  never the address; migration 0045), in a transaction of its own;
+  `wiring.limits` names `signups` (per address, `SIGNUPS_PER_ADDRESS_PER_DAY`),
+  `uploads` (per account, `UPLOADS_PER_ACCOUNT_PER_DAY`: résumés, own
+  postings, template PDFs) and `syncs` (`SYNCS_PER_ACCOUNT_PER_HOUR`). A
+  refusal is `RateLimitedError(retry_after_seconds=)`, answered 429 with
+  `Retry-After`. uvicorn believes `X-Forwarded-For` only from
+  `FORWARDED_ALLOW_IPS` (jsa_net's subnet on the droplet). The SPA words the
+  proxy's own 429 and 413 and reads error pages that are not JSON.
+- **Releases by digest** (ADR 0055). CI runs on pushes to `master` (it named
+  `main`/`develop` before and never ran there); a passing push runs
+  `make push-app`: the prod images for `RELEASE_PLATFORMS`
+  (amd64 and arm64, the latter under QEMU) to `RELEASE_REGISTRY`, and
+  `release.env` naming each by digest. Each place runs
+  `make pull-app RELEASE=release.env`, edge first. `pull_policy: never` stays.
+
+Not yet: a domain (and with it Google sign-in and Cloudflare in front), and an
+arm64 image that the gates themselves ran against.
