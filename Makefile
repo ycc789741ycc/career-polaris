@@ -21,8 +21,8 @@
 #
 # Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
 # (docs/decisions/0051): `edge` (api, web, Postgres), `compute` (worker,
-# crawler), `tunnel` (the link between them) and `local` (MinIO). Development
-# and CI name them all but `tunnel`. Builds and `stop-app` cover every profile;
+# crawler), `tunnel` (the link between them), `proxy` (Caddy, ADR 0053) and
+# `local` (MinIO). Development and CI name edge, compute and local. Builds and `stop-app` cover every profile;
 # starts run only this place's.
 
 SHELL := /bin/bash
@@ -47,7 +47,8 @@ ALL_PROFILES  := --profile '*'
 
 # One tag per mode, plus the test image both modes build.
 MODE_IMAGES        := jsa-backend:$(MODE) jsa-web:$(MODE)
-PROD_IMAGES        := jsa-backend:prod jsa-web:prod
+PROD_IMAGES        := jsa-backend:prod jsa-web:prod jsa-proxy:prod
+PROXY_IMAGE        := jsa-proxy:prod
 BACKEND_TEST_IMAGE := jsa-backend:test
 WEB_TEST_IMAGE     := jsa-web:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
@@ -75,7 +76,7 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache
+        stats disk-usage clean-up-cache backup-db restore-db
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -84,7 +85,8 @@ help:
 	@echo "Gates (their own targets, never folded into a test target):"
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
-	@echo "  migrate format gen-client lock logs stats disk-usage clean-up-cache clean-up-infra"
+	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
+	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
 	@test -f $(ENV_FILE) || { \
@@ -122,7 +124,8 @@ build-infra: require-infra-services
 	$(COMPOSE_INFRA) pull
 
 # The images for the requested mode, plus the `test` stage the test tiers and
-# gates run in — built whichever mode was asked for.
+# gates run in — built whichever mode was asked for. The proxy has one stage,
+# so it is jsa-proxy:prod in either mode; only a `proxy` place runs it.
 build-app: require-env check-mode
 	$(COMPOSE_APP) $(ALL_PROFILES) build
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
@@ -208,6 +211,8 @@ lint:
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) lint-imports --config .importlinter \
 	    --cache-dir /tmp/import-linter
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx eslint src
+	$(RUN_HERMETIC) -e SITE_HOSTNAME=lint.invalid $(PROXY_IMAGE) \
+	    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # web/tsconfig.json lists no files, only a reference to tsconfig.app.json, so a
 # bare `tsc --noEmit` there checks nothing. Name the project that holds src/.
@@ -291,6 +296,21 @@ clean-up-cache:
 	find . -mindepth 1 \( $(KEEP_OUT) \) -prune -o -type f -name '*.py[cod]' -print -exec rm -f {} +
 	rm -rf web/dist
 	find backend -mindepth 1 -depth -type d -empty -not -path '*/.venv/*' -print -exec rmdir {} \;
+
+# --- backups ----------------------------------------------------------------
+
+# One pg_dump of the database, into the backup bucket (BACKUP_S3_*). Only
+# reads the database; run it where Postgres runs. The droplet's crontab runs
+# it nightly; the bucket's lifecycle rule decides how long dumps are kept.
+backup-db: require-env
+	@infra/backup-db.sh
+
+# DESTRUCTIVE: replaces a database with a dump from the backup bucket.
+# BACKUP= names the dump (`make backup-db` prints it); RESTORE_DB= the
+# database to restore into, default POSTGRES_DB. Stop the app first. Never a
+# dependency of anything.
+restore-db: require-env
+	@infra/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
 
 # DESTRUCTIVE. Never a dependency of a build, start, stop or test target.
 clean-up-infra: require-env

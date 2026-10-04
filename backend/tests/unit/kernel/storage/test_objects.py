@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from botocore.exceptions import EndpointConnectionError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from kernel.errors import ValidationError
 from kernel.storage import ObjectStore, object_key
@@ -30,17 +30,18 @@ def test_a_category_must_be_alphanumeric() -> None:
 
 
 class FlakyClient:
-    """Fails the first `failures` calls, as a container that is still starting."""
+    """Fails the first `failures` calls, as a container that is still starting,
+    then finds no bucket."""
 
     def __init__(self, failures: int) -> None:
         self.remaining = failures
         self.created: list[str] = []
 
-    def list_buckets(self) -> dict[str, list[dict[str, str]]]:
+    def head_bucket(self, Bucket: str) -> None:  # noqa: N803 - boto3's own name
         if self.remaining > 0:
             self.remaining -= 1
             raise EndpointConnectionError(endpoint_url="http://objectstore:9000/")
-        return {"Buckets": []}
+        raise ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "HeadBucket")
 
     def create_bucket(self, Bucket: str) -> None:  # noqa: N803 - boto3's own name
         self.created.append(Bucket)
@@ -73,9 +74,36 @@ def test_a_persistently_unreachable_store_fails_the_start() -> None:
 
 def test_an_existing_bucket_is_left_alone() -> None:
     class Existing(FlakyClient):
-        def list_buckets(self) -> dict[str, list[dict[str, str]]]:
-            return {"Buckets": [{"Name": "test-bucket"}]}
+        def head_bucket(self, Bucket: str) -> None:  # noqa: N803 - boto3's own name
+            return None
 
     client = Existing(failures=0)
     store_with(client).ensure_bucket(attempts=1, delay_seconds=0)
+    assert client.created == []
+
+
+def test_a_key_scoped_to_its_bucket_never_lists_the_account() -> None:
+    """Spaces keys may be limited to one bucket (ADR 0051): ListBuckets is
+    refused for them, so starting must not need it."""
+
+    class Scoped(FlakyClient):
+        def list_buckets(self) -> None:
+            raise ClientError({"Error": {"Code": "AccessDenied"}}, "ListBuckets")
+
+        def head_bucket(self, Bucket: str) -> None:  # noqa: N803 - boto3's own name
+            return None
+
+    client = Scoped(failures=0)
+    store_with(client).ensure_bucket(attempts=1, delay_seconds=0)
+    assert client.created == []
+
+
+def test_a_bucket_the_key_may_not_see_fails_the_start() -> None:
+    class Forbidden(FlakyClient):
+        def head_bucket(self, Bucket: str) -> None:  # noqa: N803 - boto3's own name
+            raise ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "HeadBucket")
+
+    client = Forbidden(failures=0)
+    with pytest.raises(StorageUnavailableError):
+        store_with(client).ensure_bucket(attempts=2, delay_seconds=0)
     assert client.created == []
