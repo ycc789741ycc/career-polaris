@@ -29,6 +29,7 @@ import {
 import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
 import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import { recordTargetUse } from "./advisorTarget";
 import { CostConfirm } from "./CostConfirm";
 import { targetQuery } from "./target";
 import {
@@ -48,7 +49,7 @@ import { messageOf, useAsync } from "./useAsync";
  * and the trip to the Advisor and back.
  */
 export function Roles() {
-  const { navigate, focus: anyFocus, setFocus, status } = useShell();
+  const { navigate, focus: anyFocus, setFocus, status, account } = useShell();
   // A posting of your own is aimed at from the Advisor; the map selects roles.
   const focus = roleFocus(anyFocus);
   const { activity, refresh: refreshActivity, settled } = useActivity();
@@ -179,6 +180,7 @@ export function Roles() {
       setQuestionCost({ ...target, cost });
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === "target_unusable") {
+        recordTargetUse(account, refOf(target.focus), target.label);
         navigate("advisor", { tab: "gaps", focus: target.focus });
       } else {
         setError(messageOf(caught));
@@ -206,6 +208,7 @@ export function Roles() {
     }
     setBusy(false);
     const focus = questionCost.focus;
+    recordTargetUse(account, refOf(focus), questionCost.label);
     setQuestionCost(null);
     await refreshActivity();
     navigate("advisor", { tab: "gaps", focus });

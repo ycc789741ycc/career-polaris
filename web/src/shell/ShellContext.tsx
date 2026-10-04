@@ -16,8 +16,11 @@ export interface NavigateTo {
 
 export interface Shell {
   status: ShellStatus;
+  /** The signed-in address, which keys what this browser remembers for it. */
+  account: string | null;
   navigate: (screen: Screen, to?: NavigateTo) => void;
-  /** What the role map has selected, and the Advisor aims at. In the hash. */
+  /** What the role map has selected, or what the Advisor is aimed at. In
+   * the hash. */
   focus: Focus | null;
   /** Changes the selection without adding a history entry. */
   setFocus: (focus: Focus | null) => void;
@@ -38,6 +41,7 @@ const EMPTY: ShellStatus = {
 
 export const ShellContext = createContext<Shell>({
   status: EMPTY,
+  account: null,
   navigate: () => {},
   focus: null,
   setFocus: () => {},

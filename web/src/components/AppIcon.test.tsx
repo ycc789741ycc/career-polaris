@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { APP_ICON_COLOURS, AppIcon, type AppIconVariant } from "./AppIcon";
 
 describe("app icon", () => {
-  it.each(Object.keys(APP_ICON_COLOURS) as AppIconVariant[])(
+  it.each(["default", "light", "dark", "green"] as AppIconVariant[])(
     "draws the %s version in its colours",
     (variant) => {
       const { container } = render(<AppIcon variant={variant} />);
@@ -23,6 +23,15 @@ describe("app icon", () => {
       expect(star).toHaveAttribute("fill", colours.star);
     },
   );
+
+  it("draws the route not taken yet as a dashed path to an empty star", () => {
+    const { container } = render(<AppIcon variant="outline" />);
+
+    const [path, star] = container.querySelectorAll("path");
+    expect(path).toHaveAttribute("stroke-dasharray", "2 12");
+    expect(star).toHaveAttribute("fill", "none");
+    expect(star).toHaveAttribute("stroke", APP_ICON_COLOURS.outline.star);
+  });
 
   it("is decorative unless it is given a name", () => {
     const { container, rerender } = render(<AppIcon />);

@@ -278,10 +278,11 @@ queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
 Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
-aimed at what the role map has selected: a role, and optionally one of its
-openings. That selection is carried in the hash (`?role=`, plus `&opening=`),
-so neither tab picks a Target of its own; the Advisor's "Your target role"
-banner only links back. The role map has exactly one control that aims the
+aimed at the Target the user set: a role from the map (and, for a Target set
+before ADR 0049, one of its openings), or a role of their own. It is carried in
+the hash (`?role=`, plus `&opening=`, or `?posting=`) and remembered in the
+browser (ADR 0050), so neither tab picks a Target of its own; the Advisor's
+"Your target role" banner only links back, or switches to a previous target. The role map has exactly one control that aims the
 Advisor — the sticky "Advisor target" bar, at the selected role (ADR 0049);
 picking a bubble only selects.
 
@@ -695,4 +696,12 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   `posted_on`), ten at a time with "See all n openings", and no fit per
   opening. No row selects an opening: "Target this role" aims at the role.
   Opening fits (ADR 0032) are still computed for Targets that name one.
+- **No target until one is chosen** (ADR 0050). The current Target and its
+  history live in `localStorage` per account (`features/advisorTarget.ts`),
+  written by "Target this role", "Set as target", "Use again" and every
+  Advisor visit. Entering the Advisor from elsewhere opens the stored Target
+  (`getArrivalFocus`), never the role map's selection, or `AdvisorNoTarget`
+  (steps locked, three ways in). "Previous targets" on the banner
+  (`PreviousTargets`) joins that history with `/gap-plans` and
+  `/tailored-resumes`; switching only navigates. No backend change.
 

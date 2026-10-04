@@ -5,7 +5,7 @@
  * colours, for the browser tab.
  */
 
-export type AppIconVariant = "default" | "light" | "dark" | "green";
+export type AppIconVariant = "default" | "light" | "dark" | "green" | "outline";
 
 const PATH = "M27 73 C 27 54, 50 62, 50 46 S 63 34, 66 31";
 const STAR = "M74 13 L78 22 L87 26 L78 30 L74 39 L70 30 L61 26 L70 22 Z";
@@ -19,6 +19,9 @@ export const APP_ICON_COLOURS: Record<
   light: { tile: "#f5ead8", line: "#c67139", star: "#8c491a" },
   dark: { tile: "#201e1d", line: "#f5ead8", star: "#c67139" },
   green: { tile: "#56633f", line: "#f5ead8", star: "#e1eecc" },
+  // The route not taken yet: a dashed path to an empty star, on peach. The
+  // Advisor shows it while no target is set.
+  outline: { tile: "#ffe1d0", line: "#c67139", star: "#c67139" },
 };
 
 export function AppIcon({
@@ -32,6 +35,7 @@ export function AppIcon({
   label?: string;
 }) {
   const colours = APP_ICON_COLOURS[variant];
+  const isOutline = variant === "outline";
   return (
     <svg
       width={size}
@@ -48,9 +52,20 @@ export function AppIcon({
         stroke={colours.line}
         strokeWidth="7"
         strokeLinecap="round"
+        strokeDasharray={isOutline ? "2 12" : undefined}
       />
       <circle cx="27" cy="73" r="7.5" fill={colours.line} />
-      <path d={STAR} fill={colours.star} />
+      {isOutline ? (
+        <path
+          d={STAR}
+          fill="none"
+          stroke={colours.star}
+          strokeWidth="3"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path d={STAR} fill={colours.star} />
+      )}
     </svg>
   );
 }

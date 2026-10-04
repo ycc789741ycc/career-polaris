@@ -99,6 +99,7 @@ function renderConnect() {
     refresh: async () => {},
     target: null,
     setTarget: vi.fn(),
+    account: "maya@example.com",
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>

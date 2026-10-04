@@ -3280,3 +3280,20 @@ ADR 0049.
 What gets harder: a new Target can no longer name one opening from the map,
 yet every build still works out opening fits.
 
+## No target until one is chosen
+ADR 0050.
+* No Target exists until the user sets one: "Target this role" on the role
+  map, "Set as target" on a role of their own, or a previous target used
+  again. Picking a bubble only selects it.
+* The sidebar's Advisor link opens the Target last set, or **No target yet**:
+  the steps locked, and three cards — the role map (with its best fit), a role
+  of your own, and up to three previous targets with "Use again".
+* "Previous targets (n)" on the target banner lists the others, each with
+  where it came from, when it was last used and its fit. Switching back
+  restores its answers, plan and résumé, and posts nothing.
+* The current Target and the history are kept in the browser, per account,
+  and joined with the Targets the server has plans and résumés for.
+
+What gets harder: the current Target does not follow the user to another
+device, and a Target with only answers is remembered only where it was set.
+

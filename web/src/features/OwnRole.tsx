@@ -9,6 +9,7 @@ import { Button, ErrorNote, Eyebrow, FitBadge } from "../components/ui";
 import { useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
+import { recordTargetUse } from "./advisorTarget";
 import { CostConfirm } from "./CostConfirm";
 import { dayLabel } from "./time";
 import { messageOf } from "./useAsync";
@@ -328,7 +329,7 @@ export function MyRoles({
   currentTarget: string | null;
   onChanged: () => Promise<void>;
 }) {
-  const { navigate } = useShell();
+  const { navigate, account } = useShell();
   const flash = useToast();
   const { refresh: refreshActivity } = useActivity();
   const [pricing, setPricing] = useState<{
@@ -360,6 +361,18 @@ export function MyRoles({
       await refreshActivity();
       setPricing(null);
       await onChanged();
+      // It is the target from now on, even while it is still being scored.
+      recordTargetUse(
+        account,
+        {
+          role_id: null,
+          job_posting_id: null,
+          private_job_posting_id: posting.private_job_posting_id,
+        },
+        posting.company_name
+          ? `${posting.title} · ${posting.company_name}`
+          : posting.title,
+      );
       navigate("advisor", {
         tab: "gaps",
         focus: { posting: posting.private_job_posting_id },
