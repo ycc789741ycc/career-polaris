@@ -81,6 +81,7 @@ class FakeResumes:
             target=None,  # type: ignore[arg-type]
             profile=None,  # type: ignore[arg-type]
             assessment=None,  # type: ignore[arg-type]
+            gapfill=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             object_store=None,  # type: ignore[arg-type]
         )

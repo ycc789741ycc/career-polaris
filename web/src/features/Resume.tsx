@@ -906,10 +906,15 @@ export function Resume({
                         <span style={{ fontSize: 13.5, fontWeight: 700 }}>
                           {row.requirement}
                         </span>
+                        {row.verdict === "gap" && row.answers.length > 0 && (
+                          // Still a gap until a re-analysis counts it; the
+                          // page may claim it from the answer (ADR 0044).
+                          <span className="chip">Answered by you</span>
+                        )}
                       </div>
                       <EvidenceDisclosure
                         compact
-                        evidence={row.evidence}
+                        evidence={[...row.evidence, ...row.answers]}
                         empty="Nothing in your sources speaks to this yet."
                       />
                     </div>

@@ -7,6 +7,7 @@ unit of work (ADR 0011).
 from __future__ import annotations
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapFillService
 from advisor.profile import ProfileService
 from advisor.resume.infra.unit_of_work import SqlAlchemyResumeUnitOfWork
 from advisor.resume.service import ResumeService
@@ -22,6 +23,7 @@ def create_resume_service(
     target: TargetService,
     profile: ProfileService,
     assessment: AssessmentService,
+    gapfill: GapFillService,
     gateway: AiGateway,
     object_store: ObjectStore,
     template_max: int,
@@ -33,6 +35,7 @@ def create_resume_service(
         target=target,
         profile=profile,
         assessment=assessment,
+        gapfill=gapfill,
         gateway=gateway,
         object_store=object_store,
         template_max=template_max,

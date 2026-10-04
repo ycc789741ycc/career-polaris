@@ -653,3 +653,11 @@ uploaded one (`docs/plan.md`), one branch per step under
   section's state unless asked (`get_proposal_layout`). "Fill from your
   sources" (`POST /tailored-resumes/{id}/sections`, priced) fills an empty
   section or a new one of the user's own. Migration 0039.
+- **A résumé cites what you answered** (ADR 0044). `ResumeService` reads
+  `gapfill.get_answers`; each coverage row carries the answers to its gap
+  (`dim:` or `req:` key, `target.gap_key_for_*`), stored on the résumé and
+  listed in the prompts as "answered in [E41]". `resume_write` and
+  `resume_revise` are v5: a gap may be claimed only from its own answers, and
+  `assert_gap_claims_answered` checks every write, proposal and filled
+  section (`get_claims_settled` drops an `answers` naming no requirement).
+  The verdict stays a gap; the requirements panel says "Answered by you".

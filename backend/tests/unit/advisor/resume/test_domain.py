@@ -17,10 +17,12 @@ from advisor.resume.domain import (
     ResumeError,
     Template,
     Verdict,
+    assert_gap_claims_answered,
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
     get_built_in_spec,
+    get_claims_settled,
     get_download_name,
     mark_edits,
     settle_revision,
@@ -145,6 +147,56 @@ def test_fourteen_short_is_no_longer_partial() -> None:
         evidence={},
     )
     assert row.verdict is Verdict.GAP
+
+
+def test_coverage_lists_the_answers_about_each_requirement_and_keeps_its_verdict() -> None:
+    rows = coverage(
+        requirements=["Leads", "Org influence", "Ships"],
+        requirement_map={"Leads": "lead", "Org influence": None, "Ships": "ship"},
+        scores={"lead": 50, "ship": 90},
+        targets={"lead": 80, "ship": 70},
+        evidence={"ship": ["e1"]},
+        answers={"Leads": ["a1"], "Org influence": ["a2", "a3"]},
+    )
+
+    assert [(r.verdict, r.answer_ids) for r in rows] == [
+        (Verdict.GAP, ("a1",)),
+        (Verdict.GAP, ("a2", "a3")),
+        (Verdict.COVERED, ()),
+    ]
+
+
+GAPS = {"Org influence": ["a1"], "Kubernetes": []}
+
+
+def _claiming(requirement: str, *cited: str, origin: Origin = Origin.WRITTEN) -> ResumeContent:
+    return make_content(Bullet("Wrote the RFC two teams built on", cited, origin, requirement))
+
+
+def test_a_gap_is_claimed_from_its_own_answers_alone() -> None:
+    assert_gap_claims_answered(_claiming("Org influence", "a1"), GAPS)
+    with pytest.raises(ResumeError, match="other than its answers"):
+        assert_gap_claims_answered(_claiming("Org influence", "a1", "e1"), GAPS)
+    with pytest.raises(ResumeError, match="other than its answers"):
+        assert_gap_claims_answered(_claiming("Org influence", "e1"), GAPS)
+
+
+def test_a_gap_nobody_answered_about_is_not_claimed() -> None:
+    with pytest.raises(ResumeError, match="nothing was answered"):
+        assert_gap_claims_answered(_claiming("Kubernetes", "e1"), GAPS)
+
+
+def test_a_covered_requirement_and_the_users_own_line_are_left_alone() -> None:
+    assert_gap_claims_answered(_claiming("Ships", "e1"), GAPS)
+    assert_gap_claims_answered(_claiming("Kubernetes", origin=Origin.YOURS), GAPS)
+
+
+def test_a_claim_naming_no_requirement_is_dropped_not_rejected() -> None:
+    settled = get_claims_settled(_claiming("Something else", "e1"), ["Org influence", "Ships"])
+
+    assert get_lines(settled)[0].answers is None
+    kept = get_claims_settled(_claiming("Ships", "e1"), ["Ships"])
+    assert get_lines(kept)[0].answers == "Ships"
 
 
 # -- export ---------------------------------------------------------------

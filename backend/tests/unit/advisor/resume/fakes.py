@@ -221,3 +221,14 @@ class FakeProfile:
 
     async def version(self, owner_id: uuid.UUID) -> int:
         return self.current
+
+
+class FakeGapFill:
+    """What the user answered in Fill the gap: ``(gap_key, evidence_id)``
+    pairs, newest first."""
+
+    def __init__(self, *answers: tuple[str, str]) -> None:
+        self.answers = answers
+
+    async def get_answers(self, owner_id: uuid.UUID, ref: Any) -> tuple[Any, ...]:
+        return tuple(SimpleNamespace(gap_key=k, evidence_id=e) for k, e in self.answers)

@@ -90,8 +90,26 @@ const resume: TailoredResume = {
       evidence: [
         { id: "e1", reference: "GitHub · 38 PRs", fact: "payments-svc" },
       ],
+      answers: [],
     },
-    { requirement: "Kubernetes in production", verdict: "gap", evidence: [] },
+    {
+      requirement: "Kubernetes in production",
+      verdict: "gap",
+      evidence: [],
+      answers: [],
+    },
+    {
+      requirement: "On-call for a payments platform",
+      verdict: "gap",
+      evidence: [],
+      answers: [
+        {
+          id: "e9",
+          reference: "Your answer",
+          fact: "Were you on call? — Yes, weekly for two years",
+        },
+      ],
+    },
   ],
   version,
   content: {
@@ -380,7 +398,7 @@ describe("résumé screen", () => {
     );
     expect(note).toBeVisible();
     expect(screen.getByText("Covered")).toBeInTheDocument();
-    expect(screen.getByText("Gap")).toBeInTheDocument();
+    expect(screen.getAllByText("Gap")).toHaveLength(2);
     expect(
       screen.getByRole("button", { name: /^Save as v\d+$/ }),
     ).toBeDisabled();
@@ -1031,6 +1049,21 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
       url: "/tailored-resumes/res-1/sections",
       body: { kind: "education", title: null },
     });
+  });
+
+  it("marks a gap the user answered about, and lists the answer", async () => {
+    serve(defaults);
+    renderResume();
+
+    const answered = (
+      await screen.findByText("On-call for a payments platform")
+    ).closest(".requirement-row") as HTMLElement;
+    expect(within(answered).getByText("Answered by you")).toBeTruthy();
+    expect(answered).toHaveTextContent("Yes, weekly for two years");
+    const unanswered = screen
+      .getByText("Kubernetes in production")
+      .closest(".requirement-row") as HTMLElement;
+    expect(within(unanswered).queryByText("Answered by you")).toBeNull();
   });
 
   it("asks for a custom section's heading before pricing it", async () => {

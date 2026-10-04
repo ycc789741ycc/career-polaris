@@ -2949,6 +2949,16 @@ Open questions:
   row in the panel, or listed apart as "nothing to write".
 
 ## A résumé cites what you answered
+**Done** (ADR 0044). As planned, with these details:
+
+* A requirement's answers are those under its dimension's key or under its
+  own statement's, since a requirement mapped to a dimension with no bar is
+  asked about by its statement.
+* The check also runs on a filled section, and `get_claims_settled` clears an
+  `answers` naming no requirement before it.
+* The rows stored on the résumé carry the answers, so a revision sees the
+  pairing of its last write.
+
 Phase 9's "A plan cites what you answered" left this as an open question.
 The answers do reach the résumé today, but they cannot help it where they
 matter most:

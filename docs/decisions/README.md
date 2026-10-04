@@ -49,6 +49,7 @@ new record that supersedes the old one.
 | [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
 | [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted |
 | [0043](0043-write-every-resume-section-at-once-and-show-what-the-user-picks.md) | A résumé writes every section at once, and the user picks which to show | Accepted |
+| [0044](0044-let-a-resume-claim-a-gap-from-the-answers-given-about-it.md) | A résumé may claim a gap from the answers given about it, and nothing else | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
