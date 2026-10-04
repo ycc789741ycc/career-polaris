@@ -2761,3 +2761,163 @@ What gets harder:
   not compare, which the number beside each still allows.
 * Moving the chat to the left column makes the left column the longest on
   the page. On a short screen, Revise with AI is below the fold.
+
+# Phase 10
+What the user answers in Fill the gap reaches the résumé, not only the gap
+plan.
+* A tailored résumé can claim a requirement it would otherwise leave out
+  as a gap, when the user answered a question about that gap, and only from
+  those answers.
+* The Résumé's requirements panel shows which requirements rest on the
+  user's own answers.
+
+One branch, cut from `epic/<ticket>/phase-10`, which is cut from mainline:
+
+1. "A résumé cites what you answered": a requirement the user answered
+   about can be written from that answer, including one with no other
+   evidence.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
+`README.md` and `docs/architecture.md` saying what is built.
+
+## A résumé cites what you answered
+Phase 9's "A plan cites what you answered" left this as an open question.
+The answers do reach the résumé today, but they cannot help it where they
+matter most:
+* **The writer sees every answer.** `_generate` reads
+  `profile.snapshot`, which holds every fact, so each answer is a line in
+  the evidence block (`[E7] (user_answer, answered 2026-…) …`), and the
+  model may cite it.
+* **But the coverage list forbids the gaps.** `resume_write` v3 says "Do
+  not claim a requirement marked "gap"". Coverage comes from
+  `resume.domain.coverage`, which judges each requirement by the latest
+  analysis's dimension score against the Target's bar. Fill the gap asks
+  only about gaps, so its answers are about exactly the requirements the
+  writer is told to leave out.
+* **The model does not know which answer belongs to which requirement.**
+  As in the plan before ADR 0036, an answer is just another line among
+  every commit, issue and résumé line.
+* **The rule is only in the prompt.** Nothing checks a bullet's
+  `answers` (the requirement it claims) against its verdict, so a bullet
+  may claim a gap from any evidence the user owns, and a bullet that obeys
+  the prompt cannot use the answer meant for it.
+
+Coverage itself still comes from the last analysis. An answer does not move
+a score or turn a gap into covered until the user re-analyses, and this step
+does not change that.
+
+Its own branch, `feature/<ticket>/resume-cites-answers`. A résumé written
+before the answers is already outdated by `evidence` (ADR 0035), so
+Regenerate is what makes it read them; nothing new is queued.
+
+1. **Each coverage row knows its gap.**
+   * A row's gap key is the one Fill the gap asked about:
+     `gap_key_for_dimension(dimension_key)` for a requirement mapped to a
+     dimension, `gap_key_for_uncovered(statement)` for one mapped to
+     nothing. Both live in `target.domain`; `target/__init__.py` exports
+     them, since `resume` may import only a component's public surface.
+   * `ResumeService` takes `GapFillService` in its factory and calls
+     `gapfill.get_answers(owner_id, ref)` once per write. `resume` already
+     sits above `gapfill` (`gapplan | resume | activity → gapfill →
+     target`); the import-linter contracts need no change.
+   * `Coverage` and `CoverageView` gain `answer_ids` / `answers`: the
+     evidence the user's answers to that row's gap became, newest first.
+     A `dim:` answer is listed under every requirement mapped to that
+     dimension.
+   * The rows are stored on the résumé as today (`resume.coverage`, JSON),
+     with the answers' ids. A row stored before this has none; no
+     migration.
+2. **The prompt is told which answers go with which requirement.**
+   * In the coverage block, a row with answers lists their handles:
+     `- gap: Runs Kubernetes in production (answered in [E41], [E42])`.
+     Covered and partial rows list theirs the same way.
+   * The answers stay in the evidence block too, so their text is there to
+     read.
+3. **`resume_write` v4 and `resume_revise` v4.**
+   * A requirement marked `gap` with no answers is still not claimed.
+   * A requirement marked `gap` with answers may be claimed only by bullets
+     that cite those answers and nothing else. Such a bullet says what the
+     answer says, in the person's own terms, and never adds a number, a
+     scope or an outcome the answer does not state.
+   * Covered and partial requirements keep their rule; their answers are
+     ordinary evidence.
+   * Revise reads the coverage stored at the last write, answers included.
+     An answer given after that write makes the résumé outdated by
+     `evidence`, and Regenerate, not a revision, picks it up.
+   * `resume_section` v1 has no coverage and claims no requirement, so it
+     is unchanged.
+4. **The rule is checked, not just asked for.**
+   * A new domain rule, `assert_gap_claims_answered(content, coverage)`,
+     runs after `assert_written_lines_cited`, on writes, revisions applied
+     and saved edits alike:
+     * a bullet whose `answers` names a requirement with verdict `gap` must
+       cite at least one of that row's answers, and nothing outside them;
+     * a bullet whose `answers` names no requirement on the list has its
+       `answers` cleared rather than rejected, as a typo is not an invented
+       claim.
+   * A breach on a write or a proposed revision is `OutputInvalidError`,
+     like a line with no citation. A manual edit is the user's own word
+     and is not checked by it, the same way `mark_edits` makes the line
+     `yours`.
+   * `assert_citations_exist` still runs over every citation, so an answer
+     deleted while the model runs is still caught.
+5. **The Résumé shows it.**
+   * `api/schemas/resume.py`'s `Coverage` gains `answers` (the
+     `EvidenceNote`s), built in `from_view`; then `make gen-client`.
+   * In the requirements panel, a `gap` row with answers shows "Answered by
+     you" beside its verdict badge, and its `EvidenceDisclosure` lists the
+     answers. A `gap` row without them keeps "Nothing in your sources
+     speaks to this yet."
+   * The verdict stays `gap`: the badge does not turn green on the user's
+     word alone.
+6. **The estimate needs no change.** The gateway prices the rendered
+   prompt, and the handles add a few tokens per answered requirement.
+7. **An ADR** (0043) amends ADR 0023 and extends ADR 0036 to the résumé: an
+   answer is evidence for the gap it was asked about, and a résumé may claim
+   that gap's requirement from it and nothing else. Update the index,
+   `docs/domain_model.md` and `CLAUDE.md`'s Phase 9 résumé bullets.
+
+Tests:
+* Unit, `coverage`:
+  * a row mapped to a dimension lists the answers to `dim:<key>`;
+  * an unmapped row lists the answers to its `req:` slug;
+  * a row nobody answered about lists none.
+* Unit, `assert_gap_claims_answered`:
+  * a bullet claiming a `gap` row and citing its own answer passes;
+  * one citing another row's answer, or any other evidence, is rejected;
+  * one claiming a `gap` row with no answers is rejected;
+  * one claiming a covered or partial row is not affected;
+  * one claiming a requirement not on the list has `answers` cleared.
+* Unit, the resume service, with a fake gateway that records its inputs:
+  * the coverage block lists each answered row's handles;
+  * a revision whose proposal breaks the rule is refused, and the résumé is
+    unchanged;
+  * a manual edit claiming a gap is saved.
+* Integration: submit answers, regenerate the résumé, and a bullet claiming
+  the answered requirement cites the answer under row-level security.
+  Another user's answers are never listed.
+* SPA: a `gap` row with answers shows "Answered by you" and the answers in
+  its disclosure; one without keeps the empty text.
+
+What gets harder:
+* A résumé is a document a recruiter reads, not a plan the user reads. A
+  bullet written from the user's answer is their own claim, with nothing
+  behind it the platform has seen; the `user_answer` evidence is the only
+  trail. The rules against embellishing it are only in the prompt.
+* The requirements panel can show a requirement as a gap while the page
+  claims it. That is true to how coverage is decided, but it reads as a
+  contradiction until the user re-analyses.
+* A `req:` key is a slug of the requirement's statement. A rebuild that
+  rewords a requirement gives it a new key, and the earlier answers are no
+  longer listed beside it, though they stay in the evidence block.
+* One more read of `gapfill` on every write, and `resume` now needs
+  `GapFillService` in its factory, as `gapplan` does.
+
+Open questions:
+* Whether an answer should count toward coverage with no re-analysis: a
+  local rule that turns an answered gap into `partial`. It changes what a
+  verdict means and, through the fit, what the role map shows, so it would
+  need its own ADR (Phase 9 left the same question for the fit).
+* Whether a manual edit that claims a gap should be warned about in the
+  editor rather than saved silently.
