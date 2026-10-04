@@ -1076,11 +1076,13 @@ describe("sections you choose (ADR 0039, ADR 0043)", () => {
     // Only the empty section offers it.
     expect(
       within(rows[3]!).queryByRole("button", {
-        name: "Fill from your sources",
+        name: "Empty — fill from your sources",
       }),
     ).toBeNull();
     await user.click(
-      within(rows[4]!).getByRole("button", { name: "Fill from your sources" }),
+      within(rows[4]!).getByRole("button", {
+        name: "Empty — fill from your sources",
+      }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",
