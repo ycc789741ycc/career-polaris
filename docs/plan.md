@@ -3345,3 +3345,12 @@ read from a file (ADR 0041).
   unsaved changes: a filled section lands in the saved version and would
   write over them.
 
+## Undo
+* "↶ Undo" beside "Save as vN" takes back the last unsaved edit to the
+  résumé — a line, a heading, a removed entry, a section shown, hidden or
+  moved — one at a time, up to fifty, back to the saved version. Cmd/Ctrl+Z
+  does the same while no line is being typed in; a line being edited keeps
+  the browser's own undo.
+* Saving, or opening another résumé, starts the history again: what is saved
+  is changed by editing and saving again.
+
