@@ -1391,6 +1391,7 @@ function ChatPanel({
       >
         <input
           className="input"
+          style={{ flex: 1, minWidth: 0 }}
           aria-label="Ask for a change"
           placeholder="Ask for a change…"
           value={message}

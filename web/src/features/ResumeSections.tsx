@@ -201,22 +201,19 @@ export function SectionsPanel({
                   )}
                 </svg>
               </button>
-              <span
-                className={
-                  section.is_shown ? "section-name" : "section-name muted"
-                }
-              >
-                {name}
-              </span>
-              {isFilling ? (
-                <span className="chip">Filling…</span>
-              ) : added.includes(key) ? (
-                <span className="chip">New</span>
-              ) : (
-                isEmpty && (
+              <span className="section-text">
+                <span
+                  className={
+                    section.is_shown ? "section-name" : "section-name muted"
+                  }
+                  title={name}
+                >
+                  {name}
+                </span>
+                {isEmpty && !isFilling && !added.includes(key) && (
                   <button
                     type="button"
-                    className="chip-add"
+                    className="section-fill"
                     title="Nothing in your sources for this yet"
                     disabled={busy || filling !== null}
                     onClick={() =>
@@ -227,9 +224,14 @@ export function SectionsPanel({
                       })
                     }
                   >
-                    Fill from your sources
+                    Empty — fill from your sources
                   </button>
-                )
+                )}
+              </span>
+              {isFilling ? (
+                <span className="chip">Filling…</span>
+              ) : (
+                added.includes(key) && <span className="chip">New</span>
               )}
               {section.kind === "experience" ? (
                 <span className="muted" style={{ fontSize: 12 }}>

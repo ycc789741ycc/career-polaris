@@ -770,7 +770,27 @@ select.input { appearance: auto; }
   fill: #8a847e;
 }
 .section-handle:focus-visible { outline: 2px solid var(--color-accent); border-radius: 6px; }
-.section-name { flex: 1; font-size: 13.5px; font-weight: 600; }
+/* The name, and under it what an empty section can do; never crushed. */
+.section-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.section-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.section-row > .chip,
+.section-row > button,
+.section-row > .muted { flex: none; }
+.section-fill {
+  all: unset;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.section-fill:disabled { opacity: 0.5; cursor: default; }
+.section-fill:focus-visible { outline: 2px solid var(--color-accent); border-radius: 4px; }
 .chip-add {
   all: unset;
   cursor: pointer;
@@ -1450,7 +1470,11 @@ select.input { appearance: auto; }
 .resume-layout {
   display: grid;
   gap: 20px;
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(240px, 300px);
+  /* The side columns share a wide screen with the page, up to a point. */
+  grid-template-columns:
+    minmax(280px, min(24%, 420px))
+    minmax(0, 1fr)
+    minmax(260px, min(22%, 380px));
   grid-template-areas: "tools page requirements";
   align-items: start;
 }
@@ -1465,7 +1489,8 @@ select.input { appearance: auto; }
 .resume-col-tools { grid-area: tools; }
 .resume-col-page { grid-area: page; min-width: 0; }
 .resume-col-requirements { grid-area: requirements; }
-@media (max-width: 1100px) {
+/* Below this the page would be too narrow to read beside both columns. */
+@media (max-width: 1240px) {
   .resume-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "page" "tools" "requirements";
