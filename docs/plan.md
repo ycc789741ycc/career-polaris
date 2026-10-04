@@ -2761,3 +2761,420 @@ What gets harder:
   not compare, which the number beside each still allows.
 * Moving the chat to the left column makes the left column the longest on
   the page. On a short screen, Revise with AI is below the fold.
+
+# Phase 10
+A tailored résumé is written from the user's sources, whether or not they
+uploaded one, and what they answer in Fill the gap reaches it.
+* Every section is written from the evidence: GitHub, Jira, an uploaded
+  résumé and the user's answers. A user with no résumé still gets an
+  Experience section, and every other section the evidence supports.
+* Generating a résumé writes every section at once. Only the default ones
+  (summary, experience, skills) are shown on the page; the rest wait,
+  already written, for the user to show. Showing or hiding a section spends
+  nothing, and each section keeps whether it is shown.
+* A tailored résumé can claim a requirement it would otherwise leave out
+  as a gap, when the user answered a question about that gap, and only from
+  those answers.
+* The Résumé's requirements panel shows which requirements rest on the
+  user's own answers.
+* The career timeline is recorded: each analysis reads the positions the
+  user's résumé and answers state, so the résumé writer and the next
+  analysis know their roles, employers and years of experience.
+
+Three branches, in this order, each cut from `epic/<ticket>/phase-10`, which
+is cut from mainline:
+
+1. "Every section, written at once from the sources": the writer no longer
+   needs an uploaded résumé to fill a section, writes them all, and the
+   user shows or hides each.
+2. "A résumé cites what you answered": a requirement the user answered
+   about can be written from that answer, including one with no other
+   evidence.
+3. "Record the career timeline": the analysis reports the positions the
+   evidence states, and they are stored as the profile's timeline.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR each with the index, and `CLAUDE.md`,
+`README.md` and `docs/architecture.md` saying what is built.
+
+## Every section, written at once from the sources
+A user who connected GitHub and Jira but uploaded no résumé gets a résumé
+with an empty Experience section. Three things add up to that:
+* **Nothing ever writes the career timeline.** `profile.career_position`
+  has a repository, a mapper and three readers (the résumé writer, the
+  analysis and Sources), and no writer: `resume_parser` turns a résumé into
+  evidence lines only, and no connector records a position. ADR 0039 noted
+  it. So `timeline` is always "(no positions recorded)".
+* **The writer is given roles only through the uploaded résumé.**
+  `resume_write` v3 defines an experience entry as "one per role", `title`
+  the role and `org` the employer, and says "Write only what the evidence
+  shows" and "A section the evidence does not support is left empty".
+  GitHub and Jira show the work but never a job title, so without
+  `base_resume` the model obeys and leaves Experience empty. Every other
+  section leans on the résumé the same way: education, certifications and
+  talks are rarely in GitHub or Jira at all, and nothing tells the model how
+  to tell a side project from open source or from paid work.
+* **Only the plan's sections are written.** A new résumé's plan is
+  `DEFAULT_PLAN` (summary, experience, skills). Any other section is a
+  priced `resume.fill_section` job of its own, one at a time, so a user
+  with only GitHub work never sees it land in Open source or Side projects
+  unless they think to add those.
+
+Its own branch, `feature/<ticket>/all-sections-from-sources`.
+
+1. **Each kind says how it is written from evidence alone** (`resume_write`
+   v4). With a timeline or an uploaded résumé, roles come from them, as
+   today. Without, each kind has its rule:
+   * `experience`: one entry per place the work was done, as the evidence
+     names it — a Jira site, a GitHub organisation. `org` is that name;
+     `title` is a job title only when the evidence states one, and
+     otherwise names the work ("Payments platform, backend"), never an
+     invented title; `when` runs from the oldest to the newest fact cited.
+   * `open_source`: work in repositories owned by someone other than the
+     user and other than an organisation they work in; `side_projects`:
+     repositories under the user's own account that belong to no
+     experience entry. Every repository's work lands in exactly one of
+     experience, open source and side projects.
+   * `skills`: what the cited work uses, ordered by what the job screens
+     for when asked to; `summary`: two or three sentences over the rest.
+   * `education`, `certifications`, `talks_and_writing`: only what the
+     evidence states, which without a résumé is usually only the user's
+     answers. Empty otherwise.
+   * To tell the user's own repositories from others', the prompt is given
+     the connected accounts: `SourceConnection.external_account` for each
+     source (the GitHub login, the Jira site), through a new
+     `ProfileSnapshot.accounts`. It is untrusted like the evidence.
+2. **Generating writes every section.**
+   * A write fills every built-in kind, and every custom section the résumé
+     has, in one call: `_generate` passes the full list, and the reply's
+     schema asks for each. A section the evidence does not support comes
+     back empty, as today.
+   * `expected_output_tokens` rises with the extra sections, so the estimate
+     a user confirms before Generate and Regenerate rises too. Measure on
+     the fixture profiles and set it from that, not a guess.
+   * `resume_section` v1 stays, for two cases only: filling a custom
+     section the user just added, and filling an empty built-in section of a
+     résumé written before this branch. Both stay priced.
+3. **Each section stores whether it is shown.**
+   * `SectionSlot` gains `is_shown`, so `Resume.section_plan` is every
+     section in its order with its state, and each saved version's sections
+     carry it too, so going back to a version brings back what it showed.
+   * A new résumé shows `DEFAULT_PLAN` and hides the rest, in
+     `HEADINGS` order after them. Experience is always shown;
+     `assert_plan_valid` refuses hiding it.
+   * Showing and hiding are edits saved as a version, like moving a
+     section: no AI call, no spend, nothing queued. A hidden section keeps
+     its content, so showing it again shows what was written.
+   * `MAX_SECTIONS` stops limiting what a résumé holds — that is the eight
+     built-in kinds plus `MAX_CUSTOM_SECTIONS` — and limits only what is
+     shown.
+   * Regenerating rewrites every section and keeps each one's order and
+     state. A hidden section is still rewritten, so showing it later shows
+     a section written to the same evidence as the rest.
+4. **Only what is shown is printed.** `render_html`, the preview and the
+   export's reuse check read shown sections only. A hidden section is
+   never sent to a template or trimmed. Coverage is unaffected: it is
+   decided by scores, not by the page.
+5. **Revise sees every section.** `resume_revise` v4 is given the hidden
+   sections too, marked hidden, may rewrite them when asked, and shows or
+   hides one only when the person asks, as it adds or removes one today.
+6. **The Sections panel lists every section.** Each row shows its heading,
+   whether it is shown, and whether it is empty ("Nothing in your sources
+   for this yet"). Show and Hide replace Add and Remove for the built-in
+   kinds and cost nothing. "Fill from your sources", priced, appears on an
+   empty one only when it predates this branch. Adding a custom section is
+   as today.
+7. **Migration 0039.** Every stored `section_plan` and every saved
+   version's sections gain `is_shown`: the sections a résumé has now are
+   shown, and the missing built-in kinds are appended hidden and empty.
+   `from_dict` reads only the new shape. The downgrade drops hidden
+   sections and the flag.
+8. **An ADR** (0043) amends ADR 0039: a résumé holds every section, each
+   shown or hidden, and generating writes them all; adding a built-in
+   section is no longer a spend. Update the index, `docs/domain_model.md`
+   and `CLAUDE.md`'s "Sections you choose" bullet.
+
+Tests:
+* Unit, `section.py`:
+  * a new résumé's plan holds every built-in kind, with only the defaults
+    shown;
+  * hiding Experience is refused; hiding and showing anything else passes;
+  * the shown limit counts shown sections only.
+* Unit, `get_planned` and the renderer: hidden sections are kept in the
+  content and never printed; an empty shown section prints nothing, as
+  today.
+* Unit, the resume service, with a fake gateway that records its inputs:
+  * a write asks for every section and passes the connected accounts;
+  * a write with no timeline and no résumé saves the experience entries the
+    reply holds, cited;
+  * regenerating keeps each section's order and state;
+  * showing a section saves a version and calls nothing.
+* Integration: generate for a user with GitHub evidence only, and every
+  section is stored, Experience and the defaults shown, the rest hidden;
+  show Open source, and the next version shows it with no job queued.
+  Migration 0039 upgrades and downgrades a stored résumé.
+* SPA: the Sections panel shows every section with its state; Show and
+  Hide save without a price; "Fill from your sources" shows only on an
+  empty section of an older résumé.
+
+What gets harder:
+* Every write costs more, for sections most users never show. A user who
+  only ever wants the defaults pays for the rest each time they regenerate.
+* An experience entry without a timeline or a résumé names a place and the
+  work, not a job title. That reads thinner than a résumé the user wrote,
+  and the prompt rule against inventing a title is only in the prompt.
+* Telling open source from side projects from paid work rests on repository
+  owners and the accounts given. An organisation's repository the user
+  contributed to as an outsider reads as experience.
+* A hidden section is still content: the revise chat and every reader of a
+  version walk it.
+* Migration 0039 rewrites stored JSON again, as 0035 did.
+
+Open questions:
+* The career timeline stays empty until "Record the career timeline". Until
+  then these rules are the only way Experience is written without a résumé,
+  and they stay the rule for a user whose evidence states no position.
+* Whether a section the evidence left empty should be shown as an empty
+  row in the panel, or listed apart as "nothing to write".
+
+## A résumé cites what you answered
+Phase 9's "A plan cites what you answered" left this as an open question.
+The answers do reach the résumé today, but they cannot help it where they
+matter most:
+* **The writer sees every answer.** `_generate` reads
+  `profile.snapshot`, which holds every fact, so each answer is a line in
+  the evidence block (`[E7] (user_answer, answered 2026-…) …`), and the
+  model may cite it.
+* **But the coverage list forbids the gaps.** `resume_write` v3 says "Do
+  not claim a requirement marked "gap"". Coverage comes from
+  `resume.domain.coverage`, which judges each requirement by the latest
+  analysis's dimension score against the Target's bar. Fill the gap asks
+  only about gaps, so its answers are about exactly the requirements the
+  writer is told to leave out.
+* **The model does not know which answer belongs to which requirement.**
+  As in the plan before ADR 0036, an answer is just another line among
+  every commit, issue and résumé line.
+* **The rule is only in the prompt.** Nothing checks a bullet's
+  `answers` (the requirement it claims) against its verdict, so a bullet
+  may claim a gap from any evidence the user owns, and a bullet that obeys
+  the prompt cannot use the answer meant for it.
+
+Coverage itself still comes from the last analysis. An answer does not move
+a score or turn a gap into covered until the user re-analyses, and this step
+does not change that.
+
+Its own branch, `feature/<ticket>/resume-cites-answers`, after "Every
+section, written at once from the sources". A résumé written
+before the answers is already outdated by `evidence` (ADR 0035), so
+Regenerate is what makes it read them; nothing new is queued.
+
+1. **Each coverage row knows its gap.**
+   * A row's gap key is the one Fill the gap asked about:
+     `gap_key_for_dimension(dimension_key)` for a requirement mapped to a
+     dimension, `gap_key_for_uncovered(statement)` for one mapped to
+     nothing. Both live in `target.domain`; `target/__init__.py` exports
+     them, since `resume` may import only a component's public surface.
+   * `ResumeService` takes `GapFillService` in its factory and calls
+     `gapfill.get_answers(owner_id, ref)` once per write. `resume` already
+     sits above `gapfill` (`gapplan | resume | activity → gapfill →
+     target`); the import-linter contracts need no change.
+   * `Coverage` and `CoverageView` gain `answer_ids` / `answers`: the
+     evidence the user's answers to that row's gap became, newest first.
+     A `dim:` answer is listed under every requirement mapped to that
+     dimension.
+   * The rows are stored on the résumé as today (`resume.coverage`, JSON),
+     with the answers' ids. A row stored before this has none; no
+     migration.
+2. **The prompt is told which answers go with which requirement.**
+   * In the coverage block, a row with answers lists their handles:
+     `- gap: Runs Kubernetes in production (answered in [E41], [E42])`.
+     Covered and partial rows list theirs the same way.
+   * The answers stay in the evidence block too, so their text is there to
+     read.
+3. **`resume_write` v5 and `resume_revise` v5.**
+   * A requirement marked `gap` with no answers is still not claimed.
+   * A requirement marked `gap` with answers may be claimed only by bullets
+     that cite those answers and nothing else. Such a bullet says what the
+     answer says, in the person's own terms, and never adds a number, a
+     scope or an outcome the answer does not state.
+   * Covered and partial requirements keep their rule; their answers are
+     ordinary evidence.
+   * Revise reads the coverage stored at the last write, answers included.
+     An answer given after that write makes the résumé outdated by
+     `evidence`, and Regenerate, not a revision, picks it up.
+   * `resume_section` v1 has no coverage and claims no requirement, so it
+     is unchanged. A hidden section is written to the same rule, since it
+     may be shown later.
+4. **The rule is checked, not just asked for.**
+   * A new domain rule, `assert_gap_claims_answered(content, coverage)`,
+     runs after `assert_written_lines_cited`, on writes, revisions applied
+     and saved edits alike:
+     * a bullet whose `answers` names a requirement with verdict `gap` must
+       cite at least one of that row's answers, and nothing outside them;
+     * a bullet whose `answers` names no requirement on the list has its
+       `answers` cleared rather than rejected, as a typo is not an invented
+       claim.
+   * A breach on a write or a proposed revision is `OutputInvalidError`,
+     like a line with no citation. A manual edit is the user's own word
+     and is not checked by it, the same way `mark_edits` makes the line
+     `yours`.
+   * `assert_citations_exist` still runs over every citation, so an answer
+     deleted while the model runs is still caught.
+5. **The Résumé shows it.**
+   * `api/schemas/resume.py`'s `Coverage` gains `answers` (the
+     `EvidenceNote`s), built in `from_view`; then `make gen-client`.
+   * In the requirements panel, a `gap` row with answers shows "Answered by
+     you" beside its verdict badge, and its `EvidenceDisclosure` lists the
+     answers. A `gap` row without them keeps "Nothing in your sources
+     speaks to this yet."
+   * The verdict stays `gap`: the badge does not turn green on the user's
+     word alone.
+6. **The estimate needs no change.** The gateway prices the rendered
+   prompt, and the handles add a few tokens per answered requirement.
+7. **An ADR** (0044) amends ADR 0023 and extends ADR 0036 to the résumé: an
+   answer is evidence for the gap it was asked about, and a résumé may claim
+   that gap's requirement from it and nothing else. Update the index,
+   `docs/domain_model.md` and `CLAUDE.md`'s Phase 9 résumé bullets.
+
+Tests:
+* Unit, `coverage`:
+  * a row mapped to a dimension lists the answers to `dim:<key>`;
+  * an unmapped row lists the answers to its `req:` slug;
+  * a row nobody answered about lists none.
+* Unit, `assert_gap_claims_answered`:
+  * a bullet claiming a `gap` row and citing its own answer passes;
+  * one citing another row's answer, or any other evidence, is rejected;
+  * one claiming a `gap` row with no answers is rejected;
+  * one claiming a covered or partial row is not affected;
+  * one claiming a requirement not on the list has `answers` cleared.
+* Unit, the resume service, with a fake gateway that records its inputs:
+  * the coverage block lists each answered row's handles;
+  * a revision whose proposal breaks the rule is refused, and the résumé is
+    unchanged;
+  * a manual edit claiming a gap is saved.
+* Integration: submit answers, regenerate the résumé, and a bullet claiming
+  the answered requirement cites the answer under row-level security.
+  Another user's answers are never listed.
+* SPA: a `gap` row with answers shows "Answered by you" and the answers in
+  its disclosure; one without keeps the empty text.
+
+What gets harder:
+* A résumé is a document a recruiter reads, not a plan the user reads. A
+  bullet written from the user's answer is their own claim, with nothing
+  behind it the platform has seen; the `user_answer` evidence is the only
+  trail. The rules against embellishing it are only in the prompt.
+* The requirements panel can show a requirement as a gap while the page
+  claims it. That is true to how coverage is decided, but it reads as a
+  contradiction until the user re-analyses.
+* A `req:` key is a slug of the requirement's statement. A rebuild that
+  rewords a requirement gives it a new key, and the earlier answers are no
+  longer listed beside it, though they stay in the evidence block.
+* One more read of `gapfill` on every write, and `resume` now needs
+  `GapFillService` in its factory, as `gapplan` does.
+
+Open questions:
+* Whether an answer should count toward coverage with no re-analysis: a
+  local rule that turns an answered gap into `partial`. It changes what a
+  verdict means and, through the fit, what the role map shows, so it would
+  need its own ADR (Phase 9 left the same question for the fit).
+* Whether a manual edit that claims a gap should be warned about in the
+  editor rather than saved silently.
+
+## Record the career timeline
+The timeline has every reader it needs and no writer (see "Every section,
+written at once from the sources"):
+* **The résumé writer** is given `timeline` and gets "(no positions
+  recorded)" every time, so it learns roles and employers only from the
+  uploaded résumé's raw text, and Experience is only as good as the model's
+  reading of it.
+* **The analysis** is given the timeline and "Total experience, overlaps
+  counted once" (`assessment/service.py`, `_timeline_block`) to judge
+  seniority, and gets nothing, even for a user who uploaded a résumé.
+* **`GET /profile`** returns `positions` and `total_experience_months`,
+  always empty. The SPA reads neither.
+
+Where positions should come from:
+* **Not from the résumé parser.** `resume_parser` is local and splits text
+  into lines on purpose. Reading titles, employers and date ranges out of
+  free-form résumés locally is unreliable.
+* **Not from a model call on upload.** Uploading spends nothing today, and
+  must not start spending the user's key without asking.
+* **From the analysis.** It is already a confirmed spend, already reads
+  every résumé line and answer, and is the first reader of the timeline.
+
+Its own branch, `feature/<ticket>/career-timeline`, after "A résumé cites
+what you answered".
+
+1. **`skill_assessment` v5 reports the positions.**
+   * The reply gains `positions`: `title`, `company`, `started_on` and
+     `ended_on` (`YYYY-MM`, `ended_on` null for a current one), and
+     `evidence_ids`.
+   * A position is reported only when the evidence states it: a résumé
+     line or an answer. It is never inferred from a GitHub organisation or
+     a Jira site, which say where work happened, not what the job was.
+   * The newer fact wins, as ADR 0037's rules on time already say: an answer
+     that corrects a résumé's title or dates replaces it.
+   * The prompt no longer gets the stored timeline. It works the positions
+     out from the evidence first and judges seniority from them, so a run
+     never just confirms the last run's reading.
+2. **The positions are checked, not trusted.**
+   * Every cited id must be the user's, and must be `resume` or
+     `user_answer` evidence; any other citation rejects the whole reply, as
+     an invented id does today.
+   * Dates must parse, start no later than they end, and end no later than
+     today. A position that breaks these rejects the reply too, so a bad
+     reading never half-lands.
+3. **The analysis stores them.**
+   * `CareerPosition` gains `evidence_ids` and `assessment_id`.
+   * `ProfileService.replace_positions(owner_id, assessment_id, positions)`
+     replaces the whole timeline, in the same success path that records the
+     analysis. A failed analysis leaves the last timeline as it was.
+   * `assessment` already reads `profile`; the import-linter contracts need
+     no change. `profile` keeps owning its table.
+   * Replacing the timeline does not bump the profile version: it is a
+     reading of the evidence, not new evidence. A résumé written before it
+     is still outdated by `evidence` when the evidence that changed it
+     arrived.
+   * Migration 0040 adds both columns. Existing rows: none.
+4. **The readers use it, unchanged.** `_timeline_block` and `_write_inputs`
+   already format positions; `total_experience_months` already merges
+   overlaps. With a timeline, `resume_write` v4's rule that roles come from
+   it applies, and Experience gets real titles and employers even when the
+   uploaded résumé's layout reads badly as text.
+5. **Nothing new on screen.** Sources lists facts and nothing the analysis
+   made of them, so the timeline does not appear there. `GET /profile`
+   keeps returning it.
+6. **The estimate** rises by the positions' output tokens. Set
+   `expected_output_tokens` from the fixture profiles.
+7. **An ADR** (0045): the career timeline is the analysis's reading of the
+   evidence, cited to résumé lines and answers, replaced by each successful
+   analysis. Update the index, `docs/domain_model.md` and `CLAUDE.md`.
+
+Tests:
+* Unit, the position rules:
+  * a position citing a résumé line or an answer passes;
+  * one citing GitHub or Jira evidence, or an id the user lacks, rejects
+    the reply;
+  * a start after its end, or an end in the future, rejects the reply.
+* Unit, the assessment service, with a fake gateway:
+  * a successful run replaces the timeline with the reply's positions;
+  * a failed run leaves it as it was;
+  * the prompt is not given the stored timeline.
+* Integration: an analysis of a user with an uploaded résumé stores their
+  positions under row-level security, `GET /profile` returns them with the
+  months merged, and another user's timeline is never read.
+
+What gets harder:
+* The timeline changes only when the user re-analyses. A résumé uploaded
+  after the last analysis is in the evidence the writer reads, but not in
+  the timeline, until then.
+* A position is a model's reading, cited but not checked against the text
+  it cites. A wrong title or date reaches the résumé's Experience, and the
+  user cannot correct the timeline except through an answer and a
+  re-analysis.
+* Every analysis spends a little more, for the positions.
+
+Open questions:
+* Whether the user should see and correct the timeline. Sources is the
+  wrong place by the journey's rule; Strengths, which shows what the
+  analysis made, may be the right one.
