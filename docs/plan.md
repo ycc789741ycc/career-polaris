@@ -3332,8 +3332,9 @@ read from a file (ADR 0041).
 
 ## Remove one entry from a section
 * Each entry on the page — a job under Experience, a repository under Side
-  projects or Open source — has a remove control (×) beside its dates, quiet
-  until the entry is pointed at. It takes the whole entry off the draft; the
+  projects or Open source — has a round remove control (×) in the page margin
+  left of its title, quiet until the entry is pointed at. Sitting in the
+  margin, it moves nothing on the page that the PDF prints. It takes the whole entry off the draft; the
   entry is gone once "Save as vN" saves the version. Nothing prints it.
 
 ## Sections saved on request
