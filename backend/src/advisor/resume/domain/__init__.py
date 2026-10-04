@@ -87,9 +87,11 @@ from advisor.resume.domain.template_spec import (
     Rule,
     TemplateSpec,
     TemplateSpecError,
+    assert_fonts_valid,
     assert_spec_valid,
     get_built_in_spec,
     get_contrast,
+    get_spec_with_fonts,
 )
 
 __all__ = [
@@ -159,6 +161,7 @@ __all__ = [
     "TemplateSpecError",
     "Verdict",
     "VersionSource",
+    "assert_fonts_valid",
     "assert_plan_valid",
     "assert_spec_valid",
     "assert_well_formed",
@@ -173,6 +176,7 @@ __all__ = [
     "get_headings_kept",
     "get_planned",
     "get_proposal_layout",
+    "get_spec_with_fonts",
     "get_template_spec_from_runs",
     "mark_edits",
     "settle_revision",

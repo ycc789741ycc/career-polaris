@@ -3209,3 +3209,20 @@ Open questions:
 * Whether the user should see and correct the timeline. Sources is the
   wrong place by the journey's rule; Strengths, which shows what the
   analysis made, may be the right one.
+
+## Found while testing Phase 10
+Fixed on the epic, each on its own branch:
+* **A failed résumé could not be tried again.** It now has Try again, priced
+  first (`bugfix/no-ticket/retry-failed-resume`, cut from mainline).
+* **A gap claim the answers could not back failed the whole write.** The
+  claim is dropped and the line kept (ADR 0046).
+* **The left column was squeezed.** The side columns take a share of a wide
+  screen, a section row keeps its name on one line, and the layout stacks
+  below 1240px.
+* **Titles on the page could not be edited.** Headline, contact, section
+  headings, entry fields and list items now can. A built-in section may take
+  a heading of its own, kept through every rewrite.
+* **Fonts needed a template of one's own.** A résumé may set its two fonts
+  over its template's from the Template panel (ADR 0047, migration 0041).
+* **Contact details are plain text.** Planned next: typed items drawn with
+  icons (ADR 0048).

@@ -160,6 +160,8 @@ const resume: TailoredResume = {
       section("education", { is_shown: false }),
     ],
   },
+  heading_font: null,
+  body_font: null,
   section_plan: [
     { kind: "summary", title: null, is_shown: true },
     { kind: "experience", title: null, is_shown: true },
@@ -402,6 +404,30 @@ describe("résumé screen", () => {
     expect(
       screen.getByRole("button", { name: /^Save as v\d+$/ }),
     ).toBeDisabled();
+  });
+
+  it("sets the résumé in fonts of its own and previews them", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const titles = await screen.findByRole("combobox", { name: "Titles in" });
+    expect(titles).toHaveValue("");
+    await user.selectOptions(titles, "DejaVu Serif");
+
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        method: "PUT",
+        url: "/tailored-resumes/res-1/settings",
+        body: expect.objectContaining({
+          heading_font: "DejaVu Serif",
+          body_font: null,
+        }),
+      }),
+    );
+    const page = screen.getByRole("article", { name: "Résumé" });
+    expect(page.getAttribute("style")).toContain("DejaVu Serif");
   });
 
   it("writes a failed résumé again once priced", async () => {

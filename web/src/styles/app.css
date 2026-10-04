@@ -789,6 +789,9 @@ select.input { appearance: auto; }
 .section-row > .chip,
 .section-row > button,
 .section-row > .muted { flex: none; }
+/* The Template panel's two font pickers, side by side. */
+.font-picker { flex: 1 1 120px; min-width: 0; display: flex; flex-direction: column; }
+.font-picker .input { width: 100%; }
 .section-fill {
   all: unset;
   cursor: pointer;
