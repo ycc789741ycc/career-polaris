@@ -41,11 +41,9 @@ _MARKERS = {BulletStyle.DOT: "disc", BulletStyle.DASH: '"\\2013  "', BulletStyle
 
 
 def _contact_line(content: ResumeContent) -> str:
-    """The headline, then each contact detail with its kind's icon, inline so
-    nothing is fetched (ADR 0048)."""
-    headline = (
-        f'<span class="headline">{escape(content.headline)}</span>' if content.headline else ""
-    )
+    """The headline on a line of its own, then each contact detail with its
+    kind's icon, inline so nothing is fetched (ADR 0048)."""
+    headline = f'<div class="headline">{escape(content.headline)}</div>' if content.headline else ""
     items = "".join(
         '<span class="contact-item"><svg viewBox="0 0 24 24" aria-hidden="true">'
         f'<path d="{CONTACT_ICONS[str(item.kind)]}"/></svg>{escape(item.value)}</span>'
@@ -100,7 +98,7 @@ header.band {{ background: {spec.get_band_color()}; padding: 10pt 12pt; }}
 h1 {{ font-family: {heading}; font-size: {spec.name_pt}pt; line-height: 1.1;
      color: {spec.name_color}; margin: 0; font-weight: 400; }}
 .contact {{ font-size: {contact_pt}pt; color: #5a5550; margin-top: 4pt; }}
-.contact .headline {{ margin-right: 10pt; }}
+.contact .headline {{ margin: 0 0 2pt; }}
 .contact-item {{ white-space: nowrap; margin-right: 10pt; }}
 .contact-item svg {{ width: 0.95em; height: 0.95em; vertical-align: -0.12em;
   margin-right: 3pt; fill: {spec.accent_color}; }}
