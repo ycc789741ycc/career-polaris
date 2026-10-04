@@ -26,6 +26,16 @@ function status(overrides: Partial<ShellStatus> = {}): ShellStatus {
 }
 
 describe("sidebar", () => {
+  it("names the app beside its icon, which assistive technology skips", () => {
+    const { container } = render(
+      <Sidebar current="sources" status={status()} onNavigate={vi.fn()} />,
+    );
+
+    const brand = container.querySelector(".brand");
+    expect(brand).toHaveTextContent("CareerPolaris");
+    expect(brand?.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("marks the current screen and navigates on click", async () => {
     const onNavigate = vi.fn();
     render(

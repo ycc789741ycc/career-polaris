@@ -3226,3 +3226,40 @@ Fixed on the epic, each on its own branch:
   over its template's from the Template panel (ADR 0047, migration 0041).
 * **Contact details were plain text.** They are typed items drawn with icons,
   edited in place (ADR 0048, migration 0042).
+
+# Phase 11
+The 4 October prototype: the app gets its name, and the Advisor works against
+a target only once the user has chosen one.
+* The app is called **CareerPolaris**, with an icon: a path climbing from a
+  dot (your evidence) to a star (the target role).
+* No target exists until the user clicks "Target this role" on the role map,
+  or "Set as target" on a role of their own. Until then the Advisor shows
+  **No target yet**, with its tabs locked, and offers the role map, a role of
+  their own, or a previous target.
+* "Previous targets" on the target banner switches back to a role targeted
+  before, restoring its answers, plan and résumé with no AI call.
+* The role map lists "Openings for this role", newest first and without a
+  fit per opening, because the fit is scored on the role.
+* The Résumé has two columns: the tools, collapsible, beside the page.
+
+Four branches, in this order, each cut from `epic/no-ticket/update-prototype`,
+which carries the prototype:
+
+1. "CareerPolaris": the name and icon.
+2. "Openings for this role": newest first, paged, no fit per opening.
+3. "No target until one is chosen": the target rule, No target yet and
+   Previous targets.
+4. "The Résumé in two columns".
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR where a decision is costly to reverse,
+and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
+
+## CareerPolaris
+* The sidebar and the sign-in screen show the icon and the name; the browser
+  tab reads CareerPolaris, with the icon as its favicon (`web/public/icon.svg`).
+  `AppIcon` draws the mark in its four colour versions.
+* The API's OpenAPI title is CareerPolaris.
+* The repository, the `jsa-*` images, `jsa_net` and the compose projects keep
+  the old name: renaming them would break every running stack for nothing a
+  user sees. No ADR, because a name is easy to change back.

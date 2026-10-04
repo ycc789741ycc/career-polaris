@@ -1,4 +1,4 @@
-# Domain Model: Job Searching Advisor
+# Domain Model: CareerPolaris
 
 A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.excalidraw`, checked against the original product requirements summarized in section 5.1 and the prototype in [`../prototype/`](../prototype/README.md): one screen per file under `screens/`, and its spec, `career-advisor-domain-spec.md`.
 

@@ -1,4 +1,4 @@
-# Architecture: Job Searching Advisor
+# Architecture: CareerPolaris
 
 This doc turns the domain model in [`domain_model.md`](domain_model.md) into an architecture. It covers what gets deployed separately, who owns which data, where secrets can be decrypted, where untrusted input enters, how modules talk to each other, and the decisions behind all of it.
 

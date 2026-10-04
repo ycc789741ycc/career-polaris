@@ -1,3 +1,4 @@
+import { AppIcon } from "../components/AppIcon";
 import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
 import type { ShellStatus } from "./ShellContext";
@@ -25,8 +26,8 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-dot" aria-hidden="true" />
-        Job Searching Advisor
+        <AppIcon size={28} />
+        CareerPolaris
       </div>
 
       <nav aria-label="Screens">

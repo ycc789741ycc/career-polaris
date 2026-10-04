@@ -1,4 +1,7 @@
-# Job Searching Advisor
+# CareerPolaris
+
+*Formerly Job Searching Advisor. The repository, images and compose projects
+keep the old `job-searching-advisor` / `jsa` names.*
 
 **Know where you stand, see which real jobs fit you, and close the gap to the
 one you want.** Everything is built from the work you have actually done.
@@ -10,7 +13,7 @@ compare to what the market is hiring for, which roles you could realistically
 land, what it would take to reach the one you want, or how to present your work
 for it. Your résumé undersells you, and advice from job boards is generic.
 
-Job Searching Advisor answers those questions from evidence: your GitHub, your
+CareerPolaris answers those questions from evidence: your GitHub, your
 Jira and your résumé, measured against real job openings.
 
 ```mermaid
