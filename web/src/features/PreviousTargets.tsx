@@ -59,7 +59,9 @@ export function PreviousTargets({
           role="region"
           aria-label="Previous targets"
         >
-          <div className="eyebrow">Switch back to a role you targeted before</div>
+          <div className="eyebrow">
+            Switch back to a role you targeted before
+          </div>
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {previous.map((target) => (
               <li key={targetKey(target)}>

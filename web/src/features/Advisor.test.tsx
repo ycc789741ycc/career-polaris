@@ -217,9 +217,9 @@ describe("the Advisor's one target role", () => {
       "true",
     );
     // The best fit on the map, as the first way in.
-    expect(screen.getByText("Best fit on your map").parentElement).toHaveTextContent(
-      "Staff Backend Engineer81%",
-    );
+    expect(
+      screen.getByText("Best fit on your map").parentElement,
+    ).toHaveTextContent("Staff Backend Engineer81%");
     await user.click(screen.getByRole("button", { name: "Open role map" }));
     expect(shell.navigate).toHaveBeenCalledWith("roles");
     await user.click(screen.getByRole("button", { name: "Add your own role" }));

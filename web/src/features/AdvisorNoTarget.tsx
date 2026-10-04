@@ -41,9 +41,9 @@ export function AdvisorNoTarget({
             Pick a target to get started
           </h2>
           <p className="subcopy" style={{ margin: "6px 0 0" }}>
-            The Advisor works against one role at a time. Choose it one of
-            three ways below; you can change it later from the banner on every
-            Advisor page.
+            The Advisor works against one role at a time. Choose it one of three
+            ways below; you can change it later from the banner on every Advisor
+            page.
           </p>
         </div>
       </section>

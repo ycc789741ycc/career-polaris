@@ -137,10 +137,16 @@ describe("previous targets", () => {
     const previous = getPreviousTargets({
       ...none,
       history: [
-        { ref: roleRef("r1"), label: "Backend", usedAt: "2026-09-05T00:00:00Z" },
+        {
+          ref: roleRef("r1"),
+          label: "Backend",
+          usedAt: "2026-09-05T00:00:00Z",
+        },
       ],
       plans: [plan(roleRef("r1"), "Backend", "2026-09-10T00:00:00Z")],
-      resumes: [resume(ownRef("j1"), "Principal · Halden", "2026-09-12T00:00:00Z")],
+      resumes: [
+        resume(ownRef("j1"), "Principal · Halden", "2026-09-12T00:00:00Z"),
+      ],
     });
 
     expect(previous).toEqual([
@@ -168,11 +174,27 @@ describe("previous targets", () => {
       ...none,
       current: roleRef("r1"),
       history: [
-        { ref: roleRef("r1"), label: "Current", usedAt: "2026-09-05T00:00:00Z" },
+        {
+          ref: roleRef("r1"),
+          label: "Current",
+          usedAt: "2026-09-05T00:00:00Z",
+        },
         { ref: roleRef("gone"), label: "Gone", usedAt: "2026-09-05T00:00:00Z" },
-        { ref: ownRef("j2"), label: "Not scored", usedAt: "2026-09-05T00:00:00Z" },
-        { ref: ownRef("removed"), label: "Removed", usedAt: "2026-09-05T00:00:00Z" },
-        { ref: roleRef("r2"), label: "Platform", usedAt: "2026-09-04T00:00:00Z" },
+        {
+          ref: ownRef("j2"),
+          label: "Not scored",
+          usedAt: "2026-09-05T00:00:00Z",
+        },
+        {
+          ref: ownRef("removed"),
+          label: "Removed",
+          usedAt: "2026-09-05T00:00:00Z",
+        },
+        {
+          ref: roleRef("r2"),
+          label: "Platform",
+          usedAt: "2026-09-04T00:00:00Z",
+        },
       ],
     });
 
@@ -186,7 +208,11 @@ describe("previous targets", () => {
       ...none,
       own: [{ ...own[0]!, is_stale: true }],
       history: [
-        { ref: ownRef("j1"), label: "Principal", usedAt: "2026-09-05T00:00:00Z" },
+        {
+          ref: ownRef("j1"),
+          label: "Principal",
+          usedAt: "2026-09-05T00:00:00Z",
+        },
       ],
     });
 
