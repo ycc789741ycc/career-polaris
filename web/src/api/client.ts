@@ -33,6 +33,60 @@ export class ApiError extends Error {
   }
 }
 
+/** How long to wait, as a person says it: whole units, rounded up. */
+export function getWaitLabel(seconds: number): string {
+  if (seconds <= 60) return "a minute";
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)} minutes`;
+  const hours = Math.ceil(seconds / 3600);
+  return hours === 1 ? "an hour" : `${hours} hours`;
+}
+
+/**
+ * What to say when a request was refused with no `{error}` envelope: the
+ * edge proxy answers 413 and 429 itself (ADR 0053), and 502 while the api
+ * restarts. The app's own refusals carry their message, and keep it.
+ */
+export function getRefusalMessage(
+  status: number,
+  retryAfter: string | null,
+): string {
+  if (status === 429) {
+    const seconds = Number(retryAfter);
+    return seconds > 0
+      ? `Too many requests. Try again in ${getWaitLabel(seconds)}.`
+      : "Too many requests. Try again shortly.";
+  }
+  if (status === 413) return "That file is too large to upload.";
+  if (status === 502 || status === 503 || status === 504) {
+    return "The server is not answering. Try again in a moment.";
+  }
+  return `Request failed (${status})`;
+}
+
+/** The error envelope, if the body is one: an edge's page is not JSON. */
+function getEnvelope(
+  text: string,
+): { code?: string; message?: string } | undefined {
+  try {
+    const parsed = JSON.parse(text) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    return parsed?.error;
+  } catch {
+    return undefined;
+  }
+}
+
+function getApiError(response: Response, text: string): ApiError {
+  const envelope = getEnvelope(text);
+  return new ApiError(
+    envelope?.code ?? "unknown",
+    envelope?.message ??
+      getRefusalMessage(response.status, response.headers.get("retry-after")),
+    response.status,
+  );
+}
+
 type TokenSource = () => Promise<string | null>;
 
 let getToken: TokenSource = async () => null;
@@ -58,17 +112,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  const payload: unknown = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    const envelope = payload as { error?: { code?: string; message?: string } };
-    throw new ApiError(
-      envelope?.error?.code ?? "unknown",
-      envelope?.error?.message ?? `Request failed (${response.status})`,
-      response.status,
-    );
-  }
-  return payload as T;
+  if (!response.ok) throw getApiError(response, text);
+  return (text ? JSON.parse(text) : null) as T;
 }
 
 export const api = {
@@ -154,15 +199,7 @@ export async function streamEvents(
     body: JSON.stringify(body),
   });
   if (!response.ok || !response.body) {
-    const text = await response.text();
-    const envelope = (text ? JSON.parse(text) : null) as {
-      error?: { code?: string; message?: string };
-    } | null;
-    throw new ApiError(
-      envelope?.error?.code ?? "unknown",
-      envelope?.error?.message ?? `Request failed (${response.status})`,
-      response.status,
-    );
+    throw getApiError(response, await response.text());
   }
 
   const reader = response.body.getReader();

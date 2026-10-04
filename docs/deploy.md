@@ -68,7 +68,8 @@ needs Docker and `make`, and nothing else.
    repository to `/srv/careerpolaris`.
 6. **`.env`.** Copy `.env.example` to `.env` and fill it in as below. Then
    `chmod 600 .env`.
-7. **Start it:**
+7. **Start it.** `jsa_net` exists once `start-infra` has run. Read its
+   subnet into `FORWARDED_ALLOW_IPS` before the first `start-app`.
 
    ```
    make build-infra          # pulls Postgres and Tailscale
@@ -107,6 +108,7 @@ needs Docker and `make`, and nothing else.
 | `GOOGLE_OAUTH_CLIENT_ID` | Blank: Google sign-in waits for a domain of your own |
 | `POSTGRES_SHARED_BUFFERS`, `_WORK_MEM`, `_EFFECTIVE_CACHE_SIZE`, `_MAX_CONNECTIONS` | `128MB`, `4MB`, `512MB`, `50` |
 | `DB_POOL_SIZE` | `3` |
+| `FORWARDED_ALLOW_IPS` | jsa_net's subnet, from `docker network inspect jsa_net` (e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054). |
 | `API_MEM_LIMIT`, `WEB_MEM_LIMIT`, `PROXY_MEM_LIMIT`, `POSTGRES_MEM_LIMIT`, `TUNNEL_MEM_LIMIT` | `512m`, `64m`, `128m`, `512m`, `128m` |
 | `API_CPUS`, `POSTGRES_CPUS` | `1.0` each. A ceiling, not a share, and there is one vCPU. |
 

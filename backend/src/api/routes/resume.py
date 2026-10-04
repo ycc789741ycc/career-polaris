@@ -203,6 +203,7 @@ async def upload_template_file(
     """Starts a template from a PDF: stores it and queues reading its style;
     poll ``GET /resume-template-readings/{id}``. Only the style is read, and
     the file is deleted once it is (ADR 0041). Spends nothing."""
+    await deps.limiter.record_attempt(deps.limits.uploads, f"account:{user}")
     reading = await deps.resume.upload_template_file(
         user,
         content_type=file.content_type or "application/octet-stream",

@@ -38,8 +38,10 @@ from kernel.ai_gateway import AiGateway
 from kernel.auth import ALGORITHM, JwksResolver, StaticSecretResolver, TokenVerifier
 from kernel.config import Settings, get_settings, must
 from kernel.db import Database
+from kernel.limits import Limiter
 from kernel.presence import PresenceView, get_presence
 from kernel.storage import ObjectStore
+from wiring.limits import Limits, create_limits
 
 # Google rotates its signing keys over days; an hour keeps the fetch rare while
 # a newly published key is still picked up well before it is used.
@@ -62,6 +64,8 @@ class Container:
     resume: ResumeService
     activity: ActivityService
     object_store: ObjectStore
+    limiter: Limiter
+    limits: Limits
     _verifier: TokenVerifier | None = None
     _google: GoogleSignIn | None = None
 
@@ -241,6 +245,8 @@ def build(settings: Settings | None = None) -> Container:
         resume=resume,
         activity=activity,
         object_store=object_store,
+        limiter=Limiter(database),
+        limits=create_limits(settings),
     )
 
 

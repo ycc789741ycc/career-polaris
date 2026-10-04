@@ -39,6 +39,7 @@ from api.routes import resume as resume_api
 from kernel.errors import ConflictError, TargetUnusableError
 from tests.unit.advisor.resume.builders import make_content
 from tests.unit.advisor.resume.fakes import FakeResumeUnitOfWork
+from tests.unit.api.routes.fake_limits import LIMITS, FakeLimiter
 
 RESUME_ID = uuid.uuid4()
 REVISION_ID = uuid.uuid4()
@@ -189,7 +190,9 @@ def client(resumes: FakeResumes, queued: list[dict[str, Any]]) -> TestClient:
     app.include_router(resume_api.router)
     user = uuid.uuid4()
     app.dependency_overrides[current_user] = lambda: user
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(resume=resumes)
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(
+        resume=resumes, limiter=FakeLimiter(), limits=LIMITS
+    )
     return TestClient(app, raise_server_exceptions=False)
 
 

@@ -178,6 +178,16 @@ class Settings(BaseSettings):
     # three calls each on the user's key, and the whole map.
     role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
 
+    # --- Limits per account and per address (ADR 0054) ----------------------
+    # Accounts made from one address in a day. Addresses are not verified yet
+    # (architecture.md open question 3), so this is what stops a script.
+    signups_per_address_per_day: int = Field(default=10, ge=1, alias="SIGNUPS_PER_ADDRESS_PER_DAY")
+    # Files one account uploads in a day: résumés, roles of their own and
+    # template PDFs, each read on the compute machine.
+    uploads_per_account_per_day: int = Field(default=30, ge=1, alias="UPLOADS_PER_ACCOUNT_PER_DAY")
+    # Connector syncs one account asks for in an hour.
+    syncs_per_account_per_hour: int = Field(default=6, ge=1, alias="SYNCS_PER_ACCOUNT_PER_HOUR")
+
     # --- Background work ----------------------------------------------------
     # How long a sync, parse, analysis or role-map build may show as running
     # before it is treated as lost (a worker that died mid-job), so it stops
