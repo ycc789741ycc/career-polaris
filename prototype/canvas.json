@@ -2,6 +2,37 @@
   "v": 3,
   "attachments": {},
   "boards": {
+    "AppIcon.dc.html": {
+      "h": 820,
+      "title": "App icon",
+      "w": 1200,
+      "x": 8040,
+      "y": 0
+    },
+    "CustomTarget.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "title": "04 Advisor — Your own role",
+      "w": 1440,
+      "x": 6080,
+      "y": 2180
+    },
+    "Gaps.dc.html": {
+      "h": 1500,
+      "is_interactive": true,
+      "title": "04 Advisor — Fill the gap",
+      "w": 1440,
+      "x": 0,
+      "y": 2180
+    },
+    "GapsBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Fill the gap: preparing",
+      "w": 1440,
+      "x": 0,
+      "y": 4400
+    },
     "Main.dc.html": {
       "h": 1560,
       "is_interactive": true,
@@ -26,6 +57,22 @@
       "x": 1520,
       "y": 2180
     },
+    "PlanBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Gap plan: drafting",
+      "w": 1440,
+      "x": 1520,
+      "y": 4400
+    },
+    "PlanWhileResume.dc.html": {
+      "h": 1480,
+      "is_interactive": true,
+      "title": "04 Advisor — Gap plan while résumé is writing",
+      "w": 1440,
+      "x": 4560,
+      "y": 4400
+    },
     "Resume.dc.html": {
       "h": 1820,
       "is_interactive": true,
@@ -34,12 +81,28 @@
       "x": 3040,
       "y": 2180
     },
+    "ResumeBuilding.dc.html": {
+      "h": 1020,
+      "is_interactive": true,
+      "title": "04 Advisor — Résumé: writing",
+      "w": 1440,
+      "x": 3040,
+      "y": 4400
+    },
     "Roles.dc.html": {
       "h": 1640,
       "is_interactive": true,
       "title": "03 Role map",
       "w": 1440,
       "x": 3040,
+      "y": 0
+    },
+    "RolesBuilding.dc.html": {
+      "h": 1100,
+      "is_interactive": true,
+      "title": "03 Role map — building",
+      "w": 1440,
+      "x": 5000,
       "y": 0
     },
     "Sidebar.dc.html": {
@@ -57,22 +120,6 @@
       "x": 1520,
       "y": 0
     },
-    "Gaps.dc.html": {
-      "h": 1500,
-      "is_interactive": true,
-      "title": "04 Advisor — Fill the gap",
-      "w": 1440,
-      "x": 0,
-      "y": 2180
-    },
-    "RolesBuilding.dc.html": {
-      "h": 1100,
-      "is_interactive": true,
-      "title": "03 Role map — building",
-      "w": 1440,
-      "x": 5000,
-      "y": 0
-    },
     "StrengthsBuilding.dc.html": {
       "h": 1100,
       "is_interactive": true,
@@ -81,44 +128,12 @@
       "x": 6520,
       "y": 0
     },
-    "CustomTarget.dc.html": {
-      "h": 1180,
+    "AdvisorNoTarget.dc.html": {
+      "h": 1080,
       "is_interactive": true,
-      "title": "04 Advisor — Your own role",
+      "title": "04 Advisor — No target yet",
       "w": 1440,
       "x": 6080,
-      "y": 2180
-    },
-    "GapsBuilding.dc.html": {
-      "h": 1020,
-      "is_interactive": true,
-      "title": "04 Advisor — Fill the gap: preparing",
-      "w": 1440,
-      "x": 0,
-      "y": 4400
-    },
-    "PlanBuilding.dc.html": {
-      "h": 1020,
-      "is_interactive": true,
-      "title": "04 Advisor — Gap plan: drafting",
-      "w": 1440,
-      "x": 1520,
-      "y": 4400
-    },
-    "ResumeBuilding.dc.html": {
-      "h": 1020,
-      "is_interactive": true,
-      "title": "04 Advisor — Résumé: writing",
-      "w": 1440,
-      "x": 3040,
-      "y": 4400
-    },
-    "PlanWhileResume.dc.html": {
-      "h": 1480,
-      "is_interactive": true,
-      "title": "04 Advisor — Gap plan while résumé is writing",
-      "w": 1440,
-      "x": 4560,
       "y": 4400
     }
   },
@@ -141,7 +156,7 @@
     },
     "row1": {
       "kind": "title1",
-      "maxW": 7960,
+      "maxW": 8000,
       "text": "The journey — 01 Sources · 02 Strengths · 03 Role map (+ waiting states, far right)",
       "w": 240,
       "x": 0,
@@ -155,21 +170,21 @@
       "x": 0,
       "y": 1880
     },
-    "rules": {
-      "fill": "orange",
-      "maxH": 520,
-      "text": "Rules the current build holds to\n\n• The journey only runs forward: a step reads the ones before it, never after. Strengths shows no role fit; comparing to a role is the role map's job.\n• Sources lists collected facts only. Follow-up questions live in the Advisor's Fill the gap step; each answer comes back to Sources as a Your answer fact.\n• The Advisor target comes from one of two places: the role map's \"Target this role\" bar, or \"Use your own role\" in the Advisor (uploaded JD or filled in by hand). Own roles never appear on the role map.\n• Every AI action shows a cost estimate on the user's own key first.\n• Light-only; Organic design system (Caprasimo + Figtree).",
-      "w": 360,
-      "x": 4560,
-      "y": 980
-    },
     "row3": {
       "kind": "title1",
-      "maxW": 6000,
-      "text": "04 Advisor — generating states (the page stays usable; switch tabs while it runs)",
+      "maxW": 7520,
+      "text": "04 Advisor — generating states (the page stays usable; switch tabs while it runs) · no target yet (far right)",
       "w": 240,
       "x": 0,
       "y": 4100
+    },
+    "rules": {
+      "fill": "orange",
+      "maxH": 600,
+      "text": "Rules the current build holds to\n\n• The journey only runs forward: a step reads the ones before it, never after. Strengths shows no role fit; comparing to a role is the role map's job.\n• Sources lists collected facts only. Follow-up questions live in the Advisor's Fill the gap step; each answer comes back to Sources as a Your answer fact.\n• The Advisor target comes from one of two places: the role map's \"Target this role\" bar, or \"Use your own role\" in the Advisor (uploaded JD or filled in by hand). Own roles never appear on the role map.\n• No target is set until the user clicks \"Target this role\" on the role map (or \"Set as target\" on an own role). Until then, opening the Advisor shows the No target yet screen.\n• Every AI action shows a cost estimate on the user's own key first.\n• Light-only; Organic design system (Caprasimo + Figtree).",
+      "w": 360,
+      "x": 4560,
+      "y": 980
     }
   },
   "order": [
@@ -184,11 +199,13 @@
     "Resume.dc.html",
     "Model.dc.html",
     "Sidebar.dc.html",
+    "AdvisorNoTarget.dc.html",
     "GapsBuilding.dc.html",
     "PlanBuilding.dc.html",
     "ResumeBuilding.dc.html",
-    "PlanWhileResume.dc.html"
+    "PlanWhileResume.dc.html",
+    "AppIcon.dc.html"
   ],
   "pages": [],
-  "title": "Career Advisor — current layout"
+  "title": "CareerPolaris — current layout"
 }

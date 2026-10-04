@@ -43,6 +43,15 @@ a{color:#8c491a}a:hover{color:#643312}
 <div style="display: flex; flex-direction: column; gap: 8px; flex: 0 0 auto">
 <a href="Roles.dc.html" style="padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.2); background: #f9f4ed; color: #643312; font: 600 14px Figtree, sans-serif; text-decoration: none; text-align: center">Pick from role map</a>
 <a href="CustomTarget.dc.html" style="padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.2); background: #f9f4ed; color: #643312; font: 600 14px Figtree, sans-serif; text-decoration: none; text-align: center">Use your own role</a>
+<details open style="position: relative">
+<summary style="list-style: none; display: block; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.2); background: #f9f4ed; color: #643312; font: 600 14px Figtree, sans-serif; text-align: center; cursor: pointer">Previous targets (2) ▾</summary>
+<div style="position: absolute; right: 0; top: calc(100% + 8px); z-index: 5; width: 400px; box-sizing: border-box; background: #f9f4ed; border: 1px solid rgba(32,30,29,0.16); border-radius: 20px; padding: 10px; box-shadow: 0 14px 34px rgba(32,30,29,0.18)">
+<div style="font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; padding: 6px 12px 4px">Switch back to a role you targeted before</div>
+<a href="Gaps.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; text-decoration: none; color: #201e1d"><span style="flex-grow: 1; min-width: 0"><span style="display: block; font-size: 14px; font-weight: 700">Principal Engineer · Halden Labs</span><span style="display: block; font-size: 12px; color: #645c50; margin-top: 2px">Your own role · uploaded JD · last used 12 Sep</span></span><span style="flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; background: #ebddc5; color: #474238; font-size: 11.5px; font-weight: 700">Own role</span><span style="flex: 0 0 auto; font-family: Caprasimo, system-ui, sans-serif; font-size: 16px; color: #8c491a">71%</span></a>
+<a href="Gaps.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; text-decoration: none; color: #201e1d"><span style="flex-grow: 1; min-width: 0"><span style="display: block; font-size: 14px; font-weight: 700">Senior Platform Engineer · Kestrel Cloud</span><span style="display: block; font-size: 12px; color: #645c50; margin-top: 2px">From the role map · Berlin · last used 2 Sep</span></span><span style="flex: 0 0 auto; padding: 3px 9px; border-radius: 999px; background: #ebddc5; color: #474238; font-size: 11.5px; font-weight: 700">Role map</span><span style="flex: 0 0 auto; font-family: Caprasimo, system-ui, sans-serif; font-size: 16px; color: #8c491a">92%</span></a>
+<p style="font-size: 12px; line-height: 1.5; color: #474238; margin: 6px 12px 6px; padding-top: 8px; border-top: 1px solid rgba(32,30,29,0.1)">Switching back restores that role's saved answers, gap plan and résumé versions. No new AI calls, so no cost.</p>
+</div>
+</details>
 </div>
 </section>
 
@@ -64,6 +73,10 @@ a{color:#8c491a}a:hover{color:#643312}
 <div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Write for</div>
 <div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 20px; margin-top: 4px">Staff Backend Engineer · Northwind Pay · 86% fit</div>
 <div style="font-size: 13px; color: #474238; margin-top: 4px">Drafted from your sources, including the 4 answers you gave in Fill the gap.</div>
+<div style="display: flex; align-items: center; gap: 10px; margin-top: 12px">
+<label for="res-version" style="font-size: 12.5px; font-weight: 700; color: #645c50">Version</label>
+<select id="res-version" style="padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 600 13.5px Figtree, sans-serif; color: #201e1d"><option>Northwind Pay · v3 · edited 27 Sep</option><option>Northwind Pay · v2 · 20 Sep</option><option>Halden Labs · v1 · 12 Sep · pasted JD</option></select>
+</div>
 </div>
 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: 0 0 auto">
 <a href="ResumeBuilding.dc.html" style="padding: 11px 20px; border-radius: 999px; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; text-decoration: none">Regenerate résumé</a>
@@ -71,23 +84,17 @@ a{color:#8c491a}a:hover{color:#643312}
 </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; gap: 20px; align-items: start">
-<div style="display: flex; flex-direction: column; gap: 18px">
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin-bottom: 12px">Saved résumés</div>
-<div style="background: #ffe1d0; border-radius: 16px; padding: 10px 14px; margin-bottom: 8px"><div style="font-size: 14px; font-weight: 700">Northwind Pay · v3</div><div style="font-size: 12px; color: #645c50">Edited 27 Sep · 86% fit</div></div>
-<div style="background: #f5ead8; border-radius: 16px; padding: 10px 14px"><div style="font-size: 14px; font-weight: 700">Halden Labs · v1</div><div style="font-size: 12px; color: #645c50">12 Sep · pasted JD</div></div>
+<div style="display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 24px; align-items: start">
+<aside aria-label="Résumé tools" style="display: flex; flex-direction: column; gap: 12px">
+<details open style="background: #ebddc5; border-radius: 24px">
+<summary style="display: flex; align-items: center; gap: 10px; padding: 16px 20px; cursor: pointer; list-style: none; font: 700 14.5px Figtree, sans-serif"><span>Layout</span><span style="font-size: 12.5px; font-weight: 600; color: #645c50">Organic · 4 sections</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#645c50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-left: auto"><path d="M6 9l6 6 6-6"></path></svg></summary>
+<div style="padding: 0 20px 18px">
+<div style="font-size: 12px; font-weight: 700; color: #645c50; margin-bottom: 8px">Template</div>
+<div role="radiogroup" aria-label="Template" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 2px solid #c67139; background: #f5ead8; cursor: pointer"><span style="display: flex; align-items: center; gap: 6px"><input type="radio" name="tpl" checked="checked"><b style="font-size: 13.5px">Organic</b></span><span style="font-size: 12px; color: #474238">Rounded, terracotta rule</span></label>
+<label style="display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 14px; border: 2px solid transparent; background: #f5ead8; cursor: pointer"><span style="display: flex; align-items: center; gap: 6px"><input type="radio" name="tpl"><b style="font-size: 13.5px">Plain</b></span><span style="font-size: 12px; color: #474238">One page, evidence first</span></label>
 </div>
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50; margin-bottom: 12px">Template</div>
-<label style="display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 16px; border: 2px solid #c67139; margin-bottom: 8px"><input type="radio" name="tpl" checked="checked"><span><b style="font-size: 14px">Organic</b><span style="display: block; font-size: 12.5px; color: #474238">Rounded, terracotta rule.</span></span></label>
-<label style="display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 16px; border: 2px solid transparent"><input type="radio" name="tpl"><span><b style="font-size: 14px">Plain</b><span style="display: block; font-size: 12.5px; color: #474238">One page, evidence first.</span></span></label>
-<button type="button" style="margin-top: 14px; width: 100%; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Export PDF</button>
-<p style="font-size: 12.5px; color: #474238; margin: 10px 0 0">The export is a white, printable page in the template you pick.</p>
-</div>
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #645c50">Sections</div>
-<p style="font-size: 12.5px; color: #474238; margin: 4px 0 4px">Drag to reorder. Remove what you don't need.</p>
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 18px"><span style="font-size: 12px; font-weight: 700; color: #645c50">Sections</span><span style="font-size: 12px; color: #645c50">Drag to reorder</span></div>
 <ul style="list-style: none; margin: 0; padding: 0">
 <li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Summary" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Summary</span><button type="button" aria-label="Remove Summary" style="padding: 4px 10px; border-radius: 999px; border: 0; background: transparent; color: #b2622d; font: 600 12.5px Figtree, sans-serif; cursor: pointer">Remove</button></li>
 <li style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #f5ead8; margin-top: 6px"><button type="button" aria-label="Move Experience" style="width: 24px; height: 28px; border: 0; background: transparent; padding: 0; cursor: grab; display: inline-flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="#8a847e" aria-hidden="true"><circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle><circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg></button><span style="flex-grow: 1; font-size: 13.5px; font-weight: 600">Experience</span><span style="font-size: 11.5px; font-weight: 700; color: #645c50; padding: 4px 10px">Required</span></li>
@@ -98,13 +105,13 @@ a{color:#8c491a}a:hover{color:#643312}
 <div style="display: flex; gap: 6px; flex-wrap: wrap">
 <button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Education</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Talks &amp; writing</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Open source</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Certifications</button><button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px dashed rgba(32,30,29,0.3); background: transparent; font: 600 12.5px Figtree, sans-serif; color: #201e1d; cursor: pointer">+ Custom…</button>
 </div>
-<p style="font-size: 12px; color: #645c50; margin: 10px 0 0">New sections are filled from your sources; add or edit lines in place.</p>
+<p style="font-size: 12px; color: #645c50; margin: 8px 0 0">New sections are filled from your sources; edit lines in place.</p>
 </div>
-<div style="background: #ebddc5; border-radius: 28px; padding: 20px 22px">
-<div style="display: flex; gap: 10px; align-items: center">
-<span style="width: 32px; height: 32px; border-radius: 999px; background: #c67139; color: #f9f4ed; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800">AI</span>
-<div><div style="font-size: 14px; font-weight: 700">Revise with claude-sonnet-5</div><div style="font-size: 12px; color: #645c50">Proposals apply only when you say so</div></div>
-</div>
+</details>
+<details open style="background: #ebddc5; border-radius: 24px">
+<summary style="display: flex; align-items: center; gap: 10px; padding: 16px 20px; cursor: pointer; list-style: none; font: 700 14.5px Figtree, sans-serif"><span>Revise with AI</span><span style="font-size: 12.5px; font-weight: 600; color: #645c50">1 proposal waiting</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#645c50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-left: auto"><path d="M6 9l6 6 6-6"></path></svg></summary>
+<div style="padding: 0 20px 18px">
+<div style="font-size: 12px; color: #645c50">claude-sonnet-5 · proposals apply only when you say so</div>
 <div style="display: flex; flex-direction: column; gap: 10px; margin: 14px 0">
 <div style="align-self: flex-end; max-width: 85%; background: #ffe1d0; color: #643312; border-radius: 16px; padding: 10px 14px; font-size: 13.5px">Quantify every bullet</div>
 <div style="align-self: flex-start; max-width: 85%; background: #f5ead8; border-radius: 16px; padding: 10px 14px; font-size: 13.5px; line-height: 1.5">The idempotency bullet can cite the 412 commits in payments-api. The highlighted line shows the proposal.
@@ -118,8 +125,20 @@ a{color:#8c491a}a:hover{color:#643312}
 <input aria-label="Ask for a change" placeholder="Ask for a change…" style="flex-grow: 1; min-width: 0; padding: 11px 16px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: #f5ead8; font: 14px Figtree, sans-serif">
 <button type="button" style="padding: 11px 16px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Send</button>
 </div>
+
 </div>
+</details>
+<details style="background: #e1eecc; border-radius: 24px">
+<summary style="display: flex; align-items: center; gap: 10px; padding: 16px 20px; cursor: pointer; list-style: none; font: 700 14.5px Figtree, sans-serif"><span>Coverage</span><span style="font-size: 12.5px; font-weight: 600; color: #645c50">1 covered · 1 partial · 1 gap</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#645c50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-left: auto"><path d="M6 9l6 6 6-6"></path></svg></summary>
+<div style="padding: 0 20px 18px">
+<div style="font-size: 12.5px; color: #272e1b; margin-top: 4px">Open a requirement to see the evidence behind it.</div>
+<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #56633f; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Covered</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Designs high-volume payment systems</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">payments-api#1284 — Led the idempotency-key rollout</div></details>
+<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Partial</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Owns production reliability</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">design-docs/pir-2025-11 — Wrote the post-incident review</div></details>
+<details style="padding: 12px 0"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #f9f4ed; color: #474238; font-size: 11.5px; font-weight: 700">Gap</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Multi-region capacity planning</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">Nothing in your sources speaks to this yet.</div></details>
+
 </div>
+</details>
+</aside>
 
 <article aria-label="Résumé" style="background: #ffffff; border-radius: 16px; padding: 40px 44px; box-shadow: 0 3px 10px rgba(46,43,37,0.16); color: #201e1d">
 <div style="font-family: Caprasimo, system-ui, sans-serif; font-size: 29px; line-height: 1.1">Maya Chen</div>
@@ -143,20 +162,10 @@ a{color:#8c491a}a:hover{color:#643312}
 <div style="display: flex; gap: 10px; margin-top: 8px"><span style="width: 6px; height: 6px; border-radius: 999px; margin-top: 8px; background: #c67139; flex: 0 0 auto"></span><div><div style="font-size: 13.5px; line-height: 1.6"><b>ledger-sim</b> · Open-source load generator for double-entry ledgers.</div><div style="font-size: 11.5px; color: #8a847e; margin-top: 3px">github.com/mayachen/ledger-sim</div></div></div>
 <div style="display: flex; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee">
 <button type="button" style="padding: 11px 20px; border-radius: 999px; border: 0; background: #c67139; color: #f5ead8; font: 600 14px Figtree, sans-serif; cursor: pointer">Save as v4</button>
-<span style="font-size: 12.5px; color: #645c50; align-self: center">Click any line to edit it in place.</span>
+<button type="button" style="padding: 11px 20px; border-radius: 999px; border: 1px solid rgba(32,30,29,0.16); background: transparent; font: 600 14px Figtree, sans-serif; color: #201e1d; cursor: pointer">Export PDF</button>
+<span style="font-size: 12.5px; color: #645c50; align-self: center; margin-left: auto">Click any line to edit it in place.</span>
 </div>
 </article>
-
-<div style="display: flex; flex-direction: column; gap: 18px">
-<div style="background: #e1eecc; border-radius: 28px; padding: 22px">
-<div style="font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #3d472b">Their requirements → your evidence</div>
-<div style="font-size: 12.5px; color: #272e1b; margin-top: 4px">Open a requirement to see the evidence behind it.</div>
-<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #56633f; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Covered</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Designs high-volume payment systems</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">payments-api#1284 — Led the idempotency-key rollout</div></details>
-<details style="padding: 12px 0; border-bottom: 1px solid rgba(32,30,29,0.12)"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #8c491a; color: #f9f4ed; font-size: 11.5px; font-weight: 700">Partial</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Owns production reliability</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">design-docs/pir-2025-11 — Wrote the post-incident review</div></details>
-<details style="padding: 12px 0"><summary style="display: flex; gap: 8px; align-items: baseline; cursor: pointer; list-style: none"><span style="padding: 2px 9px; border-radius: 999px; background: #f9f4ed; color: #474238; font-size: 11.5px; font-weight: 700">Gap</span><span style="font-size: 13.5px; font-weight: 700; flex-grow: 1">Multi-region capacity planning</span><span style="font-size: 12px; font-weight: 700; color: #3d472b; flex: 0 0 auto">Evidence ▾</span></summary><div style="font-size: 12.5px; color: #272e1b; margin-top: 8px; padding: 9px 12px; border-radius: 12px; background: rgba(249,244,237,0.7)">Nothing in your sources speaks to this yet.</div></details>
-</div>
-
-</div>
 </div>
 </div>
 </main>
