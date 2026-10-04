@@ -24,7 +24,13 @@ from advisor.identity import (
     Session,
     SignInFailure,
 )
-from api.dependencies import REFRESH_COOKIE, CurrentUser, Deps, refresh_token_from
+from api.dependencies import (
+    REFRESH_COOKIE,
+    CurrentUser,
+    Deps,
+    get_client_address,
+    refresh_token_from,
+)
 from api.schemas.identity import (
     Budget,
     BudgetRequest,
@@ -76,12 +82,16 @@ def _set_refresh_cookie(session: Session, response: Response, settings: Settings
 
 
 @router.post("/auth/register", status_code=201)
-async def register(body: RegisterRequest, response: Response, deps: Deps) -> SessionResponse:
+async def register(
+    body: RegisterRequest, request: Request, response: Response, deps: Deps
+) -> SessionResponse:
     """Create an account and sign in.
 
     The address is not verified — nothing is sent to it yet. That has to be in
-    place before any notification feature ships.
+    place before any notification feature ships. Until then, how many accounts
+    one network may make in a day is limited (ADR 0054).
     """
+    await deps.limiter.record_attempt(deps.limits.signups, get_client_address(request))
     session = await deps.auth.register(email=str(body.email), password=body.password)
     return _respond_with(session, response, deps)
 

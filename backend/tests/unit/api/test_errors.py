@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, EmailStr
 
 from api import errors
-from kernel.errors import ConflictError
+from kernel.errors import ConflictError, RateLimitedError
 
 
 class Body(BaseModel):
@@ -28,6 +28,14 @@ def client() -> TestClient:
     @app.post("/conflict")
     async def conflict() -> None:
         raise ConflictError("An account already exists for that email.")
+
+    @app.post("/limited")
+    async def limited() -> None:
+        raise RateLimitedError("Too many syncs. Try again in an hour.", retry_after_seconds=3600)
+
+    @app.post("/locked")
+    async def locked() -> None:
+        raise RateLimitedError("Too many failed attempts.")
 
     @app.post("/boom")
     async def boom() -> None:
@@ -63,3 +71,16 @@ def test_an_unexpected_error_leaks_nothing() -> None:
     assert response.status_code == 500
     assert "hunter2" not in response.text
     assert response.json()["error"]["code"] == "internal_error"
+
+
+def test_a_limit_says_when_to_try_again_in_a_header_too() -> None:
+    response = client().post("/limited")
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "3600"
+    assert response.json()["error"]["message"] == "Too many syncs. Try again in an hour."
+
+
+def test_a_refusal_that_names_no_wait_sends_no_header() -> None:
+    response = client().post("/locked")
+    assert response.status_code == 429
+    assert "retry-after" not in response.headers

@@ -91,6 +91,12 @@ services:
       - "0.0.0.0"
       - --port
       - "8000"
+      # The client's own address from X-Forwarded-For, believed only when the
+      # proxy sent it (ADR 0054): set FORWARDED_ALLOW_IPS to jsa_net's subnet
+      # where the proxy runs. The default believes no one.
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     ports:
       # Loopback only: Docker's iptables rules go ahead of ufw, so 0.0.0.0
       # would serve the api over plain HTTP to the internet on any host with a

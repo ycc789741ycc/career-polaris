@@ -208,7 +208,8 @@ export interface paths {
          * @description Create an account and sign in.
          *
          *     The address is not verified — nothing is sent to it yet. That has to be in
-         *     place before any notification feature ships.
+         *     place before any notification feature ships. Until then, how many accounts
+         *     one network may make in a day is limited (ADR 0054).
          */
         post: operations["register_api_v1_auth_register_post"];
         delete?: never;

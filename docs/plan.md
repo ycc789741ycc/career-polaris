@@ -3583,6 +3583,20 @@ when a job starts.
   before Caddy could refuse them, which nothing on the droplet can do.
 
 ## Limit what one account can do
+**Done** (ADR 0054, migration 0045). Where the build differs from the plan
+below:
+
+* The counter is incremented in a short transaction of its own, not in the
+  request's. A request that fails after it is counted still counts;
+  otherwise a flood of bad requests would never be limited.
+* The subject is stored only as a digest, so the table keeps no address.
+* `FORWARDED_ALLOW_IPS` is optional, defaulting to `127.0.0.1` (believe no
+  one), and `docs/deploy.md` lists it among the droplet's settings. A
+  required setting would have broken development, where no proxy runs.
+* The SPA needed no new screen. The app's refusals carry the wait in their
+  message, and the client now writes a message for the proxy's own 429 and
+  413, which have no body, and for an error page that is not JSON.
+
 ADR: quotas live in the app, counted in Postgres, because only the app knows
 the account.
 * **The real client address.** uvicorn runs with `--proxy-headers` and

@@ -68,6 +68,13 @@ CurrentUser = Annotated[uuid.UUID, Depends(current_user)]
 Deps = Annotated[Container, Depends(get_container)]
 
 
+def get_client_address(request: Request) -> str:
+    """Who is asking, by address. Behind the proxy this is the client's own,
+    because uvicorn trusts the forwarded address from FORWARDED_ALLOW_IPS
+    only (ADR 0054)."""
+    return request.client.host if request.client else "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class PageQuery:
     page: int
