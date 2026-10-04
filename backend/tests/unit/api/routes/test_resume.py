@@ -267,6 +267,7 @@ def test_the_chat_streams_text_then_one_proposal(client: TestClient) -> None:
         "entries": [],
         "items": [],
         "bullets": [],
+        "is_shown": True,
     }
 
 

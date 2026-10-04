@@ -44,6 +44,7 @@ function section(
     entries: [],
     items: [],
     bullets: [],
+    is_shown: true,
     ...fields,
   };
 }
@@ -118,12 +119,35 @@ const resume: TailoredResume = {
         ],
       }),
       section("skills", { items: ["Go", "Postgres", "Kafka", "gRPC"] }),
+      // Written with the rest, and hidden (ADR 0043).
+      section("open_source", {
+        is_shown: false,
+        entries: [
+          {
+            title: "pgx",
+            org: "",
+            when: "2024",
+            link: "",
+            bullets: [
+              {
+                text: "Fixed a pool leak in pgx",
+                evidence_ids: ["e1"],
+                origin: "written",
+                answers: null,
+              },
+            ],
+          },
+        ],
+      }),
+      section("education", { is_shown: false }),
     ],
   },
   section_plan: [
-    { kind: "summary", title: null },
-    { kind: "experience", title: null },
-    { kind: "skills", title: null },
+    { kind: "summary", title: null, is_shown: true },
+    { kind: "experience", title: null, is_shown: true },
+    { kind: "skills", title: null, is_shown: true },
+    { kind: "open_source", title: null, is_shown: false },
+    { kind: "education", title: null, is_shown: false },
   ],
   evidence: { e1: { reference: "GitHub · 38 PRs", fact: "payments-svc" } },
   versions: [version],
@@ -875,13 +899,13 @@ describe("templates of your own (ADR 0040)", () => {
   });
 });
 
-describe("sections you choose (ADR 0039)", () => {
+describe("sections you choose (ADR 0039, ADR 0043)", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists the sections with Experience required, and removing one saves a version", async () => {
+  it("lists every section, prints only the shown ones, and hiding one saves a version", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -896,27 +920,54 @@ describe("sections you choose (ADR 0039)", () => {
       expect.stringContaining("Summary"),
       expect.stringContaining("Experience"),
       expect.stringContaining("Skills"),
+      expect.stringContaining("Open source"),
+      expect.stringContaining("Education"),
     ]);
     expect(rows[1]).toHaveTextContent("Required");
-    expect(
-      within(rows[1]!).queryByRole("button", { name: "Remove" }),
-    ).toBeNull();
+    expect(within(rows[1]!).queryByRole("button", { name: "Hide" })).toBeNull();
+    expect(within(rows[3]!).getByRole("button", { name: "Show" })).toBeTruthy();
+    // Written, and not printed while hidden.
+    expect(screen.queryByText("Fixed a pool leak in pgx")).toBeNull();
 
-    // Skills has items: the first click asks, the second removes.
-    await user.click(within(rows[2]!).getByRole("button", { name: "Remove" }));
-    expect(calls.some((c) => c.method === "POST")).toBe(false);
-    await user.click(
-      within(rows[2]!).getByRole("button", { name: "Remove its lines too" }),
+    await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
+
+    expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
     );
+    const body = saved?.body as { content: ResumeContent };
+    expect(body.content.sections.map((s) => [s.kind, s.is_shown])).toEqual([
+      ["summary", true],
+      ["experience", true],
+      ["skills", false],
+      ["open_source", false],
+      ["education", false],
+    ]);
+  });
+
+  it("shows a hidden section at no cost", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    const row = within(panel).getAllByRole("listitem")[3]!;
+    await user.click(within(row).getByRole("button", { name: "Show" }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
     );
     const body = saved?.body as { content: ResumeContent };
-    expect(body.content.sections.map((s) => s.kind)).toEqual([
-      "summary",
-      "experience",
-    ]);
+    const shown = body.content.sections.find((s) => s.kind === "open_source");
+    expect(shown?.is_shown).toBe(true);
+    expect(shown?.entries[0]?.bullets[0]?.text).toBe(
+      "Fixed a pool leak in pgx",
+    );
+    expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
   });
 
   it("moves a section with the keyboard and saves the new order", async () => {
@@ -940,10 +991,12 @@ describe("sections you choose (ADR 0039)", () => {
       "experience",
       "summary",
       "skills",
+      "open_source",
+      "education",
     ]);
   });
 
-  it("prices filling a new section before adding it", async () => {
+  it("prices filling an empty section before filling it", async () => {
     const calls = serve((call) => {
       if (call.url.startsWith("/tailored-resumes/res-1/sections/estimate"))
         return { cost_usd: "0.02", model_id: "claude-opus-5" };
@@ -955,8 +1008,15 @@ describe("sections you choose (ADR 0039)", () => {
     renderResume();
 
     const panel = await screen.findByRole("region", { name: "Sections" });
+    const rows = within(panel).getAllByRole("listitem");
+    // Only the empty section offers it.
+    expect(
+      within(rows[3]!).queryByRole("button", {
+        name: "Fill from your sources",
+      }),
+    ).toBeNull();
     await user.click(
-      within(panel).getByRole("button", { name: "+ Education" }),
+      within(rows[4]!).getByRole("button", { name: "Fill from your sources" }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",

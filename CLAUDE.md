@@ -632,3 +632,24 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   Sections and Revise with AI on the left; the page with "Save as vN" in the
   middle; the requirements on the right — stacking page first when narrow,
   and "Regenerate résumé" with its last-generated line on the Write-for card.
+
+## Phase 10 scope
+
+A tailored résumé is written from the user's sources, whether or not they
+uploaded one (`docs/plan.md`), one branch per step under
+`epic/no-ticket/phase-10`:
+
+- **Every section, written at once from the sources** (ADR 0043). A résumé
+  holds every built-in kind (`DEFAULT_PLAN`, `get_full_plan`), each with
+  `is_shown` on its `Section` and its `SectionSlot` (which compares without
+  it). Summary, experience and skills start shown (`DEFAULT_SHOWN`), the rest
+  hidden; Experience is always shown, and `MAX_SECTIONS` limits only what is
+  shown. Generate writes them all (`resume_write` v4, given the connected
+  accounts as `ProfileSnapshot.accounts`): without a timeline or an uploaded
+  résumé, Experience is one entry per place the work was done, never an
+  invented title, and repositories split into experience, open source and
+  side projects. Show and Hide are free edits saved as versions; only shown
+  sections print (`ResumeContent.get_shown`). `resume_revise` v4 keeps a
+  section's state unless asked (`get_proposal_layout`). "Fill from your
+  sources" (`POST /tailored-resumes/{id}/sections`, priced) fills an empty
+  section or a new one of the user's own. Migration 0039.

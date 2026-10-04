@@ -25,6 +25,7 @@ from advisor.resume.domain.section import (
     Origin,
     ResumeError,
     Section,
+    SectionKind,
     SectionSlot,
     assert_plan_valid,
     assert_section_well_formed,
@@ -68,7 +69,8 @@ class Options:
 
 @dataclass(frozen=True, slots=True)
 class ResumeContent:
-    """A header, and the sections the user chose, in their order (ADR 0039)."""
+    """A header, and every section in its order, each shown or hidden
+    (ADR 0039, ADR 0043)."""
 
     name: str
     headline: str
@@ -86,8 +88,13 @@ class ResumeContent:
         return next((s for s in self.sections if s.slot == slot), None)
 
     def get_plan(self) -> tuple[SectionSlot, ...]:
-        """Which sections there are, in order: the résumé's plan."""
+        """Which sections there are, in order, and which are shown: the
+        résumé's plan."""
         return tuple(s.slot for s in self.sections)
+
+    def get_shown(self) -> ResumeContent:
+        """The résumé as it prints: its shown sections only."""
+        return replace(self, sections=tuple(s for s in self.sections if s.is_shown))
 
     def with_citations(self, cite: Callable[[tuple[str, ...]], tuple[str, ...]]) -> ResumeContent:
         """The same résumé with every line's citations passed through ``cite``."""
@@ -118,12 +125,17 @@ class ResumeContent:
 
 
 def get_planned(content: ResumeContent, plan: Sequence[SectionSlot]) -> ResumeContent:
-    """The content laid out as ``plan``: its sections in the plan's order, an
-    empty one for any the plan has and the content lacks, and none the plan
-    does not have. Pure."""
+    """The content laid out as ``plan``: its sections in the plan's order,
+    each shown or hidden as the plan says, an empty one for any the plan has
+    and the content lacks, and none the plan does not have. Pure."""
     return replace(
         content,
-        sections=tuple(content.get_section(slot) or Section.create_empty(slot) for slot in plan),
+        sections=tuple(
+            replace(found, is_shown=slot.is_shown)
+            if (found := content.get_section(slot)) is not None
+            else Section.create_empty(slot)
+            for slot in plan
+        ),
     )
 
 
@@ -191,6 +203,30 @@ def settle_revision(
             for s in proposed.sections
         ),
     )
+
+
+def get_proposal_layout(
+    current: ResumeContent,
+    proposed: ResumeContent,
+    asked: Sequence[bool | None],
+) -> ResumeContent:
+    """A chat proposal laid out over the résumé it revises (ADR 0043).
+
+    ``asked`` is, per proposed section, whether the reply set it shown or
+    hidden; ``None`` keeps the state the section has now, and a section the
+    résumé did not have is shown. A built-in section the reply left out is
+    kept as it is, after the rest: the chat removes a section of the user's
+    own only. Pure."""
+    states = {s.slot: s.is_shown for s in current.sections}
+    laid_out = tuple(
+        replace(section, is_shown=states.get(section.slot, True) if wanted is None else wanted)
+        for section, wanted in zip(proposed.sections, asked, strict=True)
+    )
+    kept = {s.slot for s in laid_out}
+    left_out = tuple(
+        s for s in current.sections if s.kind is not SectionKind.CUSTOM and s.slot not in kept
+    )
+    return replace(proposed, sections=(*laid_out, *left_out))
 
 
 @dataclass(frozen=True, slots=True)

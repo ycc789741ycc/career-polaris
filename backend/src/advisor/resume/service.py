@@ -91,7 +91,9 @@ from advisor.resume.domain import (
     assert_written_lines_cited,
     coverage,
     get_download_name,
+    get_full_plan,
     get_planned,
+    get_proposal_layout,
     get_template_spec_from_runs,
     mark_edits,
     settle_revision,
@@ -99,9 +101,9 @@ from advisor.resume.domain import (
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
     HEADING_PT_RANGE,
+    MAX_HELD_SECTIONS,
     MAX_LINK,
     MAX_SECTION_TITLE,
-    MAX_SECTIONS,
     MAX_SUMMARY,
     MAX_TEMPLATE_NAME,
     MIN_CONTRAST,
@@ -165,8 +167,8 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v3")
-_REVISE = ("resume_revise", "v3")
+_WRITE = ("resume_write", "v4")
+_REVISE = ("resume_revise", "v4")
 _SECTION = ("resume_section", "v1")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
@@ -175,6 +177,8 @@ _CONVERSATION_TURNS = 6
 _REVISE_UNTRUSTED = frozenset({"requirements", "resume", "conversation", "request", "evidence"})
 # A custom section's heading is the user's own text.
 _SECTION_UNTRUSTED = frozenset({"requirements", "resume", "evidence", "section"})
+# The accounts are names a person or a provider chose.
+_WRITE_UNTRUSTED = frozenset({"requirements", "evidence", "timeline", "base_resume", "accounts"})
 
 
 # --- AI output schemas -----------------------------------------------------
@@ -202,13 +206,16 @@ class _Section(BaseModel):
     entries: list[_Entry] = Field(default_factory=list, max_length=MAX_ROLES)
     items: list[str] = Field(default_factory=list, max_length=MAX_SKILLS)
     bullets: list[_Bullet] = Field(default_factory=list, max_length=MAX_BULLETS_PER_ROLE)
+    # Only the chat sets it, and only when asked; None keeps the section's
+    # state (ADR 0043).
+    is_shown: bool | None = None
 
 
 class _Resume(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     headline: str = Field(default="", max_length=200)
     contact: str = Field(default="", max_length=300)
-    sections: list[_Section] = Field(default_factory=list, max_length=MAX_SECTIONS)
+    sections: list[_Section] = Field(default_factory=list, max_length=MAX_HELD_SECTIONS)
 
 
 class _Proposal(BaseModel):
@@ -429,7 +436,7 @@ class ResumeService:
                 base_resume="(read when writing)",
                 plan=DEFAULT_PLAN,
             ),
-            untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
+            untrusted=_WRITE_UNTRUSTED,
         )
         return {
             "cost_usd": str(estimate.cost_usd),
@@ -539,9 +546,10 @@ class ResumeService:
     async def request_section(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
     ) -> ResumeSummaryView:
-        """Add a section to the résumé and record it as being filled; the
-        caller queues ``fill_section``. A section already there, or one the
-        plan has no room for, is refused before anything is spent."""
+        """Show the section, or add one of the user's own, and record it as
+        being filled; the caller queues ``fill_section``. A section that
+        already has lines, or one the plan has no room for, is refused before
+        anything is spent (ADR 0043)."""
         _content, plan, _snapshot = await self._section_context(owner_id, resume_id, slot)
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
@@ -591,7 +599,9 @@ class ResumeService:
             try:
                 resume.update_cancelled(
                     latest_plan=(
-                        ResumeContent.from_dict(latest.content).get_plan() if latest else None
+                        get_full_plan(ResumeContent.from_dict(latest.content).get_plan())
+                        if latest
+                        else None
                     ),
                     at=utcnow(),
                 )
@@ -666,9 +676,9 @@ class ResumeService:
             raise NotFoundError("version not found", number=number)
         content = ResumeContent.from_dict(chosen.content) if chosen else None
         if content is not None and number is None:
-            # The latest, laid out as the plan: a section being filled shows,
-            # empty, where it will go.
-            content = get_planned(content, resume.section_plan)
+            # The latest, laid out as the plan, holding every section: a
+            # section being filled shows, empty, where it will go.
+            content = get_planned(content, get_full_plan(resume.section_plan))
         notes = await self._notes(owner_id, content.cited() if content else set())
         outdated_by = (
             await self._target.get_outdated_reasons(
@@ -692,7 +702,7 @@ class ResumeService:
             versions=tuple(_version_view(v) for v in versions),
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
-            section_plan=resume.section_plan,
+            section_plan=get_full_plan(resume.section_plan),
         )
 
     # -- editing ------------------------------------------------------------
@@ -812,9 +822,16 @@ class ResumeService:
             proposal: ResumeContent | None = None
             if result.value.changed and result.value.resume is not None:
                 message = "the proposed revision cited evidence that is not yours"
+                written = result.value.resume
                 try:
                     proposal = settle_revision(
-                        current, _content_of(result.value.resume), handles.resolve
+                        current,
+                        get_proposal_layout(
+                            current,
+                            _content_of(written),
+                            [s.is_shown for s in written.sections],
+                        ),
+                        handles.resolve,
                     )
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
@@ -1157,7 +1174,9 @@ class ResumeService:
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
         async with self._uow.for_owner(owner_id) as mine:
-            plan = (await _owned(mine, resume_id)).section_plan
+            # Every section, shown or not; one written before a résumé held
+            # them all takes the kinds it lacks, hidden (ADR 0043).
+            plan = get_full_plan((await _owned(mine, resume_id)).section_plan)
         result = await self._gateway.run(
             owner_id,
             on_progress=self._writing(owner_id, resume_id),
@@ -1174,12 +1193,13 @@ class ResumeService:
                 plan=plan,
             ),
             output_schema=_Resume,
-            untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
+            untrusted=_WRITE_UNTRUSTED,
         )
         await self._advance(owner_id, resume_id, ResumeStage.CHECKING)
         message = "the résumé cited evidence that is not yours"
         try:
-            # Written to the plan: its sections, in its order, and no others.
+            # Written to the plan: its sections, in its order, each shown or
+            # hidden as it was, and no others.
             content = get_planned(_content_of(result.value), plan).with_citations(handles.resolve)
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
@@ -1223,8 +1243,11 @@ class ResumeService:
     async def _section_context(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
     ) -> tuple[ResumeContent, tuple[SectionSlot, ...], TargetSnapshot]:
-        """The résumé as it stands, the plan with ``slot`` added at its end,
-        and the Target. Refuses a section the résumé cannot take."""
+        """The résumé as it stands, the plan with ``slot`` shown — in its
+        place, or added at the end — and the Target. Only an empty section is
+        filled: one written since ADR 0043 that the evidence left empty, one
+        of an older résumé, or a new one of the user's own. Refuses a section
+        the résumé cannot take."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             latest = await _latest_version(mine, resume_id)
@@ -1233,9 +1256,15 @@ class ResumeService:
                 "this résumé is not ready to take a section", resume_id=str(resume_id)
             )
         content = ResumeContent.from_dict(latest.content)
-        if slot in content.get_plan():
-            raise ValidationError("the résumé already has that section")
-        plan = (*content.get_plan(), slot)
+        held = get_full_plan(content.get_plan())
+        existing = content.get_section(slot)
+        if existing is not None and not existing.is_empty:
+            raise ValidationError("that section already has lines: show it, or edit it in place")
+        plan = (
+            tuple(s.update_shown(True) if s == slot else s for s in held)
+            if slot in held
+            else (*held, slot.update_shown(True))
+        )
         try:
             assert_plan_valid(plan)
         except ResumeError as exc:
@@ -1275,7 +1304,7 @@ class ResumeService:
             raise OutputInvalidError("the reply wrote a different section than was asked for")
         try:
             # The slot's own heading, whatever the reply called it.
-            written = replace(written, title=slot.title).update_bullets(
+            written = replace(written, title=slot.title, is_shown=True).update_bullets(
                 lambda b: replace(b, evidence_ids=handles.resolve(b.evidence_ids))
             )
         except CitationError as exc:
@@ -1297,7 +1326,7 @@ class ResumeService:
             content=content,
             source=VersionSource.GENERATED,
             while_busy=True,
-            label=f"{resume.target_label} — {written.heading} added"[:200],
+            label=f"{resume.target_label} — {written.heading} filled"[:200],
             model_id=result.model_id,
             template_version=result.template_version,
         )
@@ -1422,8 +1451,9 @@ class ResumeService:
             )
             resume.touched(now)
             # Every version is written to the plan, or changes it: a section
-            # added, removed or moved, by hand or in the chat (ADR 0039).
-            resume.update_plan(content.get_plan(), at=now)
+            # shown, hidden, added, removed or moved, by hand or in the chat
+            # (ADR 0039). The plan holds every built-in kind (ADR 0043).
+            resume.update_plan(get_full_plan(content.get_plan()), at=now)
             await mine.resumes.update(resume)
             mine.record(
                 ResumeVersionSaved(
@@ -1478,6 +1508,8 @@ def _content_of(model: _Resume) -> ResumeContent:
 
 def _section_of(model: _Section) -> Section:
     data = model.model_dump(mode="json")
+    # Laid out by the plan, or by the chat's proposal, once read.
+    data["is_shown"] = True
     for line in (*data["bullets"], *(b for e in data["entries"] for b in e["bullets"])):
         # The model writes; it does not get to say otherwise.
         line["origin"] = str(Origin.WRITTEN)
@@ -1485,7 +1517,8 @@ def _section_of(model: _Section) -> Section:
 
 
 def _plan_lines(plan: tuple[SectionSlot, ...]) -> str:
-    """The sections to write, in order, as the prompts name them."""
+    """The sections to write, in order, as the prompts name them: all of
+    them, shown or not, since a hidden one may be shown later."""
     return "\n".join(f"- {slot.kind}" + (f": {slot.title}" if slot.title else "") for slot in plan)
 
 
@@ -1516,6 +1549,7 @@ def _write_inputs(
         f"- {p.title} at {p.company}, {p.started_on} to {p.ended_on or 'present'}"
         for p in profile.positions
     )
+    accounts = "\n".join(f"- {a.source}: {a.account}" for a in profile.accounts)
     return {
         "target": label,
         "requirements": requirements,
@@ -1531,6 +1565,7 @@ def _write_inputs(
         )
         or "- No special instructions.",
         "timeline": timeline or "(no positions recorded)",
+        "accounts": accounts or "(none connected)",
         "base_resume": base_resume,
         "sections": _plan_lines(plan),
         "evidence": _evidence_block(profile.evidence, handles),

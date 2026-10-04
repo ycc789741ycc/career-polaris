@@ -546,9 +546,10 @@ async def test_a_section_is_added_filled_and_kept_when_the_resume_is_regenerated
     filled = await world.resume.get(account, resume_id)
     assert filled.summary.status == "ready", filled.summary.error_message
     assert filled.content is not None
-    kinds = [str(s.kind) for s in filled.content.sections]
-    assert kinds == ["summary", "experience", "skills", "education"]
-    assert filled.section_plan[-1] == education
+    shown = [str(s.kind) for s in filled.content.sections if s.is_shown]
+    assert shown == ["summary", "experience", "skills", "education"]
+    assert next(s for s in filled.section_plan if s == education).is_shown
+    plan = [(str(s.kind), s.is_shown) for s in filled.section_plan]
 
     await world.resume.redraft(account, resume_id)
     world.stub.replies.append(_resume_reply(CITED))
@@ -556,9 +557,11 @@ async def test_a_section_is_added_filled_and_kept_when_the_resume_is_regenerated
 
     again = await world.resume.get(account, resume_id)
     assert again.content is not None
-    # The reply wrote three sections; the plan keeps the fourth, empty.
-    assert [str(s.kind) for s in again.content.sections] == kinds
-    assert again.content.sections[-1].is_empty
+    # The reply wrote three sections; every other keeps its place and state,
+    # education shown and empty.
+    assert [(str(s.kind), s.is_shown) for s in again.content.sections] == plan
+    refilled = again.content.get_section(education)
+    assert refilled is not None and refilled.is_empty
 
 
 async def test_another_user_cannot_read_the_resume_or_its_export(

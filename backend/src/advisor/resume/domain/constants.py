@@ -18,11 +18,14 @@ MAX_TEXT = 600
 
 # --- section -----------------------------------------------------------------
 
-# Every section a résumé can have at once: one of each kind, and a few of the
-# user's own (ADR 0039).
+# The sections a résumé shows at once (ADR 0039, ADR 0043).
 MAX_SECTIONS = 9
 
 MAX_CUSTOM_SECTIONS = 3
+
+# Every section a résumé holds, shown or hidden: one of each of the eight
+# built-in kinds, and the user's own (ADR 0043).
+MAX_HELD_SECTIONS = 8 + MAX_CUSTOM_SECTIONS
 
 # A custom section's heading, the user's own words.
 MAX_SECTION_TITLE = 60

@@ -335,10 +335,10 @@ export function Resume({
     setError(null);
     try {
       if (estimate.section && resume) {
-        // Added to the plan, then filled from the sources as the next version.
+        // Shown, or added, then filled from the sources as the next version.
         await api.post<ResumeSummary>(
           `/tailored-resumes/${resume.id}/sections`,
-          estimate.section,
+          { kind: estimate.section.kind, title: estimate.section.title },
         );
         setAdded((all) => [
           ...all,
@@ -742,8 +742,11 @@ export function Resume({
                 added={added}
                 filling={
                   resume.status === "filling"
-                    ? (resume.section_plan.find(
+                    ? // The one being filled is shown in the plan and still
+                      // empty in the content.
+                      (resume.section_plan.find(
                         (slot) =>
+                          slot.is_shown &&
                           !resume.content?.sections.some(
                             (s) =>
                               s.kind === slot.kind &&
@@ -966,6 +969,7 @@ export function trimmedNote(
   let lines = 0;
   let items = 0;
   for (const section of content.sections) {
+    if (!section.is_shown) continue;
     for (const entry of section.entries) {
       lines += over(entry.bullets.length, look.trimmed_bullets);
     }
@@ -1058,9 +1062,12 @@ function ResumePage({
       {[content.headline, content.contact].filter(Boolean).join(" · ")}
     </div>
   );
+  // A hidden section is kept and never printed (ADR 0043).
   const sectionsWhere = (side: boolean) =>
     content.sections.map((section, at) =>
-      inSidebar(section) === side ? sectionAt(section, at) : null,
+      section.is_shown && inSidebar(section) === side
+        ? sectionAt(section, at)
+        : null,
     );
 
   function sectionAt(section: ResumeSection, at: number) {

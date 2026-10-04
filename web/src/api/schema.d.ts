@@ -2469,6 +2469,8 @@ export interface components {
             bullets: components["schemas"]["ResumeBullet"][];
             /** Entries */
             entries: components["schemas"]["ResumeEntry"][];
+            /** Is Shown */
+            is_shown: boolean;
             /** Items */
             items: string[];
             /**
@@ -2483,6 +2485,8 @@ export interface components {
         };
         /** ResumeSectionSlot */
         ResumeSectionSlot: {
+            /** Is Shown */
+            is_shown: boolean;
             /**
              * Kind
              * @enum {string}
@@ -2856,7 +2860,8 @@ export interface components {
         SectionKind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
         /**
          * SectionRequest
-         * @description A section to add to the résumé, filled from the sources (ADR 0039).
+         * @description A section to fill from the sources: an empty one the résumé holds,
+         *     shown once filled, or a new one of the user's own (ADR 0039, ADR 0043).
          */
         SectionRequest: {
             kind: components["schemas"]["SectionKind"];

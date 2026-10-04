@@ -18,6 +18,7 @@ from advisor.resume.domain.content import (
     assert_written_lines_cited,
     coverage,
     get_planned,
+    get_proposal_layout,
     mark_edits,
     settle_revision,
 )
@@ -43,7 +44,9 @@ from advisor.resume.domain.repositories import (
 )
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.section import (
+    BUILT_IN_KINDS,
     DEFAULT_PLAN,
+    DEFAULT_SHOWN,
     HEADINGS,
     SHAPES,
     Bullet,
@@ -55,6 +58,7 @@ from advisor.resume.domain.section import (
     SectionShape,
     SectionSlot,
     assert_plan_valid,
+    get_full_plan,
 )
 from advisor.resume.domain.tailored_resume import (
     ResumeStage,
@@ -87,8 +91,10 @@ from advisor.resume.domain.template_spec import (
 )
 
 __all__ = [
+    "BUILT_IN_KINDS",
     "BUILT_IN_TEMPLATES",
     "DEFAULT_PLAN",
+    "DEFAULT_SHOWN",
     "HEADINGS",
     "MAX_BULLETS_PER_ROLE",
     "MAX_ROLES",
@@ -160,7 +166,9 @@ __all__ = [
     "get_contrast",
     "get_download_name",
     "get_font_kind",
+    "get_full_plan",
     "get_planned",
+    "get_proposal_layout",
     "get_template_spec_from_runs",
     "mark_edits",
     "settle_revision",

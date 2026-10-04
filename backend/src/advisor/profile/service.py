@@ -151,6 +151,15 @@ class SourceProcessingView:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceAccountView:
+    """Whose work a connected source holds: the GitHub login, the Jira site.
+    What tells a person's own repositories from other people's (ADR 0043)."""
+
+    source: str
+    account: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileSnapshot:
     """What the assessment reads. Facts and a version, never a score."""
 
@@ -158,6 +167,7 @@ class ProfileSnapshot:
     evidence: tuple[EvidenceView, ...]
     positions: tuple[PositionValue, ...]
     total_experience_months: int
+    accounts: tuple[SourceAccountView, ...] = ()
 
 
 class ProfileService:
@@ -579,12 +589,18 @@ class ProfileService:
             timeline = await mine.positions.get_list(CareerPositionFilter())
             versions = await mine.versions.get_list(ProfileVersionFilter(), page_size=1)
             uploaded = await _upload_dates(mine)
+            connections = await mine.connections.get_list(SourceConnectionFilter())
         positions = tuple(p.value for p in timeline)
         return ProfileSnapshot(
             version=versions[0].version if versions else 0,
             evidence=get_newest_first(_evidence_view(e, uploaded) for e in evidence),
             positions=positions,
             total_experience_months=total_experience_months(list(positions), as_of=utcnow().date()),
+            accounts=tuple(
+                SourceAccountView(source=c.kind, account=c.external_account)
+                for c in sorted(connections, key=lambda c: c.kind)
+                if c.external_account
+            ),
         )
 
     async def version(self, owner_id: uuid.UUID) -> int:
