@@ -25,6 +25,14 @@ from kernel.config import Settings
 _APP_USER_SETTING = "app.user_id"
 
 
+def get_psycopg_dsn(sqlalchemy_url: str) -> str:
+    """The same database as a plain libpq URL, for code that speaks psycopg
+    directly (the job queue, migrations, heartbeats) rather than SQLAlchemy."""
+    return sqlalchemy_url.replace("postgresql+asyncpg://", "postgresql://").replace(
+        "postgresql+psycopg://", "postgresql://"
+    )
+
+
 class Database:
     def __init__(self, settings: Settings, *, url: str | None = None) -> None:
         self._engine: AsyncEngine = create_async_engine(

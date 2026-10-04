@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -35,10 +35,13 @@ from advisor.rolemap.domain import (
     reconcile,
 )
 from advisor.rolemap.service import _RoleExtraction
+from kernel.clock import utcnow
 from kernel.errors import ValidationError
 from tests.unit.advisor.rolemap.fakes import MARKET_AS_OF, FakeMarket, FakeRoleMapUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
+# A crawler up long before any build in these tests asked the market.
+CRAWLER_UP = datetime(2026, 1, 1, tzinfo=UTC)
 OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
 # The build a recluster is the work of; the fakes need no row for it.
 BUILD = uuid.UUID("00000000-0000-0000-0000-0000000000b1")
@@ -351,14 +354,23 @@ async def test_a_build_with_due_sources_waits_for_them_and_then_starts() -> None
     assert not requested.should_queue and requested.should_await_market
     assert requested.build.status == "waiting" and requested.build.is_waiting_for_market
     wait = timedelta(minutes=5)
-    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.WAIT
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=wait, crawler_online_since=CRAWLER_UP
+    )
+    assert found is MarketWait.WAIT
 
     market.fetched.update(due)
-    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.START
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=wait, crawler_online_since=CRAWLER_UP
+    )
+    assert found is MarketWait.START
     latest = await service.latest_build(OWNER)
     assert latest is not None and latest.status == "running"
     # Started once: a second check finds nothing to do.
-    assert await service.check_market(OWNER, requested.build.id, deadline=wait) is MarketWait.DONE
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=wait, crawler_online_since=CRAWLER_UP
+    )
+    assert found is MarketWait.DONE
 
 
 async def test_a_build_starts_at_its_deadline_on_what_is_stored() -> None:
@@ -366,9 +378,38 @@ async def test_a_build_starts_at_its_deadline_on_what_is_stored() -> None:
     service = _service(FakeRoleMapUnitOfWork(), market)
     requested = await service.request_build(OWNER, wait=False)
 
-    found = await service.check_market(OWNER, requested.build.id, deadline=timedelta(0))
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=timedelta(0), crawler_online_since=CRAWLER_UP
+    )
 
     assert found is MarketWait.START
+
+
+async def test_a_build_waits_for_the_crawler_while_it_is_away() -> None:
+    """Nothing it waits for can be fetched while the crawler is away, so the
+    deadline does not run out then (ADR 0052)."""
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    requested = await service.request_build(OWNER, wait=False)
+
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=timedelta(0), crawler_online_since=None
+    )
+
+    assert found is MarketWait.WAIT
+
+
+async def test_a_builds_deadline_counts_from_when_the_crawler_came_back() -> None:
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    requested = await service.request_build(OWNER, wait=False)
+    back = utcnow()
+
+    found = await service.check_market(
+        OWNER, requested.build.id, deadline=timedelta(minutes=5), crawler_online_since=back
+    )
+
+    assert found is MarketWait.WAIT
 
 
 async def test_a_build_asked_for_during_an_analysis_asks_the_market_once_it_is_released() -> None:

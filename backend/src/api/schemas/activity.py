@@ -109,6 +109,30 @@ class AdvisorJob(ApiModel):
         )
 
 
+class Processing(ApiModel):
+    """Whether the machine that runs background work is up (ADR 0051, 0052).
+
+    While the worker is away, work the user starts is queued and runs when it
+    is back; nothing reads as lost meanwhile. While the crawler is away, a
+    role map waiting for the market waits for it. ``*_seen_at`` is each one's
+    last heartbeat, or null if it never sent one."""
+
+    is_worker_online: bool
+    is_crawler_online: bool
+    worker_seen_at: Timestamp | None
+    crawler_seen_at: Timestamp | None
+
+    @classmethod
+    def from_view(cls, found: ActivityView) -> Processing:
+        presence = found.presence
+        return cls(
+            is_worker_online=presence.worker.is_online,
+            is_crawler_online=presence.crawler.is_online,
+            worker_seen_at=presence.worker.seen_at,
+            crawler_seen_at=presence.crawler.seen_at,
+        )
+
+
 class Activity(ApiModel):
     """Everything running for this user, which the shell polls while any of it
     is busy (ADR 0006, ADR 0018)."""
@@ -119,6 +143,7 @@ class Activity(ApiModel):
     role_map: RunStatus | None
     # The Advisor's jobs still running, oldest first (ADR 0042).
     advisor_jobs: list[AdvisorJob]
+    processing: Processing
 
     @classmethod
     def from_view(
@@ -133,6 +158,7 @@ class Activity(ApiModel):
                 AdvisorJob.from_view(job)
                 for job in sorted(advisor_jobs, key=lambda j: (j.started_at, j.id))
             ],
+            processing=Processing.from_view(found),
         )
 
 

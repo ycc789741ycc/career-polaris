@@ -13,7 +13,7 @@ import psycopg
 import pytest
 
 from cli.migrate import MIGRATION_LOCK_KEY, migration_lock
-from kernel.jobs.app import _psycopg_dsn
+from kernel.db import get_psycopg_dsn
 
 pytestmark = pytest.mark.integration
 
@@ -23,7 +23,7 @@ def migrator_dsn() -> str:
     url = os.environ.get("MIGRATOR_DATABASE_URL")
     if not url:
         pytest.fail("MIGRATOR_DATABASE_URL is missing; run through `make test-integration`.")
-    return _psycopg_dsn(url)
+    return get_psycopg_dsn(url)
 
 
 def _try_lock(dsn: str) -> bool:

@@ -15,19 +15,13 @@ from enum import StrEnum
 from procrastinate import App, PsycopgConnector
 
 from kernel.config import Settings
+from kernel.db import get_psycopg_dsn
 
 
 class Queue(StrEnum):
     AI = "ai"
     SYNC = "sync"
     DOCS = "docs"
-
-
-def _psycopg_dsn(sqlalchemy_url: str) -> str:
-    """Procrastinate speaks psycopg; the app speaks asyncpg. Same database."""
-    return sqlalchemy_url.replace("postgresql+asyncpg://", "postgresql://").replace(
-        "postgresql+psycopg://", "postgresql://"
-    )
 
 
 # Procrastinate manages its own tables. They live in their own schema rather
@@ -38,7 +32,7 @@ JOB_SCHEMA = "procrastinate"
 def build_app(settings: Settings, *, url: str | None = None) -> App:
     return App(
         connector=PsycopgConnector(
-            conninfo=_psycopg_dsn(url or str(settings.database_url)),
+            conninfo=get_psycopg_dsn(url or str(settings.database_url)),
             kwargs={"options": f"-c search_path={JOB_SCHEMA}"},
         ),
     )

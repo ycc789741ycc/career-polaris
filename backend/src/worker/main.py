@@ -12,8 +12,10 @@ import asyncio
 import contextlib
 
 from kernel.config import Unit, get_settings
+from kernel.db import get_psycopg_dsn
 from kernel.jobs import Queue
 from kernel.logging import configure_logging, get_logger
+from kernel.presence import Heartbeat
 from wiring.container import container
 from wiring.queue import queue
 from worker.dispatcher import dispatch_pending
@@ -41,6 +43,14 @@ async def main() -> None:
     # Missing configuration fails here, at startup, not at first use.
     settings.require_for(Unit.WORKER)
     app = queue()
+    # Says the worker is up, so work queued while it was away reads as
+    # waiting rather than lost (ADR 0052).
+    heartbeat = Heartbeat(
+        get_psycopg_dsn(settings.require_database_url()),
+        Unit.WORKER,
+        interval_seconds=settings.presence_heartbeat_seconds,
+    )
+    heartbeat.start()
 
     async with app.open_async():
         dispatcher = asyncio.create_task(_dispatch_loop())
@@ -52,6 +62,7 @@ async def main() -> None:
             dispatcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await dispatcher
+            heartbeat.stop()
 
 
 if __name__ == "__main__":

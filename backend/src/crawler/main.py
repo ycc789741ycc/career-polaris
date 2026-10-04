@@ -20,7 +20,9 @@ from datetime import timedelta
 from advisor.market import CrawlIngest, CrawlPoliteness, crawl_due, create_crawl_politeness
 from kernel.clock import utcnow
 from kernel.config import Settings, Unit, get_settings
+from kernel.db import get_psycopg_dsn
 from kernel.logging import configure_logging, get_logger
+from kernel.presence import Heartbeat
 from wiring.crawl import build_crawl_ingest
 
 log = get_logger(__name__)
@@ -70,6 +72,14 @@ async def main() -> None:
         rate_limit_per_second=settings.crawl_rate_limit_per_host_per_second,
         max_requests_per_host_per_day=settings.crawl_max_requests_per_host_per_day,
     )
+    # Says the crawler is up: a build waiting for the market counts its
+    # deadline only while it is (ADR 0052).
+    heartbeat = Heartbeat(
+        get_psycopg_dsn(settings.require_crawler_database_url()),
+        Unit.CRAWLER,
+        interval_seconds=settings.presence_heartbeat_seconds,
+    )
+    heartbeat.start()
     next_sweep = time.monotonic()
     try:
         while True:
@@ -84,6 +94,7 @@ async def main() -> None:
                 log.error("crawl.loop_failed", exc_info=True)
             await asyncio.sleep(settings.crawl_due_poll_seconds)
     finally:
+        heartbeat.stop()
         await database.dispose()
 
 

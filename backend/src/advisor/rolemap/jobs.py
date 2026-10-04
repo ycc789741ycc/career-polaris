@@ -21,10 +21,12 @@ async def recluster(deps: Any, *, owner_id: str, build_id: str) -> None:
 async def await_market(deps: Any, *, owner_id: str, build_id: str) -> Any:
     """Check whether a build waiting for the market may start (ADR 0027).
     Returns a ``MarketWait``; the caller queues the build or checks again."""
+    presence = await deps.get_presence()
     return await deps.rolemap.check_market(
         uuid.UUID(owner_id),
         uuid.UUID(build_id),
         deadline=timedelta(seconds=deps.settings.market_wait_seconds),
+        crawler_online_since=presence.crawler.online_since,
     )
 
 
