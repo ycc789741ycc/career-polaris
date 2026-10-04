@@ -7,6 +7,12 @@ from advisor.resume.domain.constants import (
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
 )
+from advisor.resume.domain.contact import (
+    ContactError,
+    ContactItem,
+    ContactKind,
+    get_contact_items,
+)
 from advisor.resume.domain.content import (
     Coverage,
     Options,
@@ -111,6 +117,9 @@ __all__ = [
     "BuiltInTemplate",
     "Bullet",
     "BulletStyle",
+    "ContactError",
+    "ContactItem",
+    "ContactKind",
     "Coverage",
     "CustomTemplate",
     "CustomTemplateFilter",
@@ -169,6 +178,7 @@ __all__ = [
     "coverage",
     "get_built_in_spec",
     "get_claims_settled",
+    "get_contact_items",
     "get_contrast",
     "get_download_name",
     "get_font_kind",

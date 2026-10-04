@@ -89,6 +89,7 @@ export type TemplateField = TemplateReading["read"][number];
 export type ResumeOptions = Schemas["ResumeOptions"];
 export type ResumeBullet = Schemas["ResumeBullet"];
 export type ResumeContent = Schemas["ResumeContent"];
+export type ResumeContact = Schemas["ResumeContact"];
 export type ResumeSection = Schemas["ResumeSection"];
 export type ResumeEntry = Schemas["ResumeEntry"];
 export type ResumeSectionSlot = Schemas["ResumeSectionSlot"];

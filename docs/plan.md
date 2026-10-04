@@ -3224,5 +3224,5 @@ Fixed on the epic, each on its own branch:
   a heading of its own, kept through every rewrite.
 * **Fonts needed a template of one's own.** A résumé may set its two fonts
   over its template's from the Template panel (ADR 0047, migration 0041).
-* **Contact details are plain text.** Planned next: typed items drawn with
-  icons (ADR 0048).
+* **Contact details were plain text.** They are typed items drawn with icons,
+  edited in place (ADR 0048, migration 0042).

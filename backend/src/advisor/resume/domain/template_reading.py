@@ -26,6 +26,7 @@ from typing import Any
 
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
+    COLUMN_BAND,
     HEADING_PT_RANGE,
     MIN_CONTRAST,
     NAME_PT_RANGE,
@@ -229,15 +230,25 @@ def _get_layout(runs: Sequence[StyleRun], *, page_width: float) -> Layout:
     is the sidebar, and it is on its side of the page."""
     if page_width <= 0:
         return Layout.SINGLE_COLUMN
-    starts = Counter(round(r.x / page_width, 2) for r in runs)
-    total = sum(starts.values())
-    columns = sorted(x for x, n in starts.items() if n / total >= SIDEBAR_MIN_SHARE)
+    # Runs are counted by the band they start in, and a column sits where its
+    # leftmost run starts.
+    bands: dict[float, list[float]] = {}
+    for r in runs:
+        share = r.x / page_width
+        bands.setdefault(_band(share), []).append(share)
+    total = len(runs)
+    columns = sorted(min(xs) for xs in bands.values() if len(xs) / total >= SIDEBAR_MIN_SHARE)
     if len(columns) < 2 or columns[-1] - columns[0] < SIDEBAR_MIN_GAP:
         return Layout.SINGLE_COLUMN
     split = (columns[0] + columns[-1]) / 2
     left = sum(r.length for r in runs if r.x / page_width < split)
     right = sum(r.length for r in runs if r.x / page_width >= split)
     return Layout.SIDEBAR_LEFT if left < right else Layout.SIDEBAR_RIGHT
+
+
+def _band(share: float) -> float:
+    """Where a run starts, to the column band it falls in."""
+    return round(round(share / COLUMN_BAND) * COLUMN_BAND, 2)
 
 
 def _is_bold(font_name: str) -> bool:

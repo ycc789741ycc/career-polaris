@@ -30,6 +30,7 @@ from advisor.resume.domain import (
     TemplateSpec,
 )
 from advisor.resume.domain.constants import (
+    CONTACT_ICONS,
     FALLBACK_FONT,
     PAGE_MARGIN_SIDE_MM,
     PAGE_MARGIN_TOP_MM,
@@ -39,11 +40,25 @@ from advisor.resume.domain.constants import (
 _MARKERS = {BulletStyle.DOT: "disc", BulletStyle.DASH: '"\\2013  "', BulletStyle.NONE: "none"}
 
 
+def _contact_line(content: ResumeContent) -> str:
+    """The headline, then each contact detail with its kind's icon, inline so
+    nothing is fetched (ADR 0048)."""
+    headline = (
+        f'<span class="headline">{escape(content.headline)}</span>' if content.headline else ""
+    )
+    items = "".join(
+        '<span class="contact-item"><svg viewBox="0 0 24 24" aria-hidden="true">'
+        f'<path d="{CONTACT_ICONS[str(item.kind)]}"/></svg>{escape(item.value)}</span>'
+        for item in content.contacts
+    )
+    return headline + items
+
+
 def render_html(content: ResumeContent, *, spec: TemplateSpec, options: Options) -> str:
     heading = f'"{spec.heading_font}", "{FALLBACK_FONT}", serif'
     body = f'"{spec.body_font}", "{FALLBACK_FONT}", sans-serif'
     title_pt, contact_pt, small_pt = spec.get_derived_pt()
-    contact = escape(" · ".join(p for p in (content.headline, content.contact) if p))
+    contact = _contact_line(content)
     # A hidden section is kept in the résumé and never printed (ADR 0043).
     content = content.get_shown()
     main = [s for s in content.sections if not spec.is_in_sidebar(s.kind)]
@@ -85,6 +100,12 @@ header.band {{ background: {spec.get_band_color()}; padding: 10pt 12pt; }}
 h1 {{ font-family: {heading}; font-size: {spec.name_pt}pt; line-height: 1.1;
      color: {spec.name_color}; margin: 0; font-weight: 400; }}
 .contact {{ font-size: {contact_pt}pt; color: #5a5550; margin-top: 4pt; }}
+.contact .headline {{ margin-right: 10pt; }}
+.contact-item {{ white-space: nowrap; margin-right: 10pt; }}
+.contact-item svg {{ width: 0.95em; height: 0.95em; vertical-align: -0.12em;
+  margin-right: 3pt; fill: {spec.accent_color}; }}
+.side .contact .headline, .side .contact-item {{ display: block; white-space: normal;
+  overflow-wrap: anywhere; margin: 0 0 2pt; }}
 h2 {{ font-size: {spec.heading_pt}pt; letter-spacing: 0.1em; text-transform: {transform};
      font-weight: 800; color: {spec.name_color}; margin: 14pt 0 6pt; }}
 .columns {{ display: flex; gap: 14pt; }}

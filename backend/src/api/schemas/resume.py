@@ -148,10 +148,20 @@ class ResumeSectionSlot(ApiModel):
     is_shown: bool
 
 
+ContactKindName = Literal["email", "phone", "github", "linkedin", "website", "location"]
+
+
+class ResumeContact(ApiModel):
+    """One contact detail, drawn with its kind's icon (ADR 0048)."""
+
+    kind: ContactKindName
+    value: str
+
+
 class ResumeContent(ApiModel):
     name: str
     headline: str
-    contact: str
+    contacts: list[ResumeContact]
     # Every section, in order, shown or hidden (ADR 0039, ADR 0043).
     sections: list[ResumeSection]
 
@@ -505,6 +515,9 @@ class ResumeTemplateLimits(ApiModel):
     max_templates: int
     # The largest PDF a template may start from (ADR 0041).
     upload_max_bytes: int
+    # Each contact kind's icon: the path of a 24-unit square SVG, as the PDF
+    # draws it (ADR 0048).
+    contact_icons: dict[ContactKindName, str]
 
     @classmethod
     def from_view(cls, limits: TemplateLimitsView) -> ResumeTemplateLimits:
@@ -519,6 +532,7 @@ class ResumeTemplateLimits(ApiModel):
                 "max_name": limits.max_name,
                 "max_templates": limits.max_templates,
                 "upload_max_bytes": limits.upload_max_bytes,
+                "contact_icons": limits.contact_icons,
             }
         )
 

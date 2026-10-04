@@ -697,12 +697,38 @@ select.input { appearance: auto; }
 /* A sidebar layout's two columns, as the renderer draws them. */
 .resume-columns { display: flex; gap: calc(var(--pt) * 14); }
 .resume-side { width: 30%; flex: 0 0 auto; }
+/* In a sidebar each contact detail takes its own line, as the PDF has it. */
+.resume-side .resume-headline,
+.resume-side .resume-contact-item {
+  display: flex;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 0 0 calc(var(--pt) * 2);
+}
 .resume-main { flex: 1; min-width: 0; }
 .resume-name {
   font-family: var(--heading-font), "DejaVu Sans", serif;
   font-size: calc(var(--pt) * var(--name-pt));
   line-height: 1.1;
   color: var(--name-color);
+}
+/* A contact detail: its icon, which is also the menu of kinds laid over
+ * it, then its text (ADR 0048). */
+.resume-headline { margin-right: calc(var(--pt) * 10); }
+.resume-contact-item {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  margin-right: calc(var(--pt) * 10);
+}
+.resume-contact-kind { position: relative; display: inline-flex; margin-right: calc(var(--pt) * 3); }
+.resume-contact-icon { width: 0.95em; height: 0.95em; fill: var(--dot-color); }
+.resume-contact-kind select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
 }
 .resume-contact {
   font-size: calc(var(--pt) * var(--contact-pt));

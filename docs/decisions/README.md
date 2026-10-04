@@ -53,6 +53,7 @@ new record that supersedes the old one.
 | [0045](0045-read-the-career-timeline-in-the-analysis.md) | The career timeline is the analysis's reading of the evidence | Accepted |
 | [0046](0046-drop-an-unbacked-gap-claim-instead-of-rejecting-the-resume.md) | An unbacked gap claim is dropped, not the résumé | Accepted |
 | [0047](0047-let-a-resume-set-its-own-fonts-over-its-template.md) | A résumé may set its own fonts over its template's | Accepted |
+| [0048](0048-draw-contact-details-as-typed-items-with-icons.md) | Contact details are typed items, drawn with icons | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

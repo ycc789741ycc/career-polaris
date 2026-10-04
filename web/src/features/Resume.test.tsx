@@ -115,7 +115,7 @@ const resume: TailoredResume = {
   content: {
     name: "Maya Lin Chen",
     headline: "Backend Engineer",
-    contact: "maya@example.com",
+    contacts: [{ kind: "email", value: "maya@example.com" }],
     sections: [
       section("summary", { text: "Builds payment systems." }),
       section("experience", {
@@ -262,6 +262,14 @@ const limits: ResumeTemplateLimits = {
   max_name: 60,
   max_templates: 10,
   upload_max_bytes: 5_242_880,
+  contact_icons: {
+    email: "M0 0h24v24H0z",
+    phone: "M0 0h24v24H0z",
+    github: "M0 0h24v24H0z",
+    linkedin: "M0 0h24v24H0z",
+    website: "M0 0h24v24H0z",
+    location: "M0 0h24v24H0z",
+  },
 };
 
 type Call = { method: string; url: string; body: unknown };
@@ -564,7 +572,7 @@ describe("résumé screen", () => {
       fireEvent.blur(field);
     };
     type("Headline", "Staff Backend Engineer");
-    type("Contact", "maya@example.com · Berlin");
+    type("Email contact", "maya.chen@example.com");
     type("Heading of Experience", "Work history");
     type("Title", "Senior Backend Engineer");
     type("Organisation", "Kestrel");
@@ -584,7 +592,9 @@ describe("résumé screen", () => {
     const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
       ?.body as { content: ResumeContent };
     expect(body.content.headline).toBe("Staff Backend Engineer");
-    expect(body.content.contact).toBe("maya@example.com · Berlin");
+    expect(body.content.contacts).toEqual([
+      { kind: "email", value: "maya.chen@example.com" },
+    ]);
     const work = experience(body.content);
     expect(work.title).toBe("Work history");
     expect(work.entries[0]).toMatchObject({
@@ -595,6 +605,32 @@ describe("résumé screen", () => {
     });
     const skills = body.content.sections.find((s) => s.kind === "skills")!;
     expect(skills.items).toEqual(["Golang", "Kafka", "gRPC"]);
+  });
+
+  it("draws each contact detail with its icon and changes its kind", async () => {
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v2", number: 2, source: "manual" };
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+    const page = await screen.findByRole("article", { name: "Résumé" });
+
+    expect(page.querySelectorAll(".resume-contact-icon")).toHaveLength(1);
+    await user.selectOptions(
+      screen.getByLabelText("Kind of maya@example.com"),
+      "website",
+    );
+    await user.click(screen.getByRole("button", { name: "+ Add contact" }));
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    expect(body.content.contacts).toEqual([
+      { kind: "website", value: "maya@example.com" },
+      { kind: "email", value: "you@example.com" },
+    ]);
   });
 
   it("puts a cleared heading back to its kind's own", async () => {

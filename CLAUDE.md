@@ -675,3 +675,6 @@ uploaded one (`docs/plan.md`), one branch per step under
   `get_headings_kept`), entry fields and list items are edited in place. A
   résumé may set its own `heading_font` and `body_font` over its template's
   (ADR 0047, `get_spec_with_fonts`, migration 0041), from the Template panel.
+  Contact details are typed `ContactItem`s (ADR 0048, migration 0042), read
+  from the model's line by `get_contact_items` and drawn with the inline SVG
+  icons in `CONTACT_ICONS`, which `GET /resume-templates/limits` also serves.
