@@ -1635,8 +1635,10 @@ select.input { appearance: auto; }
 .resume-layout {
   display: grid;
   gap: 24px;
-  /* The tools beside the page: a share of a wide screen, up to a point. */
-  grid-template-columns: minmax(300px, min(28%, 380px)) minmax(0, 1fr);
+  /* The tools beside the page: never under the prototype's 360px, so the
+   * template pair, the font pickers and the section rows keep their lines,
+   * and a share of a wider screen beyond that. The page takes the rest. */
+  grid-template-columns: minmax(360px, min(32%, 460px)) minmax(0, 1fr);
   grid-template-areas: "tools page";
   align-items: start;
 }
