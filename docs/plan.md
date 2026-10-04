@@ -3354,3 +3354,163 @@ read from a file (ADR 0041).
 * Saving, or opening another résumé, starts the history again: what is saved
   is changed by editing and saving again.
 
+# Phase 12
+Hybrid deployment: the light part that is always on runs on a DigitalOcean
+droplet (1 vCPU, 2 GB), and the heavy part runs on the operator's own
+machine.
+* **The droplet ("edge")** runs Caddy, `web`, `api` and Postgres. Every
+  request reads Postgres, so it sits beside the api.
+* **The operator's machine ("compute")** runs `worker` (the `ai`, `sync` and
+  `docs` queues: embeddings, WeasyPrint renders, connector syncs) and
+  `crawler` (the embedding model, plus parsing hostile HTML).
+* **Object storage** is a DigitalOcean Spaces bucket, which both places read
+  and write. A presigned link has to reach the browser from either place, and
+  MinIO would not fit in the droplet's memory. MinIO stays for local
+  development.
+* **The link between the two places** is a private tunnel (Tailscale or
+  WireGuard), opened outbound from the operator's machine. Postgres listens on
+  the tunnel only, and the operator's machine opens no inbound port.
+
+Why this split: the embedding model costs about 1 GiB in each process that
+loads it (the worker and the crawler), and a PDF render spikes on top of that.
+Neither fits on 2 GB beside Postgres. The api runs no embeddings: it prices
+work as a ceiling (`RoleMapService`), and only imports `sentence_transformers`
+lazily, so it never loads the model. Résumé chat streams from the api, so it
+keeps working while the compute side is away.
+
+Droplet budget, to confirm with `make stats` before the phase is called done:
+
+| On the droplet | Estimate |
+|---|---|
+| OS, dockerd, the tunnel | about 350 MB |
+| Caddy, `web` | about 50 MB |
+| `api`, one uvicorn process | about 250 MB |
+| Postgres, `shared_buffers` 128 MB | about 300–400 MB |
+| **Total** | **about 1 GB**, half the droplet |
+
+There is no domain yet. Until there is one, the edge is served at
+`<droplet-ip>.sslip.io`, with a Let's Encrypt certificate for that name.
+
+Four branches, in this order, each cut from `epic/no-ticket/hybrid-deploy`,
+which is cut from mainline:
+
+1. "Run the app in two places": one image and one compose file, with what
+   each place starts chosen in its `.env`.
+2. "Know when the compute side is away": the SPA says that work is waiting
+   for the processing machine instead of reporting it lost.
+3. "The edge on the droplet": the proxy, TLS, the firewall, Spaces and
+   backups.
+4. "Release one image to both places": CI builds, tests, scans and pushes the
+   image; each place pulls it by digest.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR where a decision is costly to reverse,
+and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
+`architecture.md` open question 1 (the choice of platform) gets its answer.
+
+## Run the app in two places
+ADR: running in two places, and why each process lives where it does.
+* **Compose profiles.** `compose.yaml` puts `api` and `web` in the `edge`
+  profile, and `worker` and `crawler` in the `compute` profile. Each place
+  sets `COMPOSE_PROFILES` in its own `.env` (`edge`, `compute`, or both for
+  local development and CI), so `start-app` and `stop-app` keep their names
+  and the Makefile has no site variable. `infra/compose.yml` does the same:
+  Postgres in `edge`, the tunnel in both, MinIO in a `local` profile only.
+* **Migrations under a lock.** `start-app` migrates first in either place.
+  `cli.migrate` takes a Postgres advisory lock, so two places starting at once
+  cannot race, and the second finds nothing pending. A compute site that runs
+  an older image than the schema fails its start (the schema is ahead of its
+  code) instead of running against it.
+* **Published ports bind to an address.** Every `ports:` entry takes an
+  optional `*_BIND_ADDRESS` (default `127.0.0.1`). Docker writes its own
+  iptables rules ahead of `ufw`, so today `0.0.0.0:21470` exposes the api
+  over plain HTTP on any host that has a public address. Postgres binds to the
+  tunnel address on the droplet.
+* **Postgres sized for the droplet.** `shared_buffers`, `work_mem`,
+  `effective_cache_size` and `max_connections` become optional `POSTGRES_*`
+  settings, passed as `-c` flags, with defaults that suit local development.
+  `DB_POOL_SIZE` falls to 2–3 per process: two places now open connections to
+  one server.
+* **The tunnel as a container.** A pinned Tailscale (or WireGuard) image in
+  infra, in both places. Its auth key is a secret in `.env`. `start-infra`
+  waits until the tunnel is up and, on the compute side, until Postgres
+  answers across it.
+* **Integration tests** cover the migration lock (two concurrent runs, one
+  applies) and that each profile starts only its services.
+
+## Know when the compute side is away
+ADR: work waits for the processing machine, and the stale limit counts from
+when a job starts.
+* **Who is online.** Procrastinate 3 records a heartbeat per worker
+  (`procrastinate.procrastinate_workers`). The crawler has no grant on the job
+  schema, so it writes its own heartbeat to a row in `market`. `activity`
+  reads both and reports `processing: online | away`, with when each side was
+  last seen, in `GET /activity`.
+* **Queued is not lost.** Today a run's staleness counts from when it was
+  recorded, which is before it is queued (`activity/domain/stages.py`). A run
+  queued while no worker is online would read as lost after
+  `JOB_STALE_AFTER_SECONDS`. Instead, staleness counts from when a worker
+  picks the run up, and a run nobody has picked up reads `queued`, never
+  `stale`.
+* **The user is told before spending.** Analyze, Rebuild, Target this role,
+  Set as target, Generate, Regenerate and Export say "Processing is offline;
+  this starts when it is back" next to the estimate while the compute side is
+  away. They can still confirm: the job waits in the queue, and the outbox
+  waits with it.
+* **The market wait.** A build waits for its sources only while the crawler
+  is online. With the crawler away, `MARKET_WAIT_SECONDS` starts counting
+  when it comes back, so the build is not made on a stale market just because
+  the operator's machine was asleep.
+* **Unit tests** for the staleness rule and the online/away read. An
+  integration test queues a run with no worker online, and checks that it
+  reads `queued`, not `stale`.
+
+## The edge on the droplet
+* **Caddy, one origin.** A pinned Caddy image in infra on the edge serves
+  `/api/*` to `api` and everything else to `web`. It holds the only public
+  ports, 80 and 443. `SITE_HOSTNAME` (required) is the name it gets a
+  certificate for: `<droplet-ip>.sslip.io` for now. `WEB_API_BASE_URL`,
+  `AUTH_PUBLIC_API_BASE_URL`, `OAUTH_REDIRECT_BASE_URL` and
+  `CORS_ALLOWED_ORIGINS` are all `https://$SITE_HOSTNAME`, and
+  `AUTH_COOKIE_SECURE=true`.
+* **Sign-in.** Google sign-in stays off (`GOOGLE_OAUTH_CLIENT_ID` blank)
+  until there is a domain of our own, because Google's consent screen wants a
+  domain we can verify. The GitHub and Jira callbacks accept the sslip.io
+  name.
+* **Firewall.** A DigitalOcean Cloud Firewall allows 22, 80 and 443, plus the
+  tunnel's UDP port if WireGuard is used. SSH takes keys only.
+* **Spaces.** One private bucket, created ahead of time, and a key scoped to
+  it. `S3_ENDPOINT_URL` and `S3_PUBLIC_ENDPOINT_URL` both name the Spaces
+  regional endpoint. The `create_bucket` fallback in `kernel/storage` stays for
+  local MinIO only. A lifecycle rule expires exports.
+* **Backups.** `make backup-db` runs `pg_dump` from the pinned Postgres image
+  and puts the dump in a second, backup-only bucket. A host cron on the
+  droplet runs it nightly, and `make restore-db` (destructive, a dependency of
+  nothing) is tested once against a scratch database.
+* **Swap.** A 1 GB swapfile on the droplet, for the host only. Containers
+  keep `memswap_limit` equal to `mem_limit`, so an overrun is still killed
+  visibly.
+* **The operator's machine is now inside the trust boundary.** The worker
+  holds `MASTER_ENCRYPTION_KEY` and connector tokens there. The machine needs
+  disk encryption, an `.env` that only its owner can read, and no other
+  users. The crawler fetches from the operator's home address, and the
+  politeness rules (per-host caps, backing off after a 429 or 403) are
+  unchanged.
+
+## Release one image to both places
+* **CI** runs `make build-app`, `lint`, `typecheck`, both test tiers and
+  `scan`, then pushes the prod images to GHCR by digest. Neither the droplet
+  nor the operator's machine builds anything: a single vCPU would take a very
+  long time to install torch and build the SPA, and could run out of memory
+  doing it.
+* **`make pull-app`** pulls a given digest and tags it `jsa-*:prod`. Compose
+  keeps `pull_policy: never`, so `start-app` still runs only what was pulled
+  and checked.
+* **The release order** is the edge first, which migrates, then the compute
+  side. Both run the same digest. A compute site on an older image fails its
+  start instead of running against a newer schema (see "Run the app in two
+  places").
+* **Accepted for now.** The api image carries torch, which it never loads:
+  about 2 GB of disk and download on the droplet. A slimmer edge image would
+  be a second artifact, and the phase keeps one.
+
