@@ -23,6 +23,7 @@ from botocore.exceptions import ClientError
 from sqlalchemy import text
 
 from advisor.assessment import AssessmentService, create_assessment_service
+from advisor.gapfill import Answer, GapFillService, create_gapfill_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import ProfileService, create_profile_service
@@ -53,6 +54,7 @@ pytestmark = pytest.mark.integration
 LEADS = "Lead technical direction across several teams"
 RELIABILITY = "Own reliability: SLOs and incident reviews"
 ORG = "Demonstrated org-level influence"
+ORG_KEY = "req:demonstrated-org-level-influence"
 # The profile holds one piece of evidence, so the prompt shows it as E1.
 CITED = "E1"
 
@@ -98,6 +100,7 @@ class World:
     store: ObjectStore
     evidence_id: str
     profile: ProfileService
+    gapfill: GapFillService
 
 
 @pytest_asyncio.fixture
@@ -160,11 +163,13 @@ async def world(
         upload_max_bytes=settings.own_posting_max_bytes,
         upload_max_pages=settings.own_posting_max_pages,
     )
+    gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     resume = create_resume_service(
         database,
         target=target,
         profile=profile,
         assessment=assessment,
+        gapfill=gapfill,
         gateway=gateway,
         object_store=store,
         template_max=settings.resume_template_max,
@@ -205,6 +210,7 @@ async def world(
         store=store,
         evidence_id=str(evidence.id),
         profile=profile,
+        gapfill=gapfill,
     )
 
 
@@ -282,7 +288,7 @@ def _resume_reply(cited: str) -> str:
                                 {
                                     "text": "Led the checkout migration across two teams",
                                     "evidence_ids": [cited],
-                                    "answers": LEADS,
+                                    "answers": RELIABILITY,
                                 }
                             ],
                         }
@@ -656,3 +662,81 @@ async def test_a_template_starts_from_a_pdf_whose_file_is_gone_once_read(
     await world.resume.forget_template_reading(account, reading.id)
     with pytest.raises(NotFoundError):
         await world.resume.template_reading(account, reading.id)
+
+
+async def _answer_org(world: World, account: uuid.UUID, ref: TargetRef) -> str:
+    """The user answers Fill the gap's one question, about org influence."""
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "gap_key": ORG_KEY,
+                        "text": "Did another team build on a design you wrote?",
+                        "asked_because": "Nothing speaks to influence beyond a team.",
+                        "answer_type": "free_text",
+                        "choices": [],
+                    }
+                ]
+            }
+        )
+    )
+    questions = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, questions.id)
+    written = await world.gapfill.get(account, questions.id)
+    assert written.status == "ready", written.error_message
+    done = await world.gapfill.submit(
+        account,
+        written.id,
+        [Answer(question_id=written.questions[0].id, text="Payments built on my ledger RFC.")],
+    )
+    [answer_id] = done.evidence_ids
+    return str(answer_id)
+
+
+def _claiming_org(cited: str, *, org_cites: str) -> str:
+    reply = json.loads(_resume_reply(cited))
+    reply["sections"][1]["entries"][0]["bullets"].append(
+        {
+            "text": "Wrote the ledger RFC the payments team built on",
+            "evidence_ids": [org_cites],
+            "answers": ORG,
+        }
+    )
+    return json.dumps(reply)
+
+
+async def test_a_gap_the_user_answered_about_is_claimed_from_the_answer_alone(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """A requirement nothing else covers rests on what the user answered
+    about it, and on nothing else (ADR 0044)."""
+    ref = await _own_posting(world, account)
+    answer_id = await _answer_org(world, account, ref)
+    assert await world.gapfill.get_answers(other_account, ref) == ()
+    profile = await world.profile.snapshot(account)
+    handle = {str(e.id): f"E{n}" for n, e in enumerate(profile.evidence, start=1)}
+
+    cited = handle[world.evidence_id]
+    world.stub.replies.append(_claiming_org(cited, org_cites=handle[answer_id]))
+    requested = await world.resume.request(
+        account, ref, template=Template.ORGANIC, options=Options()
+    )
+    await world.resume.generate(account, requested.id)
+
+    view = await world.resume.get(account, requested.id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert f"gap: {ORG} (answered in [{handle[answer_id]}])" in world.stub.calls[-1].user
+    org = next(c for c in view.coverage if c.requirement == ORG)
+    assert org.verdict == "gap"
+    assert [a.id for a in org.answers] == [answer_id]
+    assert view.content is not None
+    claimed = [b for b in view.content.bullets() if b.answers == ORG]
+    assert [b.evidence_ids for b in claimed] == [(answer_id,)]
+
+    # Claiming the same gap from other evidence is refused as a whole.
+    world.stub.replies.append(_claiming_org(cited, org_cites=cited))
+    again = await world.resume.request(account, ref, template=Template.ORGANIC, options=Options())
+    await world.resume.generate(account, again.id)
+    refused = await world.resume.get(account, again.id)
+    assert (refused.summary.status, refused.summary.error_code) == ("failed", "ai_output_invalid")

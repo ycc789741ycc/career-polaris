@@ -107,6 +107,7 @@ def test_a_tailored_resume_carries_its_summary_and_its_content() -> None:
             "requirement": "Runs Kubernetes in production",
             "verdict": "covered",
             "evidence": [{"id": "e1", "reference": "PR #12", "fact": "Migrated to EKS"}],
+            "answers": [],
         }
     ]
     assert body["version"]["source"] == "chat"

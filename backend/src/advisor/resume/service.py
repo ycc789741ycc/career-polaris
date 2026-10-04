@@ -37,6 +37,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapAnswerView, GapFillService
 from advisor.profile import (
     CitationError,
     CitationHandles,
@@ -86,10 +87,12 @@ from advisor.resume.domain import (
     TemplateSpec,
     TemplateSpecError,
     VersionSource,
+    assert_gap_claims_answered,
     assert_plan_valid,
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_claims_settled,
     get_download_name,
     get_full_plan,
     get_planned,
@@ -124,6 +127,8 @@ from advisor.target import (
     TargetRef,
     TargetService,
     TargetSnapshot,
+    gap_key_for_dimension,
+    gap_key_for_uncovered,
     get_target_digest,
     requirements_block,
 )
@@ -167,8 +172,8 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v4")
-_REVISE = ("resume_revise", "v4")
+_WRITE = ("resume_write", "v5")
+_REVISE = ("resume_revise", "v5")
 _SECTION = ("resume_section", "v1")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
@@ -243,6 +248,9 @@ class CoverageView:
     verdict: str
     dimension_key: str | None
     evidence: tuple[EvidenceNote, ...]
+    # What the user answered about this requirement's gap in Fill the gap,
+    # newest first: what a gap may be claimed from (ADR 0044).
+    answers: tuple[EvidenceNote, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +408,7 @@ class ResumeService:
         target: TargetService,
         profile: ProfileService,
         assessment: AssessmentService,
+        gapfill: GapFillService,
         gateway: AiGateway,
         object_store: ObjectStore,
         template_max: int = 10,
@@ -413,6 +422,7 @@ class ResumeService:
         self._target = target
         self._profile = profile
         self._assessment = assessment
+        self._gapfill = gapfill
         self._gateway = gateway
         self._store = object_store
 
@@ -790,7 +800,7 @@ class ResumeService:
             inputs = {
                 "target": snapshot.label,
                 "requirements": requirements_block(snapshot),
-                "coverage": _coverage_block(coverage_rows),
+                "coverage": _coverage_block(coverage_rows, handles),
                 "resume": json.dumps(shown.to_dict(), ensure_ascii=False),
                 "conversation": "\n".join(
                     f"Person: {r.request}\nYou: {r.reply}" for r in reversed(earlier)
@@ -835,9 +845,11 @@ class ResumeService:
                     )
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
+                proposal = get_claims_settled(proposal, (c.requirement for c in coverage_rows))
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
+                    assert_gap_claims_answered(proposal, _gaps_of(coverage_rows))
                 except ResumeError as exc:
                     raise OutputInvalidError(f"the proposed revision was rejected: {exc}") from exc
                 await self._assert_owned(owner_id, proposal, message)
@@ -1169,7 +1181,7 @@ class ResumeService:
         options: Options,
     ) -> None:
         snapshot = await self._target.snapshot(owner_id, ref)
-        coverage_rows = await self._coverage(owner_id, snapshot)
+        coverage_rows = await self._coverage(owner_id, snapshot, ref)
         base = await self._profile.base_resume_text(owner_id)
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
@@ -1203,9 +1215,11 @@ class ResumeService:
             content = get_planned(_content_of(result.value), plan).with_citations(handles.resolve)
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
+        content = get_claims_settled(content, (c.requirement for c in coverage_rows))
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
+            assert_gap_claims_answered(content, _gaps_of(coverage_rows))
         except ResumeError as exc:
             raise OutputInvalidError(f"the written résumé was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
@@ -1313,9 +1327,12 @@ class ResumeService:
             current,
             sections=tuple(written if s.slot == slot else s for s in current.sections),
         )
+        rows = [_coverage_view(c) for c in resume.coverage]
+        content = get_claims_settled(content, (c.requirement for c in rows))
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
+            assert_gap_claims_answered(content, _gaps_of(rows))
         except ResumeError as exc:
             raise OutputInvalidError(f"the written section was rejected: {exc}") from exc
         await self._assert_owned(owner_id, content, message)
@@ -1381,18 +1398,23 @@ class ResumeService:
                 await mine.resumes.update(resume)
 
     async def _coverage(
-        self, owner_id: uuid.UUID, snapshot: TargetSnapshot
+        self, owner_id: uuid.UUID, snapshot: TargetSnapshot, ref: TargetRef
     ) -> tuple[CoverageView, ...]:
         assessment = await self._assessment.latest(owner_id)
         dimensions = assessment.dimensions if assessment else ()
+        requirements = [r.statement for r in snapshot.requirements]
+        answers = await self._gapfill.get_answers(owner_id, ref)
         rows = coverage(
-            requirements=[r.statement for r in snapshot.requirements],
+            requirements=requirements,
             requirement_map=snapshot.requirement_map,
             scores={d.key: d.score for d in dimensions},
             targets={d.dimension_key: d.target_score for d in snapshot.dimensions},
             evidence={d.key: d.evidence_ids for d in dimensions},
+            answers=_answers_by_requirement(requirements, snapshot.requirement_map, answers),
         )
-        notes = await self._notes(owner_id, {i for row in rows for i in row.evidence_ids})
+        notes = await self._notes(
+            owner_id, {i for row in rows for i in (*row.evidence_ids, *row.answer_ids)}
+        )
         return tuple(_coverage_row(row, notes) for row in rows)
 
     async def _assert_owned(
@@ -1553,7 +1575,7 @@ def _write_inputs(
     return {
         "target": label,
         "requirements": requirements,
-        "coverage": _coverage_block(coverage_rows) or "(worked out when writing)",
+        "coverage": _coverage_block(coverage_rows, handles) or "(worked out when writing)",
         "options": "\n".join(
             line
             for line, wanted in (
@@ -1596,13 +1618,46 @@ def _evidence_block(evidence: Any, handles: CitationHandles) -> str:
     )
 
 
+def _answers_by_requirement(
+    requirements: list[str],
+    requirement_map: dict[str, str | None],
+    answers: tuple[GapAnswerView, ...],
+) -> dict[str, list[str]]:
+    """The evidence each requirement's answers became, newest first. A
+    requirement's gap is keyed by its dimension or, uncovered, by its
+    statement; the answers under either key are its own (ADR 0044)."""
+    by_gap: dict[str, list[str]] = {}
+    for answer in answers:
+        by_gap.setdefault(answer.gap_key, []).append(str(answer.evidence_id))
+    result: dict[str, list[str]] = {}
+    for requirement in requirements:
+        dimension = requirement_map.get(requirement)
+        keys = [gap_key_for_uncovered(requirement)]
+        if dimension is not None:
+            keys.insert(0, gap_key_for_dimension(dimension))
+        ids = list(dict.fromkeys(i for key in keys for i in by_gap.get(key, [])))
+        if ids:
+            result[requirement] = ids
+    return result
+
+
+def _gaps_of(rows: tuple[CoverageView, ...] | list[CoverageView]) -> dict[str, list[str]]:
+    """Each requirement marked gap, with the answers it may be claimed from."""
+    return {r.requirement: [a.id for a in r.answers] for r in rows if r.verdict == "gap"}
+
+
 def _coverage_row(row: Coverage, notes: dict[str, EvidenceNote]) -> CoverageView:
     return CoverageView(
         requirement=row.requirement,
         verdict=str(row.verdict),
         dimension_key=row.dimension_key,
         evidence=tuple(notes[i] for i in row.evidence_ids if i in notes),
+        answers=tuple(notes[i] for i in row.answer_ids if i in notes),
     )
+
+
+def _note_dict(note: EvidenceNote) -> dict[str, str]:
+    return {"id": note.id, "reference": note.reference, "fact": note.fact}
 
 
 def _coverage_dict(row: CoverageView) -> dict[str, Any]:
@@ -1610,7 +1665,8 @@ def _coverage_dict(row: CoverageView) -> dict[str, Any]:
         "requirement": row.requirement,
         "verdict": row.verdict,
         "dimension_key": row.dimension_key,
-        "evidence": [{"id": e.id, "reference": e.reference, "fact": e.fact} for e in row.evidence],
+        "evidence": [_note_dict(e) for e in row.evidence],
+        "answers": [_note_dict(a) for a in row.answers],
     }
 
 
@@ -1620,11 +1676,24 @@ def _coverage_view(data: dict[str, Any]) -> CoverageView:
         verdict=data["verdict"],
         dimension_key=data.get("dimension_key"),
         evidence=tuple(EvidenceNote(**e) for e in data.get("evidence", [])),
+        # Rows stored before ADR 0044 have none.
+        answers=tuple(EvidenceNote(**a) for a in data.get("answers", [])),
     )
 
 
-def _coverage_block(rows: tuple[CoverageView, ...] | list[CoverageView]) -> str:
-    return "\n".join(f"- {row.verdict}: {row.requirement}" for row in rows)
+def _coverage_block(
+    rows: tuple[CoverageView, ...] | list[CoverageView], handles: CitationHandles
+) -> str:
+    """One line per requirement, with the handles of what the user answered
+    about it: "- gap: Runs Kubernetes (answered in [E41], [E42])"."""
+
+    def answered(row: CoverageView) -> str:
+        # An answer whose evidence is gone since has no handle to cite.
+        given = (handles.handle(a.id) for a in row.answers)
+        cited = [f"[{h}]" for h, a in zip(given, row.answers, strict=True) if h != a.id]
+        return f" (answered in {', '.join(cited)})" if cited else ""
+
+    return "\n".join(f"- {row.verdict}: {row.requirement}{answered(row)}" for row in rows)
 
 
 def _summary(resume: TailoredResume, *, latest_version: int | None) -> ResumeSummaryView:

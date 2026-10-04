@@ -32,6 +32,7 @@ from advisor.target.domain import Requirement, RequirementBasis
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 from tests.unit.advisor.resume.builders import get_lines, make_content
 from tests.unit.advisor.resume.fakes import (
+    FakeGapFill,
     FakeObjectStore,
     FakeProfile,
     FakeResumeUnitOfWork,
@@ -55,6 +56,7 @@ def _service(
         target=FakeTarget(digest),  # type: ignore[arg-type]
         profile=profile or FakeProfile(),  # type: ignore[arg-type]
         assessment=None,  # type: ignore[arg-type]
+        gapfill=FakeGapFill(),  # type: ignore[arg-type]
         gateway=gateway,
         object_store=store or FakeObjectStore(),  # type: ignore[arg-type]
     )
@@ -355,8 +357,8 @@ def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
     assert inputs["sections"] == "- experience\n- custom: Awards"
     assert inputs["evidence"] == "[E1] (jira, latest 2026-08-14) Jira · PAY: 40 issues done in PAY"
     assert inputs["accounts"] == "- github: mayalin"
-    assert resume_service._WRITE == ("resume_write", "v4")
-    assert resume_service._REVISE == ("resume_revise", "v4")
+    assert resume_service._WRITE == ("resume_write", "v5")
+    assert resume_service._REVISE == ("resume_revise", "v5")
 
 
 # --- sections you choose (ADR 0039) -------------------------------------------
@@ -480,6 +482,7 @@ async def test_a_write_fills_every_section_and_keeps_each_ones_place_and_state()
         target=SnapshotTarget(),  # type: ignore[arg-type]
         profile=FakeProfile(),  # type: ignore[arg-type]
         assessment=NoAssessment(),  # type: ignore[arg-type]
+        gapfill=FakeGapFill(),  # type: ignore[arg-type]
         gateway=gateway,  # type: ignore[arg-type]
         object_store=FakeObjectStore(),  # type: ignore[arg-type]
     )
@@ -512,6 +515,70 @@ async def test_a_write_fills_every_section_and_keeps_each_ones_place_and_state()
     side = view.content.get_section(SectionSlot(SectionKind.SIDE_PROJECTS))
     assert side is not None and side.entries[0].bullets[0].evidence_ids == ("e1",)
     assert view.section_plan == view.content.get_plan()
+
+
+def _writer(uow: FakeResumeUnitOfWork, gateway: Any, gapfill: FakeGapFill) -> ResumeService:
+    return ResumeService(
+        uow,
+        target=SnapshotTarget(),  # type: ignore[arg-type]
+        profile=FakeProfile(),  # type: ignore[arg-type]
+        assessment=NoAssessment(),  # type: ignore[arg-type]
+        gapfill=gapfill,  # type: ignore[arg-type]
+        gateway=gateway,
+        object_store=FakeObjectStore(),  # type: ignore[arg-type]
+    )
+
+
+# The snapshot's one requirement maps to nothing: a gap, keyed by its words.
+RELIABILITY_GAP = "req:own-reliability"
+
+
+def _claiming_reliability() -> WriteGateway:
+    return WriteGateway(
+        [
+            {
+                "kind": "experience",
+                "entries": [
+                    {
+                        "title": "Payments platform, backend",
+                        "bullets": [
+                            {
+                                "text": "Ran the incident reviews for payments",
+                                "evidence_ids": ["E1"],
+                                "answers": "Own reliability",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+
+
+async def test_a_gap_is_written_from_what_the_user_answered_about_it() -> None:
+    uow = FakeResumeUnitOfWork()
+    gateway = _claiming_reliability()
+    service = _writer(uow, gateway, FakeGapFill((RELIABILITY_GAP, "e1")))
+    resume_id = await _resume(service)
+
+    await service.generate(OWNER, resume_id)
+
+    view = await service.get(OWNER, resume_id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert gateway.inputs[0]["coverage"] == "- gap: Own reliability (answered in [E1])"
+    [row] = view.coverage
+    assert (row.verdict, [a.id for a in row.answers]) == ("gap", ["e1"])
+
+
+async def test_a_gap_nobody_answered_about_cannot_be_claimed() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _writer(uow, _claiming_reliability(), FakeGapFill())
+    resume_id = await _resume(service)
+
+    await service.generate(OWNER, resume_id)
+
+    stored = uow.store.resumes[resume_id]
+    assert (stored.status, stored.error_code) == (ResumeStatus.FAILED, "ai_output_invalid")
 
 
 async def test_showing_a_section_is_an_edit_that_spends_nothing() -> None:

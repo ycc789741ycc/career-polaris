@@ -216,6 +216,7 @@ def service(store: FakeObjectStore, uow: FakeResumeUnitOfWork) -> ResumeService:
         target=FakeTarget(),  # type: ignore[arg-type]
         profile=FakeProfile(),  # type: ignore[arg-type]
         assessment=None,  # type: ignore[arg-type]
+        gapfill=None,  # type: ignore[arg-type]
         gateway=None,  # type: ignore[arg-type]
         object_store=store,  # type: ignore[arg-type]
         template_upload_max_bytes=2_000_000,

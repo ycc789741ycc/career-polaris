@@ -235,6 +235,9 @@ class Coverage:
     verdict: Verdict
     dimension_key: str | None
     evidence_ids: tuple[str, ...]
+    # The evidence the user's answers to this requirement's gap became, in
+    # Fill the gap (ADR 0044). What a gap may be claimed from.
+    answer_ids: tuple[str, ...] = ()
 
 
 def coverage(
@@ -244,19 +247,23 @@ def coverage(
     scores: Mapping[str, int],
     targets: Mapping[str, int],
     evidence: Mapping[str, Sequence[str]],
+    answers: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[Coverage, ...]:
     """Covered, partial or gap for each requirement, with what backs it.
 
     A requirement mapped to one of the user's dimensions is judged by that
     dimension's score against the Target's bar for it. One mapped to nothing —
     or to a dimension the Target sets no bar for — has no evidence to judge by,
-    and is a gap.
+    and is a gap. ``answers`` lists, per requirement, the evidence the user's
+    answers about it became; it changes no verdict.
     """
+    answered = answers or {}
     result = []
     for requirement in requirements:
         key = requirement_map.get(requirement)
+        answer_ids = tuple(answered.get(requirement, ()))
         if key is None or key not in scores or key not in targets:
-            result.append(Coverage(requirement, Verdict.GAP, key, ()))
+            result.append(Coverage(requirement, Verdict.GAP, key, (), answer_ids))
             continue
         delta = scores[key] - targets[key]
         verdict = (
@@ -266,5 +273,40 @@ def coverage(
             if delta > -PARTIAL_WITHIN
             else Verdict.GAP
         )
-        result.append(Coverage(requirement, verdict, key, tuple(evidence.get(key, ()))))
+        result.append(Coverage(requirement, verdict, key, tuple(evidence.get(key, ())), answer_ids))
     return tuple(result)
+
+
+def get_claims_settled(content: ResumeContent, requirements: Iterable[str]) -> ResumeContent:
+    """The content with every line's ``answers`` cleared where it names no
+    requirement of the Target: a misnamed requirement is not an invented
+    claim, and is dropped rather than rejected. Pure."""
+    known = set(requirements)
+    return replace(
+        content,
+        sections=tuple(
+            s.update_bullets(
+                lambda b: b if b.answers is None or b.answers in known else replace(b, answers=None)
+            )
+            for s in content.sections
+        ),
+    )
+
+
+def assert_gap_claims_answered(content: ResumeContent, gaps: Mapping[str, Iterable[str]]) -> None:
+    """A written line claiming a requirement marked gap cites only the
+    evidence the user's answers about that gap became, and at least one of
+    it (ADR 0044). ``gaps`` maps each gap requirement to those ids; a gap
+    nobody answered about maps to none, so nothing may claim it. A line the
+    user wrote is theirs and is not checked."""
+    allowed = {requirement: frozenset(ids) for requirement, ids in gaps.items()}
+    for bullet in content.bullets():
+        if bullet.origin is not Origin.WRITTEN or bullet.answers not in allowed:
+            continue
+        answers = allowed[bullet.answers]
+        if not answers:
+            raise ResumeError(f"a line claims {bullet.answers!r}, a gap nothing was answered about")
+        if not bullet.evidence_ids or not set(bullet.evidence_ids) <= answers:
+            raise ResumeError(
+                f"a line claims the gap {bullet.answers!r} from something other than its answers"
+            )

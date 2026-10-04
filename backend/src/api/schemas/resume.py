@@ -224,6 +224,9 @@ class Coverage(ApiModel):
     requirement: str
     verdict: Literal["covered", "partial", "gap"]
     evidence: list[EvidenceCitation]
+    # What the user answered about this requirement in Fill the gap: what a
+    # gap may be claimed from (ADR 0044). The verdict does not change.
+    answers: list[EvidenceCitation]
 
 
 class EvidenceNote(ApiModel):
@@ -288,6 +291,10 @@ class TailoredResume(ResumeSummary):
                     evidence=[
                         EvidenceCitation(id=e.id, reference=e.reference, fact=e.fact)
                         for e in c.evidence
+                    ],
+                    answers=[
+                        EvidenceCitation(id=a.id, reference=a.reference, fact=a.fact)
+                        for a in c.answers
                     ],
                 )
                 for c in resume.coverage

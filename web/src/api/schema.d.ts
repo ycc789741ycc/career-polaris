@@ -1669,6 +1669,8 @@ export interface components {
         };
         /** Coverage */
         Coverage: {
+            /** Answers */
+            answers: components["schemas"]["EvidenceCitation"][];
             /** Evidence */
             evidence: components["schemas"]["EvidenceCitation"][];
             /** Requirement */
