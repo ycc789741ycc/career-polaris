@@ -589,6 +589,38 @@ describe("résumé screen", () => {
     ).toBe(false);
   });
 
+  it("removes one entry from a section, kept until the version is saved", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    await user.click(
+      within(page).getByRole("button", {
+        name: "Remove Backend Engineer from Experience",
+      }),
+    );
+
+    // Gone from the page, and nothing saved until asked.
+    expect(
+      within(page).queryByText("Owned the retry layer for payments-svc"),
+    ).toBeNull();
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
+    );
+    const body = saved?.body as { content: ResumeContent };
+    expect(experience(body.content).entries).toEqual([]);
+  });
+
   it("saves an edited line as a new version", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"

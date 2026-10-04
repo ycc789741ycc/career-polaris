@@ -3330,3 +3330,9 @@ What gets harder: every family adds about 100 KB to the worker image and the
 SPA, and a family a PDF names is still mapped only by kind when a template is
 read from a file (ADR 0041).
 
+## Remove one entry from a section
+* Each entry on the page — a job under Experience, a repository under Side
+  projects or Open source — has a remove control (×) beside its dates, quiet
+  until the entry is pointed at. It takes the whole entry off the draft; the
+  entry is gone once "Save as vN" saves the version. Nothing prints it.
+
