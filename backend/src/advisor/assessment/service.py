@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -51,8 +51,12 @@ from advisor.assessment.domain import (
 from advisor.profile import (
     CitationError,
     CitationHandles,
+    EvidenceSource,
+    PositionReading,
     ProfileService,
+    TimelineError,
     assert_citations_exist,
+    assert_position_readings_valid,
     get_evidence_line,
 )
 from advisor.rolemap import (
@@ -84,6 +88,13 @@ __all__ = [
 
 log = get_logger(__name__)
 
+_TEMPLATE = ("skill_assessment", "v5")
+# Positions a reply may report; a career longer than this is cut by the model,
+# not here.
+_MAX_POSITIONS = 20
+# Facts that can state a position: a résumé line or an answer (ADR 0045).
+_STATES_POSITIONS = frozenset({EvidenceSource.RESUME, EvidenceSource.USER_ANSWER})
+
 
 # --- AI output schemas -----------------------------------------------------
 
@@ -106,9 +117,20 @@ class _Candidate(BaseModel):
     dimension_ids: list[str] = Field(min_length=1)
 
 
+class _Position(BaseModel):
+    """A position the evidence states, as the analysis read it (ADR 0045)."""
+
+    title: str = Field(min_length=1, max_length=255)
+    company: str = Field(min_length=1, max_length=255)
+    started_on: str = Field(pattern=r"^\d{4}-\d{2}$")
+    ended_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    evidence_ids: list[str] = Field(default_factory=list, max_length=12)
+
+
 class _Assessment(BaseModel):
     dimensions: list[_Dimension] = Field(min_length=MIN_DIMENSIONS, max_length=MAX_DIMENSIONS)
     candidates: list[_Candidate] = Field(default_factory=list)
+    positions: list[_Position] = Field(default_factory=list, max_length=_MAX_POSITIONS)
 
 
 def _assessment_schema(candidate_count: int) -> type[_Assessment]:
@@ -209,14 +231,14 @@ class AssessmentService:
         estimate = await self._gateway.estimate(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v4"),
+            template=load_template(*_TEMPLATE),
             inputs=_assessment_inputs(
                 snapshot,
                 CitationHandles(e.id for e in snapshot.evidence),
                 existing=(),
                 candidate_count=self._candidate_count,
             ),
-            untrusted=frozenset({"evidence", "timeline"}),
+            untrusted=frozenset({"evidence"}),
         )
         # The role map is built after every analysis, so its cost is part of
         # the one confirmation (domain decision 24, ADR 0020), and so are the
@@ -329,7 +351,7 @@ class AssessmentService:
         result = await self._gateway.run(
             owner_id,
             task="assessment.run",
-            template=load_template("skill_assessment", "v4"),
+            template=load_template(*_TEMPLATE),
             inputs=_assessment_inputs(
                 snapshot,
                 handles,
@@ -337,7 +359,7 @@ class AssessmentService:
                 candidate_count=self._candidate_count,
             ),
             output_schema=self._reply,
-            untrusted=frozenset({"evidence", "timeline"}),
+            untrusted=frozenset({"evidence"}),
         )
 
         owned_evidence = await self._profile.evidence_ids(owner_id)
@@ -373,6 +395,11 @@ class AssessmentService:
             raise ValidationError(str(exc)) from exc
 
         candidates = _candidates_from(result.value.candidates, {d.dimension_id for d in dimensions})
+        positions = _positions_from(
+            result.value.positions,
+            handles,
+            citable={str(e.id) for e in snapshot.evidence if e.source in _STATES_POSITIONS},
+        )
 
         assessment_id = await self._store(
             owner_id,
@@ -382,6 +409,9 @@ class AssessmentService:
             model_id=result.model_id,
             template_version=result.template_version,
         )
+        # The timeline is this analysis's reading, replacing the last one's
+        # (ADR 0045); a failed analysis never reaches here and leaves it.
+        await self._profile.replace_positions(owner_id, assessment_id, positions)
         # The role map searches the market for these on the build that follows
         # (ADR 0024); it owns them, so they are handed over, not stored here,
         # with the scores its local fit estimate weighs them by (ADR 0027) and
@@ -593,8 +623,9 @@ def _assessment_inputs(
     existing: tuple[tuple[str, str], ...],
     candidate_count: int,
 ) -> dict[str, str]:
+    # The stored timeline is not given: each analysis reads the positions
+    # from the evidence afresh, rather than confirming the last reading.
     return {
-        "timeline": _timeline_block(snapshot),
         "evidence": _evidence_block(snapshot, handles),
         "existing_dimensions": (
             "\n".join(f"- {key}: {name}" for key, name in existing) or "(none yet)"
@@ -603,17 +634,38 @@ def _assessment_inputs(
     }
 
 
-def _timeline_block(snapshot: Any) -> str:
-    if not snapshot.positions:
-        return "(no positions recorded)"
-    lines = [
-        f"- {p.title} at {p.company}, {p.started_on} to {p.ended_on or 'present'}"
-        for p in snapshot.positions
-    ]
-    lines.append(
-        f"Total experience, overlaps counted once: {snapshot.total_experience_months} months"
-    )
-    return "\n".join(lines)
+def _positions_from(
+    positions: list[_Position], handles: CitationHandles, *, citable: set[str]
+) -> list[PositionReading]:
+    """The positions the reply read, checked (ADR 0045): each cites only the
+    résumé lines and answers that state it, and is dated in the past. Any
+    breach rejects the whole reply, so a bad reading never half-lands."""
+    try:
+        readings = [
+            PositionReading(
+                title=p.title.strip(),
+                company=p.company.strip(),
+                started_on=_month(p.started_on),
+                ended_on=_month(p.ended_on) if p.ended_on else None,
+                evidence_ids=handles.resolve(p.evidence_ids),
+            )
+            for p in positions
+        ]
+        assert_position_readings_valid(readings, citable=citable, as_of=utcnow().date())
+    except CitationError as exc:
+        raise EvidenceNotOwnedError(
+            "the analysis read a position from evidence that is not in your profile",
+            invented=sorted(exc.invented),
+        ) from exc
+    except (TimelineError, ValueError) as exc:
+        raise OutputInvalidError(f"the analysis read a position wrongly: {exc}") from exc
+    return readings
+
+
+def _month(value: str) -> date:
+    """ "YYYY-MM" as the first of that month; a month that is not one fails."""
+    year, month = value.split("-")
+    return date(int(year), int(month), 1)
 
 
 def _evidence_block(snapshot: Any, handles: CitationHandles) -> str:

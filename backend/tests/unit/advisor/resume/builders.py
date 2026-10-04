@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from advisor.resume.domain import Bullet, Entry, ResumeContent, Section, SectionKind
+from advisor.resume.domain import (
+    Bullet,
+    ContactItem,
+    ContactKind,
+    Entry,
+    ResumeContent,
+    Section,
+    SectionKind,
+)
 
 
 def make_content(
@@ -17,7 +25,7 @@ def make_content(
     return ResumeContent(
         name=name,
         headline="Backend Engineer",
-        contact="maya@example.com",
+        contacts=(ContactItem(ContactKind.EMAIL, "maya@example.com"),),
         sections=(
             Section(SectionKind.SUMMARY, text=summary),
             Section(SectionKind.EXPERIENCE, entries=(Entry(title, org, when, "", bullets),)),

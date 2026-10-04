@@ -37,6 +37,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from advisor.assessment import AssessmentService
+from advisor.gapfill import GapAnswerView, GapFillService
 from advisor.profile import (
     CitationError,
     CitationHandles,
@@ -54,6 +55,8 @@ from advisor.resume.domain import (
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
     BuiltInTemplate,
+    ContactItem,
+    ContactKind,
     Coverage,
     CustomTemplate,
     CustomTemplateFilter,
@@ -90,18 +93,27 @@ from advisor.resume.domain import (
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_claims_settled,
+    get_contact_items,
     get_download_name,
+    get_full_plan,
+    get_headings_kept,
     get_planned,
+    get_proposal_layout,
+    get_spec_with_fonts,
     get_template_spec_from_runs,
     mark_edits,
     settle_revision,
 )
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
+    CONTACT_ICONS,
     HEADING_PT_RANGE,
+    MAX_CONTACT,
+    MAX_CONTACTS,
+    MAX_HELD_SECTIONS,
     MAX_LINK,
     MAX_SECTION_TITLE,
-    MAX_SECTIONS,
     MAX_SUMMARY,
     MAX_TEMPLATE_NAME,
     MIN_CONTRAST,
@@ -122,6 +134,8 @@ from advisor.target import (
     TargetRef,
     TargetService,
     TargetSnapshot,
+    gap_key_for_dimension,
+    gap_key_for_uncovered,
     get_target_digest,
     requirements_block,
 )
@@ -165,8 +179,8 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v3")
-_REVISE = ("resume_revise", "v3")
+_WRITE = ("resume_write", "v5")
+_REVISE = ("resume_revise", "v5")
 _SECTION = ("resume_section", "v1")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
@@ -175,6 +189,8 @@ _CONVERSATION_TURNS = 6
 _REVISE_UNTRUSTED = frozenset({"requirements", "resume", "conversation", "request", "evidence"})
 # A custom section's heading is the user's own text.
 _SECTION_UNTRUSTED = frozenset({"requirements", "resume", "evidence", "section"})
+# The accounts are names a person or a provider chose.
+_WRITE_UNTRUSTED = frozenset({"requirements", "evidence", "timeline", "base_resume", "accounts"})
 
 
 # --- AI output schemas -----------------------------------------------------
@@ -202,13 +218,24 @@ class _Section(BaseModel):
     entries: list[_Entry] = Field(default_factory=list, max_length=MAX_ROLES)
     items: list[str] = Field(default_factory=list, max_length=MAX_SKILLS)
     bullets: list[_Bullet] = Field(default_factory=list, max_length=MAX_BULLETS_PER_ROLE)
+    # Only the chat sets it, and only when asked; None keeps the section's
+    # state (ADR 0043).
+    is_shown: bool | None = None
+
+
+class _Contact(BaseModel):
+    kind: ContactKind
+    value: str = Field(min_length=1, max_length=MAX_CONTACT)
 
 
 class _Resume(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     headline: str = Field(default="", max_length=200)
+    # The line as the model writes it, read into typed items (ADR 0048)…
     contact: str = Field(default="", max_length=300)
-    sections: list[_Section] = Field(default_factory=list, max_length=MAX_SECTIONS)
+    # …or, from the chat, the items it was shown, kept or changed.
+    contacts: list[_Contact] | None = Field(default=None, max_length=MAX_CONTACTS)
+    sections: list[_Section] = Field(default_factory=list, max_length=MAX_HELD_SECTIONS)
 
 
 class _Proposal(BaseModel):
@@ -236,6 +263,9 @@ class CoverageView:
     verdict: str
     dimension_key: str | None
     evidence: tuple[EvidenceNote, ...]
+    # What the user answered about this requirement's gap in Fill the gap,
+    # newest first: what a gap may be claimed from (ADR 0044).
+    answers: tuple[EvidenceNote, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +322,9 @@ class ResumeView:
     # The sections every new version is written to, in order (ADR 0039).
     # While one is being filled it is already here, and empty in the content.
     section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
+    # Its own fonts over its template's; None keeps the template's (ADR 0047).
+    heading_font: str | None = None
+    body_font: str | None = None
 
     @property
     def is_outdated(self) -> bool:
@@ -358,6 +391,8 @@ class TemplateLimitsView:
     max_templates: int
     # A PDF a template may start from.
     upload_max_bytes: int
+    # Each contact kind's icon, as the PDF draws it (ADR 0048).
+    contact_icons: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +428,7 @@ class ResumeService:
         target: TargetService,
         profile: ProfileService,
         assessment: AssessmentService,
+        gapfill: GapFillService,
         gateway: AiGateway,
         object_store: ObjectStore,
         template_max: int = 10,
@@ -406,6 +442,7 @@ class ResumeService:
         self._target = target
         self._profile = profile
         self._assessment = assessment
+        self._gapfill = gapfill
         self._gateway = gateway
         self._store = object_store
 
@@ -429,7 +466,7 @@ class ResumeService:
                 base_resume="(read when writing)",
                 plan=DEFAULT_PLAN,
             ),
-            untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
+            untrusted=_WRITE_UNTRUSTED,
         )
         return {
             "cost_usd": str(estimate.cost_usd),
@@ -539,9 +576,10 @@ class ResumeService:
     async def request_section(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
     ) -> ResumeSummaryView:
-        """Add a section to the résumé and record it as being filled; the
-        caller queues ``fill_section``. A section already there, or one the
-        plan has no room for, is refused before anything is spent."""
+        """Show the section, or add one of the user's own, and record it as
+        being filled; the caller queues ``fill_section``. A section that
+        already has lines, or one the plan has no room for, is refused before
+        anything is spent (ADR 0043)."""
         _content, plan, _snapshot = await self._section_context(owner_id, resume_id, slot)
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
@@ -591,7 +629,9 @@ class ResumeService:
             try:
                 resume.update_cancelled(
                     latest_plan=(
-                        ResumeContent.from_dict(latest.content).get_plan() if latest else None
+                        get_full_plan(ResumeContent.from_dict(latest.content).get_plan())
+                        if latest
+                        else None
                     ),
                     at=utcnow(),
                 )
@@ -666,9 +706,9 @@ class ResumeService:
             raise NotFoundError("version not found", number=number)
         content = ResumeContent.from_dict(chosen.content) if chosen else None
         if content is not None and number is None:
-            # The latest, laid out as the plan: a section being filled shows,
-            # empty, where it will go.
-            content = get_planned(content, resume.section_plan)
+            # The latest, laid out as the plan, holding every section: a
+            # section being filled shows, empty, where it will go.
+            content = get_planned(content, get_full_plan(resume.section_plan))
         notes = await self._notes(owner_id, content.cited() if content else set())
         outdated_by = (
             await self._target.get_outdated_reasons(
@@ -692,7 +732,9 @@ class ResumeService:
             versions=tuple(_version_view(v) for v in versions),
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
-            section_plan=resume.section_plan,
+            section_plan=get_full_plan(resume.section_plan),
+            heading_font=resume.heading_font,
+            body_font=resume.body_font,
         )
 
     # -- editing ------------------------------------------------------------
@@ -704,11 +746,20 @@ class ResumeService:
         *,
         template: str,
         options: Options,
+        heading_font: str | None = None,
+        body_font: str | None = None,
     ) -> None:
+        """Its template, options and own fonts, all at once: fonts left out
+        go back to the template's (ADR 0047)."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             built_in, own = await _resolve_template(mine, template)
-            resume.restyle(template=built_in, custom_template_id=own, options=options, at=utcnow())
+            now = utcnow()
+            resume.restyle(template=built_in, custom_template_id=own, options=options, at=now)
+            try:
+                resume.update_fonts(heading_font=heading_font, body_font=body_font, at=now)
+            except TemplateSpecError as exc:
+                raise ValidationError(str(exc)) from exc
             await mine.resumes.update(resume)
 
     async def save_version(
@@ -780,7 +831,7 @@ class ResumeService:
             inputs = {
                 "target": snapshot.label,
                 "requirements": requirements_block(snapshot),
-                "coverage": _coverage_block(coverage_rows),
+                "coverage": _coverage_block(coverage_rows, handles),
                 "resume": json.dumps(shown.to_dict(), ensure_ascii=False),
                 "conversation": "\n".join(
                     f"Person: {r.request}\nYou: {r.reply}" for r in reversed(earlier)
@@ -812,12 +863,20 @@ class ResumeService:
             proposal: ResumeContent | None = None
             if result.value.changed and result.value.resume is not None:
                 message = "the proposed revision cited evidence that is not yours"
+                written = result.value.resume
                 try:
                     proposal = settle_revision(
-                        current, _content_of(result.value.resume), handles.resolve
+                        current,
+                        get_proposal_layout(
+                            current,
+                            _content_of(written),
+                            [s.is_shown for s in written.sections],
+                        ),
+                        handles.resolve,
                     )
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
+                proposal = _claims_settled(proposal, coverage_rows, resume_id=resume_id)
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
@@ -902,6 +961,7 @@ class ResumeService:
             max_name=MAX_TEMPLATE_NAME,
             max_templates=self._template_max,
             upload_max_bytes=self._upload_max_bytes,
+            contact_icons=dict(CONTACT_ICONS),
         )
 
     async def create_template(
@@ -1152,12 +1212,16 @@ class ResumeService:
         options: Options,
     ) -> None:
         snapshot = await self._target.snapshot(owner_id, ref)
-        coverage_rows = await self._coverage(owner_id, snapshot)
+        coverage_rows = await self._coverage(owner_id, snapshot, ref)
         base = await self._profile.base_resume_text(owner_id)
         profile = await self._profile.snapshot(owner_id)
         handles = CitationHandles(e.id for e in profile.evidence)
         async with self._uow.for_owner(owner_id) as mine:
-            plan = (await _owned(mine, resume_id)).section_plan
+            # Every section, shown or not; one written before a résumé held
+            # them all takes the kinds it lacks, hidden (ADR 0043).
+            plan = get_full_plan((await _owned(mine, resume_id)).section_plan)
+            latest = await _latest_version(mine, resume_id)
+        previous = ResumeContent.from_dict(latest.content) if latest else None
         result = await self._gateway.run(
             owner_id,
             on_progress=self._writing(owner_id, resume_id),
@@ -1174,15 +1238,19 @@ class ResumeService:
                 plan=plan,
             ),
             output_schema=_Resume,
-            untrusted=frozenset({"requirements", "evidence", "timeline", "base_resume"}),
+            untrusted=_WRITE_UNTRUSTED,
         )
         await self._advance(owner_id, resume_id, ResumeStage.CHECKING)
         message = "the résumé cited evidence that is not yours"
         try:
-            # Written to the plan: its sections, in its order, and no others.
-            content = get_planned(_content_of(result.value), plan).with_citations(handles.resolve)
+            # Written to the plan: its sections, in its order, each shown or
+            # hidden as it was, and no others.
+            content = get_headings_kept(
+                get_planned(_content_of(result.value), plan), previous
+            ).with_citations(handles.resolve)
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
+        content = _claims_settled(content, coverage_rows, resume_id=resume_id)
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1223,8 +1291,11 @@ class ResumeService:
     async def _section_context(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, slot: SectionSlot
     ) -> tuple[ResumeContent, tuple[SectionSlot, ...], TargetSnapshot]:
-        """The résumé as it stands, the plan with ``slot`` added at its end,
-        and the Target. Refuses a section the résumé cannot take."""
+        """The résumé as it stands, the plan with ``slot`` shown — in its
+        place, or added at the end — and the Target. Only an empty section is
+        filled: one written since ADR 0043 that the evidence left empty, one
+        of an older résumé, or a new one of the user's own. Refuses a section
+        the résumé cannot take."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             latest = await _latest_version(mine, resume_id)
@@ -1233,9 +1304,15 @@ class ResumeService:
                 "this résumé is not ready to take a section", resume_id=str(resume_id)
             )
         content = ResumeContent.from_dict(latest.content)
-        if slot in content.get_plan():
-            raise ValidationError("the résumé already has that section")
-        plan = (*content.get_plan(), slot)
+        held = get_full_plan(content.get_plan())
+        existing = content.get_section(slot)
+        if existing is not None and not existing.is_empty:
+            raise ValidationError("that section already has lines: show it, or edit it in place")
+        plan = (
+            tuple(s.update_shown(True) if s == slot else s for s in held)
+            if slot in held
+            else (*held, slot.update_shown(True))
+        )
         try:
             assert_plan_valid(plan)
         except ResumeError as exc:
@@ -1274,8 +1351,10 @@ class ResumeService:
         if written.kind is not slot.kind:
             raise OutputInvalidError("the reply wrote a different section than was asked for")
         try:
-            # The slot's own heading, whatever the reply called it.
-            written = replace(written, title=slot.title).update_bullets(
+            # The slot's own heading, or the one the user renamed it to.
+            kept = current.get_section(slot)
+            heading = slot.title or (kept.title if kept else None)
+            written = replace(written, title=heading, is_shown=True).update_bullets(
                 lambda b: replace(b, evidence_ids=handles.resolve(b.evidence_ids))
             )
         except CitationError as exc:
@@ -1284,6 +1363,8 @@ class ResumeService:
             current,
             sections=tuple(written if s.slot == slot else s for s in current.sections),
         )
+        rows = [_coverage_view(c) for c in resume.coverage]
+        content = _claims_settled(content, rows, resume_id=resume_id)
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1297,7 +1378,7 @@ class ResumeService:
             content=content,
             source=VersionSource.GENERATED,
             while_busy=True,
-            label=f"{resume.target_label} — {written.heading} added"[:200],
+            label=f"{resume.target_label} — {written.heading} filled"[:200],
             model_id=result.model_id,
             template_version=result.template_version,
         )
@@ -1352,18 +1433,23 @@ class ResumeService:
                 await mine.resumes.update(resume)
 
     async def _coverage(
-        self, owner_id: uuid.UUID, snapshot: TargetSnapshot
+        self, owner_id: uuid.UUID, snapshot: TargetSnapshot, ref: TargetRef
     ) -> tuple[CoverageView, ...]:
         assessment = await self._assessment.latest(owner_id)
         dimensions = assessment.dimensions if assessment else ()
+        requirements = [r.statement for r in snapshot.requirements]
+        answers = await self._gapfill.get_answers(owner_id, ref)
         rows = coverage(
-            requirements=[r.statement for r in snapshot.requirements],
+            requirements=requirements,
             requirement_map=snapshot.requirement_map,
             scores={d.key: d.score for d in dimensions},
             targets={d.dimension_key: d.target_score for d in snapshot.dimensions},
             evidence={d.key: d.evidence_ids for d in dimensions},
+            answers=_answers_by_requirement(requirements, snapshot.requirement_map, answers),
         )
-        notes = await self._notes(owner_id, {i for row in rows for i in row.evidence_ids})
+        notes = await self._notes(
+            owner_id, {i for row in rows for i in (*row.evidence_ids, *row.answer_ids)}
+        )
         return tuple(_coverage_row(row, notes) for row in rows)
 
     async def _assert_owned(
@@ -1422,8 +1508,9 @@ class ResumeService:
             )
             resume.touched(now)
             # Every version is written to the plan, or changes it: a section
-            # added, removed or moved, by hand or in the chat (ADR 0039).
-            resume.update_plan(content.get_plan(), at=now)
+            # shown, hidden, added, removed or moved, by hand or in the chat
+            # (ADR 0039). The plan holds every built-in kind (ADR 0043).
+            resume.update_plan(get_full_plan(content.get_plan()), at=now)
             await mine.resumes.update(resume)
             mine.record(
                 ResumeVersionSaved(
@@ -1471,13 +1558,19 @@ def _content_of(model: _Resume) -> ResumeContent:
     return ResumeContent(
         name=model.name,
         headline=model.headline,
-        contact=model.contact,
+        contacts=(
+            tuple(ContactItem(c.kind, c.value) for c in model.contacts)
+            if model.contacts is not None
+            else get_contact_items(model.contact)
+        ),
         sections=tuple(_section_of(s) for s in model.sections),
     )
 
 
 def _section_of(model: _Section) -> Section:
     data = model.model_dump(mode="json")
+    # Laid out by the plan, or by the chat's proposal, once read.
+    data["is_shown"] = True
     for line in (*data["bullets"], *(b for e in data["entries"] for b in e["bullets"])):
         # The model writes; it does not get to say otherwise.
         line["origin"] = str(Origin.WRITTEN)
@@ -1485,7 +1578,8 @@ def _section_of(model: _Section) -> Section:
 
 
 def _plan_lines(plan: tuple[SectionSlot, ...]) -> str:
-    """The sections to write, in order, as the prompts name them."""
+    """The sections to write, in order, as the prompts name them: all of
+    them, shown or not, since a hidden one may be shown later."""
     return "\n".join(f"- {slot.kind}" + (f": {slot.title}" if slot.title else "") for slot in plan)
 
 
@@ -1516,10 +1610,11 @@ def _write_inputs(
         f"- {p.title} at {p.company}, {p.started_on} to {p.ended_on or 'present'}"
         for p in profile.positions
     )
+    accounts = "\n".join(f"- {a.source}: {a.account}" for a in profile.accounts)
     return {
         "target": label,
         "requirements": requirements,
-        "coverage": _coverage_block(coverage_rows) or "(worked out when writing)",
+        "coverage": _coverage_block(coverage_rows, handles) or "(worked out when writing)",
         "options": "\n".join(
             line
             for line, wanted in (
@@ -1531,6 +1626,7 @@ def _write_inputs(
         )
         or "- No special instructions.",
         "timeline": timeline or "(no positions recorded)",
+        "accounts": accounts or "(none connected)",
         "base_resume": base_resume,
         "sections": _plan_lines(plan),
         "evidence": _evidence_block(profile.evidence, handles),
@@ -1561,13 +1657,63 @@ def _evidence_block(evidence: Any, handles: CitationHandles) -> str:
     )
 
 
+def _answers_by_requirement(
+    requirements: list[str],
+    requirement_map: dict[str, str | None],
+    answers: tuple[GapAnswerView, ...],
+) -> dict[str, list[str]]:
+    """The evidence each requirement's answers became, newest first. A
+    requirement's gap is keyed by its dimension or, uncovered, by its
+    statement; the answers under either key are its own (ADR 0044)."""
+    by_gap: dict[str, list[str]] = {}
+    for answer in answers:
+        by_gap.setdefault(answer.gap_key, []).append(str(answer.evidence_id))
+    result: dict[str, list[str]] = {}
+    for requirement in requirements:
+        dimension = requirement_map.get(requirement)
+        keys = [gap_key_for_uncovered(requirement)]
+        if dimension is not None:
+            keys.insert(0, gap_key_for_dimension(dimension))
+        ids = list(dict.fromkeys(i for key in keys for i in by_gap.get(key, [])))
+        if ids:
+            result[requirement] = ids
+    return result
+
+
+def _claims_settled(
+    content: ResumeContent,
+    rows: tuple[CoverageView, ...] | list[CoverageView],
+    *,
+    resume_id: uuid.UUID,
+) -> ResumeContent:
+    """The content with every claim nothing backs dropped (ADR 0046), and how
+    many were, logged: a claim the model made that the answers could not
+    carry is worth knowing about, but not worth the user's whole write."""
+    settled = get_claims_settled(
+        content,
+        (r.requirement for r in rows),
+        {r.requirement: [a.id for a in r.answers] for r in rows if r.verdict == "gap"},
+    )
+    dropped = sum(1 for b in content.bullets() if b.answers is not None) - sum(
+        1 for b in settled.bullets() if b.answers is not None
+    )
+    if dropped:
+        log.info("resume.claims_dropped", resume_id=str(resume_id), count=dropped)
+    return settled
+
+
 def _coverage_row(row: Coverage, notes: dict[str, EvidenceNote]) -> CoverageView:
     return CoverageView(
         requirement=row.requirement,
         verdict=str(row.verdict),
         dimension_key=row.dimension_key,
         evidence=tuple(notes[i] for i in row.evidence_ids if i in notes),
+        answers=tuple(notes[i] for i in row.answer_ids if i in notes),
     )
+
+
+def _note_dict(note: EvidenceNote) -> dict[str, str]:
+    return {"id": note.id, "reference": note.reference, "fact": note.fact}
 
 
 def _coverage_dict(row: CoverageView) -> dict[str, Any]:
@@ -1575,7 +1721,8 @@ def _coverage_dict(row: CoverageView) -> dict[str, Any]:
         "requirement": row.requirement,
         "verdict": row.verdict,
         "dimension_key": row.dimension_key,
-        "evidence": [{"id": e.id, "reference": e.reference, "fact": e.fact} for e in row.evidence],
+        "evidence": [_note_dict(e) for e in row.evidence],
+        "answers": [_note_dict(a) for a in row.answers],
     }
 
 
@@ -1585,11 +1732,24 @@ def _coverage_view(data: dict[str, Any]) -> CoverageView:
         verdict=data["verdict"],
         dimension_key=data.get("dimension_key"),
         evidence=tuple(EvidenceNote(**e) for e in data.get("evidence", [])),
+        # Rows stored before ADR 0044 have none.
+        answers=tuple(EvidenceNote(**a) for a in data.get("answers", [])),
     )
 
 
-def _coverage_block(rows: tuple[CoverageView, ...] | list[CoverageView]) -> str:
-    return "\n".join(f"- {row.verdict}: {row.requirement}" for row in rows)
+def _coverage_block(
+    rows: tuple[CoverageView, ...] | list[CoverageView], handles: CitationHandles
+) -> str:
+    """One line per requirement, with the handles of what the user answered
+    about it: "- gap: Runs Kubernetes (answered in [E41], [E42])"."""
+
+    def answered(row: CoverageView) -> str:
+        # An answer whose evidence is gone since has no handle to cite.
+        given = (handles.handle(a.id) for a in row.answers)
+        cited = [f"[{h}]" for h, a in zip(given, row.answers, strict=True) if h != a.id]
+        return f" (answered in {', '.join(cited)})" if cited else ""
+
+    return "\n".join(f"- {row.verdict}: {row.requirement}{answered(row)}" for row in rows)
 
 
 def _summary(resume: TailoredResume, *, latest_version: int | None) -> ResumeSummaryView:
@@ -1705,9 +1865,12 @@ async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomT
 
 
 async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
+    """The look the résumé is set in: its template's, in its own fonts."""
     if resume.custom_template_id is not None:
-        return (await _owned_template(mine, resume.custom_template_id)).spec
-    return BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
+        spec = (await _owned_template(mine, resume.custom_template_id)).spec
+    else:
+        spec = BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
+    return get_spec_with_fonts(spec, resume.heading_font, resume.body_font)
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:

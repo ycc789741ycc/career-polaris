@@ -28,6 +28,7 @@ const limits: ResumeTemplateLimits = {
   max_name: 60,
   max_templates: 10,
   upload_max_bytes: 5_242_880,
+  contact_icons: {},
 };
 
 describe("a template's checks, before the server's", () => {

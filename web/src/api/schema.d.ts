@@ -1669,6 +1669,8 @@ export interface components {
         };
         /** Coverage */
         Coverage: {
+            /** Answers */
+            answers: components["schemas"]["EvidenceCitation"][];
             /** Evidence */
             evidence: components["schemas"]["EvidenceCitation"][];
             /** Requirement */
@@ -2357,10 +2359,23 @@ export interface components {
             /** Text */
             text: string;
         };
+        /**
+         * ResumeContact
+         * @description One contact detail, drawn with its kind's icon (ADR 0048).
+         */
+        ResumeContact: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "github" | "linkedin" | "website" | "location";
+            /** Value */
+            value: string;
+        };
         /** ResumeContent */
         ResumeContent: {
-            /** Contact */
-            contact: string;
+            /** Contacts */
+            contacts: components["schemas"]["ResumeContact"][];
             /** Headline */
             headline: string;
             /** Name */
@@ -2469,6 +2484,8 @@ export interface components {
             bullets: components["schemas"]["ResumeBullet"][];
             /** Entries */
             entries: components["schemas"]["ResumeEntry"][];
+            /** Is Shown */
+            is_shown: boolean;
             /** Items */
             items: string[];
             /**
@@ -2483,6 +2500,8 @@ export interface components {
         };
         /** ResumeSectionSlot */
         ResumeSectionSlot: {
+            /** Is Shown */
+            is_shown: boolean;
             /**
              * Kind
              * @enum {string}
@@ -2590,6 +2609,10 @@ export interface components {
                 number,
                 number
             ];
+            /** Contact Icons */
+            contact_icons: {
+                [key: string]: string;
+            };
             /** Fonts */
             fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono")[];
             /** Heading Pt Range */
@@ -2856,7 +2879,8 @@ export interface components {
         SectionKind: "summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom";
         /**
          * SectionRequest
-         * @description A section to add to the résumé, filled from the sources (ADR 0039).
+         * @description A section to fill from the sources: an empty one the résumé holds,
+         *     shown once filled, or a new one of the user's own (ADR 0039, ADR 0043).
          */
         SectionRequest: {
             kind: components["schemas"]["SectionKind"];
@@ -2883,6 +2907,10 @@ export interface components {
         };
         /** SettingsRequest */
         SettingsRequest: {
+            /** Body Font */
+            body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
+            /** Heading Font */
+            heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             options: components["schemas"]["OptionsBody"];
             /** Template */
             template: string;
@@ -2940,6 +2968,8 @@ export interface components {
         };
         /** TailoredResume */
         TailoredResume: {
+            /** Body Font */
+            body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             content: components["schemas"]["ResumeContent"] | null;
             /** Coverage */
             coverage: components["schemas"]["Coverage"][];
@@ -2950,6 +2980,8 @@ export interface components {
             evidence: {
                 [key: string]: components["schemas"]["EvidenceNote"];
             };
+            /** Heading Font */
+            heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono") | null;
             /**
              * Id
              * Format: uuid

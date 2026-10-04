@@ -81,6 +81,7 @@ class FakeResumes:
             target=None,  # type: ignore[arg-type]
             profile=None,  # type: ignore[arg-type]
             assessment=None,  # type: ignore[arg-type]
+            gapfill=None,  # type: ignore[arg-type]
             gateway=None,  # type: ignore[arg-type]
             object_store=None,  # type: ignore[arg-type]
         )
@@ -267,6 +268,7 @@ def test_the_chat_streams_text_then_one_proposal(client: TestClient) -> None:
         "entries": [],
         "items": [],
         "bullets": [],
+        "is_shown": True,
     }
 
 

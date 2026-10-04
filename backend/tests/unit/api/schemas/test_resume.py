@@ -29,7 +29,7 @@ from advisor.resume.domain.content import VersionSource
 from advisor.resume.service import EvidenceNote
 from advisor.target import OutdatedReason, TargetRef
 from api.schemas.resume import ResumeContent as ContentBody
-from api.schemas.resume import ResumeExport, TailoredResume, revision_event
+from api.schemas.resume import ResumeExport, SettingsRequest, TailoredResume, revision_event
 from tests.unit.advisor.resume.builders import make_content
 
 AT = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
@@ -107,6 +107,7 @@ def test_a_tailored_resume_carries_its_summary_and_its_content() -> None:
             "requirement": "Runs Kubernetes in production",
             "verdict": "covered",
             "evidence": [{"id": "e1", "reference": "PR #12", "fact": "Migrated to EKS"}],
+            "answers": [],
         }
     ]
     assert body["version"]["source"] == "chat"
@@ -171,3 +172,14 @@ def test_each_chat_event_has_its_name_and_a_json_body() -> None:
     failed = revision_event(RevisionFailed("ai_output_invalid", "rejected"))
     assert failed["event"] == "error"
     assert json.loads(failed["data"]) == {"code": "ai_output_invalid", "message": "rejected"}
+
+
+def test_settings_take_the_resumes_own_fonts_from_the_ones_it_can_set() -> None:
+    """ADR 0047: null, or left out, keeps the template's; anything else is a
+    422 before the service sees it."""
+    body = {"template": "organic", "options": {"metrics": True, "reorder": True, "trim": False}}
+    assert SettingsRequest.model_validate(body).heading_font is None
+    chosen = SettingsRequest.model_validate({**body, "heading_font": "DejaVu Serif"})
+    assert chosen.heading_font == "DejaVu Serif"
+    with pytest.raises(ValidationError):
+        SettingsRequest.model_validate({**body, "body_font": "Comic Sans"})

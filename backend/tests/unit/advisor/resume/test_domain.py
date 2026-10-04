@@ -21,6 +21,7 @@ from advisor.resume.domain import (
     assert_written_lines_cited,
     coverage,
     get_built_in_spec,
+    get_claims_settled,
     get_download_name,
     mark_edits,
     settle_revision,
@@ -145,6 +146,66 @@ def test_fourteen_short_is_no_longer_partial() -> None:
         evidence={},
     )
     assert row.verdict is Verdict.GAP
+
+
+def test_coverage_lists_the_answers_about_each_requirement_and_keeps_its_verdict() -> None:
+    rows = coverage(
+        requirements=["Leads", "Org influence", "Ships"],
+        requirement_map={"Leads": "lead", "Org influence": None, "Ships": "ship"},
+        scores={"lead": 50, "ship": 90},
+        targets={"lead": 80, "ship": 70},
+        evidence={"ship": ["e1"]},
+        answers={"Leads": ["a1"], "Org influence": ["a2", "a3"]},
+    )
+
+    assert [(r.verdict, r.answer_ids) for r in rows] == [
+        (Verdict.GAP, ("a1",)),
+        (Verdict.GAP, ("a2", "a3")),
+        (Verdict.COVERED, ()),
+    ]
+
+
+GAPS = {"Org influence": ["a1"], "Kubernetes": []}
+
+
+def _claiming(requirement: str, *cited: str, origin: Origin = Origin.WRITTEN) -> ResumeContent:
+    return make_content(Bullet("Wrote the RFC two teams built on", cited, origin, requirement))
+
+
+def _claim(content: ResumeContent) -> str | None:
+    return get_lines(content)[0].answers
+
+
+REQUIREMENTS = ["Org influence", "Kubernetes", "Ships"]
+
+
+def test_a_gap_is_claimed_from_its_own_answers_alone() -> None:
+    kept = get_claims_settled(_claiming("Org influence", "a1"), REQUIREMENTS, GAPS)
+    assert _claim(kept) == "Org influence"
+    for cited in (("a1", "e1"), ("e1",), ()):
+        dropped = get_claims_settled(_claiming("Org influence", *cited), REQUIREMENTS, GAPS)
+        # The line stays, cited as it was; only the claim goes (ADR 0046).
+        assert _claim(dropped) is None
+        assert get_lines(dropped)[0].evidence_ids == cited
+
+
+def test_a_gap_nobody_answered_about_is_not_claimed() -> None:
+    settled = get_claims_settled(_claiming("Kubernetes", "e1"), REQUIREMENTS, GAPS)
+
+    assert _claim(settled) is None
+    assert get_lines(settled)[0].text == "Wrote the RFC two teams built on"
+
+
+def test_a_covered_requirement_and_the_users_own_line_keep_their_claims() -> None:
+    assert _claim(get_claims_settled(_claiming("Ships", "e1"), REQUIREMENTS, GAPS)) == "Ships"
+    own = _claiming("Kubernetes", origin=Origin.YOURS)
+    assert _claim(get_claims_settled(own, REQUIREMENTS, GAPS)) == "Kubernetes"
+
+
+def test_a_claim_naming_no_requirement_is_dropped() -> None:
+    settled = get_claims_settled(_claiming("Something else", "e1"), REQUIREMENTS, GAPS)
+
+    assert _claim(settled) is None
 
 
 # -- export ---------------------------------------------------------------

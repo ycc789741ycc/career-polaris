@@ -58,6 +58,10 @@ class ResumeRequest(TargetFields):
 class SettingsRequest(RequestModel):
     template: TemplateId
     options: OptionsBody
+    # The résumé's own fonts over its template's; null, or left out, keeps the
+    # template's (ADR 0047).
+    heading_font: FontName | None = None
+    body_font: FontName | None = None
 
 
 class VersionRequest(RequestModel):
@@ -76,7 +80,8 @@ class ExportRequest(RequestModel):
 
 
 class SectionRequest(RequestModel):
-    """A section to add to the résumé, filled from the sources (ADR 0039)."""
+    """A section to fill from the sources: an empty one the résumé holds,
+    shown once filled, or a new one of the user's own (ADR 0039, ADR 0043)."""
 
     kind: SectionKind
     # A section of the user's own needs its heading; no other kind takes one.
@@ -125,24 +130,39 @@ class ResumeSection(ApiModel):
     ``items`` for skills and certifications, ``bullets`` for a custom one."""
 
     kind: SectionKindName
-    # A custom section's heading; null for every other kind.
+    # The heading the user gave it: a custom section's own, or one renaming a
+    # built-in kind. Null keeps the kind's heading.
     title: str | None
     text: str
     entries: list[ResumeEntry]
     items: list[str]
     bullets: list[ResumeBullet]
+    # A hidden section is kept and written like the rest, and never printed
+    # (ADR 0043). Experience is always shown.
+    is_shown: bool
 
 
 class ResumeSectionSlot(ApiModel):
     kind: SectionKindName
     title: str | None
+    is_shown: bool
+
+
+ContactKindName = Literal["email", "phone", "github", "linkedin", "website", "location"]
+
+
+class ResumeContact(ApiModel):
+    """One contact detail, drawn with its kind's icon (ADR 0048)."""
+
+    kind: ContactKindName
+    value: str
 
 
 class ResumeContent(ApiModel):
     name: str
     headline: str
-    contact: str
-    # In order (ADR 0039).
+    contacts: list[ResumeContact]
+    # Every section, in order, shown or hidden (ADR 0039, ADR 0043).
     sections: list[ResumeSection]
 
     @classmethod
@@ -219,6 +239,9 @@ class Coverage(ApiModel):
     requirement: str
     verdict: Literal["covered", "partial", "gap"]
     evidence: list[EvidenceCitation]
+    # What the user answered about this requirement in Fill the gap: what a
+    # gap may be claimed from (ADR 0044). The verdict does not change.
+    answers: list[EvidenceCitation]
 
 
 class EvidenceNote(ApiModel):
@@ -253,6 +276,9 @@ class TailoredResume(ResumeSummary):
     outdated_by: list[OutdatedReasonName]
     # The sections every new version is written to, in order (ADR 0039).
     section_plan: list[ResumeSectionSlot]
+    # Its own fonts over its template's; null keeps the template's (ADR 0047).
+    heading_font: FontName | None
+    body_font: FontName | None
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
@@ -284,6 +310,10 @@ class TailoredResume(ResumeSummary):
                         EvidenceCitation(id=e.id, reference=e.reference, fact=e.fact)
                         for e in c.evidence
                     ],
+                    answers=[
+                        EvidenceCitation(id=a.id, reference=a.reference, fact=a.fact)
+                        for a in c.answers
+                    ],
                 )
                 for c in resume.coverage
             ],
@@ -308,9 +338,11 @@ class TailoredResume(ResumeSummary):
             is_outdated=resume.is_outdated,
             outdated_by=[str(r) for r in resume.outdated_by],
             section_plan=[
-                ResumeSectionSlot(kind=str(slot.kind), title=slot.title)
+                ResumeSectionSlot(kind=str(slot.kind), title=slot.title, is_shown=slot.is_shown)
                 for slot in resume.section_plan
             ],
+            heading_font=resume.heading_font,
+            body_font=resume.body_font,
         )
 
 
@@ -483,6 +515,9 @@ class ResumeTemplateLimits(ApiModel):
     max_templates: int
     # The largest PDF a template may start from (ADR 0041).
     upload_max_bytes: int
+    # Each contact kind's icon: the path of a 24-unit square SVG, as the PDF
+    # draws it (ADR 0048).
+    contact_icons: dict[ContactKindName, str]
 
     @classmethod
     def from_view(cls, limits: TemplateLimitsView) -> ResumeTemplateLimits:
@@ -497,6 +532,7 @@ class ResumeTemplateLimits(ApiModel):
                 "max_name": limits.max_name,
                 "max_templates": limits.max_templates,
                 "upload_max_bytes": limits.upload_max_bytes,
+                "contact_icons": limits.contact_icons,
             }
         )
 

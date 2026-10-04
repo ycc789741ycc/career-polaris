@@ -632,3 +632,49 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   Sections and Revise with AI on the left; the page with "Save as vN" in the
   middle; the requirements on the right — stacking page first when narrow,
   and "Regenerate résumé" with its last-generated line on the Write-for card.
+
+## Phase 10 scope
+
+A tailored résumé is written from the user's sources, whether or not they
+uploaded one (`docs/plan.md`), one branch per step under
+`epic/no-ticket/phase-10`:
+
+- **Every section, written at once from the sources** (ADR 0043). A résumé
+  holds every built-in kind (`DEFAULT_PLAN`, `get_full_plan`), each with
+  `is_shown` on its `Section` and its `SectionSlot` (which compares without
+  it). Summary, experience and skills start shown (`DEFAULT_SHOWN`), the rest
+  hidden; Experience is always shown, and `MAX_SECTIONS` limits only what is
+  shown. Generate writes them all (`resume_write` v4, given the connected
+  accounts as `ProfileSnapshot.accounts`): without a timeline or an uploaded
+  résumé, Experience is one entry per place the work was done, never an
+  invented title, and repositories split into experience, open source and
+  side projects. Show and Hide are free edits saved as versions; only shown
+  sections print (`ResumeContent.get_shown`). `resume_revise` v4 keeps a
+  section's state unless asked (`get_proposal_layout`). "Fill from your
+  sources" (`POST /tailored-resumes/{id}/sections`, priced) fills an empty
+  section or a new one of the user's own. Migration 0039.
+- **A résumé cites what you answered** (ADR 0044). `ResumeService` reads
+  `gapfill.get_answers`; each coverage row carries the answers to its gap
+  (`dim:` or `req:` key, `target.gap_key_for_*`), stored on the résumé and
+  listed in the prompts as "answered in [E41]". `resume_write` and
+  `resume_revise` are v5: a gap may be claimed only from its own answers.
+  Every write, proposal and filled section runs `get_claims_settled`, which
+  drops a claim (`answers`) that names no requirement or a gap its citations
+  do not rest on alone, keeping the line (ADR 0046). The verdict stays a gap;
+  the requirements panel says "Answered by you".
+- **Record the career timeline** (ADR 0045). `skill_assessment` v5 reports
+  the `positions` résumé lines and answers state, and is no longer given the
+  stored timeline. They are checked (`profile.assert_position_readings_valid`:
+  cites only `resume` or `user_answer` evidence, dated in the past) before
+  anything is stored, then `ProfileService.replace_positions` replaces the
+  timeline with them, citing `evidence_ids` and the `skill_assessment_id`.
+  No profile version moves. Migration 0040.
+- **Found while testing Phase 10.** The left column takes a share of a wide
+  screen and the layout stacks below 1240px. Headline, contact, section
+  headings (a built-in section may take its own `title`, kept through
+  `get_headings_kept`), entry fields and list items are edited in place. A
+  résumé may set its own `heading_font` and `body_font` over its template's
+  (ADR 0047, `get_spec_with_fonts`, migration 0041), from the Template panel.
+  Contact details are typed `ContactItem`s (ADR 0048, migration 0042), read
+  from the model's line by `get_contact_items` and drawn with the inline SVG
+  icons in `CONTACT_ICONS`, which `GET /resume-templates/limits` also serves.

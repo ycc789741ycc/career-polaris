@@ -9,9 +9,16 @@ from typing import Any
 
 import pytest
 
-from advisor.profile import AnswerRecord, EvidenceSource, ProfileService, get_evidence_line
+from advisor.profile import (
+    AnswerRecord,
+    EvidenceSource,
+    PositionReading,
+    ProfileService,
+    get_evidence_line,
+)
 from advisor.profile.domain import (
     CareerPosition,
+    CareerPositionFilter,
     ConnectionStatus,
     EvidenceGranularity,
     ProfileUpdated,
@@ -585,6 +592,32 @@ async def test_the_snapshot_lists_facts_newest_first_and_totals_the_timeline() -
     ]
     assert snapshot.version == 2
     assert snapshot.total_experience_months == 24
+
+
+async def test_an_analysis_replaces_the_timeline_and_moves_no_version() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow)
+    await profile.record_answer(OWNER, question_id="q1", question="Q?", answer="A.")
+    before = await profile.version(OWNER)
+    first = uuid.uuid4()
+    await profile.replace_positions(
+        OWNER, first, [PositionReading("Engineer", "Acme", date(2019, 1, 1), None, ("a1",))]
+    )
+    second = uuid.uuid4()
+
+    await profile.replace_positions(
+        OWNER,
+        second,
+        [PositionReading("Staff Engineer", "Kestrel", date(2022, 1, 1), None, ("a1",))],
+    )
+
+    snapshot = await profile.snapshot(OWNER)
+    assert [(p.title, p.company) for p in snapshot.positions] == [("Staff Engineer", "Kestrel")]
+    async with uow.for_owner(OWNER) as mine:
+        [stored] = await mine.positions.get_list(CareerPositionFilter())
+    assert (stored.skill_assessment_id, stored.evidence_ids) == (second, ("a1",))
+    assert await profile.version(OWNER) == before
+    assert (await profile.snapshot(OTHER)).positions == ()
 
 
 async def test_a_resume_line_is_dated_by_the_upload_it_was_last_found_in() -> None:

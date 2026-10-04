@@ -30,7 +30,10 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from advisor.resume.domain.constants import TEMPLATE_FONTS
 from kernel.db.base import Base, OwnedMixin, new_id
+
+_FONTS = ", ".join(f"'{font}'" for font in TEMPLATE_FONTS)
 
 
 class Resume(Base, OwnedMixin):
@@ -42,6 +45,11 @@ class Resume(Base, OwnedMixin):
         CheckConstraint("template IN ('organic', 'plain')", name="template"),
         # A built-in template, or one of the user's own: exactly one (ADR 0040).
         CheckConstraint("num_nonnulls(template, custom_template_id) = 1", name="look"),
+        # Its own fonts, one of TEMPLATE_FONTS each, or none (ADR 0047).
+        *(
+            CheckConstraint(f"{column} IS NULL OR {column} IN ({_FONTS})", name=column)
+            for column in ("heading_font", "body_font")
+        ),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
         {"schema": "resume"},
@@ -81,20 +89,30 @@ class Resume(Base, OwnedMixin):
     # first write, and on résumés written before they were recorded.
     profile_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # The sections every new version is written to, in order: [{kind, title}]
-    # (ADR 0039).
+    # The sections every new version is written to, in order, each shown or
+    # hidden: [{kind, title, is_shown}] (ADR 0039, ADR 0043).
     section_plan: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=sql_text(
-            """'[{"kind": "summary", "title": null}, {"kind": "experience", "title": null},"""
-            """ {"kind": "skills", "title": null}]'::jsonb"""
+            """'[{"kind": "summary", "title": null, "is_shown": true},"""
+            """ {"kind": "experience", "title": null, "is_shown": true},"""
+            """ {"kind": "skills", "title": null, "is_shown": true},"""
+            """ {"kind": "side_projects", "title": null, "is_shown": false},"""
+            """ {"kind": "open_source", "title": null, "is_shown": false},"""
+            """ {"kind": "education", "title": null, "is_shown": false},"""
+            """ {"kind": "talks_and_writing", "title": null, "is_shown": false},"""
+            """ {"kind": "certifications", "title": null, "is_shown": false}]'::jsonb"""
         ),
     )
     # Where the job running on it has got (ADR 0042).
     stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
     progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    # The résumé's own fonts over its template's (ADR 0047); null keeps the
+    # template's.
+    heading_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    body_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class ResumeVersion(Base, OwnedMixin):

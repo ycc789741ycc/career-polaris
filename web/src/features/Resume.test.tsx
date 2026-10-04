@@ -44,6 +44,7 @@ function section(
     entries: [],
     items: [],
     bullets: [],
+    is_shown: true,
     ...fields,
   };
 }
@@ -89,14 +90,32 @@ const resume: TailoredResume = {
       evidence: [
         { id: "e1", reference: "GitHub · 38 PRs", fact: "payments-svc" },
       ],
+      answers: [],
     },
-    { requirement: "Kubernetes in production", verdict: "gap", evidence: [] },
+    {
+      requirement: "Kubernetes in production",
+      verdict: "gap",
+      evidence: [],
+      answers: [],
+    },
+    {
+      requirement: "On-call for a payments platform",
+      verdict: "gap",
+      evidence: [],
+      answers: [
+        {
+          id: "e9",
+          reference: "Your answer",
+          fact: "Were you on call? — Yes, weekly for two years",
+        },
+      ],
+    },
   ],
   version,
   content: {
     name: "Maya Lin Chen",
     headline: "Backend Engineer",
-    contact: "maya@example.com",
+    contacts: [{ kind: "email", value: "maya@example.com" }],
     sections: [
       section("summary", { text: "Builds payment systems." }),
       section("experience", {
@@ -118,12 +137,37 @@ const resume: TailoredResume = {
         ],
       }),
       section("skills", { items: ["Go", "Postgres", "Kafka", "gRPC"] }),
+      // Written with the rest, and hidden (ADR 0043).
+      section("open_source", {
+        is_shown: false,
+        entries: [
+          {
+            title: "pgx",
+            org: "",
+            when: "2024",
+            link: "",
+            bullets: [
+              {
+                text: "Fixed a pool leak in pgx",
+                evidence_ids: ["e1"],
+                origin: "written",
+                answers: null,
+              },
+            ],
+          },
+        ],
+      }),
+      section("education", { is_shown: false }),
     ],
   },
+  heading_font: null,
+  body_font: null,
   section_plan: [
-    { kind: "summary", title: null },
-    { kind: "experience", title: null },
-    { kind: "skills", title: null },
+    { kind: "summary", title: null, is_shown: true },
+    { kind: "experience", title: null, is_shown: true },
+    { kind: "skills", title: null, is_shown: true },
+    { kind: "open_source", title: null, is_shown: false },
+    { kind: "education", title: null, is_shown: false },
   ],
   evidence: { e1: { reference: "GitHub · 38 PRs", fact: "payments-svc" } },
   versions: [version],
@@ -218,6 +262,14 @@ const limits: ResumeTemplateLimits = {
   max_name: 60,
   max_templates: 10,
   upload_max_bytes: 5_242_880,
+  contact_icons: {
+    email: "M0 0h24v24H0z",
+    phone: "M0 0h24v24H0z",
+    github: "M0 0h24v24H0z",
+    linkedin: "M0 0h24v24H0z",
+    website: "M0 0h24v24H0z",
+    location: "M0 0h24v24H0z",
+  },
 };
 
 type Call = { method: string; url: string; body: unknown };
@@ -356,10 +408,80 @@ describe("résumé screen", () => {
     );
     expect(note).toBeVisible();
     expect(screen.getByText("Covered")).toBeInTheDocument();
-    expect(screen.getByText("Gap")).toBeInTheDocument();
+    expect(screen.getAllByText("Gap")).toHaveLength(2);
     expect(
       screen.getByRole("button", { name: /^Save as v\d+$/ }),
     ).toBeDisabled();
+  });
+
+  it("sets the résumé in fonts of its own and previews them", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const titles = await screen.findByRole("combobox", { name: "Titles in" });
+    expect(titles).toHaveValue("");
+    await user.selectOptions(titles, "DejaVu Serif");
+
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        method: "PUT",
+        url: "/tailored-resumes/res-1/settings",
+        body: expect.objectContaining({
+          heading_font: "DejaVu Serif",
+          body_font: null,
+        }),
+      }),
+    );
+    const page = screen.getByRole("article", { name: "Résumé" });
+    expect(page.getAttribute("style")).toContain("DejaVu Serif");
+  });
+
+  it("writes a failed résumé again once priced", async () => {
+    let regenerated = false;
+    const calls = serve((call) => {
+      if (call.url.startsWith("/tailored-resumes/cost-estimate"))
+        return { cost_usd: "0.05", model_id: "claude-opus-5" };
+      if (call.url === "/tailored-resumes/res-1/regenerate") {
+        regenerated = true;
+        return { ...summary, status: "drafting" };
+      }
+      if (call.url === "/tailored-resumes/res-1")
+        return regenerated
+          ? { ...resume, status: "drafting" }
+          : {
+              ...resume,
+              status: "failed",
+              error: {
+                code: "ai_output_invalid",
+                message: "the written résumé was rejected",
+              },
+              version: null,
+              versions: [],
+              content: null,
+            };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    expect(
+      await screen.findByText("This résumé could not be written"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
+
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: "/tailored-resumes/res-1/regenerate",
+      body: undefined,
+    });
   });
 
   it("regenerates an outdated résumé as its next version once priced", async () => {
@@ -431,6 +553,100 @@ describe("résumé screen", () => {
     const body = posted?.body as { content: ResumeContent };
     expect(experience(body.content).entries[0]!.bullets[0]!.text).toBe(
       "Owned the retry layer, end to end",
+    );
+  });
+
+  it("edits the headline, a heading, an entry's fields and a skill in place", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const type = (label: string, text: string) => {
+      const field = screen.getByLabelText(label);
+      field.textContent = text;
+      fireEvent.blur(field);
+    };
+    type("Headline", "Staff Backend Engineer");
+    type("Email contact", "maya.chen@example.com");
+    type("Heading of Experience", "Work history");
+    type("Title", "Senior Backend Engineer");
+    type("Organisation", "Kestrel");
+    type("When", "2021 — now");
+    type("Link", "kestrel.example");
+    // Renamed, the heading's own label follows it.
+    expect(screen.getByLabelText("Heading of Work history")).toBeTruthy();
+    const [go] = screen.getAllByLabelText("Skills item");
+    go!.textContent = "Golang";
+    fireEvent.blur(go!);
+    const [, postgres] = screen.getAllByLabelText("Skills item");
+    postgres!.textContent = "";
+    fireEvent.blur(postgres!);
+
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    expect(body.content.headline).toBe("Staff Backend Engineer");
+    expect(body.content.contacts).toEqual([
+      { kind: "email", value: "maya.chen@example.com" },
+    ]);
+    const work = experience(body.content);
+    expect(work.title).toBe("Work history");
+    expect(work.entries[0]).toMatchObject({
+      title: "Senior Backend Engineer",
+      org: "Kestrel",
+      when: "2021 — now",
+      link: "kestrel.example",
+    });
+    const skills = body.content.sections.find((s) => s.kind === "skills")!;
+    expect(skills.items).toEqual(["Golang", "Kafka", "gRPC"]);
+  });
+
+  it("draws each contact detail with its icon and changes its kind", async () => {
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v2", number: 2, source: "manual" };
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+    const page = await screen.findByRole("article", { name: "Résumé" });
+
+    expect(page.querySelectorAll(".resume-contact-icon")).toHaveLength(1);
+    await user.selectOptions(
+      screen.getByLabelText("Kind of maya@example.com"),
+      "website",
+    );
+    await user.click(screen.getByRole("button", { name: "+ Add contact" }));
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    expect(body.content.contacts).toEqual([
+      { kind: "website", value: "maya@example.com" },
+      { kind: "email", value: "you@example.com" },
+    ]);
+  });
+
+  it("puts a cleared heading back to its kind's own", async () => {
+    serve(defaults);
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    const renamed = screen.getByLabelText("Heading of Summary");
+    renamed.textContent = "Profile";
+    fireEvent.blur(renamed);
+    const cleared = screen.getByLabelText("Heading of Profile");
+    cleared.textContent = "";
+    fireEvent.blur(cleared);
+
+    expect(screen.getByLabelText("Heading of Summary")).toHaveTextContent(
+      "Summary",
     );
   });
 
@@ -875,13 +1091,13 @@ describe("templates of your own (ADR 0040)", () => {
   });
 });
 
-describe("sections you choose (ADR 0039)", () => {
+describe("sections you choose (ADR 0039, ADR 0043)", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("lists the sections with Experience required, and removing one saves a version", async () => {
+  it("lists every section, prints only the shown ones, and hiding one saves a version", async () => {
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1/versions"
         ? { ...version, id: "v2", number: 2, source: "manual" }
@@ -896,27 +1112,54 @@ describe("sections you choose (ADR 0039)", () => {
       expect.stringContaining("Summary"),
       expect.stringContaining("Experience"),
       expect.stringContaining("Skills"),
+      expect.stringContaining("Open source"),
+      expect.stringContaining("Education"),
     ]);
     expect(rows[1]).toHaveTextContent("Required");
-    expect(
-      within(rows[1]!).queryByRole("button", { name: "Remove" }),
-    ).toBeNull();
+    expect(within(rows[1]!).queryByRole("button", { name: "Hide" })).toBeNull();
+    expect(within(rows[3]!).getByRole("button", { name: "Show" })).toBeTruthy();
+    // Written, and not printed while hidden.
+    expect(screen.queryByText("Fixed a pool leak in pgx")).toBeNull();
 
-    // Skills has items: the first click asks, the second removes.
-    await user.click(within(rows[2]!).getByRole("button", { name: "Remove" }));
-    expect(calls.some((c) => c.method === "POST")).toBe(false);
-    await user.click(
-      within(rows[2]!).getByRole("button", { name: "Remove its lines too" }),
+    await user.click(within(rows[2]!).getByRole("button", { name: "Hide" }));
+
+    expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
+    const saved = calls.find(
+      (c) => c.url === "/tailored-resumes/res-1/versions",
     );
+    const body = saved?.body as { content: ResumeContent };
+    expect(body.content.sections.map((s) => [s.kind, s.is_shown])).toEqual([
+      ["summary", true],
+      ["experience", true],
+      ["skills", false],
+      ["open_source", false],
+      ["education", false],
+    ]);
+  });
+
+  it("shows a hidden section at no cost", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const panel = await screen.findByRole("region", { name: "Sections" });
+    const row = within(panel).getAllByRole("listitem")[3]!;
+    await user.click(within(row).getByRole("button", { name: "Show" }));
 
     const saved = calls.find(
       (c) => c.url === "/tailored-resumes/res-1/versions",
     );
     const body = saved?.body as { content: ResumeContent };
-    expect(body.content.sections.map((s) => s.kind)).toEqual([
-      "summary",
-      "experience",
-    ]);
+    const shown = body.content.sections.find((s) => s.kind === "open_source");
+    expect(shown?.is_shown).toBe(true);
+    expect(shown?.entries[0]?.bullets[0]?.text).toBe(
+      "Fixed a pool leak in pgx",
+    );
+    expect(calls.some((c) => c.url.includes("/sections"))).toBe(false);
   });
 
   it("moves a section with the keyboard and saves the new order", async () => {
@@ -940,10 +1183,12 @@ describe("sections you choose (ADR 0039)", () => {
       "experience",
       "summary",
       "skills",
+      "open_source",
+      "education",
     ]);
   });
 
-  it("prices filling a new section before adding it", async () => {
+  it("prices filling an empty section before filling it", async () => {
     const calls = serve((call) => {
       if (call.url.startsWith("/tailored-resumes/res-1/sections/estimate"))
         return { cost_usd: "0.02", model_id: "claude-opus-5" };
@@ -955,8 +1200,17 @@ describe("sections you choose (ADR 0039)", () => {
     renderResume();
 
     const panel = await screen.findByRole("region", { name: "Sections" });
+    const rows = within(panel).getAllByRole("listitem");
+    // Only the empty section offers it.
+    expect(
+      within(rows[3]!).queryByRole("button", {
+        name: "Empty — fill from your sources",
+      }),
+    ).toBeNull();
     await user.click(
-      within(panel).getByRole("button", { name: "+ Education" }),
+      within(rows[4]!).getByRole("button", {
+        name: "Empty — fill from your sources",
+      }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",
@@ -971,6 +1225,21 @@ describe("sections you choose (ADR 0039)", () => {
       url: "/tailored-resumes/res-1/sections",
       body: { kind: "education", title: null },
     });
+  });
+
+  it("marks a gap the user answered about, and lists the answer", async () => {
+    serve(defaults);
+    renderResume();
+
+    const answered = (
+      await screen.findByText("On-call for a payments platform")
+    ).closest(".requirement-row") as HTMLElement;
+    expect(within(answered).getByText("Answered by you")).toBeTruthy();
+    expect(answered).toHaveTextContent("Yes, weekly for two years");
+    const unanswered = screen
+      .getByText("Kubernetes in production")
+      .closest(".requirement-row") as HTMLElement;
+    expect(within(unanswered).queryByText("Answered by you")).toBeNull();
   });
 
   it("asks for a custom section's heading before pricing it", async () => {

@@ -52,18 +52,36 @@ class _Snapshot:
 
 
 class FakeProfile:
+    """A GitHub tally (E1), a résumé line (E2) and an answer (E3); records
+    the timeline it is handed."""
+
     def __init__(self, version: int = 1) -> None:
         self.current_version = version
+        self.timelines: list[tuple[uuid.UUID, list[Any]]] = []
 
     async def version(self, owner_id: uuid.UUID) -> int:
         return self.current_version
 
     async def snapshot(self, owner_id: uuid.UUID) -> _Snapshot:
-        fact = _Evidence("e1", EvidenceSource.GITHUB, "GitHub · api", "12 merged PRs")
-        return _Snapshot(evidence=(fact,))
+        return _Snapshot(
+            evidence=(
+                _Evidence("e1", EvidenceSource.GITHUB, "GitHub · api", "12 merged PRs"),
+                _Evidence(
+                    "e2", EvidenceSource.RESUME, "Résumé", "Backend Engineer, Kestrel, 2022 — now"
+                ),
+                _Evidence(
+                    "e3", EvidenceSource.USER_ANSWER, "Your answer", "Engineer at Acme, 2019-2021"
+                ),
+            )
+        )
 
     async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
-        return {"e1"}
+        return {"e1", "e2", "e3"}
+
+    async def replace_positions(
+        self, owner_id: uuid.UUID, skill_assessment_id: uuid.UUID, readings: list[Any]
+    ) -> None:
+        self.timelines.append((skill_assessment_id, list(readings)))
 
 
 @dataclass
@@ -525,3 +543,70 @@ async def test_a_role_resting_on_a_dimension_the_reply_lacks_rejects_the_whole_r
         await service.run(OWNER)
 
     assert rolemap.handed == [] and uow.store.assessments == {}
+
+
+# --- the career timeline (ADR 0045) -------------------------------------------
+
+
+def _position(cites: list[str], *, started: str = "2022-03", ended: str | None = None) -> Any:
+    return {
+        "title": "Backend Engineer",
+        "company": "Kestrel",
+        "started_on": started,
+        "ended_on": ended,
+        "evidence_ids": cites,
+    }
+
+
+async def test_an_analysis_replaces_the_timeline_with_the_positions_it_read() -> None:
+    reply = _reply([]) | {
+        "positions": [
+            _position(["E2"]),
+            {**_position(["E3"], started="2019-01", ended="2021-06"), "company": "Acme"},
+        ]
+    }
+    service, _rolemap, _uow = _analysing(reply)
+
+    assessment = await service.run(OWNER)
+
+    profile: Any = service._profile
+    [(skill_assessment_id, readings)] = profile.timelines
+    assert skill_assessment_id == assessment.id
+    assert [(r.company, r.started_on, r.ended_on, r.evidence_ids) for r in readings] == [
+        ("Kestrel", date(2022, 3, 1), None, ("e2",)),
+        ("Acme", date(2019, 1, 1), date(2021, 6, 1), ("e3",)),
+    ]
+    # Each analysis reads the timeline afresh, never the last one's reading.
+    gateway: Any = service._gateway
+    assert "timeline" not in gateway.calls[0]
+
+
+@pytest.mark.parametrize(
+    ("position", "match"),
+    [
+        (_position(["E1"]), "does not state a position"),
+        (_position([]), "cites nothing"),
+        (_position(["E2"], started="2099-01"), "future"),
+        (_position(["E2"], started="2022-03", ended="2021-01"), "ends before"),
+        (_position(["E2"], started="2022-13"), "wrongly"),
+    ],
+)
+async def test_a_position_read_wrongly_rejects_the_whole_reply(
+    position: dict[str, Any], match: str
+) -> None:
+    service, rolemap, uow = _analysing(_reply([]) | {"positions": [position]})
+
+    with pytest.raises(OutputInvalidError, match=match):
+        await service.run(OWNER)
+
+    profile: Any = service._profile
+    assert profile.timelines == [] and uow.store.assessments == {} and rolemap.handed == []
+
+
+async def test_a_reply_with_no_positions_empties_the_timeline() -> None:
+    service, _rolemap, _uow = _analysing(_reply([]))
+
+    await service.run(OWNER)
+
+    profile: Any = service._profile
+    assert [readings for _, readings in profile.timelines] == [[]]

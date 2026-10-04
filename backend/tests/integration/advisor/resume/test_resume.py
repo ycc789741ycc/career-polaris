@@ -21,8 +21,10 @@ import pytest
 import pytest_asyncio
 from botocore.exceptions import ClientError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from advisor.assessment import AssessmentService, create_assessment_service
+from advisor.gapfill import Answer, GapFillService, create_gapfill_service
 from advisor.identity import create_identity_service
 from advisor.market import MarketService, create_market_service
 from advisor.profile import ProfileService, create_profile_service
@@ -53,6 +55,7 @@ pytestmark = pytest.mark.integration
 LEADS = "Lead technical direction across several teams"
 RELIABILITY = "Own reliability: SLOs and incident reviews"
 ORG = "Demonstrated org-level influence"
+ORG_KEY = "req:demonstrated-org-level-influence"
 # The profile holds one piece of evidence, so the prompt shows it as E1.
 CITED = "E1"
 
@@ -98,6 +101,7 @@ class World:
     store: ObjectStore
     evidence_id: str
     profile: ProfileService
+    gapfill: GapFillService
 
 
 @pytest_asyncio.fixture
@@ -160,11 +164,13 @@ async def world(
         upload_max_bytes=settings.own_posting_max_bytes,
         upload_max_pages=settings.own_posting_max_pages,
     )
+    gapfill = create_gapfill_service(database, target=target, profile=profile, gateway=gateway)
     resume = create_resume_service(
         database,
         target=target,
         profile=profile,
         assessment=assessment,
+        gapfill=gapfill,
         gateway=gateway,
         object_store=store,
         template_max=settings.resume_template_max,
@@ -205,6 +211,7 @@ async def world(
         store=store,
         evidence_id=str(evidence.id),
         profile=profile,
+        gapfill=gapfill,
     )
 
 
@@ -282,7 +289,7 @@ def _resume_reply(cited: str) -> str:
                                 {
                                     "text": "Led the checkout migration across two teams",
                                     "evidence_ids": [cited],
-                                    "answers": LEADS,
+                                    "answers": RELIABILITY,
                                 }
                             ],
                         }
@@ -546,9 +553,10 @@ async def test_a_section_is_added_filled_and_kept_when_the_resume_is_regenerated
     filled = await world.resume.get(account, resume_id)
     assert filled.summary.status == "ready", filled.summary.error_message
     assert filled.content is not None
-    kinds = [str(s.kind) for s in filled.content.sections]
-    assert kinds == ["summary", "experience", "skills", "education"]
-    assert filled.section_plan[-1] == education
+    shown = [str(s.kind) for s in filled.content.sections if s.is_shown]
+    assert shown == ["summary", "experience", "skills", "education"]
+    assert next(s for s in filled.section_plan if s == education).is_shown
+    plan = [(str(s.kind), s.is_shown) for s in filled.section_plan]
 
     await world.resume.redraft(account, resume_id)
     world.stub.replies.append(_resume_reply(CITED))
@@ -556,9 +564,11 @@ async def test_a_section_is_added_filled_and_kept_when_the_resume_is_regenerated
 
     again = await world.resume.get(account, resume_id)
     assert again.content is not None
-    # The reply wrote three sections; the plan keeps the fourth, empty.
-    assert [str(s.kind) for s in again.content.sections] == kinds
-    assert again.content.sections[-1].is_empty
+    # The reply wrote three sections; every other keeps its place and state,
+    # education shown and empty.
+    assert [(str(s.kind), s.is_shown) for s in again.content.sections] == plan
+    refilled = again.content.get_section(education)
+    assert refilled is not None and refilled.is_empty
 
 
 async def test_another_user_cannot_read_the_resume_or_its_export(
@@ -653,3 +663,110 @@ async def test_a_template_starts_from_a_pdf_whose_file_is_gone_once_read(
     await world.resume.forget_template_reading(account, reading.id)
     with pytest.raises(NotFoundError):
         await world.resume.template_reading(account, reading.id)
+
+
+async def _answer_org(world: World, account: uuid.UUID, ref: TargetRef) -> str:
+    """The user answers Fill the gap's one question, about org influence."""
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "gap_key": ORG_KEY,
+                        "text": "Did another team build on a design you wrote?",
+                        "asked_because": "Nothing speaks to influence beyond a team.",
+                        "answer_type": "free_text",
+                        "choices": [],
+                    }
+                ]
+            }
+        )
+    )
+    questions = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, questions.id)
+    written = await world.gapfill.get(account, questions.id)
+    assert written.status == "ready", written.error_message
+    done = await world.gapfill.submit(
+        account,
+        written.id,
+        [Answer(question_id=written.questions[0].id, text="Payments built on my ledger RFC.")],
+    )
+    [answer_id] = done.evidence_ids
+    return str(answer_id)
+
+
+def _claiming_org(cited: str, *, org_cites: str) -> str:
+    reply = json.loads(_resume_reply(cited))
+    reply["sections"][1]["entries"][0]["bullets"].append(
+        {
+            "text": "Wrote the ledger RFC the payments team built on",
+            "evidence_ids": [org_cites],
+            "answers": ORG,
+        }
+    )
+    return json.dumps(reply)
+
+
+async def test_a_gap_the_user_answered_about_is_claimed_from_the_answer_alone(
+    world: World, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    """A requirement nothing else covers rests on what the user answered
+    about it, and on nothing else (ADR 0044)."""
+    ref = await _own_posting(world, account)
+    answer_id = await _answer_org(world, account, ref)
+    assert await world.gapfill.get_answers(other_account, ref) == ()
+    profile = await world.profile.snapshot(account)
+    handle = {str(e.id): f"E{n}" for n, e in enumerate(profile.evidence, start=1)}
+
+    cited = handle[world.evidence_id]
+    world.stub.replies.append(_claiming_org(cited, org_cites=handle[answer_id]))
+    requested = await world.resume.request(
+        account, ref, template=Template.ORGANIC, options=Options()
+    )
+    await world.resume.generate(account, requested.id)
+
+    view = await world.resume.get(account, requested.id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert f"gap: {ORG} (answered in [{handle[answer_id]}])" in world.stub.calls[-1].user
+    org = next(c for c in view.coverage if c.requirement == ORG)
+    assert org.verdict == "gap"
+    assert [a.id for a in org.answers] == [answer_id]
+    assert view.content is not None
+    claimed = [b for b in view.content.bullets() if b.answers == ORG]
+    assert [b.evidence_ids for b in claimed] == [(answer_id,)]
+
+    # Claiming the same gap from other evidence keeps the line and drops the
+    # claim (ADR 0046).
+    world.stub.replies.append(_claiming_org(cited, org_cites=cited))
+    again = await world.resume.request(account, ref, template=Template.ORGANIC, options=Options())
+    await world.resume.generate(account, again.id)
+    written = await world.resume.get(account, again.id)
+    assert written.summary.status == "ready", written.summary.error_message
+    assert written.content is not None
+    line = next(b for b in written.content.bullets() if b.text.startswith("Wrote the ledger RFC"))
+    assert (line.answers, line.evidence_ids) == (None, (world.evidence_id,))
+
+
+async def test_a_resume_keeps_its_own_fonts_and_the_database_refuses_others(
+    world: World, account: uuid.UUID, database: Database
+) -> None:
+    """ADR 0047, migration 0041."""
+    resume_id = await _written(world, account)
+
+    await world.resume.update_settings(
+        account,
+        resume_id,
+        template=Template.PLAIN,
+        options=Options(),
+        heading_font="DejaVu Serif",
+        body_font="DejaVu Sans Mono",
+    )
+
+    view = await world.resume.get(account, resume_id)
+    assert (view.heading_font, view.body_font) == ("DejaVu Serif", "DejaVu Sans Mono")
+    with pytest.raises(IntegrityError, match="ck_resume_body_font"):
+        async with database.for_user(account) as session:
+            await session.execute(
+                text("UPDATE resume.resume SET body_font = 'Comic Sans' WHERE id = :id"),
+                {"id": resume_id},
+            )

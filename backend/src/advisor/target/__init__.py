@@ -16,6 +16,8 @@ from advisor.target.domain import (
     MAX_REQUIREMENT_LINE,
     MAX_REQUIREMENT_LINES,
     MAX_TITLE,
+    gap_key_for_dimension,
+    gap_key_for_uncovered,
 )
 from advisor.target.factory import create_target_service
 from advisor.target.service import (
@@ -50,6 +52,8 @@ __all__ = [
     "TargetSnapshot",
     "UncoveredGap",
     "create_target_service",
+    "gap_key_for_dimension",
+    "gap_key_for_uncovered",
     "get_target_digest",
     "jobs",
     "requirements_block",

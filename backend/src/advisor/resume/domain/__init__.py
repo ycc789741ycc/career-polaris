@@ -7,6 +7,12 @@ from advisor.resume.domain.constants import (
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
 )
+from advisor.resume.domain.contact import (
+    ContactError,
+    ContactItem,
+    ContactKind,
+    get_contact_items,
+)
 from advisor.resume.domain.content import (
     Coverage,
     Options,
@@ -17,7 +23,10 @@ from advisor.resume.domain.content import (
     assert_well_formed,
     assert_written_lines_cited,
     coverage,
+    get_claims_settled,
+    get_headings_kept,
     get_planned,
+    get_proposal_layout,
     mark_edits,
     settle_revision,
 )
@@ -43,7 +52,9 @@ from advisor.resume.domain.repositories import (
 )
 from advisor.resume.domain.revision import Revision
 from advisor.resume.domain.section import (
+    BUILT_IN_KINDS,
     DEFAULT_PLAN,
+    DEFAULT_SHOWN,
     HEADINGS,
     SHAPES,
     Bullet,
@@ -55,6 +66,7 @@ from advisor.resume.domain.section import (
     SectionShape,
     SectionSlot,
     assert_plan_valid,
+    get_full_plan,
 )
 from advisor.resume.domain.tailored_resume import (
     ResumeStage,
@@ -81,14 +93,18 @@ from advisor.resume.domain.template_spec import (
     Rule,
     TemplateSpec,
     TemplateSpecError,
+    assert_fonts_valid,
     assert_spec_valid,
     get_built_in_spec,
     get_contrast,
+    get_spec_with_fonts,
 )
 
 __all__ = [
+    "BUILT_IN_KINDS",
     "BUILT_IN_TEMPLATES",
     "DEFAULT_PLAN",
+    "DEFAULT_SHOWN",
     "HEADINGS",
     "MAX_BULLETS_PER_ROLE",
     "MAX_ROLES",
@@ -101,6 +117,9 @@ __all__ = [
     "BuiltInTemplate",
     "Bullet",
     "BulletStyle",
+    "ContactError",
+    "ContactItem",
+    "ContactKind",
     "Coverage",
     "CustomTemplate",
     "CustomTemplateFilter",
@@ -151,16 +170,23 @@ __all__ = [
     "TemplateSpecError",
     "Verdict",
     "VersionSource",
+    "assert_fonts_valid",
     "assert_plan_valid",
     "assert_spec_valid",
     "assert_well_formed",
     "assert_written_lines_cited",
     "coverage",
     "get_built_in_spec",
+    "get_claims_settled",
+    "get_contact_items",
     "get_contrast",
     "get_download_name",
     "get_font_kind",
+    "get_full_plan",
+    "get_headings_kept",
     "get_planned",
+    "get_proposal_layout",
+    "get_spec_with_fonts",
     "get_template_spec_from_runs",
     "mark_edits",
     "settle_revision",

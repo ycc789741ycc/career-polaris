@@ -45,6 +45,7 @@ def _service(uow: FakeResumeUnitOfWork, *, template_max: int = 10) -> ResumeServ
         target=FakeTarget(),  # type: ignore[arg-type]
         profile=FakeProfile(),  # type: ignore[arg-type]
         assessment=None,  # type: ignore[arg-type]
+        gapfill=None,  # type: ignore[arg-type]
         gateway=None,  # type: ignore[arg-type]
         object_store=FakeObjectStore(),  # type: ignore[arg-type]
         template_max=template_max,

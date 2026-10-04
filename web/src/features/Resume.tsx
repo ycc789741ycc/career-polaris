@@ -3,6 +3,7 @@ import { api, streamEvents } from "../api/client";
 import type {
   PlanEstimate,
   ResumeBullet,
+  ResumeContact,
   ResumeContent,
   ResumeExport,
   ResumeSection,
@@ -36,6 +37,7 @@ import { CostConfirm } from "./CostConfirm";
 import { startDownload } from "./download";
 import {
   isEmptySection,
+  SECTION_HEADINGS,
   sectionHeading,
   SectionsPanel,
 } from "./ResumeSections";
@@ -132,6 +134,9 @@ export function Resume({
     reorder: true,
     trim: false,
   });
+  // This résumé's own fonts over its template's; null keeps the template's
+  // (ADR 0047).
+  const [fonts, setFonts] = useState<ResumeFonts>(NO_FONTS);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplateLook[]>([]);
@@ -149,8 +154,18 @@ export function Resume({
 
   const chosen =
     templates.find((t) => t.id === template) ?? templates[0] ?? null;
-  // While a template is being edited, the page previews it.
-  const look = editor && preview ? withSpec(editor.from, preview) : chosen;
+  // While a template is being edited, the page previews it; otherwise the
+  // chosen one, in the résumé's own fonts.
+  const look =
+    editor && preview
+      ? withSpec(editor.from, preview)
+      : chosen && (fonts.heading_font || fonts.body_font)
+        ? withSpec(chosen, {
+            ...chosen.spec,
+            heading_font: fonts.heading_font ?? chosen.spec.heading_font,
+            body_font: fonts.body_font ?? chosen.spec.body_font,
+          })
+        : chosen;
 
   // What writing it again costs, priced up front for the Write-for card.
   const [regenerateCost, setRegenerateCost] = useState<PlanEstimate | null>(
@@ -263,6 +278,7 @@ export function Resume({
     setDraft(next.content);
     setTemplate(next.template);
     setOptions(next.options);
+    setFonts({ heading_font: next.heading_font, body_font: next.body_font });
     setExchanges(
       next.revisions.map((r) => ({
         request: r.request,
@@ -335,10 +351,10 @@ export function Resume({
     setError(null);
     try {
       if (estimate.section && resume) {
-        // Added to the plan, then filled from the sources as the next version.
+        // Shown, or added, then filled from the sources as the next version.
         await api.post<ResumeSummary>(
           `/tailored-resumes/${resume.id}/sections`,
-          estimate.section,
+          { kind: estimate.section.kind, title: estimate.section.title },
         );
         setAdded((all) => [
           ...all,
@@ -401,14 +417,17 @@ export function Resume({
   async function changeSettings(
     nextTemplate: ResumeTemplate,
     nextOptions: ResumeOptions,
+    nextFonts: ResumeFonts = fonts,
   ) {
     setTemplate(nextTemplate);
     setOptions(nextOptions);
+    setFonts(nextFonts);
     if (!resume || resume.status !== "ready") return;
     try {
       await api.put(`/tailored-resumes/${resume.id}/settings`, {
         template: nextTemplate,
         options: nextOptions,
+        ...nextFonts,
       });
     } catch (caught) {
       setError(messageOf(caught));
@@ -699,6 +718,36 @@ export function Resume({
                 </div>
               )
             )}
+            {chosen && limits && !editor && (
+              <div className="row" style={{ gap: 8, marginTop: 12 }}>
+                {FONT_PICKERS.map(({ key, label }) => (
+                  <label key={key} className="font-picker">
+                    <span className="field-label">{label}</span>
+                    <select
+                      className="input"
+                      value={fonts[key] ?? ""}
+                      disabled={resume?.status !== "ready"}
+                      onChange={(event) =>
+                        void changeSettings(template, options, {
+                          ...fonts,
+                          [key]: (event.target.value ||
+                            null) as ResumeFonts["heading_font"],
+                        })
+                      }
+                    >
+                      <option value="">
+                        Template&apos;s ({chosen.spec[key]})
+                      </option>
+                      {limits.fonts.map((font) => (
+                        <option key={font} value={font}>
+                          {font}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="stack" style={{ gap: 10, marginTop: 16 }}>
               {OPTION_LABELS.map(({ key, label }) => (
                 <RoundCheck
@@ -742,8 +791,11 @@ export function Resume({
                 added={added}
                 filling={
                   resume.status === "filling"
-                    ? (resume.section_plan.find(
+                    ? // The one being filled is shown in the plan and still
+                      // empty in the content.
+                      (resume.section_plan.find(
                         (slot) =>
+                          slot.is_shown &&
                           !resume.content?.sections.some(
                             (s) =>
                               s.kind === slot.kind &&
@@ -804,12 +856,23 @@ export function Resume({
             <div className="panel">
               <h3>This résumé could not be written</h3>
               <ErrorNote error={resume.error?.message ?? "Writing failed."} />
-              {(resume.error?.code?.startsWith("ai_credential") ||
-                resume.error?.code === "ai_budget_exceeded") && (
-                <Button variant="ghost" onClick={() => navigate("model")}>
-                  Open AI &amp; model
+              <div className="row" style={{ marginTop: 12, gap: 8 }}>
+                {/* Written again as the same résumé, priced first. */}
+                <Button
+                  busy={busy}
+                  onClick={() =>
+                    void price(resume.target, resume.label, resume.id)
+                  }
+                >
+                  Try again
                 </Button>
-              )}
+                {(resume.error?.code?.startsWith("ai_credential") ||
+                  resume.error?.code === "ai_budget_exceeded") && (
+                  <Button variant="ghost" onClick={() => navigate("model")}>
+                    Open AI &amp; model
+                  </Button>
+                )}
+              </div>
             </div>
           ) : draft && look ? (
             <>
@@ -843,6 +906,7 @@ export function Resume({
                 content={draft}
                 evidence={resume.evidence}
                 look={look}
+                icons={limits?.contact_icons ?? null}
                 trim={options.trim}
                 reorder={options.reorder}
                 showSources={showSources}
@@ -903,10 +967,15 @@ export function Resume({
                         <span style={{ fontSize: 13.5, fontWeight: 700 }}>
                           {row.requirement}
                         </span>
+                        {row.verdict === "gap" && row.answers.length > 0 && (
+                          // Still a gap until a re-analysis counts it; the
+                          // page may claim it from the answer (ADR 0044).
+                          <span className="chip">Answered by you</span>
+                        )}
                       </div>
                       <EvidenceDisclosure
                         compact
-                        evidence={row.evidence}
+                        evidence={[...row.evidence, ...row.answers]}
                         empty="Nothing in your sources speaks to this yet."
                       />
                     </div>
@@ -966,6 +1035,7 @@ export function trimmedNote(
   let lines = 0;
   let items = 0;
   for (const section of content.sections) {
+    if (!section.is_shown) continue;
     for (const entry of section.entries) {
       lines += over(entry.bullets.length, look.trimmed_bullets);
     }
@@ -985,6 +1055,7 @@ function ResumePage({
   content,
   evidence,
   look,
+  icons,
   trim,
   reorder,
   showSources,
@@ -993,6 +1064,8 @@ function ResumePage({
   content: ResumeContent;
   evidence: TailoredResume["evidence"];
   look: ResumeTemplateLook;
+  /** Each contact kind's icon path, as the PDF draws it (ADR 0048). */
+  icons: Record<string, string> | null;
   trim: boolean;
   reorder: boolean;
   showSources: boolean;
@@ -1004,6 +1077,18 @@ function ResumePage({
     onChange({
       ...content,
       sections: content.sections.map((s, i) => (i === at ? next : s)),
+    });
+  const editEntry = (
+    at: number,
+    section: ResumeSection,
+    index: number,
+    patch: Partial<ResumeSection["entries"][number]>,
+  ) =>
+    editSection(at, {
+      ...section,
+      entries: section.entries.map((it, i) =>
+        i === index ? { ...it, ...patch } : it,
+      ),
     });
 
   const lines = (bullets: ResumeBullet[]) =>
@@ -1053,14 +1138,81 @@ function ResumePage({
     spec.layout === "sidebar_left" || spec.layout === "sidebar_right";
   const inSidebar = (section: ResumeSection) =>
     hasSidebar && (spec.sidebar_kinds as string[]).includes(section.kind);
+  const editContact = (at: number, patch: Partial<ResumeContact>) =>
+    edit({
+      contacts: content.contacts.map((c, i) =>
+        i === at ? { ...c, ...patch } : c,
+      ),
+    });
   const contact = (
     <div className="resume-contact">
-      {[content.headline, content.contact].filter(Boolean).join(" · ")}
+      <Editable
+        className="resume-headline"
+        value={content.headline}
+        label="Headline"
+        placeholder="Headline"
+        onChange={(headline) => edit({ headline })}
+      />
+      {content.contacts.map((item, at) => (
+        <span key={at} className="resume-contact-item">
+          <span className="resume-contact-kind">
+            <ContactIcon kind={item.kind} icons={icons} />
+            {/* The icon is the menu: an invisible select laid over it. */}
+            <select
+              aria-label={`Kind of ${item.value || "contact"}`}
+              value={item.kind}
+              onChange={(event) =>
+                editContact(at, {
+                  kind: event.target.value as ResumeContact["kind"],
+                })
+              }
+            >
+              {CONTACT_KINDS.map(({ kind, label }) => (
+                <option key={kind} value={kind}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </span>
+          <Editable
+            value={item.value}
+            label={`${CONTACT_LABELS[item.kind]} contact`}
+            placeholder={CONTACT_LABELS[item.kind]}
+            onChange={(value) =>
+              // Cleared to nothing, it goes.
+              value
+                ? editContact(at, { value })
+                : edit({
+                    contacts: content.contacts.filter((_, i) => i !== at),
+                  })
+            }
+          />
+        </span>
+      ))}
+      {content.contacts.length < MAX_CONTACTS && (
+        <button
+          type="button"
+          className="resume-add-line"
+          onClick={() =>
+            edit({
+              contacts: [
+                ...content.contacts,
+                { kind: "email", value: "you@example.com" },
+              ],
+            })
+          }
+        >
+          + Add contact
+        </button>
+      )}
     </div>
   );
+  // A hidden section is kept and never printed (ADR 0043).
   const sectionsWhere = (side: boolean) =>
     content.sections.map((section, at) =>
-      inSidebar(section) === side ? sectionAt(section, at) : null,
+      section.is_shown && inSidebar(section) === side
+        ? sectionAt(section, at)
+        : null,
     );
 
   function sectionAt(section: ResumeSection, at: number) {
@@ -1087,7 +1239,25 @@ function ResumePage({
     }
     return (
       <section key={key} aria-label={heading}>
-        <div className="resume-section">{heading}</div>
+        <Editable
+          as="div"
+          className="resume-section"
+          value={heading}
+          label={`Heading of ${heading}`}
+          onChange={(next) =>
+            editSection(at, {
+              ...section,
+              // Cleared, or back to the kind's own: no override. A section of
+              // the user's own keeps a heading.
+              title:
+                !next || next === SECTION_HEADINGS[section.kind]
+                  ? section.kind === "custom"
+                    ? section.title
+                    : null
+                  : next,
+            })
+          }
+        />
         {section.kind === "summary" && (
           <p
             className="resume-summary"
@@ -1108,11 +1278,39 @@ function ResumePage({
           <section key={`${entry.title}-${e}`} className="resume-job">
             <div className="resume-job-head">
               <span className="resume-job-title">
-                {[entry.title, entry.org].filter(Boolean).join(" — ")}
+                <Editable
+                  value={entry.title}
+                  label="Title"
+                  placeholder="Title"
+                  onChange={(title) =>
+                    // An entry always has a title; clearing it keeps the old.
+                    title && editEntry(at, section, e, { title })
+                  }
+                />
+                {entry.org ? " — " : " "}
+                <Editable
+                  value={entry.org}
+                  label="Organisation"
+                  placeholder="Organisation"
+                  onChange={(org) => editEntry(at, section, e, { org })}
+                />
               </span>
-              <span className="resume-when">{entry.when}</span>
+              <Editable
+                className="resume-when"
+                value={entry.when}
+                label="When"
+                placeholder="When"
+                onChange={(when) => editEntry(at, section, e, { when })}
+              />
             </div>
-            {entry.link && <div className="resume-when">{entry.link}</div>}
+            <Editable
+              as="div"
+              className="resume-when"
+              value={entry.link}
+              label="Link"
+              placeholder="Link"
+              onChange={(link) => editEntry(at, section, e, { link })}
+            />
             {bulletList(entry.bullets, (next) =>
               editSection(at, {
                 ...section,
@@ -1129,19 +1327,40 @@ function ResumePage({
               ? section.items.slice(0, look.trimmed_skills)
               : section.items
             ).map((item, index) => (
-              <span
-                key={item}
+              <Editable
+                key={`${index}-${item}`}
                 className="resume-skill"
-                data-lead={
+                value={item}
+                label={`${heading} item`}
+                lead={
                   showSources &&
                   reorder &&
                   section.kind === "skills" &&
                   index < 3
                 }
-              >
-                {item}
-              </span>
+                onChange={(next) =>
+                  editSection(at, {
+                    ...section,
+                    // Cleared to nothing, it goes.
+                    items: next
+                      ? section.items.map((it, i) => (i === index ? next : it))
+                      : section.items.filter((_, i) => i !== index),
+                  })
+                }
+              />
             ))}
+            <button
+              type="button"
+              className="resume-add-line"
+              onClick={() =>
+                editSection(at, {
+                  ...section,
+                  items: [...section.items, "New item"],
+                })
+              }
+            >
+              + Add
+            </button>
           </div>
         )}
         {section.bullets.length > 0 &&
@@ -1368,6 +1587,7 @@ function ChatPanel({
       >
         <input
           className="input"
+          style={{ flex: 1, minWidth: 0 }}
           aria-label="Ask for a change"
           placeholder="Ask for a change…"
           value={message}
@@ -1406,4 +1626,84 @@ export function lastGeneratedLine(
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Text edited in place on the page: saved on blur when it changed, trimmed.
+ * Empty, it shows its placeholder, which the page never prints. */
+function Editable({
+  as: Tag = "span",
+  value,
+  label,
+  placeholder,
+  className,
+  lead,
+  onChange,
+}: {
+  as?: "span" | "div";
+  value: string;
+  label: string;
+  placeholder?: string;
+  className?: string;
+  lead?: boolean;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <Tag
+      className={className}
+      contentEditable
+      suppressContentEditableWarning
+      aria-label={label}
+      data-placeholder={placeholder}
+      data-lead={lead}
+      onBlur={(event) => {
+        const next = (event.currentTarget.textContent ?? "").trim();
+        if (next !== value) onChange(next);
+      }}
+    >
+      {value}
+    </Tag>
+  );
+}
+
+type ResumeFonts = Pick<TailoredResume, "heading_font" | "body_font">;
+
+const NO_FONTS: ResumeFonts = { heading_font: null, body_font: null };
+
+/** The two fonts a résumé can set over its template's (ADR 0047). */
+const FONT_PICKERS: { key: keyof ResumeFonts; label: string }[] = [
+  { key: "heading_font", label: "Titles in" },
+  { key: "body_font", label: "Text in" },
+];
+
+const MAX_CONTACTS = 8;
+
+/** The contact kinds, as the kind menu offers them. */
+const CONTACT_KINDS: { kind: ResumeContact["kind"]; label: string }[] = [
+  { kind: "email", label: "Email" },
+  { kind: "phone", label: "Phone" },
+  { kind: "github", label: "GitHub" },
+  { kind: "linkedin", label: "LinkedIn" },
+  { kind: "website", label: "Website" },
+  { kind: "location", label: "Location" },
+];
+
+const CONTACT_LABELS = Object.fromEntries(
+  CONTACT_KINDS.map(({ kind, label }) => [kind, label]),
+) as Record<ResumeContact["kind"], string>;
+
+/** A contact kind's icon, drawn from the same path the PDF draws. */
+function ContactIcon({
+  kind,
+  icons,
+}: {
+  kind: ResumeContact["kind"];
+  icons: Record<string, string> | null;
+}) {
+  const path = icons?.[kind];
+  if (!path) return null;
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="resume-contact-icon">
+      <path d={path} />
+    </svg>
+  );
 }

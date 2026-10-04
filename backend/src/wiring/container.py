@@ -201,6 +201,7 @@ def build(settings: Settings | None = None) -> Container:
         target=target,
         profile=profile,
         assessment=assessment,
+        gapfill=gapfill,
         gateway=gateway,
         object_store=object_store,
         template_max=settings.resume_template_max,

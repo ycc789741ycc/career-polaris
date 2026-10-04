@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
@@ -163,6 +163,25 @@ def get_contrast(foreground: str, background: str = "#ffffff") -> float:
 
     light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
     return (light + 0.05) / (dark + 0.05)
+
+
+def assert_fonts_valid(heading_font: str | None, body_font: str | None) -> None:
+    """A résumé's own fonts (ADR 0047): each None, keeping its template's, or
+    one the résumé can set."""
+    for name, font in (("heading font", heading_font), ("body font", body_font)):
+        if font is not None and font not in TEMPLATE_FONTS:
+            raise TemplateSpecError(f"the {name} {font!r} is not one the résumé can set")
+
+
+def get_spec_with_fonts(
+    spec: TemplateSpec, heading_font: str | None, body_font: str | None
+) -> TemplateSpec:
+    """``spec`` in a résumé's own fonts, where it set any (ADR 0047). Pure."""
+    return replace(
+        spec,
+        heading_font=heading_font or spec.heading_font,
+        body_font=body_font or spec.body_font,
+    )
 
 
 def assert_spec_valid(spec: TemplateSpec) -> None:

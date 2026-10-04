@@ -16,6 +16,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import text as sql_text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kernel.db.base import Base, OwnedMixin, TimestampMixin, new_id
@@ -112,6 +114,13 @@ class Position(Base, OwnedMixin, TimestampMixin):
     company: Mapped[str] = mapped_column(String(255), nullable=False)
     started_on: Mapped[date] = mapped_column(Date, nullable=False)
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # The résumé lines and answers it was read from, and the analysis that
+    # read it (ADR 0045). The analysis lives in another component: no foreign
+    # key.
+    evidence_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=sql_text("'[]'::jsonb")
+    )
+    skill_assessment_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
 
 
 class ProfileVersion(Base, OwnedMixin):

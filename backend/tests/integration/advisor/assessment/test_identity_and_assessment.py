@@ -598,6 +598,107 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         assert recorded.scalar_one() == stored.id
 
 
+async def test_an_analysis_records_the_positions_the_evidence_states(
+    database: Database,
+    identity: IdentityService,
+    profile: ProfileService,
+    settings: Settings,
+    account: uuid.UUID,
+    other_account: uuid.UUID,
+    stub_provider: StubProvider,
+) -> None:
+    """The career timeline is the analysis's reading of the user's own
+    résumé lines and answers, stored under row-level security (ADR 0045)."""
+    import json
+
+    from advisor.assessment import create_assessment_service
+    from advisor.market import create_market_service
+
+    await identity.set_credential(
+        account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
+    )
+    await profile.record_answer(
+        account,
+        question_id="q1",
+        question="Where have you worked?",
+        answer="Backend Engineer at Kestrel since March 2022; Engineer at Acme 2019 to 2021.",
+    )
+    gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
+    market = create_market_service(database, windows=WINDOWS)
+    rolemap = create_rolemap_service(
+        database,
+        market=market,
+        gateway=gateway,
+        embedding_model=settings.embedding_model_name,
+        top_k=settings.role_map_top_k,
+        candidate_count=settings.role_candidate_count,
+    )
+    assessment = create_assessment_service(
+        database,
+        profile=profile,
+        rolemap=rolemap,
+        gateway=gateway,
+        confidence_threshold=settings.assessment_confidence_threshold,
+        candidate_count=settings.role_candidate_count,
+    )
+    stub_provider.replies.append(
+        json.dumps(
+            {
+                "positions": [
+                    {
+                        "title": "Backend Engineer",
+                        "company": "Kestrel",
+                        "started_on": "2022-03",
+                        "ended_on": None,
+                        "evidence_ids": ["E1"],
+                    },
+                    {
+                        "title": "Engineer",
+                        "company": "Acme",
+                        "started_on": "2019-01",
+                        "ended_on": "2021-01",
+                        "evidence_ids": ["E1"],
+                    },
+                ],
+                "dimensions": [
+                    {
+                        "id": f"d{i}",
+                        "name": f"Dimension {i}",
+                        "short_name": f"D{i}",
+                        "score": 70,
+                        "confidence": 0.9,
+                        "read": "A read.",
+                        "evidence_ids": ["E1"],
+                    }
+                    for i in range(5)
+                ],
+            }
+        )
+    )
+    version = await profile.version(account)
+
+    stored = await assessment.run(account)
+
+    snapshot = await profile.snapshot(account)
+    # Written in one transaction, so their order is not part of the contract.
+    assert {(p.title, p.company) for p in snapshot.positions} == {
+        ("Backend Engineer", "Kestrel"),
+        ("Engineer", "Acme"),
+    }
+    # 24 months at Acme, and Kestrel from March 2022 to today.
+    assert snapshot.total_experience_months > 24 + 50
+    assert snapshot.version == version
+    async with database.for_user(account) as session:
+        recorded = await session.execute(
+            text(
+                "SELECT DISTINCT skill_assessment_id FROM profile.position WHERE owner_id = :owner"
+            ),
+            {"owner": account},
+        )
+        assert recorded.scalar_one() == stored.id
+    assert (await profile.snapshot(other_account)).positions == ()
+
+
 # -- ten roles, fixed (ADR 0020) ---------------------------------------------
 
 

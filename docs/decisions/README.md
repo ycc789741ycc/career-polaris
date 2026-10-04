@@ -48,6 +48,12 @@ new record that supersedes the old one.
 | [0040](0040-keep-resume-templates-as-checked-specs.md) | A résumé template is a checked spec, and a user can keep their own | Accepted |
 | [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
 | [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted |
+| [0043](0043-write-every-resume-section-at-once-and-show-what-the-user-picks.md) | A résumé writes every section at once, and the user picks which to show | Accepted |
+| [0044](0044-let-a-resume-claim-a-gap-from-the-answers-given-about-it.md) | A résumé may claim a gap from the answers given about it, and nothing else | Accepted |
+| [0045](0045-read-the-career-timeline-in-the-analysis.md) | The career timeline is the analysis's reading of the evidence | Accepted |
+| [0046](0046-drop-an-unbacked-gap-claim-instead-of-rejecting-the-resume.md) | An unbacked gap claim is dropped, not the résumé | Accepted |
+| [0047](0047-let-a-resume-set-its-own-fonts-over-its-template.md) | A résumé may set its own fonts over its template's | Accepted |
+| [0048](0048-draw-contact-details-as-typed-items-with-icons.md) | Contact details are typed items, drawn with icons | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
