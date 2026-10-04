@@ -3,6 +3,7 @@ import { api, streamEvents } from "../api/client";
 import type {
   PlanEstimate,
   ResumeBullet,
+  ResumeContact,
   ResumeContent,
   ResumeExport,
   ResumeSection,
@@ -905,6 +906,7 @@ export function Resume({
                 content={draft}
                 evidence={resume.evidence}
                 look={look}
+                icons={limits?.contact_icons ?? null}
                 trim={options.trim}
                 reorder={options.reorder}
                 showSources={showSources}
@@ -1053,6 +1055,7 @@ function ResumePage({
   content,
   evidence,
   look,
+  icons,
   trim,
   reorder,
   showSources,
@@ -1061,6 +1064,8 @@ function ResumePage({
   content: ResumeContent;
   evidence: TailoredResume["evidence"];
   look: ResumeTemplateLook;
+  /** Each contact kind's icon path, as the PDF draws it (ADR 0048). */
+  icons: Record<string, string> | null;
   trim: boolean;
   reorder: boolean;
   showSources: boolean;
@@ -1133,21 +1138,73 @@ function ResumePage({
     spec.layout === "sidebar_left" || spec.layout === "sidebar_right";
   const inSidebar = (section: ResumeSection) =>
     hasSidebar && (spec.sidebar_kinds as string[]).includes(section.kind);
+  const editContact = (at: number, patch: Partial<ResumeContact>) =>
+    edit({
+      contacts: content.contacts.map((c, i) =>
+        i === at ? { ...c, ...patch } : c,
+      ),
+    });
   const contact = (
     <div className="resume-contact">
       <Editable
+        className="resume-headline"
         value={content.headline}
         label="Headline"
         placeholder="Headline"
         onChange={(headline) => edit({ headline })}
       />
-      {content.headline && content.contact ? " · " : " "}
-      <Editable
-        value={content.contact}
-        label="Contact"
-        placeholder="Email, phone, links"
-        onChange={(next) => edit({ contact: next })}
-      />
+      {content.contacts.map((item, at) => (
+        <span key={at} className="resume-contact-item">
+          <span className="resume-contact-kind">
+            <ContactIcon kind={item.kind} icons={icons} />
+            {/* The icon is the menu: an invisible select laid over it. */}
+            <select
+              aria-label={`Kind of ${item.value || "contact"}`}
+              value={item.kind}
+              onChange={(event) =>
+                editContact(at, {
+                  kind: event.target.value as ResumeContact["kind"],
+                })
+              }
+            >
+              {CONTACT_KINDS.map(({ kind, label }) => (
+                <option key={kind} value={kind}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </span>
+          <Editable
+            value={item.value}
+            label={`${CONTACT_LABELS[item.kind]} contact`}
+            placeholder={CONTACT_LABELS[item.kind]}
+            onChange={(value) =>
+              // Cleared to nothing, it goes.
+              value
+                ? editContact(at, { value })
+                : edit({
+                    contacts: content.contacts.filter((_, i) => i !== at),
+                  })
+            }
+          />
+        </span>
+      ))}
+      {content.contacts.length < MAX_CONTACTS && (
+        <button
+          type="button"
+          className="resume-add-line"
+          onClick={() =>
+            edit({
+              contacts: [
+                ...content.contacts,
+                { kind: "email", value: "you@example.com" },
+              ],
+            })
+          }
+        >
+          + Add contact
+        </button>
+      )}
     </div>
   );
   // A hidden section is kept and never printed (ADR 0043).
@@ -1617,3 +1674,36 @@ const FONT_PICKERS: { key: keyof ResumeFonts; label: string }[] = [
   { key: "heading_font", label: "Titles in" },
   { key: "body_font", label: "Text in" },
 ];
+
+const MAX_CONTACTS = 8;
+
+/** The contact kinds, as the kind menu offers them. */
+const CONTACT_KINDS: { kind: ResumeContact["kind"]; label: string }[] = [
+  { kind: "email", label: "Email" },
+  { kind: "phone", label: "Phone" },
+  { kind: "github", label: "GitHub" },
+  { kind: "linkedin", label: "LinkedIn" },
+  { kind: "website", label: "Website" },
+  { kind: "location", label: "Location" },
+];
+
+const CONTACT_LABELS = Object.fromEntries(
+  CONTACT_KINDS.map(({ kind, label }) => [kind, label]),
+) as Record<ResumeContact["kind"], string>;
+
+/** A contact kind's icon, drawn from the same path the PDF draws. */
+function ContactIcon({
+  kind,
+  icons,
+}: {
+  kind: ResumeContact["kind"];
+  icons: Record<string, string> | null;
+}) {
+  const path = icons?.[kind];
+  if (!path) return null;
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="resume-contact-icon">
+      <path d={path} />
+    </svg>
+  );
+}

@@ -2359,10 +2359,23 @@ export interface components {
             /** Text */
             text: string;
         };
+        /**
+         * ResumeContact
+         * @description One contact detail, drawn with its kind's icon (ADR 0048).
+         */
+        ResumeContact: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "email" | "phone" | "github" | "linkedin" | "website" | "location";
+            /** Value */
+            value: string;
+        };
         /** ResumeContent */
         ResumeContent: {
-            /** Contact */
-            contact: string;
+            /** Contacts */
+            contacts: components["schemas"]["ResumeContact"][];
             /** Headline */
             headline: string;
             /** Name */
@@ -2596,6 +2609,10 @@ export interface components {
                 number,
                 number
             ];
+            /** Contact Icons */
+            contact_icons: {
+                [key: string]: string;
+            };
             /** Fonts */
             fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono")[];
             /** Heading Pt Range */

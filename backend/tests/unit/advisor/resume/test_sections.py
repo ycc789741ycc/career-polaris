@@ -35,7 +35,7 @@ CITED = Bullet("Owned the retry layer for payments-svc", ("e1",))
 
 def _with(*sections: Section) -> ResumeContent:
     base = make_content(CITED)
-    return ResumeContent(base.name, base.headline, base.contact, (*base.sections, *sections))
+    return ResumeContent(base.name, base.headline, base.contacts, (*base.sections, *sections))
 
 
 MINE = Bullet("Mentors at a code club", (), Origin.YOURS)
@@ -182,7 +182,7 @@ def test_a_proposal_keeps_each_sections_state_unless_it_set_one() -> None:
     proposed = ResumeContent(
         current.name,
         current.headline,
-        current.contact,
+        current.contacts,
         (
             Section(SectionKind.EXPERIENCE, entries=current.sections[1].entries),
             Section(SectionKind.SKILLS, items=("Go",)),

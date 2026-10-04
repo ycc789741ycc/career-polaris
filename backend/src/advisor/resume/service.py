@@ -55,6 +55,8 @@ from advisor.resume.domain import (
     TRIMMED_BULLETS,
     TRIMMED_SKILLS,
     BuiltInTemplate,
+    ContactItem,
+    ContactKind,
     Coverage,
     CustomTemplate,
     CustomTemplateFilter,
@@ -92,6 +94,7 @@ from advisor.resume.domain import (
     assert_written_lines_cited,
     coverage,
     get_claims_settled,
+    get_contact_items,
     get_download_name,
     get_full_plan,
     get_headings_kept,
@@ -104,7 +107,10 @@ from advisor.resume.domain import (
 )
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
+    CONTACT_ICONS,
     HEADING_PT_RANGE,
+    MAX_CONTACT,
+    MAX_CONTACTS,
     MAX_HELD_SECTIONS,
     MAX_LINK,
     MAX_SECTION_TITLE,
@@ -217,10 +223,18 @@ class _Section(BaseModel):
     is_shown: bool | None = None
 
 
+class _Contact(BaseModel):
+    kind: ContactKind
+    value: str = Field(min_length=1, max_length=MAX_CONTACT)
+
+
 class _Resume(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     headline: str = Field(default="", max_length=200)
+    # The line as the model writes it, read into typed items (ADR 0048)…
     contact: str = Field(default="", max_length=300)
+    # …or, from the chat, the items it was shown, kept or changed.
+    contacts: list[_Contact] | None = Field(default=None, max_length=MAX_CONTACTS)
     sections: list[_Section] = Field(default_factory=list, max_length=MAX_HELD_SECTIONS)
 
 
@@ -377,6 +391,8 @@ class TemplateLimitsView:
     max_templates: int
     # A PDF a template may start from.
     upload_max_bytes: int
+    # Each contact kind's icon, as the PDF draws it (ADR 0048).
+    contact_icons: dict[str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -945,6 +961,7 @@ class ResumeService:
             max_name=MAX_TEMPLATE_NAME,
             max_templates=self._template_max,
             upload_max_bytes=self._upload_max_bytes,
+            contact_icons=dict(CONTACT_ICONS),
         )
 
     async def create_template(
@@ -1541,7 +1558,11 @@ def _content_of(model: _Resume) -> ResumeContent:
     return ResumeContent(
         name=model.name,
         headline=model.headline,
-        contact=model.contact,
+        contacts=(
+            tuple(ContactItem(c.kind, c.value) for c in model.contacts)
+            if model.contacts is not None
+            else get_contact_items(model.contact)
+        ),
         sections=tuple(_section_of(s) for s in model.sections),
     )
 

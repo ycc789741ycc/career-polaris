@@ -20,6 +20,7 @@ from enum import StrEnum
 from typing import Any
 
 from advisor.resume.domain.constants import PARTIAL_WITHIN
+from advisor.resume.domain.contact import ContactError, ContactItem, assert_contacts_valid
 from advisor.resume.domain.section import (
     Bullet,
     Origin,
@@ -74,7 +75,8 @@ class ResumeContent:
 
     name: str
     headline: str
-    contact: str
+    # Typed, each drawn with its icon (ADR 0048).
+    contacts: tuple[ContactItem, ...]
     sections: tuple[Section, ...]
 
     def bullets(self) -> Iterable[Bullet]:
@@ -110,7 +112,7 @@ class ResumeContent:
         return {
             "name": self.name,
             "headline": self.headline,
-            "contact": self.contact,
+            "contacts": [c.to_dict() for c in self.contacts],
             "sections": [s.to_dict() for s in self.sections],
         }
 
@@ -119,7 +121,7 @@ class ResumeContent:
         return cls(
             name=str(data.get("name", "")),
             headline=str(data.get("headline", "")),
-            contact=str(data.get("contact", "")),
+            contacts=tuple(ContactItem.from_dict(c) for c in data.get("contacts", []) or []),
             sections=tuple(Section.from_dict(s) for s in data.get("sections", [])),
         )
 
@@ -142,6 +144,10 @@ def get_planned(content: ResumeContent, plan: Sequence[SectionSlot]) -> ResumeCo
 def assert_well_formed(content: ResumeContent) -> None:
     if not content.name.strip():
         raise ResumeError("a résumé needs a name")
+    try:
+        assert_contacts_valid(content.contacts)
+    except ContactError as exc:
+        raise ResumeError(str(exc)) from exc
     assert_plan_valid(content.get_plan())
     for section in content.sections:
         assert_section_well_formed(section)
