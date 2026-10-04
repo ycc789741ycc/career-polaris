@@ -152,6 +152,8 @@ def position(row: models.Position) -> CareerPosition:
         ended_on=row.ended_on,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        evidence_ids=tuple(row.evidence_ids),
+        skill_assessment_id=row.skill_assessment_id,
     )
 
 
@@ -166,6 +168,8 @@ def apply_position(row: models.Position, entity: CareerPosition) -> None:
     row.company = entity.company
     row.started_on = entity.started_on
     row.ended_on = entity.ended_on
+    row.evidence_ids = list(entity.evidence_ids)
+    row.skill_assessment_id = entity.skill_assessment_id
 
 
 def version(row: models.ProfileVersion) -> ProfileVersion:

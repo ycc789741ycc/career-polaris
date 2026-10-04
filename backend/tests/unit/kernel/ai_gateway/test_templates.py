@@ -11,8 +11,8 @@ from kernel.errors import ValidationError
 TEMPLATES = [
     # Candidate roles joined the reply in v2 (ADR 0024); v3 asks for the
     # configured number of them (ADR 0029); v4 reads each fact with its date
-    # (ADR 0037).
-    ("skill_assessment", "v4"),
+    # (ADR 0037); v5 reads the career timeline from the evidence (ADR 0045).
+    ("skill_assessment", "v5"),
     ("follow_up_questions", "v1"),
     # v2 keeps where and how a role is worked out of its name (Phase 8).
     ("role_extraction", "v2"),
@@ -24,9 +24,10 @@ TEMPLATES = [
     # there each reads each fact with its date (ADR 0037).
     ("gap_plan", "v3"),
     ("gap_questions", "v2"),
-    # v3 writes to the résumé's sections (ADR 0039).
-    ("resume_write", "v3"),
-    ("resume_revise", "v3"),
+    # v3 writes to the résumé's sections (ADR 0039); v4 writes every section,
+    # shown or hidden (ADR 0043); v5 may claim a gap from its answers (ADR 0044).
+    ("resume_write", "v5"),
+    ("resume_revise", "v5"),
     ("resume_section", "v1"),
 ]
 
@@ -34,11 +35,11 @@ TEMPLATES = [
 @pytest.mark.parametrize(
     ("name", "version"),
     [
-        ("skill_assessment", "v4"),
+        ("skill_assessment", "v5"),
         ("gap_plan", "v3"),
         ("gap_questions", "v2"),
-        ("resume_write", "v3"),
-        ("resume_revise", "v3"),
+        ("resume_write", "v5"),
+        ("resume_revise", "v5"),
         ("resume_section", "v1"),
     ],
 )

@@ -1,10 +1,22 @@
-"""The career timeline half of a CareerProfile."""
+"""The career timeline half of a CareerProfile.
+
+The timeline is the analysis's reading of the evidence: each position a
+résumé line or an answer states, cited to it, replaced by every successful
+analysis (ADR 0045). It is a reading, not evidence, and moves no profile
+version.
+"""
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
+
+
+class TimelineError(ValueError):
+    """A position read from the evidence that breaks the rules: rejected, not
+    repaired."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +59,39 @@ def total_experience_months(positions: list[Position], *, as_of: date) -> int:
     return sum((end.year - start.year) * 12 + end.month - start.month for start, end in merged)
 
 
+@dataclass(frozen=True, slots=True)
+class PositionReading:
+    """A position as the analysis read it, with what it cites."""
+
+    title: str
+    company: str
+    started_on: date
+    ended_on: date | None
+    evidence_ids: tuple[str, ...]
+
+
+def assert_position_readings_valid(
+    readings: Iterable[PositionReading], *, citable: set[str], as_of: date
+) -> None:
+    """Every position names a title and a company, starts no later than it
+    ends and neither lies in the future, and cites at least one fact that can
+    state a position — a résumé line or an answer — and nothing else.
+    ``citable`` holds those facts' ids."""
+    for reading in readings:
+        where = f"{reading.title!r} at {reading.company!r}"
+        if not reading.title.strip() or not reading.company.strip():
+            raise TimelineError("a position needs a title and a company")
+        latest = reading.ended_on or reading.started_on
+        if reading.started_on > as_of or latest > as_of:
+            raise TimelineError(f"{where} is dated in the future")
+        if reading.ended_on is not None and reading.ended_on < reading.started_on:
+            raise TimelineError(f"{where} ends before it starts")
+        if not reading.evidence_ids:
+            raise TimelineError(f"{where} cites nothing")
+        if not set(reading.evidence_ids) <= citable:
+            raise TimelineError(f"{where} cites something that does not state a position")
+
+
 @dataclass(slots=True)
 class CareerPosition:
     """One position on the career timeline."""
@@ -59,6 +104,10 @@ class CareerPosition:
     ended_on: date | None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # The résumé lines and answers it was read from, and the analysis that
+    # read it (ADR 0045); empty and None on rows written before.
+    evidence_ids: tuple[str, ...] = ()
+    skill_assessment_id: uuid.UUID | None = None
 
     @property
     def value(self) -> Position:

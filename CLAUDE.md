@@ -661,3 +661,10 @@ uploaded one (`docs/plan.md`), one branch per step under
   `assert_gap_claims_answered` checks every write, proposal and filled
   section (`get_claims_settled` drops an `answers` naming no requirement).
   The verdict stays a gap; the requirements panel says "Answered by you".
+- **Record the career timeline** (ADR 0045). `skill_assessment` v5 reports
+  the `positions` résumé lines and answers state, and is no longer given the
+  stored timeline. They are checked (`profile.assert_position_readings_valid`:
+  cites only `resume` or `user_answer` evidence, dated in the past) before
+  anything is stored, then `ProfileService.replace_positions` replaces the
+  timeline with them, citing `evidence_ids` and the `skill_assessment_id`.
+  No profile version moves. Migration 0040.
