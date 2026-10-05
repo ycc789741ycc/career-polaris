@@ -42,10 +42,12 @@ FROM python:3.12.14-slim-bookworm AS base
 # DejaVu as the fallback for letters outside their Latin subset (ADR 0038).
 # Pinned to what bookworm ships; their own dependencies follow Debian's
 # security updates.
-# libexpat1 2.5.0-1+deb12u3, as the base ships it, carries six HIGH CVEs
-# (CVE-2026-93990 among them). The fix is pinned here until a python
-# slim-bookworm tag ships deb12u4 or later; then this line goes, and
-# `make scan` shows it is safe to drop.
+# Three packages the base ships carry HIGH or CRITICAL CVEs, and their fixes
+# are pinned here until a python slim-bookworm tag ships them; then each line
+# goes, and `make scan` shows it is safe to drop:
+#   libexpat1     deb12u3: six HIGH (CVE-2026-93990 among them)
+#   perl-base     deb12u3: three CRITICAL, four HIGH (CVE-2026-13221 among them)
+#   libpcre2-8-0  deb12u1: one HIGH (CVE-2026-103111)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libpango-1.0-0=1.50.12+ds-1 \
@@ -53,6 +55,8 @@ RUN apt-get update \
       libharfbuzz-subset0=6.0.0+dfsg-3 \
       fonts-dejavu-core=2.37-6 \
       libexpat1=2.5.0-1+deb12u4 \
+      perl-base=5.36.0-7+deb12u4 \
+      libpcre2-8-0=10.42-1+deb12u2 \
  && rm -rf /var/lib/apt/lists/*
 
 # The résumé fonts, SIL OFL 1.1 with their licences beside them, where
