@@ -21,12 +21,12 @@ images=("backend backend" "web web" "proxy proxy")
 : > "$release_file.tmp"
 for entry in "${images[@]}"; do
   read -r name context <<<"$entry"
-  ref="${RELEASE_REGISTRY}/jsa-${name}:${tag}"
+  ref="${RELEASE_REGISTRY}/careerpolaris-${name}:${tag}"
   echo "release: building and pushing ${ref} for ${platforms}"
   docker buildx build --platform "$platforms" --target prod --tag "$ref" --push "$context"
   digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
   upper="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-  echo "JSA_${upper}_IMAGE=${RELEASE_REGISTRY}/jsa-${name}@${digest}" >> "$release_file.tmp"
+  echo "CAREERPOLARIS_${upper}_IMAGE=${RELEASE_REGISTRY}/careerpolaris-${name}@${digest}" >> "$release_file.tmp"
 done
 mv "$release_file.tmp" "$release_file"
 

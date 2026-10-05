@@ -28,7 +28,7 @@ echo "== Volumes =="
 # Every volume on the host is listed by `docker system df -v`; keep this stack's.
 docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' \
   | awk 'BEGIN { printf "%-32s %s\n", "VOLUME", "SIZE" }
-                $1 ~ /^jsa-(infra|app)_/ { printf "%-32s %s\n", $1, $2 }'
+                $1 ~ /^careerpolaris-(infra|app)_/ { printf "%-32s %s\n", $1, $2 }'
 
 echo
 echo "== Postgres: database size, then the 15 largest relations =="

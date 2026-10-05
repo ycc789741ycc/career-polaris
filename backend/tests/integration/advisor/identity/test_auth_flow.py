@@ -31,8 +31,8 @@ def auth(database: Database) -> AuthService:
     return create_auth_service(
         database,
         secret=SECRET,
-        issuer="jsa-test",
-        audience="jsa-test-api",
+        issuer="careerpolaris-test",
+        audience="careerpolaris-test-api",
         access_ttl_seconds=900,
         refresh_ttl_days=30,
         default_monthly_cap_usd=Decimal("20"),
@@ -42,8 +42,8 @@ def auth(database: Database) -> AuthService:
 @pytest.fixture
 def verifier() -> TokenVerifier:
     return TokenVerifier(
-        issuer="jsa-test",
-        audience="jsa-test-api",
+        issuer="careerpolaris-test",
+        audience="careerpolaris-test-api",
         resolver=StaticSecretResolver(SECRET),
         algorithms=(ALGORITHM,),
     )
