@@ -3,8 +3,8 @@
 Formerly Job Searching Advisor. Since ADR 0056 every name inside the code base
 is CareerPolaris's — the `careerpolaris-*` images, `careerpolaris_net`, the
 `careerpolaris-infra` / `careerpolaris-app` compose projects, cookies, the
-crawler's user agent — and `jsa` is not used for anything new. Only the Git
-repository keeps `job-searching-advisor`. A machine that ran the old stack
+crawler's user agent — and `jsa` is not used for anything new. Since ADR 0059
+the Git repository is `career-polaris` too. A machine that ran the old stack
 copies its volumes across once, by hand, with the commands in ADR 0056; the
 repo carries no command for it.
 
