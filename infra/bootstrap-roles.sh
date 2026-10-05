@@ -14,6 +14,14 @@ set -a; . ./"${ENV_FILE:-.env}"; set +a
 
 COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
 
+# Roles are made where Postgres runs. A compute machine reaches it across the
+# tunnel and makes nothing (docs/decisions/0051).
+if [ -z "$("${COMPOSE[@]}" ps -q --status running postgres 2>/dev/null)" ]; then
+  echo "Postgres runs elsewhere; its roles are made there."
+  exit 0
+fi
+echo "Bootstrapping least-privilege database roles..."
+
 psql_super() {
   "${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" "$@"

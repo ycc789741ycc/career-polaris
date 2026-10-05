@@ -14,6 +14,9 @@ import { useToast } from "./toast";
 
 /** How often the shell asks what is running while something is. */
 export const POLL_MS = 2000;
+/** How often it asks while the processing machine is away, so the notice
+ * clears soon after it is back (ADR 0052). */
+export const AWAY_POLL_MS = 30000;
 
 /**
  * Bumped each time a stage goes from busy to idle, so a screen can reload
@@ -60,6 +63,17 @@ export function sourcesBusy(activity: Activity | null): boolean {
   );
 }
 
+/**
+ * The machine that runs background work is off (ADR 0051, 0052): what the
+ * user starts is queued, and runs when it is back.
+ */
+export function isProcessingAway(activity: Activity | null): boolean {
+  return activity !== null && !activity.processing.is_worker_online;
+}
+
+/** What to tell the user, before they start work, while it is away. */
+export const AWAY_NOTICE = "Processing is offline; this starts when it is back";
+
 function anythingBusy(activity: Activity | null): boolean {
   return (
     sourcesBusy(activity) ||
@@ -86,19 +100,35 @@ export function describe(activity: Activity | null, model: string): string[] {
     ),
     ...activity.parsing.map((work) => `Reading ${work.label}`),
   ];
+  const away = isProcessingAway(activity);
+  if (away && lines.length + busyRuns(activity) > 0) {
+    lines.unshift("Waiting for the processing machine to come back");
+  }
   if (activity.analysis?.status === "running") {
     lines.push(`Analysing your strengths on ${model}`);
   }
   if (activity.role_map?.status === "running") {
     lines.push(`Building your role map on ${model}`);
   } else if (activity.role_map?.status === "waiting") {
+    const market = activity.role_map.waiting_for === "market";
     lines.push(
-      activity.role_map.waiting_for === "market"
-        ? "Searching the market for your recommended roles"
-        : "Role map waiting for the analysis to finish",
+      market && !activity.processing.is_crawler_online
+        ? "Role map waiting for the market search to come back online"
+        : market
+          ? "Searching the market for your recommended roles"
+          : "Role map waiting for the analysis to finish",
     );
   }
   return lines;
+}
+
+/** Analyses, builds and Advisor jobs still to finish. */
+function busyRuns(activity: Activity): number {
+  return (
+    (isBusy(activity.analysis) ? 1 : 0) +
+    (isBusy(activity.role_map) ? 1 : 0) +
+    activity.advisor_jobs.length
+  );
 }
 
 function outcome(what: string, run: RunStatus | null): string {
@@ -155,8 +185,15 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!anythingBusy(activity)) return;
-    const timer = setTimeout(() => void refresh(), POLL_MS);
+    // While the machine is away nothing moves, so ask rarely; still ask, so
+    // the notice goes once it is back.
+    const delay = isProcessingAway(activity)
+      ? AWAY_POLL_MS
+      : anythingBusy(activity)
+        ? POLL_MS
+        : null;
+    if (delay === null) return;
+    const timer = setTimeout(() => void refresh(), delay);
     return () => clearTimeout(timer);
   }, [activity, refresh]);
 

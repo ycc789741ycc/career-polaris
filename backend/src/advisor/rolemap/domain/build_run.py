@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 
@@ -82,6 +82,21 @@ class BuildRun:
         self.awaited_source_ids = due
         self.locations = locations
         self.awaited_since = at
+
+    def is_market_wait_over(
+        self, now: datetime, *, deadline: timedelta, crawler_online_since: datetime | None
+    ) -> bool:
+        """Its wait for the market has run out (ADR 0027).
+
+        The deadline counts only while the crawler is up (ADR 0052): with the
+        crawler away nothing it waits for can be fetched, so it waits for the
+        crawler rather than building on a market nobody looked at.
+        """
+        if self.awaited_since is None:
+            return True
+        if crawler_online_since is None:
+            return False
+        return now - max(self.awaited_since, crawler_online_since) >= deadline
 
     @property
     def is_running(self) -> bool:

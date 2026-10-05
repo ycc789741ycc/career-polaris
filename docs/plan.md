@@ -3354,3 +3354,324 @@ read from a file (ADR 0041).
 * Saving, or opening another résumé, starts the history again: what is saved
   is changed by editing and saving again.
 
+# Phase 12
+Hybrid deployment: the light part that is always on runs on a DigitalOcean
+droplet (1 vCPU, 2 GB), and the heavy part runs on the operator's own
+machine.
+* **The droplet ("edge")** runs Caddy, `web`, `api` and Postgres. Every
+  request reads Postgres, so it sits beside the api.
+* **The operator's machine ("compute")** runs `worker` (the `ai`, `sync` and
+  `docs` queues: embeddings, WeasyPrint renders, connector syncs) and
+  `crawler` (the embedding model, plus parsing hostile HTML).
+* **Object storage** is a DigitalOcean Spaces bucket, which both places read
+  and write. A presigned link has to reach the browser from either place, and
+  MinIO would not fit in the droplet's memory. MinIO stays for local
+  development.
+* **The link between the two places** is a private tunnel (Tailscale or
+  WireGuard), opened outbound from the operator's machine. Postgres listens on
+  the tunnel only, and the operator's machine opens no inbound port.
+
+Why this split: the embedding model costs about 1 GiB in each process that
+loads it (the worker and the crawler), and a PDF render spikes on top of that.
+Neither fits on 2 GB beside Postgres. The api runs no embeddings: it prices
+work as a ceiling (`RoleMapService`), and only imports `sentence_transformers`
+lazily, so it never loads the model. Résumé chat streams from the api, so it
+keeps working while the compute side is away.
+
+Droplet budget, to confirm with `make stats` before the phase is called done:
+
+| On the droplet | Estimate |
+|---|---|
+| OS, dockerd, the tunnel | about 350 MB |
+| Caddy, `web` | about 50 MB |
+| `api`, one uvicorn process | about 250 MB |
+| Postgres, `shared_buffers` 128 MB | about 300–400 MB |
+| **Total** | **about 1 GB**, half the droplet |
+
+There is no domain yet. Until there is one, the edge is served at
+`<droplet-ip>.sslip.io`, with a Let's Encrypt certificate for that name.
+
+Five branches, in this order, each cut from `epic/no-ticket/hybrid-deploy`,
+which is cut from mainline:
+
+1. "Run the app in two places": one image and one compose file, with what
+   each place starts chosen in its `.env`.
+2. "Know when the compute side is away": the SPA says that work is waiting
+   for the processing machine instead of reporting it lost.
+3. "The edge on the droplet": the proxy, TLS, the firewall, per-IP limits,
+   Spaces and backups.
+4. "Limit what one account can do": per-user and per-IP quotas the proxy
+   cannot see, kept in Postgres.
+5. "Release one image to both places": CI builds, tests, scans and pushes the
+   image; each place pulls it by digest.
+
+There is no separate API gateway (Kong, Tyk, APISIX): it would take 100–500 MB
+of the droplet and is one more thing to run. Caddy limits what it can see, a
+client's address and its request, and the app limits what only it can see,
+the account.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, an ADR where a decision is costly to reverse,
+and `CLAUDE.md`, `README.md` and `docs/architecture.md` saying what is built.
+`architecture.md` open question 1 (the choice of platform) gets its answer.
+
+## Run the app in two places
+**Done** (ADR 0051). Where the build differs from the plan below:
+
+* One `PUBLISHED_BIND_ADDRESS` (default `127.0.0.1`) for every published
+  port, not one per port. Postgres stays on loopback on the droplet too:
+  `infra/tunnel-up.sh` has Tailscale forward the tunnel's port 5432 to it
+  (`tailscale serve`). Binding the tunnel's address directly would fail at
+  boot whenever Docker started Postgres before the tunnel had that address.
+* The tunnel is its own profile, `tunnel`, which both deployed places name
+  and development does not. MinIO is in `local`.
+* That each profile starts only its services is checked with
+  `docker compose config --services` for each place, not by an integration
+  test: the tests run inside a container and never drive compose.
+* Infra services restart with the host (`restart: unless-stopped`); without
+  it a droplet reboot left Postgres down.
+* Found while building it: a fresh database could not migrate past 0013,
+  whose clean-up named a column today's metadata no longer has. Fixed on
+  `bugfix/no-ticket/fresh-database-migrations`, since every new install, the
+  droplet's among them, starts from a fresh database.
+
+ADR: running in two places, and why each process lives where it does.
+* **Compose profiles.** `compose.yaml` puts `api` and `web` in the `edge`
+  profile, and `worker` and `crawler` in the `compute` profile. Each place
+  sets `COMPOSE_PROFILES` in its own `.env` (`edge`, `compute`, or both for
+  local development and CI), so `start-app` and `stop-app` keep their names
+  and the Makefile has no site variable. `infra/compose.yml` does the same:
+  Postgres in `edge`, the tunnel in both, MinIO in a `local` profile only.
+* **Migrations under a lock.** `start-app` migrates first in either place.
+  `cli.migrate` takes a Postgres advisory lock, so two places starting at once
+  cannot race, and the second finds nothing pending. A compute site that runs
+  an older image than the schema fails its start (the schema is ahead of its
+  code) instead of running against it.
+* **Published ports bind to an address.** Every `ports:` entry takes an
+  optional `*_BIND_ADDRESS` (default `127.0.0.1`). Docker writes its own
+  iptables rules ahead of `ufw`, so today `0.0.0.0:21470` exposes the api
+  over plain HTTP on any host that has a public address. Postgres binds to the
+  tunnel address on the droplet.
+* **Postgres sized for the droplet.** `shared_buffers`, `work_mem`,
+  `effective_cache_size` and `max_connections` become optional `POSTGRES_*`
+  settings, passed as `-c` flags, with defaults that suit local development.
+  `DB_POOL_SIZE` falls to 2–3 per process: two places now open connections to
+  one server.
+* **The tunnel as a container.** A pinned Tailscale (or WireGuard) image in
+  infra, in both places. Its auth key is a secret in `.env`. `start-infra`
+  waits until the tunnel is up and, on the compute side, until Postgres
+  answers across it.
+* **Integration tests** cover the migration lock (two concurrent runs, one
+  applies) and that each profile starts only its services.
+
+## Know when the compute side is away
+**Done** (ADR 0052, migration 0044). Where the build differs from the plan
+below:
+
+* Procrastinate's heartbeat says whether a worker is up but not since when,
+  and the crawler has no grant on the job schema. So the worker and the
+  crawler each beat into `presence.process` (`kernel.presence`), from a
+  thread, because the crawler's embeddings and the worker's renders block the
+  event loop.
+* The limit does not count from when a worker picks a run up. It counts only
+  the time the worker has been up: from the later of the run's start and the
+  worker's return. That is one rule in `activity` instead of a new column
+  and write in every job of five components, and the user sees the same
+  thing. A run waiting for the machine therefore reads as running, with
+  "Waiting for the processing machine to come back" on the running bar, not
+  as `queued`.
+* `GET /activity` says `processing` as two booleans and two last-seen times,
+  not `online | away`: the crawler and the worker can be away apart.
+* The notice is in `CostConfirm`, which every priced action shares. Export,
+  which is not priced, shows it only on the running bar.
+
+ADR: work waits for the processing machine, and the stale limit counts from
+when a job starts.
+* **Who is online.** Procrastinate 3 records a heartbeat per worker
+  (`procrastinate.procrastinate_workers`). The crawler has no grant on the job
+  schema, so it writes its own heartbeat to a row in `market`. `activity`
+  reads both and reports `processing: online | away`, with when each side was
+  last seen, in `GET /activity`.
+* **Queued is not lost.** Today a run's staleness counts from when it was
+  recorded, which is before it is queued (`activity/domain/stages.py`). A run
+  queued while no worker is online would read as lost after
+  `JOB_STALE_AFTER_SECONDS`. Instead, staleness counts from when a worker
+  picks the run up, and a run nobody has picked up reads `queued`, never
+  `stale`.
+* **The user is told before spending.** Analyze, Rebuild, Target this role,
+  Set as target, Generate, Regenerate and Export say "Processing is offline;
+  this starts when it is back" next to the estimate while the compute side is
+  away. They can still confirm: the job waits in the queue, and the outbox
+  waits with it.
+* **The market wait.** A build waits for its sources only while the crawler
+  is online. With the crawler away, `MARKET_WAIT_SECONDS` starts counting
+  when it comes back, so the build is not made on a stale market just because
+  the operator's machine was asleep.
+* **Unit tests** for the staleness rule and the online/away read. An
+  integration test queues a run with no worker online, and checks that it
+  reads `queued`, not `stale`.
+
+## The edge on the droplet
+**Done** (ADR 0053). Where the build differs from the plan below:
+
+* The proxy is an app service with a profile of its own, `proxy`, not infra:
+  it is built (`proxy/`, Caddy plus `caddy-ratelimit`), and released and
+  scanned like the app's images. The droplet runs `edge,proxy,tunnel`.
+* Spaces needed a code change: `ObjectStore.ensure_bucket` listed every
+  bucket, which a key limited to one bucket may not do. It now asks
+  `HeadBucket` about its own.
+* No lifecycle rule expires exports. They live under each user's prefix,
+  which a rule cannot match, and an unchanged export is reused, so an
+  expired file would leave a link to nothing.
+* The per-address limits came into this step from "Limit what one account
+  can do", as planned. They were checked against stub upstreams: the
+  eleventh `/auth/*` request in a minute gets 429 with `Retry-After: 60`,
+  and a body over the cap gets 413.
+* The firewall, swap, SSH and the operator's machine are in `docs/deploy.md`,
+  the runbook for both places. They are not code.
+
+* **Caddy, one origin.** A pinned Caddy image in infra on the edge serves
+  `/api/*` to `api` and everything else to `web`. It holds the only public
+  ports, 80 and 443. `SITE_HOSTNAME` (required) is the name it gets a
+  certificate for: `<droplet-ip>.sslip.io` for now. `WEB_API_BASE_URL`,
+  `AUTH_PUBLIC_API_BASE_URL`, `OAUTH_REDIRECT_BASE_URL` and
+  `CORS_ALLOWED_ORIGINS` are all `https://$SITE_HOSTNAME`, and
+  `AUTH_COOKIE_SECURE=true`.
+* **Sign-in.** Google sign-in stays off (`GOOGLE_OAUTH_CLIENT_ID` blank)
+  until there is a domain of our own, because Google's consent screen wants a
+  domain we can verify. The GitHub and Jira callbacks accept the sslip.io
+  name.
+* **Firewall.** A DigitalOcean Cloud Firewall allows 22, 80 and 443, plus the
+  tunnel's UDP port if WireGuard is used. SSH takes keys only.
+* **Limits at the edge, per client address.** The api has none today: the
+  only limit is the sign-in lockout, which counts failures per account, so a
+  flood spread over many accounts never trips it. Every `/auth/register` and
+  `/auth/sign-in` runs Argon2id (19 MiB, two passes), and enough of them use
+  up the one vCPU. Caddy therefore:
+  * caps a request body a little above the largest upload
+    (`RESUME_MAX_BYTES`), so an oversized one is refused before uvicorn reads
+    it;
+  * sets read, header and idle timeouts, so a slow client cannot hold one of
+    uvicorn's few connections;
+  * allows `/api/v1/auth/*` about 10 requests a minute per address;
+  * allows everything else about 300 a minute per address. The SPA polls
+    `GET /activity` every two seconds while work runs, so a tight limit here
+    would lock out real users.
+
+  Rate limiting is a Caddy plugin (`caddy-ratelimit`), so the Caddy image is
+  built with `xcaddy` in CI, with Caddy and the plugin pinned, like the app's
+  images. Each limit is an optional `EDGE_*` setting in `.env`.
+* **Spaces.** One private bucket, created ahead of time, and a key scoped to
+  it. `S3_ENDPOINT_URL` and `S3_PUBLIC_ENDPOINT_URL` both name the Spaces
+  regional endpoint. The `create_bucket` fallback in `kernel/storage` stays for
+  local MinIO only. A lifecycle rule expires exports.
+* **Backups.** `make backup-db` runs `pg_dump` from the pinned Postgres image
+  and puts the dump in a second, backup-only bucket. A host cron on the
+  droplet runs it nightly, and `make restore-db` (destructive, a dependency of
+  nothing) is tested once against a scratch database.
+* **Swap.** A 1 GB swapfile on the droplet, for the host only. Containers
+  keep `memswap_limit` equal to `mem_limit`, so an overrun is still killed
+  visibly.
+* **The operator's machine is now inside the trust boundary.** The worker
+  holds `MASTER_ENCRYPTION_KEY` and connector tokens there. The machine needs
+  disk encryption, an `.env` that only its owner can read, and no other
+  users. The crawler fetches from the operator's home address, and the
+  politeness rules (per-host caps, backing off after a 429 or 403) are
+  unchanged.
+* **Later, with a domain.** Put Cloudflare's free proxy in front. It hides
+  the droplet's address and absorbs floods the droplet would fall over to
+  before Caddy could refuse them, which nothing on the droplet can do.
+
+## Limit what one account can do
+**Done** (ADR 0054, migration 0045). Where the build differs from the plan
+below:
+
+* The counter is incremented in a short transaction of its own, not in the
+  request's. A request that fails after it is counted still counts;
+  otherwise a flood of bad requests would never be limited.
+* The subject is stored only as a digest, so the table keeps no address.
+* `FORWARDED_ALLOW_IPS` is optional, defaulting to `127.0.0.1` (believe no
+  one), and `docs/deploy.md` lists it among the droplet's settings. A
+  required setting would have broken development, where no proxy runs.
+* The SPA needed no new screen. The app's refusals carry the wait in their
+  message, and the client now writes a message for the proxy's own 429 and
+  413, which have no body, and for an error page that is not JSON.
+
+ADR: quotas live in the app, counted in Postgres, because only the app knows
+the account.
+* **The real client address.** uvicorn runs with `--proxy-headers` and
+  trusts `X-Forwarded-For` from Caddy's address only
+  (`FORWARDED_ALLOW_IPS`, required on the edge). Otherwise every request
+  looks as if it came from Caddy, and a client could also forge the header.
+* **A limiter in `kernel`.** A fixed-window counter in a table of its own,
+  keyed on what is limited and on whom (an account or an address), and
+  incremented in the request's own transaction. A refusal raises the existing
+  `RateLimitedError`, which answers 429 with `Retry-After` in the usual error
+  envelope. It needs no new datastore, because Postgres is already on the
+  droplet.
+* **What is limited.** Each limit is an optional setting:
+  * accounts created per address per day: there is no address verification
+    yet (`architecture.md` open question 3), so a script could otherwise sign
+    up thousands of accounts;
+  * uploads per account per day: résumés, roles of the user's own and
+    template files, each parsed on the operator's machine;
+  * connector syncs per account per hour.
+
+  AI work needs no new limit. Each job already runs one of a kind per Target
+  at a time, spends the user's own key, and stops at their budget.
+* **The SPA** shows a 429's message and when to try again, rather than a
+  generic error.
+* **Unit tests** for the window rule. Integration tests show each limit
+  refusing the request after the allowed count, and the count starting again
+  in the next window.
+
+## Release one image to both places
+**Done** (ADR 0055). Where the build differs from the plan below:
+
+* The compute machine may be an arm64 Mac, and the droplet is amd64, so a
+  release is multi-platform. The release job builds the prod images for both
+  platforms with buildx (arm64 under QEMU) and pushes them; their manifest
+  digests go in `release.env`. Only the amd64 image is what the gates ran
+  against; the arm64 one is the same Dockerfile and commit.
+* `make pull-app RELEASE=release.env` takes the file CI writes, not a single
+  digest: there are three images.
+* CI's push trigger named `main` and `develop`, which this repository does
+  not have, so CI never ran on a push to `master`. It now does, and only
+  such a push is released.
+
+* **CI** runs `make build-app`, `lint`, `typecheck`, both test tiers and
+  `scan`, then pushes the prod images and the Caddy image to GHCR by digest.
+  Neither the droplet nor the operator's machine builds anything: a single
+  vCPU would take a very long time to install torch and build the SPA, and
+  could run out of memory doing it.
+* **`make pull-app`** pulls a given digest and tags it `jsa-*:prod`. Compose
+  keeps `pull_policy: never`, so `start-app` still runs only what was pulled
+  and checked.
+* **The release order** is the edge first, which migrates, then the compute
+  side. Both run the same digest. A compute site on an older image fails its
+  start instead of running against a newer schema (see "Run the app in two
+  places").
+* **Accepted for now.** The api image carries torch, which it never loads:
+  about 2 GB of disk and download on the droplet. A slimmer edge image would
+  be a second artifact, and the phase keeps one.
+
+## Rename everything inside to CareerPolaris
+**Done** (ADR 0056), on `chore/no-ticket/rename-to-careerpolaris`, before
+the droplet's first start so it never runs the old names:
+
+* Images `careerpolaris-{backend,web,proxy}`, network `careerpolaris_net`,
+  compose projects `careerpolaris-infra` and `careerpolaris-app`, cookies,
+  font directory, service name, token issuer and audience, user agent,
+  package names, the release file's `CAREERPOLARIS_*_IMAGE`, and CI's
+  database and bucket.
+* A development machine's old volumes are copied into the new names once, by
+  hand, keeping the old ones. The repo keeps no command for a one-time job.
+* Kept: the Git repository's name, the operator's `.env` values, and the names
+  history was written with (accepted ADRs, earlier phases, the drawings).
+
+## Call the `edge` profile `serving`
+**Done** (ADR 0057). `api`, `web` and Postgres run under `serving`, not
+`edge`, so the droplet is `serving,proxy,tunnel` and development
+`serving,compute,local`. The docs call the places "the droplet" and "the
+compute machine".
+

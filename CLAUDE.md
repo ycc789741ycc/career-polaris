@@ -1,8 +1,12 @@
 # CareerPolaris
 
-Formerly Job Searching Advisor: the repository, the `jsa-*` images, `jsa_net`
-and the compose projects keep the old name on purpose, because renaming them
-would break every running stack for no change a user sees.
+Formerly Job Searching Advisor. Since ADR 0056 every name inside the code base
+is CareerPolaris's — the `careerpolaris-*` images, `careerpolaris_net`, the
+`careerpolaris-infra` / `careerpolaris-app` compose projects, cookies, the
+crawler's user agent — and `jsa` is not used for anything new. Only the Git
+repository keeps `job-searching-advisor`. A machine that ran the old stack
+copies its volumes across once, by hand, with the commands in ADR 0056; the
+repo carries no command for it.
 
 Turns the work someone has actually done — GitHub, Jira, their résumé — into a
 picture of where they stand (a skill radar) and what is worth aiming at (a role
@@ -37,14 +41,22 @@ make start-infra          # compose up, wait healthy, then the least-privilege D
 make start-app            # runs migrations to completion first, then api/worker/crawler/web
 ```
 
+What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051, 0057):
+`serving` (api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
+them), `proxy` (Caddy, ADR 0053) and `local` (MinIO). Development and CI run
+`serving,compute,local`; the droplet `serving,proxy,tunnel`; the compute machine
+`compute,tunnel` (`docs/deploy.md`). Builds, `stop-app` and `stop-infra` cover
+every profile; starts run only this place's, and fail if it selects nothing or
+names a profile no service is in (`edge` became `serving` in ADR 0057).
+
 `build-app`, `start-app` and `stop-app` take `MODE=dev|prod`, default `prod`;
 any other value fails. Each Dockerfile has three stages, each with its own tag:
 
 | Stage | Tag | Used by |
 |---|---|---|
-| `prod` | `jsa-*:prod` | `MODE=prod`: `compose.yaml` alone, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
-| `test` | `jsa-*:test` | Both test tiers and every gate, in either mode, never mounted. `build-app` builds it whichever mode you ask for. |
-| `dev` | `jsa-*:dev` | `MODE=dev`: `compose.yaml` + `compose.dev.yaml`, with the repo bind-mounted. Local only — never pushed, never deployed. |
+| `prod` | `careerpolaris-*:prod` | `MODE=prod`: `compose.yaml` alone, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
+| `test` | `careerpolaris-*:test` | Both test tiers and every gate, in either mode, never mounted. `build-app` builds it whichever mode you ask for. |
+| `dev` | `careerpolaris-*:dev` | `MODE=dev`: `compose.yaml` + `compose.dev.yaml`, with the repo bind-mounted. Local only — never pushed, never deployed. |
 
 `start-app` never builds: if the image for the mode is missing it stops and tells
 you which `make build-app` to run. Both modes migrate first. Only one mode runs at
@@ -76,13 +88,13 @@ Every source mount in the repo lives in `compose.dev.yaml` and nowhere else — 
 as `-v` in a Makefile recipe. The overlay is deliberately not called
 `compose.override.yaml`, because compose would merge that into prod automatically.
 
-Hostnames in `.env` are compose service names on the `jsa_net` network, not
+Hostnames in `.env` are compose service names on the `careerpolaris_net` network, not
 `localhost`. The only host-facing values are the `*_PUBLISHED_PORT` numbers,
 which are what your browser and any database client connect to. They take this
 repo's block, `21470`–`21474` (api, web, Postgres, MinIO, MinIO console), never a
 common default like `8000`, `5173` or `5432`, so the stack runs beside other
 projects without a bind failure. Containers keep their conventional ports inside
-`jsa_net`.
+`careerpolaris_net`.
 
 `make test-unit` runs in a container with `--network none`, so it is hermetic by
 construction rather than by convention. `make test-integration` runs on the
@@ -97,8 +109,9 @@ host.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
-`logs`, `stats`, `disk-usage`, `clean-up-cache`, and `clean-up-infra` (the only
-destructive one).
+`logs`, `stats`, `disk-usage`, `backup-db`, `push-app` (CI's release) and
+`pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
+two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
   downloaded models in `.cache/` and `web/dist`. It never touches `.env`, `tmp/`,
@@ -120,8 +133,8 @@ destructive one).
   in CI. Prettier is told not to touch the generated `schema.d.ts`; otherwise
   `format` and `gen-client` would keep rewriting each other's output.
 
-Infra and the app are separate compose projects (`jsa-infra`, `jsa-app`) sharing
-the `jsa_net` network, so an app target can never remove an infra container. App
+Infra and the app are separate compose projects (`careerpolaris-infra`, `careerpolaris-app`) sharing
+the `careerpolaris_net` network, so an app target can never remove an infra container. App
 images carry `pull_policy: never`: they are built locally, and a missing one
 should fail rather than send compose to Docker Hub for a stranger's image of the
 same name.
@@ -145,7 +158,7 @@ backend/src/
   wiring/     composition root shared by every deployable: container, crawl (the
               crawler's own narrow wiring), queue (task registration), models
   kernel/     technical kernel, no domain: db, outbox, jobs, auth, crypto,
-              storage, ai_gateway, fetch, embeddings
+              storage, ai_gateway, fetch, embeddings, presence, limits
   advisor/    the application, one component per capability: identity · profile ·
               market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the component's ONLY importable surface
@@ -159,6 +172,8 @@ backend/src/
               market/crawling/  board adapters, discovery, politeness, one crawl run
 backend/tests/{unit,integration}/   each mirrors src/
 web/          React + Vite SPA, on the prototype's Organic design system (ADR 0004)
+proxy/        Caddy plus caddy-ratelimit, the edge on the droplet (ADR 0053)
+infra/        infra compose, DB roles, health wait, tunnel, backups, releases
 ```
 
 The backend is packaged by component, as the design guideline requires (its ADR
@@ -689,7 +704,7 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 
 - **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
   versions) in the sidebar and on sign-in, and `web/public/icon.svg` as the
-  favicon. Internal names (`jsa-*`, `jsa_net`) stay.
+  favicon. Internal names followed in ADR 0056.
 - **Openings for this role** (ADR 0049). The role map lists the selected
   role's openings newest first (`GET /matched-postings?order=newest`,
   `posted_on`), ten at a time with "See all n openings", and no fit per
@@ -729,3 +744,72 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   Cmd/Ctrl+Z (outside a field being typed in) step back. Saving or opening
   another résumé clears it.
 
+## Phase 12 scope
+
+Hybrid deployment (`docs/plan.md`), one branch per step under
+`epic/no-ticket/hybrid-deploy`; `docs/deploy.md` is the runbook:
+
+- **Two places** (ADR 0051). A DigitalOcean droplet (1 vCPU, 2 GB) runs
+  `serving,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
+  operator's machine runs `compute,tunnel`: the worker and the crawler, which
+  hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
+  forwards only 5432 to Postgres on loopback; the compute side dials out). Files
+  are in Spaces; MinIO is `local` only. Every published port binds to
+  `PUBLISHED_BIND_ADDRESS` (`127.0.0.1`), because Docker goes around `ufw`;
+  infra restarts with its host; Postgres's memory is `POSTGRES_*` settings.
+  Both places migrate under an advisory lock (`cli.migrate.migration_lock`),
+  and an image older than the schema refuses (`SchemaAheadError`). Found on
+  the way: a fresh database could not migrate past 0013.
+- **Work waits for the compute machine** (ADR 0052). The worker and the
+  crawler beat into `presence.process` (`kernel.presence`, a thread with its
+  own connection; migration 0044), every `PRESENCE_HEARTBEAT_SECONDS`.
+  `Staleness.is_stale(…, online_since=)` counts only the time the worker has
+  been up; `BuildRun.is_market_wait_over` only the crawler's. `GET /activity`
+  carries `processing`; `CostConfirm` says "Processing is offline; this
+  starts when it is back", the running bar leads with the machine, and the
+  shell asks every 30 s while it is away. The DSN helper is
+  `kernel.db.get_psycopg_dsn`.
+- **Caddy at the edge** (ADR 0053). `proxy/` builds Caddy 2.11.6 with
+  `caddy-ratelimit` (pinned by commit), non-root, read-only, no capabilities
+  (the unprivileged-port sysctl opens 80/443). One origin for
+  `SITE_HOSTNAME` (`<ip>.sslip.io` until there is a domain): `/api/*` to the
+  api, the rest to `web`. `EDGE_MAX_BODY_SIZE` (413), header/body/idle
+  timeouts, and per address `EDGE_AUTH_REQUESTS_PER_MINUTE` on `/api/v1/auth/*`
+  and `EDGE_REQUESTS_PER_MINUTE` on everything (429, `Retry-After`). No API
+  gateway. `make lint` validates the Caddyfile. `ObjectStore.ensure_bucket`
+  asks `HeadBucket`, because a Spaces key scoped to one bucket may not list.
+  `make backup-db` / `restore-db` move `pg_dump` through a second bucket
+  (`BACKUP_S3_*`) with the pinned AWS CLI image.
+- **Limits per account and address** (ADR 0054). `kernel.limits.Limiter`
+  counts a fixed window per limit and subject in `limits.counter` (a digest,
+  never the address; migration 0045), in a transaction of its own;
+  `wiring.limits` names `signups` (per address, `SIGNUPS_PER_ADDRESS_PER_DAY`),
+  `uploads` (per account, `UPLOADS_PER_ACCOUNT_PER_DAY`: résumés, own
+  postings, template PDFs) and `syncs` (`SYNCS_PER_ACCOUNT_PER_HOUR`). A
+  refusal is `RateLimitedError(retry_after_seconds=)`, answered 429 with
+  `Retry-After`. uvicorn believes `X-Forwarded-For` only from
+  `FORWARDED_ALLOW_IPS` (careerpolaris_net's subnet on the droplet). The SPA words the
+  proxy's own 429 and 413 and reads error pages that are not JSON.
+- **Releases by digest** (ADR 0055). CI runs on pushes to `master` (it named
+  `main`/`develop` before and never ran there); a passing push runs
+  `make push-app`: the prod images for `RELEASE_PLATFORMS`
+  (amd64 and arm64, the latter under QEMU) to `RELEASE_REGISTRY`, and
+  `release.env` naming each by digest. Each place runs
+  `make pull-app RELEASE=release.env`, edge first. `pull_policy: never` stays.
+
+Not yet: a domain (and with it Google sign-in and Cloudflare in front), and an
+arm64 image that the gates themselves ran against.
+
+## The rename (ADR 0056)
+
+Everything inside is CareerPolaris, on `chore/no-ticket/rename-to-careerpolaris`
+in `epic/no-ticket/hybrid-deploy`: images `careerpolaris-{backend,web,proxy}`,
+network `careerpolaris_net`, compose projects `careerpolaris-infra` and
+`careerpolaris-app`, cookies `careerpolaris_refresh` and
+`careerpolaris_google_attempt`, the font directory, `SERVICE_NAME`, token
+issuer and audience `careerpolaris` / `careerpolaris-api`, the user agent
+`CareerPolarisBot/1.0`, the package names, the release file's
+`CAREERPOLARIS_*_IMAGE` and CI's database and bucket. Everyone is signed out
+once, by the cookie and the issuer. Old volumes are copied once by hand
+(ADR 0056); the repo keeps no command for it. Accepted ADRs, past phases in `docs/plan.md` and the
+excalidraw drawings keep the names they were written with.

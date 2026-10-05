@@ -32,28 +32,30 @@ PY
 }
 
 set_value APP_ENV ci
+# Everything on one runner, as in development.
+set_value COMPOSE_PROFILES serving,compute,local
 set_value CORS_ALLOWED_ORIGINS http://localhost:21471
 # Service names on the container network, not localhost.
 set_value POSTGRES_HOST postgres
 set_value POSTGRES_PORT 5432
-set_value POSTGRES_DB jsa
+set_value POSTGRES_DB careerpolaris
 set_value POSTGRES_SUPERUSER postgres
 set_value POSTGRES_SUPERUSER_PASSWORD "$SUPER_PW"
 set_value APP_RW_PASSWORD "$APP_PW"
 set_value CRAWLER_RW_PASSWORD "$CRAWLER_PW"
 set_value AGGREGATOR_PASSWORD "$AGG_PW"
 set_value MIGRATOR_PASSWORD "$MIG_PW"
-set_value DATABASE_URL "postgresql+asyncpg://app_rw:${APP_PW}@postgres:5432/jsa"
-set_value CRAWLER_DATABASE_URL "postgresql+asyncpg://crawler_rw:${CRAWLER_PW}@postgres:5432/jsa"
-set_value MIGRATOR_DATABASE_URL "postgresql+psycopg://migrator:${MIG_PW}@postgres:5432/jsa"
+set_value DATABASE_URL "postgresql+asyncpg://app_rw:${APP_PW}@postgres:5432/careerpolaris"
+set_value CRAWLER_DATABASE_URL "postgresql+asyncpg://crawler_rw:${CRAWLER_PW}@postgres:5432/careerpolaris"
+set_value MIGRATOR_DATABASE_URL "postgresql+psycopg://migrator:${MIG_PW}@postgres:5432/careerpolaris"
 set_value MASTER_ENCRYPTION_KEY "$(key)"
 set_value AUTH_JWT_SECRET "$(pw)$(pw)"
 set_value AUTH_COOKIE_SECURE false
 set_value S3_ENDPOINT_URL http://objectstore:9000
 set_value S3_PUBLIC_ENDPOINT_URL http://localhost:21473
 set_value S3_REGION us-east-1
-set_value S3_BUCKET jsa-ci
-set_value S3_ACCESS_KEY_ID jsa-ci-access
+set_value S3_BUCKET careerpolaris-ci
+set_value S3_ACCESS_KEY_ID careerpolaris-ci-access
 set_value S3_SECRET_ACCESS_KEY "$(pw)"
 set_value OAUTH_REDIRECT_BASE_URL http://localhost:21471
 set_value GITHUB_OAUTH_CLIENT_ID ci-github
@@ -64,8 +66,16 @@ set_value JIRA_OAUTH_CLIENT_SECRET "$(pw)"
 set_value JIRA_API_BASE_URL https://api.atlassian.com
 set_value JIRA_OAUTH_BASE_URL https://auth.atlassian.com
 set_value WEB_API_BASE_URL http://localhost:21470
+# The release job pushes to this repository owner's packages; a pull request
+# has no owner's registry to push to and leaves it blank.
+if [ -n "${GITHUB_REPOSITORY_OWNER:-}" ]; then
+  set_value RELEASE_REGISTRY "ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+fi
 
-blank=$(grep -E '^[A-Z_]+=$' .env || true)
+# Optional settings that are off while blank: Google sign-in, and the tunnel,
+# proxy and backups CI never runs. Every other blank is a missing CI value.
+MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+|RELEASE_REGISTRY)=$'
+blank=$(grep -E '^[A-Z_]+=$' .env | grep -vE "$MAY_BE_BLANK" || true)
 if [ -n "$blank" ]; then
   echo "These variables from .env.example have no CI value yet:"
   echo "$blank"

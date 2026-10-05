@@ -148,6 +148,7 @@ async def complete_authorization(
 @router.post("/connections/{kind}/sync", status_code=202)
 async def sync_now(kind: str, user: CurrentUser, deps: Deps) -> Accepted:
     """Marked as syncing before it is queued, so the page shows it at once."""
+    await deps.limiter.record_attempt(deps.limits.syncs, f"account:{user}")
     await deps.profile.request_sync(user, kind)
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
     return Accepted()
@@ -162,6 +163,7 @@ async def disconnect(kind: str, user: CurrentUser, deps: Deps) -> None:
 async def upload_resume(
     user: CurrentUser, deps: Deps, file: UploadFile = File(...)
 ) -> ResumeUpload:
+    await deps.limiter.record_attempt(deps.limits.uploads, f"account:{user}")
     content = await file.read()
     resume = await deps.profile.upload_resume(
         user,

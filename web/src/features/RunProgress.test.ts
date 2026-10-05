@@ -6,6 +6,7 @@ import {
   getBuildSteps,
   isMapComing,
 } from "./RunProgress";
+import { ONLINE } from "../test/activity";
 
 const running = {
   started_at: "2026-09-28T09:00:00Z",
@@ -17,6 +18,7 @@ function activity(overrides: Partial<Activity>): Activity {
   return {
     syncing: [],
     advisor_jobs: [],
+    processing: ONLINE,
     parsing: [],
     analysis: null,
     role_map: null,

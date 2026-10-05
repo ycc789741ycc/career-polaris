@@ -28,6 +28,7 @@ def install(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status,
             content={"error": {"code": str(exc.code), "message": exc.message}},
+            headers=_retry_after(exc),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -82,3 +83,11 @@ def _readable(exc: RequestValidationError) -> str:
 
 def error_response(code: str, message: str) -> dict[str, Any]:
     return {"error": {"code": code, "message": message}}
+
+
+def _retry_after(exc: DomainError) -> dict[str, str] | None:
+    """A refusal that says when to try again says it to clients too (ADR 0054)."""
+    seconds = exc.context.get("retry_after_seconds")
+    if exc.code is not ErrorCode.RATE_LIMITED or not isinstance(seconds, int):
+        return None
+    return {"Retry-After": str(seconds)}

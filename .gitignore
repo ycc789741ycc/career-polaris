@@ -18,6 +18,7 @@ node_modules/
 web/dist/
 
 # Local artifacts
+release.env
 *.log
 .DS_Store
 tmp/

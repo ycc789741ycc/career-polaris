@@ -29,6 +29,7 @@ from api.dependencies import current_user, get_container
 from api.routes import profile as profile_api
 from kernel.errors import NotFoundError
 from kernel.paging import Page, paginate
+from tests.unit.api.routes.fake_limits import LIMITS, FakeLimiter
 
 EVIDENCE_ID = uuid.uuid4()
 RESUME_ID = uuid.uuid4()
@@ -126,12 +127,19 @@ def profile() -> FakeProfile:
 
 
 @pytest.fixture
-def client(queued: list[dict[str, Any]], profile: FakeProfile) -> TestClient:
+def limiter() -> FakeLimiter:
+    return FakeLimiter()
+
+
+@pytest.fixture
+def client(queued: list[dict[str, Any]], profile: FakeProfile, limiter: FakeLimiter) -> TestClient:
     app = FastAPI()
     errors.install(app)
     app.include_router(profile_api.router)
     app.dependency_overrides[current_user] = lambda: uuid.uuid4()
-    app.dependency_overrides[get_container] = lambda: SimpleNamespace(profile=profile)
+    app.dependency_overrides[get_container] = lambda: SimpleNamespace(
+        profile=profile, limiter=limiter, limits=LIMITS
+    )
     return TestClient(app)
 
 
@@ -269,3 +277,32 @@ def test_a_sync_of_a_source_that_is_not_connected_is_not_queued(
     response = client.post("/connections/jira/sync")
 
     assert response.status_code == 404 and queued == []
+
+
+# --- limits per account (ADR 0054) -------------------------------------------
+
+
+def test_a_sync_past_the_hourly_limit_is_refused_with_when_to_try_again(
+    client: TestClient,
+    profile: FakeProfile,
+    limiter: FakeLimiter,
+    queued: list[dict[str, Any]],
+) -> None:
+    limiter.refusing.add("syncs")
+
+    response = client.post("/connections/github/sync")
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "10800"
+    assert response.json()["error"] == {
+        "code": "rate_limited",
+        "message": "Too many syncs. Try again in 3 hours.",
+    }
+    assert profile.sync_requests == [] and queued == []
+
+
+def test_an_upload_counts_against_its_account(client: TestClient, limiter: FakeLimiter) -> None:
+    client.post("/resumes", files={"file": ("cv.pdf", b"%PDF-1.7", "application/pdf")})
+
+    assert [name for name, _ in limiter.attempts] == ["uploads"]
+    assert limiter.attempts[0][1].startswith("account:")

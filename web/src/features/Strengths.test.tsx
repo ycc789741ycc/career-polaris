@@ -7,6 +7,7 @@ import { ActivityContext } from "../shell/activity";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { Strengths } from "./Strengths";
 import { page } from "../test/page";
+import { ONLINE } from "../test/activity";
 
 function assessment(overrides: Partial<Assessment>): Assessment {
   return {
@@ -217,6 +218,7 @@ describe("Strengths", () => {
     renderStrengths({
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [{ label: "cv.pdf", started_at: "2026-09-28T09:00:00Z" }],
       analysis: null,
       role_map: null,
@@ -235,6 +237,7 @@ describe("Strengths", () => {
     renderStrengths({
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [],
       analysis: {
         status: "failed",
@@ -293,6 +296,7 @@ describe("Strengths", () => {
     renderStrengths({
       syncing: [],
       advisor_jobs: [],
+      processing: ONLINE,
       parsing: [],
       analysis: {
         status: "running",

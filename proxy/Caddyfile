@@ -1,0 +1,64 @@
+# The edge (ADR 0051, 0053). Every value comes from the environment compose
+# passes; the numbers after ':' are the defaults for the optional ones.
+{
+	# A plugin's directive needs a place in Caddy's order.
+	order rate_limit before basic_auth
+	servers {
+		# A slow client must not hold one of the api's few connections.
+		# No write timeout: the résumé chat streams its reply (SSE).
+		timeouts {
+			read_header {$EDGE_READ_HEADER_TIMEOUT:10s}
+			read_body {$EDGE_READ_BODY_TIMEOUT:120s}
+			idle {$EDGE_IDLE_TIMEOUT:2m}
+		}
+	}
+}
+
+{$SITE_HOSTNAME} {
+	# The largest upload is a résumé (RESUME_MAX_BYTES), plus multipart's
+	# framing. Anything larger is refused before the api reads a byte.
+	request_body {
+		max_size {$EDGE_MAX_BODY_SIZE:11MB}
+	}
+
+	# Per client address. The address is the connection's own: Caddy is the
+	# edge, so a client's X-Forwarded-For is never believed.
+	rate_limit {
+		# Every sign-in and sign-up runs Argon2id on the one vCPU.
+		zone auth {
+			match {
+				path /api/v1/auth/*
+			}
+			key {remote_host}
+			events {$EDGE_AUTH_REQUESTS_PER_MINUTE:10}
+			window 1m
+		}
+		# Generous: the SPA polls /activity every two seconds while work runs.
+		zone all {
+			key {remote_host}
+			events {$EDGE_REQUESTS_PER_MINUTE:300}
+			window 1m
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	encode zstd gzip
+
+	# One origin: the refresh cookie stays SameSite=Strict, and nothing needs
+	# CORS. The api's routes all live under /api.
+	handle /api/* {
+		reverse_proxy api:8000 {
+			# Stream the résumé chat as it is written.
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy web:8080
+	}
+}

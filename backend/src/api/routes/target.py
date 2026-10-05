@@ -58,6 +58,7 @@ async def upload_own_posting(
     Without a title it is named after its file until it is read. Spends
     nothing and queues nothing; the worker reads it when it is set as the
     target."""
+    await deps.limiter.record_attempt(deps.limits.uploads, f"account:{user}")
     posting = await deps.target.upload_own_posting(
         user,
         title=title,

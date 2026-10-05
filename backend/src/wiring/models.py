@@ -18,7 +18,9 @@ import advisor.resume
 import advisor.rolemap
 import advisor.target  # noqa: F401
 from kernel.db.base import Base
+from kernel.limits.models import LimitCounter  # noqa: F401
 from kernel.outbox.models import OutboxEvent  # noqa: F401
+from kernel.presence.models import ProcessHeartbeat  # noqa: F401
 
 # Schemas, in the order they are created.
 SCHEMAS = (
@@ -33,6 +35,8 @@ SCHEMAS = (
     "gapplan",
     "resume",
     "outbox",
+    "presence",
+    "limits",
 )
 
 # Every table with an owner_id, covered by row-level security.

@@ -39,8 +39,8 @@ def _auth(uow: FakeIdentityUnitOfWork) -> AuthService:
     return AuthService(
         uow,
         secret="s" * 48,
-        issuer="jsa-test",
-        audience="jsa-test-api",
+        issuer="careerpolaris-test",
+        audience="careerpolaris-test-api",
         access_ttl_seconds=900,
         refresh_ttl_days=30,
         default_monthly_cap_usd=Decimal("20"),

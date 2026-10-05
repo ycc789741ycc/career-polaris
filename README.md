@@ -1,7 +1,9 @@
 # CareerPolaris
 
-*Formerly Job Searching Advisor. The repository, images and compose projects
-keep the old `job-searching-advisor` / `jsa` names.*
+*Formerly Job Searching Advisor. Everything inside the code base now carries
+the new name ([ADR 0056](docs/decisions/0056-rename-everything-inside-to-careerpolaris.md));
+only the Git repository is still called `job-searching-advisor`. A machine that
+ran the old stack copies its data across once, by hand (ADR 0056).*
 
 **Know where you stand, see which real jobs fit you, and close the gap to the
 one you want.** Everything is built from the work you have actually done.
@@ -64,6 +66,17 @@ Design choices that are deliberate:
 - **Nothing reaches an LLM except through `kernel.ai_gateway`.** The gateway
   estimates cost, checks the budget, decrypts the key for exactly one call,
   validates the output against a schema and writes a ledger row.
+- **It runs in two places.** A small droplet runs the api, the SPA, Postgres
+  and Caddy, the only thing on the internet. The operator's own machine runs
+  the worker and the crawler, which hold the embedding model, and reaches
+  Postgres through a Tailscale tunnel. Work started while that machine is off
+  waits for it, and the app says so ([ADR 0051](docs/decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md),
+  [ADR 0052](docs/decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)).
+  [`docs/deploy.md`](docs/deploy.md) is the runbook.
+- **Limits at two levels.** Caddy caps request bodies and limits requests
+  per address ([ADR 0053](docs/decisions/0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md)).
+  The app limits sign-ups per address, and uploads and syncs per account,
+  counted in Postgres ([ADR 0054](docs/decisions/0054-limit-each-account-and-each-sign-up-address-in-postgres.md)).
 - **Glassdoor, Indeed and LinkedIn are not crawled.** Market data comes from
   public ATS boards, schema.org JSON-LD career pages, the Himalayas public API
   for remote work ([ADR 0025](docs/decisions/0025-search-himalayas-for-the-candidate-roles.md))
@@ -79,6 +92,10 @@ for local embedding and matching. WeasyPrint for PDFs. React and Vite with an
 
 You need **Docker** and **`make`**, and nothing else. Every toolchain, database,
 linter and migration runs in a container.
+
+`.env.example` sets `COMPOSE_PROFILES=serving,compute,local`, which runs
+everything on one machine. A deployment splits it across two places
+([`docs/deploy.md`](docs/deploy.md)).
 
 ```sh
 cp .env.example .env      # fill in every blank
@@ -129,9 +146,11 @@ Supporting targets, which are never dependencies of the targets above:
 `migrate`, `format`, `gen-client` (regenerates the TypeScript API client),
 `lock` (regenerates `backend/uv.lock`), `logs`, `stats` (CPU, memory and
 restarts per container, against its limit), `disk-usage` (free disk, volumes,
-the largest tables, buckets), `clean-up-cache` (deletes tool caches and build
-output, all regenerated on the next run) and `clean-up-infra`, which is the
-only destructive one.
+the largest tables, buckets), `backup-db` (a `pg_dump` into the backup bucket),
+`push-app` (CI's release, by digest) and `pull-app` (a deployed place takes
+that release), and `clean-up-cache` (deletes tool caches and build output, all
+regenerated on the next run). `restore-db` and `clean-up-infra` are the only
+destructive ones, and each asks first.
 
 ## Repository layout
 
@@ -144,19 +163,20 @@ backend/
     cli/      migrate, seed, OpenAPI export
     wiring/   composition root shared by every deployable
     kernel/   technical kernel with no domain logic: db, outbox, jobs, auth, crypto,
-              storage, ai_gateway, fetch, embeddings
+              storage, ai_gateway, fetch, embeddings, presence, limits
     advisor/  identity · profile · market · rolemap · assessment · target · gapplan · resume · activity
                 __init__.py  the only importable surface; submodules are private
                 service.py use cases · domain/ pure rules · infra/ models and adapters
   migrations/ Alembic
   tests/      unit/ and integration/, each mirroring src/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
-infra/        infra compose project, DB role bootstrap, health wait
+proxy/        Caddy, the edge on the droplet (ADR 0053)
+infra/        infra compose project, DB roles, health wait, tunnel, backups, releases
 prototype/    design reference screens for the v3 journey (prototype/README.md)
 docs/         domain model, architecture, plan, decisions
 ```
 
-Twenty-two `import-linter` contracts in `backend/.importlinter` enforce the module
+Twenty-three `import-linter` contracts in `backend/.importlinter` enforce the module
 boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 
 ## Documentation
@@ -165,6 +185,7 @@ boundaries in CI. If one of them breaks, the design is wrong, not the contract.
 |---|---|
 | [`docs/domain_model.md`](docs/domain_model.md) | The domain model, bounded contexts and the decisions behind them |
 | [`docs/architecture.md`](docs/architecture.md) | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
+| [`docs/deploy.md`](docs/deploy.md) | Deploying to the droplet and the compute machine: accounts, settings per place, releases, backups |
 | [`docs/technical/task-queue.md`](docs/technical/task-queue.md) | Task submission, outbox dispatch, worker execution and status polling, with data-flow diagrams |
 | [`docs/technical/strength-analysis.md`](docs/technical/strength-analysis.md) | The strength analysis, from the confirmed estimate to the stored report and the candidate roles it hands the role map |
 | [`docs/technical/role-map-build.md`](docs/technical/role-map-build.md) | A role-map build: what asks for one, the on-demand market fetch it waits for, choosing and analysing the ten, and the fits after |

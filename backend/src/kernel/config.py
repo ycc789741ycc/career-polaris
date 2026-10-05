@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # --- Application --------------------------------------------------------
     app_env: str = Field(alias="APP_ENV")
-    service_name: str = Field(default="job-searching-advisor", alias="SERVICE_NAME")
+    service_name: str = Field(default="careerpolaris", alias="SERVICE_NAME")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     port: int = Field(default=8000, alias="PORT")
     # Browser origins allowed to call the API — the SPA's origin, which is not
@@ -50,10 +50,8 @@ class Settings(BaseSettings):
     # emergency control.
     auth_jwt_secret: SecretStr | None = Field(default=None, alias="AUTH_JWT_SECRET")
     # Identifiers, not URLs — a default is fine and keeps one less blank.
-    auth_token_issuer: str = Field(default="job-searching-advisor", alias="AUTH_TOKEN_ISSUER")
-    auth_token_audience: str = Field(
-        default="job-searching-advisor-api", alias="AUTH_TOKEN_AUDIENCE"
-    )
+    auth_token_issuer: str = Field(default="careerpolaris", alias="AUTH_TOKEN_ISSUER")
+    auth_token_audience: str = Field(default="careerpolaris-api", alias="AUTH_TOKEN_AUDIENCE")
     # Short: an access token cannot be revoked before it expires, so its
     # lifetime is the window a stolen one is useful for.
     auth_access_token_ttl_seconds: int = Field(default=900, alias="AUTH_ACCESS_TOKEN_TTL_SECONDS")
@@ -139,7 +137,7 @@ class Settings(BaseSettings):
     template_upload_max_pages: int = Field(default=3, ge=1, alias="TEMPLATE_UPLOAD_MAX_PAGES")
 
     # --- Crawler ------------------------------------------------------------
-    crawl_user_agent: str = Field(default="JobSearchingAdvisorBot/1.0", alias="CRAWL_USER_AGENT")
+    crawl_user_agent: str = Field(default="CareerPolarisBot/1.0", alias="CRAWL_USER_AGENT")
     crawl_http_timeout_seconds: int = Field(default=30, alias="CRAWL_HTTP_TIMEOUT_SECONDS")
     crawl_rate_limit_per_host_per_second: float = Field(
         default=1.0, alias="CRAWL_RATE_LIMIT_PER_HOST_PER_SECOND"
@@ -178,11 +176,31 @@ class Settings(BaseSettings):
     # three calls each on the user's key, and the whole map.
     role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
 
+    # --- Limits per account and per address (ADR 0054) ----------------------
+    # Accounts made from one address in a day. Addresses are not verified yet
+    # (architecture.md open question 3), so this is what stops a script.
+    signups_per_address_per_day: int = Field(default=10, ge=1, alias="SIGNUPS_PER_ADDRESS_PER_DAY")
+    # Files one account uploads in a day: résumés, roles of their own and
+    # template PDFs, each read on the compute machine.
+    uploads_per_account_per_day: int = Field(default=30, ge=1, alias="UPLOADS_PER_ACCOUNT_PER_DAY")
+    # Connector syncs one account asks for in an hour.
+    syncs_per_account_per_hour: int = Field(default=6, ge=1, alias="SYNCS_PER_ACCOUNT_PER_HOUR")
+
     # --- Background work ----------------------------------------------------
     # How long a sync, parse, analysis or role-map build may show as running
     # before it is treated as lost (a worker that died mid-job), so it stops
     # blocking the stages after it (ADR 0018).
     job_stale_after_seconds: int = Field(default=900, gt=0, alias="JOB_STALE_AFTER_SECONDS")
+    # How often the worker and the crawler say they are up (ADR 0052). One
+    # silent for PRESENCE_MISSED_BEATS of these reads as away: the machine it
+    # runs on may be off, and its work waits instead of being reported lost.
+    presence_heartbeat_seconds: float = Field(
+        default=10.0, gt=0, le=60, alias="PRESENCE_HEARTBEAT_SECONDS"
+    )
+
+    @property
+    def presence_away_after_seconds(self) -> float:
+        return self.presence_heartbeat_seconds * PRESENCE_MISSED_BEATS
 
     @field_validator("log_level")
     @classmethod
@@ -268,6 +286,11 @@ class Settings(BaseSettings):
                 "`api` and `worker` only — never on `crawler`."
             )
         return self.master_encryption_key
+
+
+# Beats a process may miss before it reads as away: one late beat is a busy
+# moment, not a machine gone.
+PRESENCE_MISSED_BEATS = 4
 
 
 class MissingSecretError(RuntimeError):

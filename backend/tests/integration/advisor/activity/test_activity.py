@@ -5,6 +5,7 @@ waits for an analysis."""
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -15,15 +16,33 @@ from advisor.profile import ProfileService, create_profile_service
 from advisor.profile.domain import ResumeFile, ResumeStatus, SourceConnection
 from advisor.profile.infra.unit_of_work import SqlAlchemyProfileUnitOfWork
 from advisor.rolemap import RoleMapService, create_rolemap_service
+from kernel.clock import utcnow
 from kernel.db import Database
 from kernel.errors import SourcesProcessingError
+from kernel.presence import PresenceView, UnitPresence
 from tests.unit.advisor.rolemap.fakes import FakeMarket
 
 pytestmark = pytest.mark.integration
 
 
+class _Presence:
+    """The worker and the crawler as these tests need them: up for a day,
+    unless a test takes the worker away. A worker running against the same
+    database must not decide what these tests see."""
+
+    def __init__(self) -> None:
+        self.worker_since: datetime | None = utcnow() - timedelta(days=1)
+
+    async def __call__(self) -> PresenceView:
+        up = UnitPresence(online_since=utcnow() - timedelta(days=1), seen_at=None)
+        return PresenceView(
+            worker=UnitPresence(online_since=self.worker_since, seen_at=None), crawler=up
+        )
+
+
 class _Services:
     def __init__(self, database: Database) -> None:
+        self.presence = _Presence()
         self.profile: ProfileService = create_profile_service(
             database,
             object_store=None,  # type: ignore[arg-type]
@@ -56,6 +75,7 @@ class _Services:
             profile=self.profile,
             assessment=self.assessment,
             rolemap=self.rolemap,
+            get_presence=self.presence,
             stale_after_seconds=900,
         )
 
@@ -134,3 +154,28 @@ async def test_a_role_map_waits_for_the_analysis_and_starts_when_it_finishes(
                 {"run_id": str(run.id), "status": "failed", "error_code": "ai_budget_exceeded"},
             )
         ]
+
+
+async def test_an_analysis_queued_while_the_worker_is_away_is_not_lost(
+    database: Database, services: _Services, account: uuid.UUID
+) -> None:
+    """ADR 0052: the machine that runs the work is off. A run recorded a day
+    ago still reads as running, and is lost only once the worker has been
+    back past the limit."""
+    run = await services.activity.request_analysis(account)
+    async with database.for_user(account) as session:
+        await session.execute(
+            text(
+                "UPDATE assessment.analysis_run SET started_at = now() - interval '1 day' "
+                "WHERE id = :id"
+            ),
+            {"id": run.id},
+        )
+    services.presence.worker_since = None
+
+    away = await services.activity.status(account)
+    assert away.analysis is not None and away.analysis.status == "running"
+
+    services.presence.worker_since = utcnow() - timedelta(hours=1)
+    back = await services.activity.status(account)
+    assert back.analysis is not None and back.analysis.error_code == "stale"

@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import { Button } from "../components/ui";
+import { AWAY_NOTICE, isProcessingAway, useActivity } from "../shell/activity";
 
 /**
  * "Before we spend anything": the estimate for a run on the user's own key,
- * and nothing happens until they say yes (domain model 2.10).
+ * and nothing happens until they say yes (domain model 2.10). While the
+ * machine that runs the work is away, it says so: the run is queued, and
+ * starts when it is back (ADR 0052).
  */
 export function CostConfirm({
   children,
@@ -16,6 +19,7 @@ export function CostConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { activity } = useActivity();
   return (
     <div
       className="callout"
@@ -29,6 +33,11 @@ export function CostConfirm({
       <p className="callout-note" style={{ fontSize: 14, lineHeight: 1.6 }}>
         {children}
       </p>
+      {isProcessingAway(activity) && (
+        <p className="callout-note" role="note" style={{ fontSize: 14 }}>
+          {AWAY_NOTICE}.
+        </p>
+      )}
       <div className="row">
         <Button onClick={onConfirm} busy={busy}>
           Run it

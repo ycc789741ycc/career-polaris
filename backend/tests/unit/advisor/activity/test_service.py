@@ -4,7 +4,7 @@ and role-map use cases on in-memory storage, with a stand-in profile."""
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -14,6 +14,7 @@ from advisor.profile import PendingSourceView, SourceProcessingView
 from advisor.rolemap import RoleMapService
 from kernel.clock import utcnow
 from kernel.errors import AnalysisRunningError, SourcesProcessingError
+from kernel.presence import PresenceView, UnitPresence
 from tests.unit.advisor.assessment.fakes import FakeAssessmentUnitOfWork
 from tests.unit.advisor.rolemap.fakes import FakeMarket, FakeRoleMapUnitOfWork
 
@@ -30,9 +31,24 @@ class FakeProfile:
         return SourceProcessingView(syncing=tuple(self.syncing), parsing=tuple(self.parsing))
 
 
+class FakePresence:
+    """The worker and the crawler, up for a day unless a test says otherwise."""
+
+    def __init__(self) -> None:
+        self.worker_since: datetime | None = utcnow() - timedelta(days=1)
+        self.crawler_since: datetime | None = utcnow() - timedelta(days=1)
+
+    async def __call__(self) -> PresenceView:
+        return PresenceView(
+            worker=UnitPresence(online_since=self.worker_since, seen_at=None),
+            crawler=UnitPresence(online_since=self.crawler_since, seen_at=None),
+        )
+
+
 class World:
     def __init__(self) -> None:
         self.profile = FakeProfile()
+        self.presence = FakePresence()
         self.assessments = FakeAssessmentUnitOfWork()
         self.rolemaps = FakeRoleMapUnitOfWork()
         self.assessment = AssessmentService(
@@ -56,6 +72,7 @@ class World:
             profile=self.profile,  # type: ignore[arg-type]
             assessment=self.assessment,
             rolemap=self.rolemap,
+            get_presence=self.presence,
             stale_after_seconds=STALE_AFTER,
         )
 
@@ -275,3 +292,65 @@ async def test_a_build_long_queued_behind_an_analysis_is_judged_from_when_it_ask
     status = await world.activity.status(OWNER)
 
     assert status.role_map is not None and status.role_map.status == "waiting"
+
+
+# --- the machine that runs the work may be away (ADR 0051, 0052) -----------
+
+
+async def test_work_queued_while_the_worker_is_away_is_not_lost(world: World) -> None:
+    """The machine is off: the analysis waits in the queue, however long."""
+    world.presence.worker_since = None
+    await world.activity.request_analysis(OWNER)
+    world.age_runs()
+
+    status = await world.activity.status(OWNER)
+
+    assert status.analysis is not None and status.analysis.status == "running"
+    assert not status.presence.worker.is_online
+
+
+async def test_the_limit_counts_from_when_the_worker_came_back(world: World) -> None:
+    """Queued long ago, the worker back a moment ago: a whole limit to run in."""
+    await world.activity.request_analysis(OWNER)
+    world.age_runs()
+    world.presence.worker_since = utcnow()
+
+    status = await world.activity.status(OWNER)
+
+    assert status.analysis is not None and status.analysis.status == "running"
+
+
+async def test_work_is_lost_once_the_worker_has_been_back_past_the_limit(world: World) -> None:
+    await world.activity.request_analysis(OWNER)
+    world.age_runs()
+    world.presence.worker_since = utcnow() - timedelta(seconds=STALE_AFTER + 1)
+
+    status = await world.activity.status(OWNER)
+
+    assert status.analysis is not None
+    assert (status.analysis.status, status.analysis.error_code) == ("failed", "stale")
+
+
+async def test_a_parse_waiting_for_the_worker_still_blocks_an_analysis(world: World) -> None:
+    """A résumé uploaded while the machine was off is still to be read."""
+    world.presence.worker_since = None
+    world.profile.parsing.append(_pending("cv.pdf", age=timedelta(seconds=STALE_AFTER + 1)))
+
+    with pytest.raises(SourcesProcessingError):
+        await world.activity.request_analysis(OWNER)
+
+
+async def test_a_build_waiting_for_the_market_is_not_lost_while_the_crawler_is_away(
+    world: World,
+) -> None:
+    world.market.due = (uuid.uuid4(),)
+    await world.activity.request_role_map(OWNER)
+    for build in world.rolemaps.store.builds.values():
+        assert build.awaited_since is not None
+        build.awaited_since -= timedelta(seconds=STALE_AFTER + 1)
+    world.presence.crawler_since = None
+
+    status = await world.activity.status(OWNER)
+
+    assert status.role_map is not None
+    assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")

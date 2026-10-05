@@ -56,6 +56,13 @@ new record that supersedes the old one.
 | [0048](0048-draw-contact-details-as-typed-items-with-icons.md) | Contact details are typed items, drawn with icons | Accepted |
 | [0049](0049-list-a-roles-openings-newest-first-without-a-fit.md) | The role map lists a role's openings newest first, without a fit | Accepted |
 | [0050](0050-keep-the-advisors-target-in-the-browser.md) | The Advisor's target is kept in the browser | Accepted |
+| [0051](0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md) | The edge runs on a droplet, the heavy work on the operator's machine | Accepted |
+| [0052](0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md) | Work waits for the processing machine instead of being reported lost | Accepted |
+| [0053](0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md) | Caddy is the edge, with per-address limits and no API gateway | Accepted |
+| [0054](0054-limit-each-account-and-each-sign-up-address-in-postgres.md) | Each account, and each sign-up address, is limited in Postgres | Accepted |
+| [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted |
+| [0056](0056-rename-everything-inside-to-careerpolaris.md) | Everything inside is renamed to CareerPolaris | Accepted |
+| [0057](0057-call-the-api-web-and-postgres-profile-serving.md) | The profile with the api, the SPA and Postgres is called `serving` | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

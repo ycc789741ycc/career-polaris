@@ -208,7 +208,8 @@ export interface paths {
          * @description Create an account and sign in.
          *
          *     The address is not verified — nothing is sent to it yet. That has to be in
-         *     place before any notification feature ships.
+         *     place before any notification feature ships. Until then, how many accounts
+         *     one network may make in a day is limited (ADR 0054).
          */
         post: operations["register_api_v1_auth_register_post"];
         delete?: never;
@@ -1477,6 +1478,7 @@ export interface components {
             analysis: components["schemas"]["RunStatus"] | null;
             /** Parsing */
             parsing: components["schemas"]["PendingWork"][];
+            processing: components["schemas"]["Processing"];
             role_map: components["schemas"]["RunStatus"] | null;
             /** Syncing */
             syncing: components["schemas"]["PendingWork"][];
@@ -2284,6 +2286,25 @@ export interface components {
             started_on: string;
             /** Title */
             title: string;
+        };
+        /**
+         * Processing
+         * @description Whether the machine that runs background work is up (ADR 0051, 0052).
+         *
+         *     While the worker is away, work the user starts is queued and runs when it
+         *     is back; nothing reads as lost meanwhile. While the crawler is away, a
+         *     role map waiting for the market waits for it. ``*_seen_at`` is each one's
+         *     last heartbeat, or null if it never sent one.
+         */
+        Processing: {
+            /** Crawler Seen At */
+            crawler_seen_at: string | null;
+            /** Is Crawler Online */
+            is_crawler_online: boolean;
+            /** Is Worker Online */
+            is_worker_online: boolean;
+            /** Worker Seen At */
+            worker_seen_at: string | null;
         };
         /**
          * Profile

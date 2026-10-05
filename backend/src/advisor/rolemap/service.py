@@ -700,18 +700,26 @@ class RoleMapService:
         )
 
     async def check_market(
-        self, owner_id: uuid.UUID, build_id: uuid.UUID, *, deadline: timedelta
+        self,
+        owner_id: uuid.UUID,
+        build_id: uuid.UUID,
+        *,
+        deadline: timedelta,
+        crawler_online_since: datetime | None,
     ) -> MarketWait:
         """Start a build waiting for the market once every source it waits for
         has been fetched, or once ``deadline`` has passed since it asked; then
-        it builds on what is stored (ADR 0027)."""
+        it builds on what is stored (ADR 0027). The deadline counts only while
+        the crawler is up (ADR 0052)."""
         async with self._uow.for_owner(owner_id) as mine:
             build = await mine.builds.get(build_id)
         if build is None or not build.is_waiting_for_market or build.awaited_since is None:
             return MarketWait.DONE
         pending = await self._market.pending_sources(build.awaited_source_ids)
         now = utcnow()
-        if pending and now - build.awaited_since < deadline:
+        if pending and not build.is_market_wait_over(
+            now, deadline=deadline, crawler_online_since=crawler_online_since
+        ):
             return MarketWait.WAIT
         async with self._uow.for_owner(owner_id) as mine:
             current = await mine.builds.get(build_id)

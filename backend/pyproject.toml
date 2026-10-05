@@ -1,5 +1,5 @@
 [project]
-name = "job-searching-advisor-backend"
+name = "careerpolaris-backend"
 version = "0.1.0"
 description = "Modular monolith (api + worker) and crawler for CareerPolaris"
 requires-python = ">=3.12,<3.13"

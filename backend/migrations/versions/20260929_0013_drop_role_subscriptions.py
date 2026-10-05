@@ -43,6 +43,11 @@ _TARGET_TABLES = (("gapplan.plan", "ck_plan"), ("resume.resume", "ck_resume"))
 def upgrade() -> None:
     bind = op.get_bind()
     for table, prefix in _TARGET_TABLES:
+        # A fresh database's tables come from today's metadata, which has had
+        # no ``target_kind`` since ADR 0022: there is nothing to delete or
+        # re-check, and the checks below would name columns it lacks.
+        if not _has_column(table, "target_kind"):
+            continue
         # The migrator owns the table, but FORCE ROW LEVEL SECURITY holds even
         # the owner to the per-user policy, which would match no row here. Lift
         # it for the one statement. The table names are this module's constants.
@@ -67,6 +72,22 @@ def upgrade() -> None:
     op.execute("DROP TABLE IF EXISTS market_user.manual_refresh_log")
     # Dropping the table drops its policies, fanout_read among them.
     op.execute("DROP TABLE IF EXISTS market_user.company_subscription")
+
+
+def _has_column(table: str, column: str) -> bool:
+    schema, name = table.split(".")
+    return (
+        op.get_bind()
+        .execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = :schema AND table_name = :name AND column_name = :column"
+            ),
+            {"schema": schema, "name": name, "column": column},
+        )
+        .first()
+        is not None
+    )
 
 
 def downgrade() -> None:

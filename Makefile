@@ -18,13 +18,19 @@
 #         bind-mounted, reloading on save. Local only.
 # Tests and gates ignore MODE: they always run the `test` stage, never mounted,
 # which `build-app` builds in either mode. The app itself never reads MODE.
+#
+# Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
+# (docs/decisions/0051, 0057): `serving` (api, web, Postgres), `compute` (worker,
+# crawler), `tunnel` (the link between them), `proxy` (Caddy, ADR 0053) and
+# `local` (MinIO). Development and CI name serving, compute and local. Builds and `stop-app` cover every profile;
+# starts run only this place's.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ENV_FILE      ?= .env
 INFRA_COMPOSE := infra/compose.yml
-NETWORK       := jsa_net
+NETWORK       := careerpolaris_net
 
 MODE ?= prod
 
@@ -36,12 +42,15 @@ else
 COMPOSE_APP  := $(COMPOSE_BASE)
 endif
 COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE)
+# Every profile, whatever this place runs: what builds, stops and reports use.
+ALL_PROFILES  := --profile '*'
 
 # One tag per mode, plus the test image both modes build.
-MODE_IMAGES        := jsa-backend:$(MODE) jsa-web:$(MODE)
-PROD_IMAGES        := jsa-backend:prod jsa-web:prod
-BACKEND_TEST_IMAGE := jsa-backend:test
-WEB_TEST_IMAGE     := jsa-web:test
+MODE_IMAGES        := careerpolaris-backend:$(MODE) careerpolaris-web:$(MODE)
+PROD_IMAGES        := careerpolaris-backend:prod careerpolaris-web:prod careerpolaris-proxy:prod
+PROXY_IMAGE        := careerpolaris-proxy:prod
+BACKEND_TEST_IMAGE := careerpolaris-backend:test
+WEB_TEST_IMAGE     := careerpolaris-web:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
 
 # The dev overlay's source-writing tools run as the invoking user, so the files
@@ -63,10 +72,12 @@ PYTEST_FILTER :=
 VITEST_FILTER :=
 endif
 
-.PHONY: help require-env check-mode require-mode-images build-infra build-app \
+.PHONY: help require-env check-mode require-mode-images require-app-services \
+        require-known-profiles \
+        require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache
+        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -75,7 +86,9 @@ help:
 	@echo "Gates (their own targets, never folded into a test target):"
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
-	@echo "  migrate format gen-client lock logs stats disk-usage clean-up-cache clean-up-infra"
+	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
+	@echo "  push-app (CI) pull-app (each deployed place)"
+	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
 	@test -f $(ENV_FILE) || { \
@@ -94,46 +107,77 @@ require-mode-images: check-mode
 	    echo "ERROR: $$image is missing. Run: make build-app MODE=$(MODE)"; exit 1; }; \
 	done
 
+# Every profile a service is in. Compose ignores a name it does not know, so an
+# old or mistyped one would quietly leave its services out; refuse it instead.
+KNOWN_PROFILES := serving compute proxy tunnel local
+
+require-known-profiles: require-env
+	@for profile in $$(grep -E '^COMPOSE_PROFILES=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr ',' ' '); do \
+	  case " $(KNOWN_PROFILES) " in *" $$profile "*) ;; \
+	    *) echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) names '$$profile', which no service is in."; \
+	       echo "  Known profiles: $(KNOWN_PROFILES). ('edge' is now 'serving', ADR 0057.)"; exit 1 ;; \
+	  esac; \
+	done
+
+# A place whose COMPOSE_PROFILES selects nothing would start nothing and say
+# nothing; fail instead, with what to set.
+require-app-services: require-known-profiles
+	@[ -n "$$($(COMPOSE_BASE) config --services 2>/dev/null | grep -vx migrate)" ] || { \
+	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no app service."; \
+	  echo "  Set serving, compute, or both (development: serving,compute,local)."; exit 1; }
+
+require-infra-services: require-known-profiles
+	@[ -n "$$($(COMPOSE_INFRA) config --services 2>/dev/null)" ] || { \
+	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no infra service."; \
+	  echo "  Set serving, tunnel or local (development: serving,compute,local)."; exit 1; }
+
 # --- build ------------------------------------------------------------------
 
-build-infra: require-env
+# This place's infra only: a compute machine has no use for Postgres's image.
+build-infra: require-infra-services
 	$(COMPOSE_INFRA) pull
 
 # The images for the requested mode, plus the `test` stage the test tiers and
-# gates run in — built whichever mode was asked for.
+# gates run in — built whichever mode was asked for. The proxy has one stage,
+# so it is careerpolaris-proxy:prod in either mode; only a `proxy` place runs it.
 build-app: require-env check-mode
-	$(COMPOSE_APP) build
+	$(COMPOSE_APP) $(ALL_PROFILES) build
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
 	docker build --target test -t $(WEB_TEST_IMAGE) web
 	docker pull $(SCANNER_IMAGE)
 
 # --- start / stop -----------------------------------------------------------
 
-start-infra: require-env
+# careerpolaris_net is created here even where no infra service joins it (a compute
+# machine runs only the tunnel, on the host's network), because the app's
+# compose file expects it.
+start-infra: require-infra-services
+	@infra/tunnel-up.sh check
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || docker network create $(NETWORK) >/dev/null
 	$(COMPOSE_INFRA) up -d
 	@echo "Waiting for infra to report healthy..."
 	@infra/wait-for-healthy.sh
-	@echo "Bootstrapping least-privilege database roles..."
+	@infra/tunnel-up.sh
 	@infra/bootstrap-roles.sh
 
 # Both modes migrate first: pending migrations run to completion BEFORE any
 # container serves traffic, and a failed migration fails the start. Starting
 # one mode replaces the other, since both run the same services.
-start-app: require-env require-mode-images migrate
+start-app: require-app-services require-mode-images migrate
 	$(COMPOSE_APP) up -d --no-build
-	@echo "MODE=$(MODE): api on $$($(COMPOSE_APP) port api 8000)," \
-	      "web on $$($(COMPOSE_APP) port web 8080)"
+	@echo "MODE=$(MODE), running here:"
+	@$(COMPOSE_APP) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
 
 # Stops whichever mode is running: both run the same services in one project.
 stop-app: require-env check-mode
-	$(COMPOSE_BASE) down --remove-orphans
+	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
 
 # Preserves data on purpose. Use `make clean-up-infra` to discard volumes.
 stop-infra: require-env
-	$(COMPOSE_INFRA) stop
+	$(COMPOSE_INFRA) $(ALL_PROFILES) stop
 
 logs: require-env
-	$(COMPOSE_BASE) logs --tail 100 -f
+	$(COMPOSE_BASE) $(ALL_PROFILES) logs --tail 100 -f
 
 # --- resource usage ---------------------------------------------------------
 
@@ -142,7 +186,7 @@ logs: require-env
 # Then restarts and OOM kills: a non-zero count means a limit is too tight or
 # something leaks — raise the *_MEM_LIMIT in .env, or find the leak.
 stats: require-env
-	@ids="$$($(COMPOSE_INFRA) ps -q) $$($(COMPOSE_BASE) ps -q)"; \
+	@ids="$$($(COMPOSE_INFRA) $(ALL_PROFILES) ps -q) $$($(COMPOSE_BASE) $(ALL_PROFILES) ps -q)"; \
 	 [ -n "$${ids// /}" ] || { echo "Nothing is running. Run: make start-infra"; exit 1; }; \
 	 docker stats --no-stream \
 	   --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.PIDs}}' $$ids; \
@@ -181,6 +225,8 @@ lint:
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) lint-imports --config .importlinter \
 	    --cache-dir /tmp/import-linter
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx eslint src
+	$(RUN_HERMETIC) -e SITE_HOSTNAME=lint.invalid $(PROXY_IMAGE) \
+	    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # web/tsconfig.json lists no files, only a reference to tsconfig.app.json, so a
 # bare `tsc --noEmit` there checks nothing. Name the project that holds src/.
@@ -265,9 +311,38 @@ clean-up-cache:
 	rm -rf web/dist
 	find backend -mindepth 1 -depth -type d -empty -not -path '*/.venv/*' -print -exec rmdir {} \;
 
+# --- releases (ADR 0055) -----------------------------------------------------
+
+# CI only, after every gate has passed: builds the prod images for every
+# platform in RELEASE_PLATFORMS, pushes them to RELEASE_REGISTRY and writes
+# release.env, each image by digest. Needs a buildx builder that can build
+# those platforms.
+push-app: require-env
+	@infra/push-release.sh
+
+# On the droplet and the compute machine, in place of build-app: pulls the
+# release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
+pull-app:
+	@infra/pull-release.sh "$(RELEASE)"
+
+# --- backups ----------------------------------------------------------------
+
+# One pg_dump of the database, into the backup bucket (BACKUP_S3_*). Only
+# reads the database; run it where Postgres runs. The droplet's crontab runs
+# it nightly; the bucket's lifecycle rule decides how long dumps are kept.
+backup-db: require-env
+	@infra/backup-db.sh
+
+# DESTRUCTIVE: replaces a database with a dump from the backup bucket.
+# BACKUP= names the dump (`make backup-db` prints it); RESTORE_DB= the
+# database to restore into, default POSTGRES_DB. Stop the app first. Never a
+# dependency of anything.
+restore-db: require-env
+	@infra/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
+
 # DESTRUCTIVE. Never a dependency of a build, start, stop or test target.
 clean-up-infra: require-env
 	@read -p "This deletes all local infra volumes. Type 'yes' to continue: " ok; \
 	 [ "$$ok" = "yes" ] || { echo "aborted"; exit 1; }
-	$(COMPOSE_BASE) down --remove-orphans
-	$(COMPOSE_INFRA) down -v
+	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
+	$(COMPOSE_INFRA) $(ALL_PROFILES) down -v

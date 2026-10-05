@@ -12,8 +12,8 @@ import asyncio
 import psycopg
 
 from kernel.config import get_settings
+from kernel.db import get_psycopg_dsn
 from kernel.jobs import JOB_SCHEMA, build_app
-from kernel.jobs.app import _psycopg_dsn
 
 
 async def main() -> None:
@@ -59,7 +59,7 @@ def _migrator_dsn() -> str:
     url = os.environ.get("MIGRATOR_DATABASE_URL")
     if not url:
         raise RuntimeError("MIGRATOR_DATABASE_URL is required to apply the job schema")
-    return _psycopg_dsn(url)
+    return get_psycopg_dsn(url)
 
 
 if __name__ == "__main__":

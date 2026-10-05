@@ -59,8 +59,8 @@ RUN apt-get update \
 # fontconfig finds them: Pango loads them by family name, so the renderer still
 # fetches nothing (ADR 0038). The TTFs are the SPA's self-hosted WOFF2 files,
 # converted, so the preview and the PDF set the same type.
-COPY assets/fonts/ /usr/local/share/fonts/jsa/
-RUN fc-cache -f /usr/local/share/fonts/jsa
+COPY assets/fonts/ /usr/local/share/fonts/careerpolaris/
+RUN fc-cache -f /usr/local/share/fonts/careerpolaris
 
 # Source lives under src/ (package by component, docs/decisions/0009); every
 # entrypoint, gate and test imports from there.

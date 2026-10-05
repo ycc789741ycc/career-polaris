@@ -20,6 +20,7 @@ from advisor.target import OwnPostingView
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import target as target_api
+from tests.unit.api.routes.fake_limits import LIMITS, FakeLimiter
 
 JD_ID = uuid.uuid4()
 RUN_ID = uuid.uuid4()
@@ -114,7 +115,7 @@ def client(target: FakeTarget, activity: FakeActivity, queued: list[Any]) -> Tes
     user = uuid.uuid4()
     app.dependency_overrides[current_user] = lambda: user
     app.dependency_overrides[get_container] = lambda: SimpleNamespace(
-        target=target, activity=activity
+        target=target, activity=activity, limiter=FakeLimiter(), limits=LIMITS
     )
     return TestClient(app, raise_server_exceptions=False)
 
