@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # --- Application --------------------------------------------------------
     app_env: str = Field(alias="APP_ENV")
-    service_name: str = Field(default="job-searching-advisor", alias="SERVICE_NAME")
+    service_name: str = Field(default="careerpolaris", alias="SERVICE_NAME")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     port: int = Field(default=8000, alias="PORT")
     # Browser origins allowed to call the API — the SPA's origin, which is not
@@ -50,10 +50,8 @@ class Settings(BaseSettings):
     # emergency control.
     auth_jwt_secret: SecretStr | None = Field(default=None, alias="AUTH_JWT_SECRET")
     # Identifiers, not URLs — a default is fine and keeps one less blank.
-    auth_token_issuer: str = Field(default="job-searching-advisor", alias="AUTH_TOKEN_ISSUER")
-    auth_token_audience: str = Field(
-        default="job-searching-advisor-api", alias="AUTH_TOKEN_AUDIENCE"
-    )
+    auth_token_issuer: str = Field(default="careerpolaris", alias="AUTH_TOKEN_ISSUER")
+    auth_token_audience: str = Field(default="careerpolaris-api", alias="AUTH_TOKEN_AUDIENCE")
     # Short: an access token cannot be revoked before it expires, so its
     # lifetime is the window a stolen one is useful for.
     auth_access_token_ttl_seconds: int = Field(default=900, alias="AUTH_ACCESS_TOKEN_TTL_SECONDS")
@@ -139,7 +137,7 @@ class Settings(BaseSettings):
     template_upload_max_pages: int = Field(default=3, ge=1, alias="TEMPLATE_UPLOAD_MAX_PAGES")
 
     # --- Crawler ------------------------------------------------------------
-    crawl_user_agent: str = Field(default="JobSearchingAdvisorBot/1.0", alias="CRAWL_USER_AGENT")
+    crawl_user_agent: str = Field(default="CareerPolarisBot/1.0", alias="CRAWL_USER_AGENT")
     crawl_http_timeout_seconds: int = Field(default=30, alias="CRAWL_HTTP_TIMEOUT_SECONDS")
     crawl_rate_limit_per_host_per_second: float = Field(
         default=1.0, alias="CRAWL_RATE_LIMIT_PER_HOST_PER_SECOND"

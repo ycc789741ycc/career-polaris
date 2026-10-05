@@ -14,11 +14,11 @@
 # Its own compose project, separate from the app's. Sharing one project name
 # would make `stop-app --remove-orphans` treat these services as orphans of the
 # app stack and remove them — an app target must never touch infra.
-name: jsa-infra
+name: careerpolaris-infra
 
 networks:
   default:
-    name: jsa_net
+    name: careerpolaris_net
 
 # Rotated logs and resource limits, for the same reasons as in compose.yaml.
 # Set generously: an OOM kill here takes the datastore down, so these guard the
@@ -60,7 +60,7 @@ services:
     ports:
       # Published for a human with a database client, and for the tunnel to
       # forward to: services on this host reach Postgres by its service name on
-      # jsa_net. Loopback only, because Docker's own iptables rules go ahead of
+      # careerpolaris_net. Loopback only, because Docker's own iptables rules go ahead of
       # ufw, and the compute side comes in through the tunnel, never the
       # internet.
       - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PUBLISHED_PORT:-21472}:5432"

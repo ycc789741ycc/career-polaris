@@ -30,7 +30,7 @@ SHELL := /bin/bash
 
 ENV_FILE      ?= .env
 INFRA_COMPOSE := infra/compose.yml
-NETWORK       := jsa_net
+NETWORK       := careerpolaris_net
 
 MODE ?= prod
 
@@ -46,11 +46,11 @@ COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE)
 ALL_PROFILES  := --profile '*'
 
 # One tag per mode, plus the test image both modes build.
-MODE_IMAGES        := jsa-backend:$(MODE) jsa-web:$(MODE)
-PROD_IMAGES        := jsa-backend:prod jsa-web:prod jsa-proxy:prod
-PROXY_IMAGE        := jsa-proxy:prod
-BACKEND_TEST_IMAGE := jsa-backend:test
-WEB_TEST_IMAGE     := jsa-web:test
+MODE_IMAGES        := careerpolaris-backend:$(MODE) careerpolaris-web:$(MODE)
+PROD_IMAGES        := careerpolaris-backend:prod careerpolaris-web:prod careerpolaris-proxy:prod
+PROXY_IMAGE        := careerpolaris-proxy:prod
+BACKEND_TEST_IMAGE := careerpolaris-backend:test
+WEB_TEST_IMAGE     := careerpolaris-web:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
 
 # The dev overlay's source-writing tools run as the invoking user, so the files
@@ -76,7 +76,8 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app
+        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app \
+        copy-old-volumes
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -86,7 +87,7 @@ help:
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
-	@echo "  push-app (CI) pull-app (each deployed place)"
+	@echo "  push-app (CI) pull-app (each deployed place) copy-old-volumes (once)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -126,7 +127,7 @@ build-infra: require-infra-services
 
 # The images for the requested mode, plus the `test` stage the test tiers and
 # gates run in — built whichever mode was asked for. The proxy has one stage,
-# so it is jsa-proxy:prod in either mode; only a `proxy` place runs it.
+# so it is careerpolaris-proxy:prod in either mode; only a `proxy` place runs it.
 build-app: require-env check-mode
 	$(COMPOSE_APP) $(ALL_PROFILES) build
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
@@ -135,7 +136,7 @@ build-app: require-env check-mode
 
 # --- start / stop -----------------------------------------------------------
 
-# jsa_net is created here even where no infra service joins it (a compute
+# careerpolaris_net is created here even where no infra service joins it (a compute
 # machine runs only the tunnel, on the host's network), because the app's
 # compose file expects it.
 start-infra: require-infra-services
@@ -308,9 +309,17 @@ push-app: require-env
 	@infra/push-release.sh
 
 # On the droplet and the compute machine, in place of build-app: pulls the
-# release CI pushed, by digest, and tags it jsa-*:prod for start-app.
+# release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
 	@infra/pull-release.sh "$(RELEASE)"
+
+# --- the rename (ADR 0056) ---------------------------------------------------
+
+# Once, after the rename to CareerPolaris: copies the old jsa-infra / jsa-app
+# volumes into their careerpolaris-* names, so the new stack starts on the old
+# data. Non-destructive and idempotent. Stop the old stack first.
+copy-old-volumes:
+	@infra/copy-old-volumes.sh
 
 # --- backups ----------------------------------------------------------------
 

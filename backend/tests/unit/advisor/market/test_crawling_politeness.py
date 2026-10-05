@@ -33,10 +33,10 @@ def test_a_disallowed_path_is_refused() -> None:
 
 
 def test_a_rule_aimed_at_our_agent_is_honoured() -> None:
-    robots = RobotsCache("JobSearchingAdvisorBot")
+    robots = RobotsCache("CareerPolarisBot")
     robots.remember(
         "https://acme.test",
-        "User-agent: JobSearchingAdvisorBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n",
+        "User-agent: CareerPolarisBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n",
     )
     assert not robots.allows("https://acme.test/jobs")
 

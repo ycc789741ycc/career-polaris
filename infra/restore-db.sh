@@ -34,7 +34,7 @@ if [ "${RESTORE_CONFIRMED:-}" != "yes" ]; then
   [ "$ok" = "yes" ] || { echo "aborted"; exit 1; }
 fi
 
-docker run --rm --network jsa_net \
+docker run --rm --network careerpolaris_net \
     -e AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" \
     -e AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY" \
     -e AWS_DEFAULT_REGION="$BACKUP_S3_REGION" \

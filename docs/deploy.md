@@ -20,15 +20,15 @@ needs Docker and `make`, and nothing else.
 1. **Tailscale.**
    - Create a tailnet.
    - Under Settings → Keys, make two auth keys: reusable, pre-approved,
-     tagged `tag:jsa-edge` and `tag:jsa-compute`. For a server, turn off key
+     tagged `tag:careerpolaris-edge` and `tag:careerpolaris-compute`. For a server, turn off key
      expiry on the machines once they join.
    - Restrict the tailnet to what the app needs. In the access policy, allow
-     only `tag:jsa-compute` to reach `tag:jsa-edge:5432`:
+     only `tag:careerpolaris-compute` to reach `tag:careerpolaris-edge:5432`:
 
      ```json
      {
-       "tagOwners": {"tag:jsa-edge": ["autogroup:admin"], "tag:jsa-compute": ["autogroup:admin"]},
-       "grants": [{"src": ["tag:jsa-compute"], "dst": ["tag:jsa-edge"], "ip": ["tcp:5432"]}]
+       "tagOwners": {"tag:careerpolaris-edge": ["autogroup:admin"], "tag:careerpolaris-compute": ["autogroup:admin"]},
+       "grants": [{"src": ["tag:careerpolaris-compute"], "dst": ["tag:careerpolaris-edge"], "ip": ["tcp:5432"]}]
      }
      ```
 2. **Spaces.** In one region, create two private buckets:
@@ -42,7 +42,7 @@ needs Docker and `make`, and nothing else.
      number of days you want to keep, for example 30.
 3. **Images.** Every push to `master` that passes CI is released (ADR 0055).
    - CI builds the prod images for amd64 and arm64 and pushes them to
-     `ghcr.io/<owner>/jsa-{backend,web,proxy}`.
+     `ghcr.io/<owner>/careerpolaris-{backend,web,proxy}`.
    - The run's summary, and its `release-<sha>` artifact, hold `release.env`,
      which names each image by digest.
    - Neither machine builds anything. If the packages are private, give each
@@ -74,7 +74,7 @@ needs Docker and `make`, and nothing else.
    repository to `/srv/careerpolaris`.
 6. **`.env`.** Copy `.env.example` to `.env` and fill it in as below. Then
    `chmod 600 .env`.
-7. **Start it.** `jsa_net` exists once `start-infra` has run. Read its
+7. **Start it.** `careerpolaris_net` exists once `start-infra` has run. Read its
    subnet into `FORWARDED_ALLOW_IPS` before the first `start-app`.
 
    ```
@@ -110,11 +110,11 @@ needs Docker and `make`, and nothing else.
 | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT_URL` | `https://<region>.digitaloceanspaces.com` |
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | The app's bucket and its key |
 | `BACKUP_S3_*` | The backup bucket and its key |
-| `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:jsa-edge` key, `jsa-edge` |
+| `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:careerpolaris-edge` key, `careerpolaris-edge` |
 | `GOOGLE_OAUTH_CLIENT_ID` | Blank: Google sign-in waits for a domain of your own |
 | `POSTGRES_SHARED_BUFFERS`, `_WORK_MEM`, `_EFFECTIVE_CACHE_SIZE`, `_MAX_CONNECTIONS` | `128MB`, `4MB`, `512MB`, `50` |
 | `DB_POOL_SIZE` | `3` |
-| `FORWARDED_ALLOW_IPS` | jsa_net's subnet, from `docker network inspect jsa_net` (e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054). |
+| `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet, from `docker network inspect careerpolaris_net` (e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054). |
 | `API_MEM_LIMIT`, `WEB_MEM_LIMIT`, `PROXY_MEM_LIMIT`, `POSTGRES_MEM_LIMIT`, `TUNNEL_MEM_LIMIT` | `512m`, `64m`, `128m`, `512m`, `128m` |
 | `API_CPUS`, `POSTGRES_CPUS` | `1.0` each. A ceiling, not a share, and there is one vCPU. |
 
@@ -139,7 +139,7 @@ Raise a limit in `.env` if one sits near it or reports `oom_killed=true`.
    | `POSTGRES_PORT` | `5432` |
    | `DATABASE_URL`, `CRAWLER_DATABASE_URL`, `MIGRATOR_DATABASE_URL` | As on the droplet, with host `100.x.y.z:5432` |
    | `S3_*` | As on the droplet |
-   | `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:jsa-compute` key, `jsa-compute` |
+   | `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:careerpolaris-compute` key, `careerpolaris-compute` |
    | `DB_POOL_SIZE` | `3` |
    | Everything else the worker reads | As on the droplet, especially `MASTER_ENCRYPTION_KEY` and the connector secrets |
 

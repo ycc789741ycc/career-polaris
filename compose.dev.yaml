@@ -16,7 +16,7 @@
 x-backend-dev: &backend-dev
   build:
     target: dev
-  image: jsa-backend:dev
+  image: careerpolaris-backend:dev
 
 services:
   api:
@@ -61,7 +61,7 @@ services:
   web:
     build:
       target: dev
-    image: jsa-web:dev
+    image: careerpolaris-web:dev
     volumes:
       # Only what changes day to day. vite.config.ts or package.json changes
       # need `make build-app MODE=dev`, because they change the dependencies.
@@ -74,11 +74,11 @@ services:
   # Makefile), so the files they rewrite stay owned by that user on every host.
 
   backend-tools:
-    image: jsa-backend:dev
+    image: careerpolaris-backend:dev
     pull_policy: never
     profiles: ["tools"]
     user: "${HOST_UID:?run through make}:${HOST_GID:?run through make}"
-    # Its own bridge rather than jsa_net: formatting must not need infra up,
+    # Its own bridge rather than careerpolaris_net: formatting must not need infra up,
     # and `uv lock` needs the package index.
     network_mode: bridge
     environment:
@@ -89,7 +89,7 @@ services:
       - ./backend:/app
 
   web-tools:
-    image: jsa-web:dev
+    image: careerpolaris-web:dev
     pull_policy: never
     profiles: ["tools"]
     user: "${HOST_UID:?run through make}:${HOST_GID:?run through make}"

@@ -3655,3 +3655,17 @@ the account.
   about 2 GB of disk and download on the droplet. A slimmer edge image would
   be a second artifact, and the phase keeps one.
 
+## Rename everything inside to CareerPolaris
+**Done** (ADR 0056), on `chore/no-ticket/rename-to-careerpolaris`, before
+the droplet's first start so it never runs the old names:
+
+* Images `careerpolaris-{backend,web,proxy}`, network `careerpolaris_net`,
+  compose projects `careerpolaris-infra` and `careerpolaris-app`, cookies,
+  font directory, service name, token issuer and audience, user agent,
+  package names, the release file's `CAREERPOLARIS_*_IMAGE`, and CI's
+  database and bucket.
+* `make copy-old-volumes` copies a development machine's old volumes into the
+  new names, once, keeping the old ones.
+* Kept: the Git repository's name, the operator's `.env` values, and the names
+  history was written with (accepted ADRs, earlier phases, the drawings).
+

@@ -1,7 +1,7 @@
 # Résumé fonts
 
 The fonts the résumé PDF is set in (ADR 0038), installed in the image under
-`/usr/local/share/fonts/jsa/` where fontconfig finds them. Pango loads them by
+`/usr/local/share/fonts/careerpolaris/` where fontconfig finds them. Pango loads them by
 family name, so the renderer never fetches a font.
 
 They are the SPA's self-hosted files (`web/src/styles/fonts/*.woff2`, Latin

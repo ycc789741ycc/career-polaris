@@ -49,7 +49,7 @@ router = APIRouter(tags=["identity"])
 log = get_logger(__name__)
 
 # The one record of a Google sign-in in progress (the identity component's Google sign-in).
-GOOGLE_ATTEMPT_COOKIE = "jsa_google_attempt"
+GOOGLE_ATTEMPT_COOKIE = "careerpolaris_google_attempt"
 _GOOGLE_PATH = "/api/v1/auth/google"
 
 

@@ -18,12 +18,12 @@ fi
 
 for name in backend web proxy; do
   upper="$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-  ref="$(grep -E "^JSA_${upper}_IMAGE=" "$release_file" | cut -d= -f2- || true)"
+  ref="$(grep -E "^CAREERPOLARIS_${upper}_IMAGE=" "$release_file" | cut -d= -f2- || true)"
   case "$ref" in
     *@sha256:*) ;;
-    *) echo "ERROR: ${release_file} names no digest for jsa-${name} (got '${ref}')."; exit 1 ;;
+    *) echo "ERROR: ${release_file} names no digest for careerpolaris-${name} (got '${ref}')."; exit 1 ;;
   esac
   docker pull --quiet "$ref" >/dev/null
-  docker tag "$ref" "jsa-${name}:prod"
-  echo "jsa-${name}:prod is ${ref}"
+  docker tag "$ref" "careerpolaris-${name}:prod"
+  echo "careerpolaris-${name}:prod is ${ref}"
 done

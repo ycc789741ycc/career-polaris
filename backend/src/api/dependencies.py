@@ -15,7 +15,7 @@ from kernel.logging import trace_id_var
 from kernel.paging import check_page
 from wiring.container import Container, container
 
-REFRESH_COOKIE = "jsa_refresh"
+REFRESH_COOKIE = "careerpolaris_refresh"
 
 # The most one page may hold. Without a page_size a list comes back whole (ADR 0014).
 MAX_PAGE_SIZE = 100

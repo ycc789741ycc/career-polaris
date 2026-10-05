@@ -1,8 +1,12 @@
 # CareerPolaris
 
-Formerly Job Searching Advisor: the repository, the `jsa-*` images, `jsa_net`
-and the compose projects keep the old name on purpose, because renaming them
-would break every running stack for no change a user sees.
+Formerly Job Searching Advisor. Since ADR 0056 every name inside the code base
+is CareerPolaris's — the `careerpolaris-*` images, `careerpolaris_net`, the
+`careerpolaris-infra` / `careerpolaris-app` compose projects, cookies, the
+crawler's user agent — and `jsa` is not used for anything new. Only the Git
+repository keeps `job-searching-advisor`. A machine that ran the old stack
+copies its volumes across once: stop it from an old checkout, then
+`make copy-old-volumes`.
 
 Turns the work someone has actually done — GitHub, Jira, their résumé — into a
 picture of where they stand (a skill radar) and what is worth aiming at (a role
@@ -49,9 +53,9 @@ any other value fails. Each Dockerfile has three stages, each with its own tag:
 
 | Stage | Tag | Used by |
 |---|---|---|
-| `prod` | `jsa-*:prod` | `MODE=prod`: `compose.yaml` alone, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
-| `test` | `jsa-*:test` | Both test tiers and every gate, in either mode, never mounted. `build-app` builds it whichever mode you ask for. |
-| `dev` | `jsa-*:dev` | `MODE=dev`: `compose.yaml` + `compose.dev.yaml`, with the repo bind-mounted. Local only — never pushed, never deployed. |
+| `prod` | `careerpolaris-*:prod` | `MODE=prod`: `compose.yaml` alone, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
+| `test` | `careerpolaris-*:test` | Both test tiers and every gate, in either mode, never mounted. `build-app` builds it whichever mode you ask for. |
+| `dev` | `careerpolaris-*:dev` | `MODE=dev`: `compose.yaml` + `compose.dev.yaml`, with the repo bind-mounted. Local only — never pushed, never deployed. |
 
 `start-app` never builds: if the image for the mode is missing it stops and tells
 you which `make build-app` to run. Both modes migrate first. Only one mode runs at
@@ -83,13 +87,13 @@ Every source mount in the repo lives in `compose.dev.yaml` and nowhere else — 
 as `-v` in a Makefile recipe. The overlay is deliberately not called
 `compose.override.yaml`, because compose would merge that into prod automatically.
 
-Hostnames in `.env` are compose service names on the `jsa_net` network, not
+Hostnames in `.env` are compose service names on the `careerpolaris_net` network, not
 `localhost`. The only host-facing values are the `*_PUBLISHED_PORT` numbers,
 which are what your browser and any database client connect to. They take this
 repo's block, `21470`–`21474` (api, web, Postgres, MinIO, MinIO console), never a
 common default like `8000`, `5173` or `5432`, so the stack runs beside other
 projects without a bind failure. Containers keep their conventional ports inside
-`jsa_net`.
+`careerpolaris_net`.
 
 `make test-unit` runs in a container with `--network none`, so it is hermetic by
 construction rather than by convention. `make test-integration` runs on the
@@ -105,7 +109,8 @@ host.
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
 `logs`, `stats`, `disk-usage`, `backup-db`, `push-app` (CI's release) and
-`pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
+`pull-app RELEASE=release.env` (a deployed place's), `copy-old-volumes` (once,
+after the rename), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
@@ -128,8 +133,8 @@ two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first
   in CI. Prettier is told not to touch the generated `schema.d.ts`; otherwise
   `format` and `gen-client` would keep rewriting each other's output.
 
-Infra and the app are separate compose projects (`jsa-infra`, `jsa-app`) sharing
-the `jsa_net` network, so an app target can never remove an infra container. App
+Infra and the app are separate compose projects (`careerpolaris-infra`, `careerpolaris-app`) sharing
+the `careerpolaris_net` network, so an app target can never remove an infra container. App
 images carry `pull_policy: never`: they are built locally, and a missing one
 should fail rather than send compose to Docker Hub for a stranger's image of the
 same name.
@@ -699,7 +704,7 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 
 - **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
   versions) in the sidebar and on sign-in, and `web/public/icon.svg` as the
-  favicon. Internal names (`jsa-*`, `jsa_net`) stay.
+  favicon. Internal names followed in ADR 0056.
 - **Openings for this role** (ADR 0049). The role map lists the selected
   role's openings newest first (`GET /matched-postings?order=newest`,
   `posted_on`), ten at a time with "See all n openings", and no fit per
@@ -783,7 +788,7 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   postings, template PDFs) and `syncs` (`SYNCS_PER_ACCOUNT_PER_HOUR`). A
   refusal is `RateLimitedError(retry_after_seconds=)`, answered 429 with
   `Retry-After`. uvicorn believes `X-Forwarded-For` only from
-  `FORWARDED_ALLOW_IPS` (jsa_net's subnet on the droplet). The SPA words the
+  `FORWARDED_ALLOW_IPS` (careerpolaris_net's subnet on the droplet). The SPA words the
   proxy's own 429 and 413 and reads error pages that are not JSON.
 - **Releases by digest** (ADR 0055). CI runs on pushes to `master` (it named
   `main`/`develop` before and never ran there); a passing push runs
@@ -794,3 +799,17 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
 
 Not yet: a domain (and with it Google sign-in and Cloudflare in front), and an
 arm64 image that the gates themselves ran against.
+
+## The rename (ADR 0056)
+
+Everything inside is CareerPolaris, on `chore/no-ticket/rename-to-careerpolaris`
+in `epic/no-ticket/hybrid-deploy`: images `careerpolaris-{backend,web,proxy}`,
+network `careerpolaris_net`, compose projects `careerpolaris-infra` and
+`careerpolaris-app`, cookies `careerpolaris_refresh` and
+`careerpolaris_google_attempt`, the font directory, `SERVICE_NAME`, token
+issuer and audience `careerpolaris` / `careerpolaris-api`, the user agent
+`CareerPolarisBot/1.0`, the package names, the release file's
+`CAREERPOLARIS_*_IMAGE` and CI's database and bucket. Everyone is signed out
+once, by the cookie and the issuer. `make copy-old-volumes` copies the old
+volumes, keeping them. Accepted ADRs, past phases in `docs/plan.md` and the
+excalidraw drawings keep the names they were written with.
