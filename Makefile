@@ -76,8 +76,7 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app \
-        copy-old-volumes
+        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -87,7 +86,7 @@ help:
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
-	@echo "  push-app (CI) pull-app (each deployed place) copy-old-volumes (once)"
+	@echo "  push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -312,14 +311,6 @@ push-app: require-env
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
 	@infra/pull-release.sh "$(RELEASE)"
-
-# --- the rename (ADR 0056) ---------------------------------------------------
-
-# Once, after the rename to CareerPolaris: copies the old jsa-infra / jsa-app
-# volumes into their careerpolaris-* names, so the new stack starts on the old
-# data. Non-destructive and idempotent. Stop the old stack first.
-copy-old-volumes:
-	@infra/copy-old-volumes.sh
 
 # --- backups ----------------------------------------------------------------
 

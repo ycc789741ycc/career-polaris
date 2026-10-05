@@ -5,8 +5,8 @@ is CareerPolaris's — the `careerpolaris-*` images, `careerpolaris_net`, the
 `careerpolaris-infra` / `careerpolaris-app` compose projects, cookies, the
 crawler's user agent — and `jsa` is not used for anything new. Only the Git
 repository keeps `job-searching-advisor`. A machine that ran the old stack
-copies its volumes across once: stop it from an old checkout, then
-`make copy-old-volumes`.
+copies its volumes across once, by hand, with the commands in ADR 0056; the
+repo carries no command for it.
 
 Turns the work someone has actually done — GitHub, Jira, their résumé — into a
 picture of where they stand (a skill radar) and what is worth aiming at (a role
@@ -109,8 +109,7 @@ host.
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
 `logs`, `stats`, `disk-usage`, `backup-db`, `push-app` (CI's release) and
-`pull-app RELEASE=release.env` (a deployed place's), `copy-old-volumes` (once,
-after the rename), `clean-up-cache`, and the
+`pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
@@ -810,6 +809,6 @@ network `careerpolaris_net`, compose projects `careerpolaris-infra` and
 issuer and audience `careerpolaris` / `careerpolaris-api`, the user agent
 `CareerPolarisBot/1.0`, the package names, the release file's
 `CAREERPOLARIS_*_IMAGE` and CI's database and bucket. Everyone is signed out
-once, by the cookie and the issuer. `make copy-old-volumes` copies the old
-volumes, keeping them. Accepted ADRs, past phases in `docs/plan.md` and the
+once, by the cookie and the issuer. Old volumes are copied once by hand
+(ADR 0056); the repo keeps no command for it. Accepted ADRs, past phases in `docs/plan.md` and the
 excalidraw drawings keep the names they were written with.

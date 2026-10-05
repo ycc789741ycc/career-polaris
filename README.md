@@ -3,7 +3,7 @@
 *Formerly Job Searching Advisor. Everything inside the code base now carries
 the new name ([ADR 0056](docs/decisions/0056-rename-everything-inside-to-careerpolaris.md));
 only the Git repository is still called `job-searching-advisor`. A machine that
-ran the old stack copies its data across once with `make copy-old-volumes`.*
+ran the old stack copies its data across once, by hand (ADR 0056).*
 
 **Know where you stand, see which real jobs fit you, and close the gap to the
 one you want.** Everything is built from the work you have actually done.

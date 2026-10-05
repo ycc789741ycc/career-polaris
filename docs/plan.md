@@ -3664,8 +3664,8 @@ the droplet's first start so it never runs the old names:
   font directory, service name, token issuer and audience, user agent,
   package names, the release file's `CAREERPOLARIS_*_IMAGE`, and CI's
   database and bucket.
-* `make copy-old-volumes` copies a development machine's old volumes into the
-  new names, once, keeping the old ones.
+* A development machine's old volumes are copied into the new names once, by
+  hand, keeping the old ones. The repo keeps no command for a one-time job.
 * Kept: the Git repository's name, the operator's `.env` values, and the names
   history was written with (accepted ADRs, earlier phases, the drawings).
 

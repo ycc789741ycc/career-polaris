@@ -34,12 +34,27 @@ used for anything new.
 | Release file | `JSA_*_IMAGE` | `CAREERPOLARIS_*_IMAGE` |
 | Font directory, CI database and bucket, Tailscale tags | `jsa` | `careerpolaris` |
 
-- **Existing data comes across once, by copy.** `make copy-old-volumes`
-  (`infra/copy-old-volumes.sh`):
-  - it copies each volume of the old projects into the same name under the
-    new project, preserving ownership, with a pinned Alpine image;
-  - it refuses while the old stack runs, skips a volume that already exists,
-    and keeps the old volumes.
+- **Existing data comes across once, by copy, by hand.** The repository
+  carries no command for a job each machine does once.
+  - Stop the old stack first, so Postgres is not copied mid-write. Then copy
+    each old volume into its new name, preserving ownership, and keep the old
+    ones.
+  - Each new volume carries the labels compose would give it, so the new
+    project adopts it:
+
+  ```sh
+  docker compose -p jsa-app down
+  docker compose -p jsa-infra stop
+  for pair in jsa-infra_pgdata:careerpolaris-infra_pgdata \
+              jsa-infra_objectdata:careerpolaris-infra_objectdata \
+              jsa-app_modelcache:careerpolaris-app_modelcache; do
+    old=${pair%%:*}; new=${pair#*:}; project=${new%%_*}; volume=${new#*_}
+    docker volume create --label com.docker.compose.project=$project \
+      --label com.docker.compose.volume=$volume "$new"
+    docker run --rm --network none -v "$old:/from:ro" -v "$new:/to" \
+      alpine:3.24.2 sh -c 'cp -a /from/. /to/'
+  done
+  ```
 - **The Git repository keeps its name,** `job-searching-advisor`. Renaming it
   belongs to GitHub, and every clone's remote, not to this code base.
 - **History keeps the names it was written with:** accepted ADRs, past
@@ -59,8 +74,8 @@ Easier:
 
 Harder:
 
-- **Every running development stack needs one manual step:** stop it from an
-  old checkout, then `make copy-old-volumes`, then start. Until then, a new
+- **Every running development stack needs one manual step:** stop it, copy
+  its volumes as above, then start. Until then, a new
   `start-infra` starts an empty database.
 - **The old volumes, images, network and stopped containers stay behind**
   until the operator removes them.
