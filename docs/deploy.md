@@ -40,11 +40,12 @@ needs Docker and `make`, and nothing else.
    - **The backups**, e.g. `careerpolaris-backups`, with its own
      limited-access key, and a lifecycle rule that expires objects after the
      number of days you want to keep, for example 30.
-3. **Images.** Every push to `master` that passes CI is released (ADR 0055).
+3. **Images.** A version tag (`v1.2.3`) pushed on a commit already on
+   `master` is released, once CI's gates pass on it (ADR 0055, 0060).
    - CI builds the prod images for amd64 and arm64 and pushes them to
-     `ghcr.io/<owner>/careerpolaris-{backend,web,proxy}`.
-   - The run's summary, and its `release-<sha>` artifact, hold `release.env`,
-     which names each image by digest.
+     `ghcr.io/<owner>/careerpolaris-{backend,web,proxy}:<version>`.
+   - The tag's GitHub Release holds `release.env`, which names each image by
+     digest.
    - Neither machine builds anything. If the packages are private, give each
      machine a classic token with only `read:packages`, once:
      `docker login ghcr.io -u <user>`.
@@ -157,7 +158,18 @@ rules (per-host caps, backing off after a 429 or 403) do not change.
 
 ## 4. A release
 
-Copy the run's `release.env` to both machines, next to `.env`.
+Tag the commit on `master` you want to ship, and push the tag:
+
+```
+git fetch origin
+git tag -a v0.1.0 origin/master -m "v0.1.0"
+git push origin v0.1.0
+```
+
+SemVer: raise the patch for fixes, the minor for features, the major when a
+place needs more than a pull. When CI is green, download `release.env` from
+the GitHub Release (`gh release download v0.1.0 -p release.env`) and copy it
+to both machines, next to `.env`.
 
 1. **Edge first.** Run `make pull-app RELEASE=release.env`, then
    `make stop-app`, then `make start-app`. That migrates under the lock.

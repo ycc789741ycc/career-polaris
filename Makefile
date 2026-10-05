@@ -311,11 +311,12 @@ clean-up-cache:
 	rm -rf web/dist
 	find backend -mindepth 1 -depth -type d -empty -not -path '*/.venv/*' -print -exec rmdir {} \;
 
-# --- releases (ADR 0055) -----------------------------------------------------
+# --- releases (ADR 0055, 0060) -----------------------------------------------
 
-# CI only, after every gate has passed: builds the prod images for every
-# platform in RELEASE_PLATFORMS, pushes them to RELEASE_REGISTRY and writes
-# release.env, each image by digest. Needs a buildx builder that can build
+# CI only, for a version tag on master after every gate has passed: builds the
+# prod images for every platform in RELEASE_PLATFORMS, pushes them to
+# RELEASE_REGISTRY under the version and writes release.env, each image by
+# digest. Refuses a HEAD with no vX.Y.Z tag or not on origin/master. Needs a buildx builder that can build
 # those platforms.
 push-app: require-env
 	@infra/push-release.sh
