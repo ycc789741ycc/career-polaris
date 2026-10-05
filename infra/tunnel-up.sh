@@ -3,7 +3,7 @@
 # place runs one (the `tunnel` profile). Idempotent. Run by `start-infra` after
 # the containers report healthy, which for the tunnel means it is signed in.
 #
-#   edge     Postgres runs here: forward the tunnel's port 5432 to Postgres on
+#   serving  Postgres runs here (the droplet): forward the tunnel's port 5432 to Postgres on
 #            loopback, so the compute side reaches it and nothing else does.
 #   compute  Postgres runs on the other side: wait until it answers across the
 #            tunnel, so `start-app`'s migration does not race the link.

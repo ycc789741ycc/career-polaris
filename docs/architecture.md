@@ -50,7 +50,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  subgraph EDGE["Droplet: 1 vCPU, 2 GB (edge, proxy, tunnel)"]
+  subgraph EDGE["Droplet: 1 vCPU, 2 GB (serving, proxy, tunnel)"]
     P["proxy: Caddy"] --> A["api"]
     P --> W2["web"]
     A --> PG[("Postgres")]
@@ -68,9 +68,9 @@ flowchart LR
 
 - **What runs where** is `COMPOSE_PROFILES` in each place's `.env`. There is
   one image and one pair of compose files. Development and CI run
-  `edge,compute,local` on one machine, with MinIO in place of Spaces.
+  `serving,compute,local` on one machine, with MinIO in place of Spaces.
 - **The compute machine may be off.** The queue and the outbox are in
-  Postgres on the edge, so work waits for it. The worker and the crawler each
+  Postgres on the droplet, so work waits for it. The worker and the crawler each
   write a heartbeat to `presence.process`. Lost-work limits and a build's
   market deadline count only the time the process they need has been up,
   and `GET /activity` reports `processing`

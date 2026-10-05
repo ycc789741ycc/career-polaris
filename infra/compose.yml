@@ -7,7 +7,7 @@
 #
 # Which services run here is the COMPOSE_PROFILES setting in .env, so one file
 # serves every place the app runs (docs/decisions/0051):
-#   edge     Postgres, beside the api that reads it on every request
+#   serving  Postgres, beside the api that reads it on every request
 #   tunnel   the private link between the edge and the compute side
 #   local    MinIO, for development and CI; a deployment uses Spaces
 
@@ -34,7 +34,7 @@ x-logging: &logging
 services:
   postgres:
     <<: *logging
-    profiles: ["edge"]
+    profiles: ["serving"]
     restart: unless-stopped
     mem_limit: ${POSTGRES_MEM_LIMIT:-1g}
     memswap_limit: ${POSTGRES_MEM_LIMIT:-1g}

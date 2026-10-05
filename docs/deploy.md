@@ -4,7 +4,7 @@ The app runs in two places (ADR 0051):
 
 | Place | Runs | `COMPOSE_PROFILES` |
 |---|---|---|
-| **Edge**: a DigitalOcean droplet, 1 vCPU, 2 GB | Caddy (ADR 0053), `web`, `api`, Postgres, the tunnel | `edge,proxy,tunnel` |
+| **Droplet**: DigitalOcean, 1 vCPU, 2 GB | Caddy (ADR 0053), `web`, `api`, Postgres, the tunnel | `serving,proxy,tunnel` |
 | **Compute**: the operator's own machine | `worker`, `crawler`, the tunnel | `compute,tunnel` |
 
 Files live in a DigitalOcean Spaces bucket, which both places reach. The
@@ -101,7 +101,7 @@ needs Docker and `make`, and nothing else.
 
 | Setting | Value |
 |---|---|
-| `COMPOSE_PROFILES` | `edge,proxy,tunnel` |
+| `COMPOSE_PROFILES` | `serving,proxy,tunnel` |
 | `APP_ENV` | `production` |
 | `SITE_HOSTNAME` | `<droplet-ip>.sslip.io`, until there is a domain |
 | `CORS_ALLOWED_ORIGINS`, `WEB_API_BASE_URL`, `OAUTH_REDIRECT_BASE_URL`, `AUTH_PUBLIC_API_BASE_URL` | `https://$SITE_HOSTNAME`, each written out |

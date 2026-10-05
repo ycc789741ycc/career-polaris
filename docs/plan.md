@@ -3669,3 +3669,9 @@ the droplet's first start so it never runs the old names:
 * Kept: the Git repository's name, the operator's `.env` values, and the names
   history was written with (accepted ADRs, earlier phases, the drawings).
 
+## Call the `edge` profile `serving`
+**Done** (ADR 0057). `api`, `web` and Postgres run under `serving`, not
+`edge`, so the droplet is `serving,proxy,tunnel` and development
+`serving,compute,local`. The docs call the places "the droplet" and "the
+compute machine".
+

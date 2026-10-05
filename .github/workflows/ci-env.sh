@@ -33,7 +33,7 @@ PY
 
 set_value APP_ENV ci
 # Everything on one runner, as in development.
-set_value COMPOSE_PROFILES edge,compute,local
+set_value COMPOSE_PROFILES serving,compute,local
 set_value CORS_ALLOWED_ORIGINS http://localhost:21471
 # Service names on the container network, not localhost.
 set_value POSTGRES_HOST postgres

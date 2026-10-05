@@ -20,9 +20,9 @@
 # which `build-app` builds in either mode. The app itself never reads MODE.
 #
 # Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
-# (docs/decisions/0051): `edge` (api, web, Postgres), `compute` (worker,
+# (docs/decisions/0051, 0057): `serving` (api, web, Postgres), `compute` (worker,
 # crawler), `tunnel` (the link between them), `proxy` (Caddy, ADR 0053) and
-# `local` (MinIO). Development and CI name edge, compute and local. Builds and `stop-app` cover every profile;
+# `local` (MinIO). Development and CI name serving, compute and local. Builds and `stop-app` cover every profile;
 # starts run only this place's.
 
 SHELL := /bin/bash
@@ -73,6 +73,7 @@ VITEST_FILTER :=
 endif
 
 .PHONY: help require-env check-mode require-mode-images require-app-services \
+        require-known-profiles \
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
@@ -106,17 +107,29 @@ require-mode-images: check-mode
 	    echo "ERROR: $$image is missing. Run: make build-app MODE=$(MODE)"; exit 1; }; \
 	done
 
+# Every profile a service is in. Compose ignores a name it does not know, so an
+# old or mistyped one would quietly leave its services out; refuse it instead.
+KNOWN_PROFILES := serving compute proxy tunnel local
+
+require-known-profiles: require-env
+	@for profile in $$(grep -E '^COMPOSE_PROFILES=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr ',' ' '); do \
+	  case " $(KNOWN_PROFILES) " in *" $$profile "*) ;; \
+	    *) echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) names '$$profile', which no service is in."; \
+	       echo "  Known profiles: $(KNOWN_PROFILES). ('edge' is now 'serving', ADR 0057.)"; exit 1 ;; \
+	  esac; \
+	done
+
 # A place whose COMPOSE_PROFILES selects nothing would start nothing and say
 # nothing; fail instead, with what to set.
-require-app-services: require-env
+require-app-services: require-known-profiles
 	@[ -n "$$($(COMPOSE_BASE) config --services 2>/dev/null | grep -vx migrate)" ] || { \
 	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no app service."; \
-	  echo "  Set edge, compute, or both (development: edge,compute,local)."; exit 1; }
+	  echo "  Set serving, compute, or both (development: serving,compute,local)."; exit 1; }
 
-require-infra-services: require-env
+require-infra-services: require-known-profiles
 	@[ -n "$$($(COMPOSE_INFRA) config --services 2>/dev/null)" ] || { \
 	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no infra service."; \
-	  echo "  Set edge, tunnel or local (development: edge,compute,local)."; exit 1; }
+	  echo "  Set serving, tunnel or local (development: serving,compute,local)."; exit 1; }
 
 # --- build ------------------------------------------------------------------
 

@@ -15,7 +15,7 @@
 #
 # Which services run here is the COMPOSE_PROFILES setting in .env
 # (docs/decisions/0051):
-#   edge     api and web: light, always on, beside Postgres
+#   serving  api and web: light, always on, beside Postgres
 #   compute  worker and crawler: the embedding model, PDF renders and syncs
 #   proxy    Caddy, the only thing on the internet: the droplet alone
 # Development and CI name both. `migrate` is in neither: `make migrate` runs it
@@ -78,7 +78,7 @@ services:
   # Verifies tokens, serves HTTP, starts connector OAuth. Holds the master key.
   api:
     <<: [*backend, *long-running]
-    profiles: ["edge"]
+    profiles: ["serving"]
     mem_limit: ${API_MEM_LIMIT:-768m}
     memswap_limit: ${API_MEM_LIMIT:-768m}
     cpus: ${API_CPUS:-1.0}
@@ -163,7 +163,7 @@ services:
   # reaches the browser, so it receives nothing else.
   web:
     <<: [*hardened, *long-running]
-    profiles: ["edge"]
+    profiles: ["serving"]
     mem_limit: ${WEB_MEM_LIMIT:-512m}
     memswap_limit: ${WEB_MEM_LIMIT:-512m}
     cpus: ${WEB_CPUS:-0.5}
