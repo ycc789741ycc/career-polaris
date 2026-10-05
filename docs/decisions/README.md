@@ -63,6 +63,7 @@ new record that supersedes the old one.
 | [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted |
 | [0056](0056-rename-everything-inside-to-careerpolaris.md) | Everything inside is renamed to CareerPolaris | Accepted |
 | [0057](0057-call-the-api-web-and-postgres-profile-serving.md) | The profile with the api, the SPA and Postgres is called `serving` | Accepted |
+| [0058](0058-run-the-versity-s3-gateway-in-place-of-minio.md) | Development and CI run the Versity S3 Gateway, not MinIO | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

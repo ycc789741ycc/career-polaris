@@ -119,9 +119,6 @@ async def world(
         account, provider="anthropic", model="claude-opus-5", api_key="sk-test", base_url=None
     )
     store = ObjectStore(settings)
-    # The api creates the bucket at startup, but this tier assumes only infra
-    # that is up and migrated — on fresh infra nothing has created it yet.
-    store.ensure_bucket()
     profile = create_profile_service(
         database,
         object_store=store,

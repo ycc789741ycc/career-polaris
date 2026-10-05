@@ -22,7 +22,7 @@
 # Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
 # (docs/decisions/0051, 0057): `serving` (api, web, Postgres), `compute` (worker,
 # crawler), `tunnel` (the link between them), `proxy` (Caddy, ADR 0053) and
-# `local` (MinIO). Development and CI name serving, compute and local. Builds and `stop-app` cover every profile;
+# `local` (an S3 gateway, ADR 0058). Development and CI name serving, compute and local. Builds and `stop-app` cover every profile;
 # starts run only this place's.
 
 SHELL := /bin/bash
