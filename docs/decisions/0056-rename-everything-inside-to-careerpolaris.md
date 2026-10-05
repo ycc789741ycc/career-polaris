@@ -1,6 +1,6 @@
 # 0056. Everything inside is renamed to CareerPolaris
 
-**Status:** Accepted — 2026-10-05.
+**Status:** Accepted — 2026-10-05. Amended by [0059](0059-rename-the-repository-to-career-polaris.md).
 
 ## Context
 
