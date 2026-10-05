@@ -41,12 +41,13 @@ make start-infra          # compose up, wait healthy, then the least-privilege D
 make start-app            # runs migrations to completion first, then api/worker/crawler/web
 ```
 
-What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051): `edge`
-(api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
+What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051, 0057):
+`serving` (api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
 them), `proxy` (Caddy, ADR 0053) and `local` (MinIO). Development and CI run
-`edge,compute,local`; the droplet `edge,proxy,tunnel`; the compute machine
+`serving,compute,local`; the droplet `serving,proxy,tunnel`; the compute machine
 `compute,tunnel` (`docs/deploy.md`). Builds, `stop-app` and `stop-infra` cover
-every profile; starts run only this place's, and fail if it selects nothing.
+every profile; starts run only this place's, and fail if it selects nothing or
+names a profile no service is in (`edge` became `serving` in ADR 0057).
 
 `build-app`, `start-app` and `stop-app` take `MODE=dev|prod`, default `prod`;
 any other value fails. Each Dockerfile has three stages, each with its own tag:
@@ -749,7 +750,7 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
 `epic/no-ticket/hybrid-deploy`; `docs/deploy.md` is the runbook:
 
 - **Two places** (ADR 0051). A DigitalOcean droplet (1 vCPU, 2 GB) runs
-  `edge,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
+  `serving,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
   operator's machine runs `compute,tunnel`: the worker and the crawler, which
   hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
   forwards only 5432 to Postgres on loopback; the compute side dials out). Files

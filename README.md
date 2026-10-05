@@ -93,7 +93,7 @@ for local embedding and matching. WeasyPrint for PDFs. React and Vite with an
 You need **Docker** and **`make`**, and nothing else. Every toolchain, database,
 linter and migration runs in a container.
 
-`.env.example` sets `COMPOSE_PROFILES=edge,compute,local`, which runs
+`.env.example` sets `COMPOSE_PROFILES=serving,compute,local`, which runs
 everything on one machine. A deployment splits it across two places
 ([`docs/deploy.md`](docs/deploy.md)).
 
