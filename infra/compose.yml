@@ -9,7 +9,7 @@
 # serves every place the app runs (docs/decisions/0051):
 #   serving  Postgres, beside the api that reads it on every request
 #   tunnel   the private link between the edge and the compute side
-#   local    MinIO, for development and CI; a deployment uses Spaces
+#   local    an S3 gateway for development and CI; a deployment uses Spaces
 
 # Its own compose project, separate from the app's. Sharing one project name
 # would make `stop-app --remove-orphans` treat these services as orphans of the
@@ -72,30 +72,42 @@ services:
       timeout: 5s
       retries: 20
 
+  # S3 for development and CI, standing in for Spaces (ADR 0058): the Versity
+  # S3 Gateway, which keeps each object as a plain file under /data. MinIO,
+  # used until then, no longer publishes images anyone can pull.
   objectstore:
     <<: *logging
     profiles: ["local"]
     restart: unless-stopped
-    mem_limit: ${OBJECTSTORE_MEM_LIMIT:-1g}
-    memswap_limit: ${OBJECTSTORE_MEM_LIMIT:-1g}
+    mem_limit: ${OBJECTSTORE_MEM_LIMIT:-256m}
+    memswap_limit: ${OBJECTSTORE_MEM_LIMIT:-256m}
     cpus: ${OBJECTSTORE_CPUS:-1.0}
     pids_limit: 256
-    # quay.io, not Docker Hub: the docker.io/minio/minio repository is no longer
-    # publicly pullable.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
+    image: versity/versitygw:v1.8.0
+    command: ["--port", ":9000", "posix", "/data"]
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      ROOT_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      ROOT_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+    # Root inside the container only to own its volume, which Docker creates
+    # root-owned; it holds no capability, cannot gain one, and writes nowhere
+    # but /data.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     ports:
       # Published so a browser can follow a presigned URL, which is signed
       # against S3_PUBLIC_ENDPOINT_URL.
       - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${S3_PUBLISHED_PORT:-21473}:9000"
-      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${S3_CONSOLE_PUBLISHED_PORT:-21474}:9001"
     volumes:
-      - objectdata:/data
+      # Not MinIO's old `objectdata`: MinIO kept its own format, which this
+      # gateway cannot read.
+      - objectfiles:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      # Any answer means it is serving; an unsigned request is answered 403.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
       interval: 3s
       timeout: 5s
       retries: 20
@@ -141,5 +153,5 @@ services:
 
 volumes:
   pgdata:
-  objectdata:
+  objectfiles:
   tunnelstate:

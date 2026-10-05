@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from kernel.config import Settings, get_settings
 from kernel.db import Database
+from kernel.storage import ObjectStore
 
 pytestmark = pytest.mark.integration
 
@@ -43,6 +44,17 @@ def settings() -> Settings:
     _require_env()
     get_settings.cache_clear()
     return get_settings()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def object_bucket(settings: Settings) -> None:
+    """The bucket every test that stores a file writes to.
+
+    The api creates it at startup, but this tier assumes only infra that is up
+    and migrated: on fresh infra, as in CI, nothing has created it yet.
+    Idempotent, and a store that never answers fails here, once, by name.
+    """
+    ObjectStore(settings).ensure_bucket()
 
 
 @pytest_asyncio.fixture

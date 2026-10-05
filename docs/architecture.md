@@ -68,7 +68,7 @@ flowchart LR
 
 - **What runs where** is `COMPOSE_PROFILES` in each place's `.env`. There is
   one image and one pair of compose files. Development and CI run
-  `serving,compute,local` on one machine, with MinIO in place of Spaces.
+  `serving,compute,local` on one machine, with a local S3 gateway (ADR 0058) in place of Spaces.
 - **The compute machine may be off.** The queue and the outbox are in
   Postgres on the droplet, so work waits for it. The worker and the crawler each
   write a heartbeat to `presence.process`. Lost-work limits and a build's

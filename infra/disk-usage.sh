@@ -15,7 +15,7 @@ running() { [ -n "$("${COMPOSE[@]}" ps -q --status running "$1" 2>/dev/null)" ];
 
 # Each place runs part of the infra (COMPOSE_PROFILES): report what is here.
 if ! running postgres && ! running objectstore; then
-  echo "ERROR: neither Postgres nor MinIO runs here. Run: make start-infra"
+  echo "ERROR: neither Postgres nor object storage runs here. Run: make start-infra"
   exit 1
 fi
 

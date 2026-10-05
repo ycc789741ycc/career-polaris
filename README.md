@@ -99,7 +99,7 @@ everything on one machine. A deployment splits it across two places
 
 ```sh
 cp .env.example .env      # fill in every blank
-make build-infra          # pull the pinned Postgres and MinIO images
+make build-infra          # pull the pinned Postgres and S3 gateway images
 make build-app            # build the prod images, plus the test images the gates use
 make start-infra          # start infra, wait until healthy, create least-privilege DB roles
 make start-app            # run migrations to completion, then start api, worker, crawler and web
@@ -112,8 +112,7 @@ Open **http://localhost:21471**. The host ports are this repo's block:
 | `21470` | api |
 | `21471` | web |
 | `21472` | Postgres |
-| `21473` | MinIO |
-| `21474` | MinIO console |
+| `21473` | Object storage (Versity S3 Gateway) |
 
 To stop, run `make stop-app` and then `make stop-infra`. `stop-infra` keeps your
 data. Only `make clean-up-infra` deletes it.

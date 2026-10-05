@@ -3675,3 +3675,12 @@ the droplet's first start so it never runs the old names:
 `serving,compute,local`. The docs call the places "the droplet" and "the
 compute machine".
 
+## Replace MinIO, which can no longer be pulled
+**Done** (ADR 0058), on `bugfix/no-ticket/replace-minio`. `build-infra`
+failed: MinIO no longer publishes pullable images. The `local` profile now
+runs the Versity S3 Gateway (`versity/versitygw:v1.8.0`), with objects as
+plain files in the `objectfiles` volume and no console, so port 21474 is
+free. Found on the way: on fresh infra, five integration tests failed
+because only the api created the bucket. The integration tier now ensures it
+once per session.
+

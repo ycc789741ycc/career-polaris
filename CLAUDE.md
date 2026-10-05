@@ -35,7 +35,7 @@ missing.
 
 ```
 cp .env.example .env      # fill in every blank; nothing has a default that matters
-make build-infra          # pull the pinned Postgres and MinIO images
+make build-infra          # pull the pinned Postgres and S3 gateway images
 make build-app            # build the prod images, plus the test images the gates use
 make start-infra          # compose up, wait healthy, then the least-privilege DB roles
 make start-app            # runs migrations to completion first, then api/worker/crawler/web
@@ -43,7 +43,7 @@ make start-app            # runs migrations to completion first, then api/worker
 
 What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051, 0057):
 `serving` (api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
-them), `proxy` (Caddy, ADR 0053) and `local` (MinIO). Development and CI run
+them), `proxy` (Caddy, ADR 0053) and `local` (an S3 gateway, ADR 0058). Development and CI run
 `serving,compute,local`; the droplet `serving,proxy,tunnel`; the compute machine
 `compute,tunnel` (`docs/deploy.md`). Builds, `stop-app` and `stop-infra` cover
 every profile; starts run only this place's, and fail if it selects nothing or
@@ -91,7 +91,7 @@ as `-v` in a Makefile recipe. The overlay is deliberately not called
 Hostnames in `.env` are compose service names on the `careerpolaris_net` network, not
 `localhost`. The only host-facing values are the `*_PUBLISHED_PORT` numbers,
 which are what your browser and any database client connect to. They take this
-repo's block, `21470`–`21474` (api, web, Postgres, MinIO, MinIO console), never a
+repo's block, `21470`–`21473` (api, web, Postgres, object storage), never a
 common default like `8000`, `5173` or `5432`, so the stack runs beside other
 projects without a bind failure. Containers keep their conventional ports inside
 `careerpolaris_net`.
@@ -754,7 +754,7 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   operator's machine runs `compute,tunnel`: the worker and the crawler, which
   hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
   forwards only 5432 to Postgres on loopback; the compute side dials out). Files
-  are in Spaces; MinIO is `local` only. Every published port binds to
+  are in Spaces; the local S3 gateway is `local` only. Every published port binds to
   `PUBLISHED_BIND_ADDRESS` (`127.0.0.1`), because Docker goes around `ufw`;
   infra restarts with its host; Postgres's memory is `POSTGRES_*` settings.
   Both places migrate under an advisory lock (`cli.migrate.migration_lock`),
@@ -796,6 +796,12 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   (amd64 and arm64, the latter under QEMU) to `RELEASE_REGISTRY`, and
   `release.env` naming each by digest. Each place runs
   `make pull-app RELEASE=release.env`, edge first. `pull_policy: never` stays.
+
+- **Local S3 without MinIO** (ADR 0058). MinIO no longer publishes pullable
+  images, so `local` runs the Versity S3 Gateway (`versity/versitygw`), with
+  objects as plain files in the `objectfiles` volume and no console. The
+  integration tier ensures the bucket once per session
+  (`tests/integration/conftest.py`), because only the api creates it.
 
 Not yet: a domain (and with it Google sign-in and Cloudflare in front), and an
 arm64 image that the gates themselves ran against.
