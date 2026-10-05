@@ -16,9 +16,14 @@
 # app stack and remove them — an app target must never touch infra.
 name: careerpolaris-infra
 
+# External here as in the app's compose file: `make start-infra` creates the
+# network on every place, even one where no infra service joins it, so compose
+# never owns it. A network compose owns must carry compose's labels, and the
+# one start-infra creates has none.
 networks:
   default:
     name: careerpolaris_net
+    external: true
 
 # Rotated logs and resource limits, for the same reasons as in compose.yaml.
 # Set generously: an OOM kill here takes the datastore down, so these guard the
