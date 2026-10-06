@@ -52,9 +52,15 @@ needs Docker and `make`, and nothing else.
 
 ## 2. The droplet
 
-1. **Create it.** Ubuntu 24.04 LTS, 1 vCPU, 2 GB. Add your SSH key, and
-   turn on monitoring (the agent's memory and disk alerts).
-2. **Cloud Firewall** (Networking → Firewalls), attached to the droplet:
+1. **Create it.** Ubuntu 26.04 LTS (24.04 works too), 1 vCPU, 2 GB. Add your
+   SSH key, and turn on monitoring (the agent's memory and disk alerts).
+   Under Advanced options → User data, paste `infra/bootstrap-droplet.sh`,
+   so the host is prepared (step 4) before anyone can log in.
+2. **Reserved IP** (Networking → Reserved IPs), assigned to the droplet. Use
+   it, never the droplet's own address, in `SITE_HOSTNAME`: a replacement
+   droplet then takes the IP over, and the certificate, every public URL and
+   the OAuth callbacks stay as they are. It is free while assigned.
+3. **Cloud Firewall** (Networking → Firewalls), attached to the droplet:
    - Inbound: TCP 22 (from your own address if you can), TCP 80, TCP 443 and
      UDP 443.
    - Nothing else. Docker's port publishing goes around `ufw` but not around
@@ -62,28 +68,47 @@ needs Docker and `make`, and nothing else.
      anyway (`PUBLISHED_BIND_ADDRESS`).
    - Tailscale traffic arrives on the tunnel, not through this firewall, and
      needs no rule.
-3. **SSH.** Keys only: `PasswordAuthentication no` in
-   `/etc/ssh/sshd_config.d/`. Turn on `unattended-upgrades`.
-4. **Swap, for the host only.** Containers keep `memswap_limit` equal to
-   `mem_limit`, so a container that overruns is still killed, visibly.
+4. **The host.** `infra/bootstrap-droplet.sh`, as root, does all of it, and
+   running it again changes nothing already in place:
+   - SSH by key only. It refuses to run while no `authorized_keys` holds a
+     key.
+   - Daily security updates (`unattended-upgrades`). It never reboots: when
+     `/var/run/reboot-required` exists, reboot at a quiet time.
+   - 1 GB of swap, for the host only. Containers keep `memswap_limit` equal
+     to `mem_limit`, so a container that overruns is still killed, visibly.
+   - Docker Engine and the compose plugin from Docker's apt repository, plus
+     `make` and `git`. Docker's repository is not one the automatic updates
+     follow: `apt-get upgrade` now and then.
+
+   Pasted as User data, it has run by the time you log in; its output is in
+   `/var/log/cloud-init-output.log`. On a droplet created without it, clone
+   the repository (next step) and run `infra/bootstrap-droplet.sh`.
+5. **The repository,** at `/srv/careerpolaris`:
+   `git clone https://github.com/<owner>/career-polaris.git /srv/careerpolaris`.
+6. **`.env`,** from the droplet's template, which already holds this
+   machine's sizes and every production setting that is not a secret:
 
    ```
-   fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-   echo '/swapfile none swap sw 0 0' >> /etc/fstab
+   cp infra/env/droplet-1vcpu-2gb.env.example .env && chmod 600 .env
    ```
-5. **Docker Engine and `make`,** from Docker's apt repository. Clone the
-   repository to `/srv/careerpolaris`.
-6. **`.env`.** Copy `.env.example` to `.env` and fill it in as below. Then
-   `chmod 600 .env`.
+
+   Fill in every blank, as below. `FORWARDED_ALLOW_IPS` waits for the next
+   step.
 7. **Start it.** `careerpolaris_net` exists once `start-infra` has run. Read its
-   subnet into `FORWARDED_ALLOW_IPS` before the first `start-app`.
+   subnet into `FORWARDED_ALLOW_IPS`, then check `.env` against its template,
+   before the first `start-app`.
 
    ```
    make build-infra          # pulls Postgres and Tailscale
    make pull-app RELEASE=release.env   # the release's images, by digest
    make start-infra          # Postgres, then the tunnel forwards 5432 to it
+   docker network inspect careerpolaris_net -f '{{(index .IPAM.Config 0).Subnet}}'
+   make check-env TEMPLATE=infra/env/droplet-1vcpu-2gb.env.example
    make start-app            # migrates, then api, web and Caddy
    ```
+
+   `check-env` fails on a setting `.env` lacks or leaves blank, and lists
+   the values that differ from the template. It prints no secret.
 
    Caddy asks Let's Encrypt for `SITE_HOSTNAME`'s certificate on its first
    start. Ports 80 and 443 must already be open.
@@ -98,32 +123,38 @@ needs Docker and `make`, and nothing else.
    - run `make restore-db BACKUP=<key> RESTORE_DB=<scratch>`;
    - drop the scratch database again.
 
-### The droplet's `.env`, beyond the template
+### The droplet's `.env`: what the template leaves blank
+
+The template (`infra/env/droplet-1vcpu-2gb.env.example`) sets the profiles,
+`APP_ENV`, the secure cookie, the Postgres host and the sizes: each
+container's memory and CPU ceiling (no CPU above 1.0, since there is one
+vCPU), Postgres's own memory settings and `DB_POOL_SIZE`. What it leaves blank
+is this machine's alone:
 
 | Setting | Value |
 |---|---|
-| `COMPOSE_PROFILES` | `serving,proxy,tunnel` |
-| `APP_ENV` | `production` |
-| `SITE_HOSTNAME` | `<droplet-ip>.sslip.io`, until there is a domain |
+| `SITE_HOSTNAME` | `<reserved-ip>.sslip.io`, until there is a domain |
 | `CORS_ALLOWED_ORIGINS`, `WEB_API_BASE_URL`, `OAUTH_REDIRECT_BASE_URL`, `AUTH_PUBLIC_API_BASE_URL` | `https://$SITE_HOSTNAME`, each written out |
-| `AUTH_COOKIE_SECURE` | `true` |
-| `POSTGRES_HOST` | `postgres` |
+| `POSTGRES_SUPERUSER_PASSWORD`, `APP_RW_PASSWORD`, `CRAWLER_RW_PASSWORD`, `AGGREGATOR_PASSWORD`, `MIGRATOR_PASSWORD`, `AUTH_JWT_SECRET` | Each its own `openssl rand -hex 32` |
+| `DATABASE_URL`, `CRAWLER_DATABASE_URL`, `MIGRATOR_DATABASE_URL` | `postgresql+asyncpg://app_rw:<pw>@postgres:5432/careerpolaris`, the same for `crawler_rw`, and `postgresql+psycopg://migrator:<pw>@postgres:5432/careerpolaris`: the shapes `.github/workflows/ci-env.sh` writes |
+| `MASTER_ENCRYPTION_KEY` | `openssl rand -base64 32`, the same on the compute machine. Keep a copy off the droplet: without it every stored connector token and AI key is unreadable. |
 | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT_URL` | `https://<region>.digitaloceanspaces.com` |
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | The app's bucket and its key |
 | `BACKUP_S3_*` | The backup bucket and its key |
-| `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:careerpolaris-edge` key, `careerpolaris-edge` |
-| `GOOGLE_OAUTH_CLIENT_ID` | Blank: Google sign-in waits for a domain of your own |
-| `POSTGRES_SHARED_BUFFERS`, `_WORK_MEM`, `_EFFECTIVE_CACHE_SIZE`, `_MAX_CONNECTIONS` | `128MB`, `4MB`, `512MB`, `50` |
-| `DB_POOL_SIZE` | `3` |
-| `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet, from `docker network inspect careerpolaris_net` (e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054). |
-| `API_MEM_LIMIT`, `WEB_MEM_LIMIT`, `PROXY_MEM_LIMIT`, `POSTGRES_MEM_LIMIT`, `TUNNEL_MEM_LIMIT` | `512m`, `64m`, `128m`, `512m`, `128m` |
-| `API_CPUS`, `POSTGRES_CPUS` | `1.0` each. A ceiling, not a share, and there is one vCPU. |
+| `TUNNEL_AUTH_KEY` | The `tag:careerpolaris-edge` key |
+| `GITHUB_OAUTH_*`, `JIRA_OAUTH_CLIENT_*` | From the OAuth apps |
+| `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet (step 7, e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054); `check-env` refuses it blank. |
+
+`GOOGLE_OAUTH_*` and `RELEASE_REGISTRY` stay blank: Google sign-in waits for a
+domain of your own, and the droplet pushes no images.
 
 The GitHub and Jira OAuth apps list `https://$SITE_HOSTNAME/connections/…/callback`
 as their callbacks (see `.env.example`).
 
 After a day of use, `make stats` shows each container against its ceiling.
-Raise a limit in `.env` if one sits near it or reports `oom_killed=true`.
+If one sits near it or reports `oom_killed=true`, raise its limit in the
+template, by pull request, and then in `.env`; `check-env` lists any value
+the two disagree on.
 
 ## 3. The compute machine
 
@@ -173,8 +204,10 @@ hand it is `git fetch origin`, `git tag -a v0.1.0 origin/master -m v0.1.0`,
 the GitHub Release (`gh release download v0.1.0 -p release.env`) and copy it
 to both machines, next to `.env`.
 
-1. **Edge first.** Run `make pull-app RELEASE=release.env`, then
-   `make stop-app`, then `make start-app`. That migrates under the lock.
+1. **Edge first.** Run `git pull`, `make pull-app RELEASE=release.env`, then
+   `make check-env TEMPLATE=infra/env/droplet-1vcpu-2gb.env.example`: a
+   release that added a setting fails here, naming it, rather than at start.
+   Then `make stop-app` and `make start-app`, which migrates under the lock.
 2. **Then compute,** with the same `release.env`. A compute machine still on the
    previous image refuses to start against the newer schema, and says which
    release to run.

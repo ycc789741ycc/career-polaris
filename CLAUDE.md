@@ -116,7 +116,9 @@ Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
 `logs`, `stats`, `disk-usage`, `backup-db`, `release BUMP=` (tags
 `origin/master` with the next version and pushes it), `push-app` (CI's release) and
-`pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
+`pull-app RELEASE=release.env` (a deployed place's), `check-env TEMPLATE=` (a
+deployed place's `.env` against its machine's template in `infra/env/`, whose
+names `lint` keeps equal to `.env.example`'s), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
