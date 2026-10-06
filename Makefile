@@ -77,7 +77,7 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache backup-db restore-db push-app pull-app
+        stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -87,7 +87,7 @@ help:
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
-	@echo "  push-app (CI) pull-app (each deployed place)"
+	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -312,6 +312,14 @@ clean-up-cache:
 	find backend -mindepth 1 -depth -type d -empty -not -path '*/.venv/*' -print -exec rmdir {} \;
 
 # --- releases (ADR 0055, 0060) -----------------------------------------------
+
+# For the operator: tags origin/master with the next version
+# (BUMP=patch|minor|major) and pushes the tag, which starts CI's release.
+# Idempotent: does nothing if origin/master is already released, and pushes a
+# tag an earlier run left unpushed. Asks first; YES=1 does not. Runs git on the
+# host, with your own credentials.
+release:
+	@BUMP="$(BUMP)" YES="$(YES)" infra/tag-release.sh
 
 # CI only, for a version tag on master after every gate has passed: builds the
 # prod images for every platform in RELEASE_PLATFORMS, pushes them to

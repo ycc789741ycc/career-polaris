@@ -158,16 +158,18 @@ rules (per-host caps, backing off after a 429 or 403) do not change.
 
 ## 4. A release
 
-Tag the commit on `master` you want to ship, and push the tag:
+Tag `origin/master` with the next version and push the tag:
 
 ```
-git fetch origin
-git tag -a v0.1.0 origin/master -m "v0.1.0"
-git push origin v0.1.0
+make release BUMP=patch   # or minor, or major
 ```
 
 SemVer: raise the patch for fixes, the minor for features, the major when a
-place needs more than a pull. When CI is green, download `release.env` from
+place needs more than a pull. It shows the version and the commit and asks
+first (`YES=1` does not). Running it again is safe: it does nothing once
+`origin/master` is released, and pushes a tag an earlier run left unpushed. By
+hand it is `git fetch origin`, `git tag -a v0.1.0 origin/master -m v0.1.0`,
+`git push origin v0.1.0`. When CI is green, download `release.env` from
 the GitHub Release (`gh release download v0.1.0 -p release.env`) and copy it
 to both machines, next to `.env`.
 
