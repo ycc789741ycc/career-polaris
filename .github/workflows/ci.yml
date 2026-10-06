@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create the environment file
         # Every environment supplies the same variable names from .env.example,
@@ -81,7 +81,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history and every branch, so push-app can check the tagged
           # commit is on origin/master.
