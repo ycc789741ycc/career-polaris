@@ -20,15 +20,15 @@ needs Docker and `make`, and nothing else.
 1. **Tailscale.**
    - Create a tailnet.
    - Under Settings → Keys, make two auth keys: reusable, pre-approved,
-     tagged `tag:careerpolaris-edge` and `tag:careerpolaris-compute`. For a server, turn off key
+     tagged `tag:careerpolaris-serving` and `tag:careerpolaris-compute`. For a server, turn off key
      expiry on the machines once they join.
    - Restrict the tailnet to what the app needs. In the access policy, allow
-     only `tag:careerpolaris-compute` to reach `tag:careerpolaris-edge:5432`:
+     only `tag:careerpolaris-compute` to reach `tag:careerpolaris-serving:5432`:
 
      ```json
      {
-       "tagOwners": {"tag:careerpolaris-edge": ["autogroup:admin"], "tag:careerpolaris-compute": ["autogroup:admin"]},
-       "grants": [{"src": ["tag:careerpolaris-compute"], "dst": ["tag:careerpolaris-edge"], "ip": ["tcp:5432"]}]
+       "tagOwners": {"tag:careerpolaris-serving": ["autogroup:admin"], "tag:careerpolaris-compute": ["autogroup:admin"]},
+       "grants": [{"src": ["tag:careerpolaris-compute"], "dst": ["tag:careerpolaris-serving"], "ip": ["tcp:5432"]}]
      }
      ```
 2. **Spaces.** In one region, create two private buckets:
@@ -141,7 +141,7 @@ is this machine's alone:
 | `S3_ENDPOINT_URL`, `S3_PUBLIC_ENDPOINT_URL` | `https://<region>.digitaloceanspaces.com` |
 | `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | The app's bucket and its key |
 | `BACKUP_S3_*` | The backup bucket and its key |
-| `TUNNEL_AUTH_KEY` | The `tag:careerpolaris-edge` key |
+| `TUNNEL_AUTH_KEY` | The `tag:careerpolaris-serving` key |
 | `GITHUB_OAUTH_*`, `JIRA_OAUTH_CLIENT_*` | From the OAuth apps |
 | `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet (step 7, e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054); `check-env` refuses it blank. |
 
