@@ -105,7 +105,10 @@ compose network and assumes infra is up and migrated — it tells you to run
 into a test target. `scan` covers Python dependencies, npm dependencies, and the
 prod images themselves. It hands each image to Trivy as a `docker save` stream,
 rather than mounting the Docker socket, which would give the scanner root on the
-host.
+host. Between pushes, Dependabot (`.github/dependabot.yml`) opens security
+updates as advisories land and weekly grouped bumps, each held a week
+(`cooldown`); CI gates its PRs like any other. It cannot see images pinned in
+the Makefile, which stay manual.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
