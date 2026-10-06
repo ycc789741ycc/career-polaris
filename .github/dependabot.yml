@@ -38,11 +38,13 @@ updates:
         update-types: [version-update:semver-major]
     groups:
       # ESLint and its plugins only work at matching majors, so they move in
-      # one PR, majors included. Listed before `web`, which would take them.
+      # one PR, majors included. `web` excludes them by name: Dependabot gives
+      # a package to the group it calls more specific, not the first listed.
       eslint:
         patterns: [eslint, "@eslint/*", typescript-eslint, "eslint-plugin-*"]
       web:
         update-types: [minor, patch]
+        exclude-patterns: [eslint, "@eslint/*", typescript-eslint, "eslint-plugin-*"]
 
   - package-ecosystem: uv
     directory: /backend

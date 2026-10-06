@@ -97,7 +97,7 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
       const { url } = await api.get<{ url: string }>(
         `/connections/${kind}/authorize-url`,
       );
-      window.location.href = url;
+      window.location.assign(url);
     } catch (caught) {
       setError(messageOf(caught));
       setBusy(null);
