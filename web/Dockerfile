@@ -17,7 +17,7 @@
 #         web/src bind-mounted. Local only: never pushed, never deployed.
 
 # --- dependencies ----------------------------------------------------------
-FROM node:22.23.2-bookworm-slim AS deps
+FROM node:26.9.0-bookworm-slim AS deps
 
 WORKDIR /app
 COPY package.json package-lock.json ./
