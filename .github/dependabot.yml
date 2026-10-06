@@ -1,0 +1,83 @@
+# Dependabot: what it watches, and how its pull requests look.
+#
+# Security updates (on in the repo's settings) open a PR as soon as an advisory
+# names a dependency we lock, whatever the schedule below says. Version
+# updates are the weekly PRs configured here: minor and patch bumps grouped
+# into one PR per ecosystem, majors one PR each.
+#
+# Every PR it opens runs CI's `verify` like any other: `make scan`, lint,
+# typecheck and both test tiers. Dependabot never runs make; CI checks its work.
+#
+# Not watched, because Dependabot cannot read them: tool images pinned in the
+# Makefile (Trivy, the AWS CLI) and the app's own careerpolaris-* images.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    # A new release waits a week before it is proposed, so one pulled or
+    # compromised in its first days never reaches a PR. Security updates skip it.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(no-ticket)
+    groups:
+      web:
+        update-types: [minor, patch]
+
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(no-ticket)
+    groups:
+      backend:
+        update-types: [minor, patch]
+
+  # Base images in each Dockerfile's FROM lines.
+  - package-ecosystem: docker
+    directories: [/backend, /web, /proxy]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(no-ticket)
+    groups:
+      base-images:
+        update-types: [minor, patch]
+
+  # Infra images: Postgres with pgvector, the S3 gateway, Tailscale.
+  - package-ecosystem: docker-compose
+    directory: /infra
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(no-ticket)
+    groups:
+      infra-images:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(no-ticket)
+    groups:
+      actions:
+        update-types: [minor, patch]
