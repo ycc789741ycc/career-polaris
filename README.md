@@ -141,6 +141,12 @@ make typecheck
 make scan                        # Python and npm dependencies, plus the prod images (Trivy)
 ```
 
+Between pushes, Dependabot watches the same dependencies
+(`.github/dependabot.yml`): a security update as soon as an advisory names one
+we lock, and once a week grouped minor and patch bumps for npm, uv, the base
+and infra images and the Actions. Its pull requests pass the same gates as
+anyone's; it never runs `make`.
+
 Supporting targets, which are never dependencies of the targets above:
 `migrate`, `format`, `gen-client` (regenerates the TypeScript API client),
 `lock` (regenerates `backend/uv.lock`), `logs`, `stats` (CPU, memory and
