@@ -15,7 +15,7 @@
 # never baked in.
 
 # --- dependencies ----------------------------------------------------------
-FROM python:3.12.14-slim-bookworm AS deps
+FROM python:3.14.7-slim-bookworm AS deps
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /bin/uv
 
@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # --- base: the production contents -----------------------------------------
 # Internal. `test` builds on it, and `prod` at the end of the file re-tags it.
-FROM python:3.12.14-slim-bookworm AS base
+FROM python:3.14.7-slim-bookworm AS base
 
 # WeasyPrint renders résumé PDFs through Pango (ADR 0007). The templates set
 # type in the design system's Caprasimo and Figtree, installed below, with
