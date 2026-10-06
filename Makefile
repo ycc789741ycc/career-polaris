@@ -63,6 +63,12 @@ RUN_HERMETIC := docker run --rm --network none
 # On the compose network, with configuration supplied at run time.
 RUN_ON_NET   := docker run --rm --network $(NETWORK) --env-file $(ENV_FILE)
 
+# .env templates per machine (infra/env/), each declaring exactly the names
+# .env.example does. infra/check-env.sh compares them, reading every file from
+# stdin in a container with no network, so nothing is mounted.
+ENV_TEMPLATES   := $(wildcard infra/env/*.env.example)
+CHECK_ENV_IMAGE := careerpolaris-backend:prod
+
 PATTERN ?=
 ifdef PATTERN
 PYTEST_FILTER := -k $(PATTERN)
@@ -77,7 +83,8 @@ endif
         require-infra-services build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
-        stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app
+        stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
+        check-env
 
 help:
 	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
@@ -87,6 +94,7 @@ help:
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
+	@echo "  check-env TEMPLATE=infra/env/<machine>.env.example (each deployed place)"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
@@ -227,6 +235,8 @@ lint:
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx eslint src
 	$(RUN_HERMETIC) -e SITE_HOSTNAME=lint.invalid $(PROXY_IMAGE) \
 	    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+	for f in .env.example $(ENV_TEMPLATES); do echo "### FILE $$f"; cat "$$f"; echo; done \
+	  | $(RUN_HERMETIC) -i $(BACKEND_TEST_IMAGE) sh -c "$$(cat infra/check-env.sh)" check-env templates
 
 # web/tsconfig.json lists no files, only a reference to tsconfig.app.json, so a
 # bare `tsc --noEmit` there checks nothing. Name the project that holds src/.
@@ -333,6 +343,21 @@ push-app: require-env
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
 	@infra/pull-release.sh "$(RELEASE)"
+
+# On a deployed place: compares its .env with the template it was copied from
+# (TEMPLATE=infra/env/<machine>.env.example). Fails on a name .env lacks or a
+# required value left blank, and lists values that differ from the template.
+# Run it once .env is filled in, and after each release. Prints no secret: only
+# values the template sets, and templates leave every secret blank.
+check-env: require-env
+	@[ -n "$(TEMPLATE)" ] && [ -f "$(TEMPLATE)" ] || { \
+	  echo "ERROR: name the template this .env was copied from:"; \
+	  echo "  make check-env TEMPLATE=infra/env/<machine>.env.example"; exit 1; }
+	@docker image inspect $(CHECK_ENV_IMAGE) >/dev/null 2>&1 || { \
+	  echo "ERROR: $(CHECK_ENV_IMAGE) is missing. Run: make pull-app RELEASE=release.env"; exit 1; }
+	@for f in $(TEMPLATE) $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
+	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat infra/check-env.sh)" \
+	      check-env place $(TEMPLATE) $(ENV_FILE)
 
 # --- backups ----------------------------------------------------------------
 
