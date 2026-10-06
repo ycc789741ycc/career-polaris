@@ -109,7 +109,8 @@ host.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
-`logs`, `stats`, `disk-usage`, `backup-db`, `push-app` (CI's release) and
+`logs`, `stats`, `disk-usage`, `backup-db`, `release BUMP=` (tags
+`origin/master` with the next version and pushes it), `push-app` (CI's release) and
 `pull-app RELEASE=release.env` (a deployed place's), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
@@ -791,10 +792,13 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   `FORWARDED_ALLOW_IPS` (careerpolaris_net's subnet on the droplet). The SPA words the
   proxy's own 429 and 413 and reads error pages that are not JSON.
 - **Releases by digest** (ADR 0055). CI runs on pushes to `master` (it named
-  `main`/`develop` before and never ran there); a passing push runs
-  `make push-app`: the prod images for `RELEASE_PLATFORMS`
-  (amd64 and arm64, the latter under QEMU) to `RELEASE_REGISTRY`, and
-  `release.env` naming each by digest. Each place runs
+  `main`/`develop` before and never ran there) and pull requests. A version
+  tag (`v1.2.3`) on a commit already on `master` — `make release BUMP=patch|minor|major`
+  makes and pushes the next one, idempotently — runs the gates and then
+  `make push-app` (ADR 0060), which refuses any other ref: the prod images for
+  `RELEASE_PLATFORMS` (amd64 and arm64, the latter under QEMU) to
+  `RELEASE_REGISTRY`, tagged with the version, and `release.env` naming each
+  by digest, attached to the tag's GitHub Release. Each place runs
   `make pull-app RELEASE=release.env`, edge first. `pull_policy: never` stays.
 
 - **Local S3 without MinIO** (ADR 0058). MinIO no longer publishes pullable

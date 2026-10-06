@@ -146,7 +146,8 @@ Supporting targets, which are never dependencies of the targets above:
 `lock` (regenerates `backend/uv.lock`), `logs`, `stats` (CPU, memory and
 restarts per container, against its limit), `disk-usage` (free disk, volumes,
 the largest tables, buckets), `backup-db` (a `pg_dump` into the backup bucket),
-`push-app` (CI's release, by digest) and `pull-app` (a deployed place takes
+`release BUMP=patch|minor|major` (tags `origin/master` with the next version
+and pushes the tag, which releases), `push-app` (CI's release, by digest) and `pull-app` (a deployed place takes
 that release), and `clean-up-cache` (deletes tool caches and build output, all
 regenerated on the next run). `restore-db` and `clean-up-infra` are the only
 destructive ones, and each asks first.
