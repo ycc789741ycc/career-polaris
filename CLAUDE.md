@@ -108,7 +108,9 @@ rather than mounting the Docker socket, which would give the scanner root on the
 host. Between pushes, Dependabot (`.github/dependabot.yml`) opens security
 updates as advisories land and weekly grouped bumps, each held a week
 (`cooldown`); CI gates its PRs like any other. It cannot see images pinned in
-the Makefile, which stay manual.
+the Makefile, which stay manual. It never rebases on its own (comment
+`@dependabot rebase`), ESLint and its plugins arrive as one PR, and the Python
+and Node versions and TypeScript's major are upgraded on purpose, not by it.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
