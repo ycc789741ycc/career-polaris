@@ -8,6 +8,14 @@
 # Every PR it opens runs CI's `verify` like any other: `make scan`, lint,
 # typecheck and both test tiers. Dependabot never runs make; CI checks its work.
 #
+# `rebase-strategy: disabled`: master requires PRs to be up to date, so
+# rebasing every open PR on each merge would rerun `verify` on all of them.
+# Comment `@dependabot rebase` on the one you are about to merge instead.
+#
+# What moves only on purpose, never from a Dependabot PR: the language each
+# image runs (python, node: patch bumps only) and TypeScript's major, which
+# waits until openapi-typescript (`make gen-client`) supports it.
+#
 # Not watched, because Dependabot cannot read them: tool images pinned in the
 # Makefile (Trivy, the AWS CLI) and the app's own careerpolaris-* images.
 version: 2
@@ -24,7 +32,15 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(no-ticket)
+    rebase-strategy: disabled
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
     groups:
+      # ESLint and its plugins only work at matching majors, so they move in
+      # one PR, majors included. Listed before `web`, which would take them.
+      eslint:
+        patterns: [eslint, "@eslint/*", typescript-eslint, "eslint-plugin-*"]
       web:
         update-types: [minor, patch]
 
@@ -37,6 +53,7 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(no-ticket)
+    rebase-strategy: disabled
     groups:
       backend:
         update-types: [minor, patch]
@@ -44,6 +61,13 @@ updates:
   # Base images in each Dockerfile's FROM lines.
   - package-ecosystem: docker
     directories: [/backend, /web, /proxy]
+    # Python 3.12 -> 3.14 counts as a minor bump here, but it is a language
+    # upgrade: requires-python, uv.lock and every wheel move with it.
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: node
+        update-types: [version-update:semver-major, version-update:semver-minor]
     schedule:
       interval: weekly
       day: monday
@@ -51,6 +75,7 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(no-ticket)
+    rebase-strategy: disabled
     groups:
       base-images:
         update-types: [minor, patch]
@@ -65,6 +90,7 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(no-ticket)
+    rebase-strategy: disabled
     groups:
       infra-images:
         update-types: [minor, patch]
@@ -78,6 +104,7 @@ updates:
       default-days: 7
     commit-message:
       prefix: chore(no-ticket)
+    rebase-strategy: disabled
     groups:
       actions:
         update-types: [minor, patch]

@@ -22,6 +22,13 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels that PR's run still in progress: only
+# its newest commit can merge. Pushes to master and tags each get a group of
+# their own, so no gate run there, and no release, is ever cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
