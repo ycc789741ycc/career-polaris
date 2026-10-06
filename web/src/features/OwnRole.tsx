@@ -42,14 +42,17 @@ export function useOwnPostings(): {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
-  const reload = useCallback(async () => {
-    try {
-      setData(await api.items<OwnPostingPage>("/own-postings"));
-      setError(null);
-    } catch (caught) {
-      setError(messageOf(caught));
-    }
-  }, []);
+  const reload = useCallback(
+    () =>
+      api.items<OwnPostingPage>("/own-postings").then(
+        (items) => {
+          setData(items);
+          setError(null);
+        },
+        (caught: unknown) => setError(messageOf(caught)),
+      ),
+    [],
+  );
 
   useEffect(() => {
     void reload();

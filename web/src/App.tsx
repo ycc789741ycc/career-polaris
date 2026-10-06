@@ -149,9 +149,7 @@ function Shell() {
     });
   }, [navigate]);
 
-  const refresh = useCallback(async () => {
-    setStatus(await loadStatus());
-  }, []);
+  const refresh = useCallback(() => loadStatus().then(setStatus), []);
 
   useEffect(() => {
     void refresh();
