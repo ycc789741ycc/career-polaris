@@ -13,8 +13,8 @@
 #         test-unit and gen-client run here, never mounted. The SPA's
 #         production artifact is static files, so "prod plus test deps" means
 #         the source `build` compiles, with the tools that check it.
-#   dev   test plus the Vite dev server, run by `make start-app MODE=dev` with
-#         web/src bind-mounted. Local only: never pushed, never deployed.
+#   dev   test plus the Vite dev server, run on the `local` machine with
+#         web/src bind-mounted. Never pushed, never deployed.
 
 # --- dependencies ----------------------------------------------------------
 FROM node:26.9.0-bookworm-slim AS deps
@@ -37,7 +37,7 @@ USER node
 
 # --- dev: the Vite dev server with hot module replacement -----------------
 # Listens on 8080, the port the prod image uses, so compose's published port
-# mapping applies unchanged in either mode.
+# mapping reads the same on every machine.
 FROM test AS dev
 
 CMD ["npx", "vite", "--host", "0.0.0.0", "--port", "8080", "--strictPort"]

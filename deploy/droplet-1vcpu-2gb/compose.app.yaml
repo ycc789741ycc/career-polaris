@@ -1,0 +1,64 @@
+# The droplet: DigitalOcean, 1 vCPU, 2 GB (ADR 0051, 0062). The api, the SPA and
+# Caddy, the only thing on the internet; the worker and the crawler run on the
+# compute machine. Prod images, pulled by digest (`make pull-app`).
+#
+# Running here, by memory ceiling: api 512m, Postgres 512m, proxy 128m, tunnel
+# 128m, web 64m — about 1.3 GB, leaving the rest to the host and the page
+# cache. migrate (512m) runs only while the api is stopped. Raise a limit here,
+# by pull request, when `make stats` shows a service near it.
+#
+# The names are the ones this machine had before ADR 0062, so its volumes —
+# the proxy's certificates, Postgres's data — carry over untouched.
+
+name: careerpolaris-app
+
+networks:
+  default:
+    name: careerpolaris_net
+    external: true
+
+services:
+  # Published on loopback only: Docker's iptables rules go ahead of ufw, so
+  # 0.0.0.0 would serve the api over plain HTTP to the internet. The proxy
+  # reaches it on the network.
+  api:
+    extends: {file: ../compose.app.base.yaml, service: api}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    ports:
+      - "127.0.0.1:21470:8000"
+
+  migrate:
+    extends: {file: ../compose.app.base.yaml, service: migrate}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+
+  web:
+    extends: {file: ../compose.app.base.yaml, service: web}
+    mem_limit: 64m
+    memswap_limit: 64m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:21471:8080"
+
+  proxy:
+    extends: {file: ../compose.app.base.yaml, service: proxy}
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    ports:
+      # Public on purpose, and the only service that is.
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      # Certificates and the ACME account: keep them, or every restart asks
+      # Let's Encrypt again and soon hits its rate limit.
+      - proxydata:/data
+      - proxyconfig:/config
+
+volumes:
+  proxydata:
+  proxyconfig:

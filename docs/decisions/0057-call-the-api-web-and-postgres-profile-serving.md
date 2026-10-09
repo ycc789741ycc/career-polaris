@@ -1,6 +1,6 @@
 # 0057. The profile with the api, the SPA and Postgres is called `serving`
 
-**Status:** Accepted — 2026-10-05.
+**Status:** Superseded by [0062](0062-keep-each-machines-shape-in-its-own-deploy-folder.md) — 2026-10-09.
 
 ## Context
 

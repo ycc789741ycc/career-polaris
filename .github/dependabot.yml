@@ -82,9 +82,10 @@ updates:
       base-images:
         update-types: [minor, patch]
 
-  # Infra images: Postgres with pgvector, the S3 gateway, Tailscale.
+  # Infra images: Postgres with pgvector, the S3 gateway, Tailscale, pinned in
+  # deploy/compose.infra.base.yaml (ADR 0062).
   - package-ecosystem: docker-compose
-    directory: /infra
+    directory: /deploy
     schedule:
       interval: weekly
       day: monday

@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Builds CI's .env from the committed template.
+# Builds CI's .env from the committed template, and names the machine: `ci`
+# (deploy/ci/, ADR 0062), whose ports are 21474-21477.
 #
 # The names come from .env.example, so a new required variable fails here until
 # it is added in both places — which is the point.
 set -euo pipefail
 
 # Never clobber a developer's environment: this only ever creates a new one.
-if [ -f .env ]; then
-  echo "ERROR: .env already exists. This script only builds a fresh CI environment."
+if [ -f .env ] || [ -f .machine ]; then
+  echo "ERROR: .env or .machine already exists. This script only builds a fresh CI environment."
   exit 1
 fi
+echo ci > .machine
 
 key() { python3 -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())"; }
 pw() { python3 -c "import secrets;print(secrets.token_urlsafe(18))"; }
@@ -32,9 +34,7 @@ PY
 }
 
 set_value APP_ENV ci
-# Everything on one runner, as in development.
-set_value COMPOSE_PROFILES serving,compute,local
-set_value CORS_ALLOWED_ORIGINS http://localhost:21471
+set_value CORS_ALLOWED_ORIGINS http://localhost:21475
 # Service names on the container network, not localhost.
 set_value POSTGRES_HOST postgres
 set_value POSTGRES_PORT 5432
@@ -52,12 +52,12 @@ set_value MASTER_ENCRYPTION_KEY "$(key)"
 set_value AUTH_JWT_SECRET "$(pw)$(pw)"
 set_value AUTH_COOKIE_SECURE false
 set_value S3_ENDPOINT_URL http://objectstore:9000
-set_value S3_PUBLIC_ENDPOINT_URL http://localhost:21473
+set_value S3_PUBLIC_ENDPOINT_URL http://localhost:21477
 set_value S3_REGION us-east-1
 set_value S3_BUCKET careerpolaris-ci
 set_value S3_ACCESS_KEY_ID careerpolaris-ci-access
 set_value S3_SECRET_ACCESS_KEY "$(pw)"
-set_value OAUTH_REDIRECT_BASE_URL http://localhost:21471
+set_value OAUTH_REDIRECT_BASE_URL http://localhost:21475
 set_value GITHUB_OAUTH_CLIENT_ID ci-github
 set_value GITHUB_OAUTH_CLIENT_SECRET "$(pw)"
 set_value GITHUB_API_BASE_URL https://api.github.com
@@ -65,7 +65,7 @@ set_value JIRA_OAUTH_CLIENT_ID ci-jira
 set_value JIRA_OAUTH_CLIENT_SECRET "$(pw)"
 set_value JIRA_API_BASE_URL https://api.atlassian.com
 set_value JIRA_OAUTH_BASE_URL https://auth.atlassian.com
-set_value WEB_API_BASE_URL http://localhost:21470
+set_value WEB_API_BASE_URL http://localhost:21474
 set_value WEB_PRIVACY_CONTACT_EMAIL privacy@example.test
 # The release job pushes to this repository owner's packages; a pull request
 # has no owner's registry to push to and leaves it blank.

@@ -1,0 +1,40 @@
+# CI's infra (ADR 0062): Postgres and the S3 gateway, as on `local`, under
+# `-ci` names and ports 21476–21477.
+
+name: careerpolaris-infra-ci
+
+networks:
+  default:
+    name: careerpolaris_net_ci
+    external: true
+
+services:
+  postgres:
+    extends: {file: ../compose.infra.base.yaml, service: postgres}
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2.0
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - max_connections=100
+    ports:
+      - "127.0.0.1:21476:5432"
+
+  objectstore:
+    extends: {file: ../compose.infra.base.yaml, service: objectstore}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    ports:
+      - "127.0.0.1:21477:9000"
+
+volumes:
+  pgdata:
+  objectfiles:

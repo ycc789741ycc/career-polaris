@@ -1,0 +1,140 @@
+# The developer's machine (ADR 0062): every app service, from the `dev` images,
+# with this checkout's source bind-mounted read-only so a save reloads what uses
+# it. Local is always dev; the prod images run on the `ci` machine and the
+# deployed ones. Used by every app target when .machine says `local`, and by
+# `make format` and `make lock` on any machine.
+#
+# Every source bind-mount in the repo lives in this file and nowhere else:
+# never as `-v` in a Makefile recipe, never in how the test tiers or the gates
+# run. They run against the `test` image and never read this file.
+#
+# The app's mounts are read-only. Dependencies live outside the mounted paths
+# (/opt/venv for Python; node_modules is never mounted for the SPA), so the
+# host's own .venv or node_modules cannot shadow the Linux builds in the image.
+#
+# Names end in `-local`, so this stack runs beside a deployed one on the same
+# host (the compute machine) without either replacing the other.
+
+name: careerpolaris-app-local
+
+networks:
+  default:
+    name: careerpolaris_net_local
+    external: true
+
+# Ceilings: about twice what each service was measured using. memswap_limit
+# equals mem_limit so an overrun is killed promptly and visibly. Raise one here,
+# by pull request, when `make stats` shows a service near it.
+services:
+  api:
+    extends: {file: ../compose.app.base.yaml, service: api}
+    build: {target: dev}
+    image: careerpolaris-backend:dev
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.0
+    command:
+      - uvicorn
+      - api.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app
+    ports:
+      - "127.0.0.1:21470:8000"
+    volumes:
+      - ../../backend:/app:ro
+
+  worker:
+    extends: {file: ../compose.app.base.yaml, service: worker}
+    build: {target: dev}
+    image: careerpolaris-backend:dev
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    # Restarts the worker when Python source changes. Ships with
+    # uvicorn[standard], so nothing is added to the image for it.
+    command: ["watchfiles", "--filter", "python", "python -m worker.main", "/app"]
+    volumes:
+      - ../../backend:/app:ro
+      # The local embedding model is downloaded once and reused.
+      - modelcache:/home/app/.cache/huggingface
+
+  # Mounted, but deliberately NOT reloading. The crawler runs a crawl as soon as
+  # it starts, so restarting on every save would hit real job boards on every
+  # keystroke. Pick up a change with `make stop-app && make start-app`.
+  crawler:
+    extends: {file: ../compose.app.base.yaml, service: crawler}
+    build: {target: dev}
+    image: careerpolaris-backend:dev
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 1.0
+    volumes:
+      - ../../backend:/app:ro
+      - modelcache:/home/app/.cache/huggingface
+
+  # Mounted, so a migration written a moment ago applies without a rebuild.
+  migrate:
+    extends: {file: ../compose.app.base.yaml, service: migrate}
+    build: {target: dev}
+    image: careerpolaris-backend:dev
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.0
+    volumes:
+      - ../../backend:/app:ro
+
+  # The Vite dev server with hot module replacement, from the dev stage's own
+  # command, on the same port the prod image listens on.
+  web:
+    extends: {file: ../compose.app.base.yaml, service: web}
+    build: {target: dev}
+    image: careerpolaris-web:dev
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:21471:8080"
+    volumes:
+      # Only what changes day to day. vite.config.ts or package.json changes
+      # need `make build-app`, because they change the dependencies.
+      - ../../web/src:/app/src:ro
+      - ../../web/index.html:/app/index.html:ro
+
+  # --- tools that write back to source --------------------------------------
+  # Run only by `make format` and `make lock`, behind a profile so `up` never
+  # starts them. They run as the invoking user's uid (exported by the
+  # Makefile), so the files they rewrite stay owned by that user on every host.
+
+  backend-tools:
+    image: careerpolaris-backend:dev
+    pull_policy: never
+    profiles: ["tools"]
+    user: "${HOST_UID:?run through make}:${HOST_GID:?run through make}"
+    # Its own bridge rather than the stack's network: formatting must not need
+    # infra up, and `uv lock` needs the package index.
+    network_mode: bridge
+    environment:
+      HOME: /tmp
+      # Resolving the lockfile must not touch a virtualenv in the mounted tree.
+      UV_PROJECT_ENVIRONMENT: /tmp/lockenv
+    volumes:
+      - ../../backend:/app
+
+  web-tools:
+    image: careerpolaris-web:dev
+    pull_policy: never
+    profiles: ["tools"]
+    user: "${HOST_UID:?run through make}:${HOST_GID:?run through make}"
+    network_mode: none
+    environment:
+      HOME: /tmp
+    volumes:
+      - ../../web/src:/app/src
+
+volumes:
+  modelcache:

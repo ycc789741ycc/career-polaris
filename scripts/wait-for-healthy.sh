@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
+COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f "${INFRA_COMPOSE_FILE:?run through make}")
 deadline=$(( $(date +%s) + ${INFRA_HEALTH_TIMEOUT_SECONDS:-120} ))
 
 while :; do

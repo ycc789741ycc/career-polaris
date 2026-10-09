@@ -17,7 +17,7 @@ set -a; . ./"${ENV_FILE:-.env}"; set +a
 : "${BACKUP_S3_ACCESS_KEY_ID:?BACKUP_S3_ACCESS_KEY_ID is required to back up}"
 : "${BACKUP_S3_SECRET_ACCESS_KEY:?BACKUP_S3_SECRET_ACCESS_KEY is required to back up}"
 
-COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
+COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f "${INFRA_COMPOSE_FILE:?run through make}")
 AWS_CLI_IMAGE=amazon/aws-cli:2.37.9
 
 if [ -z "$("${COMPOSE[@]}" ps -q --status running postgres 2>/dev/null)" ]; then
@@ -30,7 +30,7 @@ key="${POSTGRES_DB}/$(date -u +%Y%m%dT%H%M%SZ).dump"
 # pipefail: a failed dump fails the target even though the upload saw an end.
 "${COMPOSE[@]}" exec -T -e PGPASSWORD="$POSTGRES_SUPERUSER_PASSWORD" postgres \
   pg_dump --format=custom -U "$POSTGRES_SUPERUSER" -d "$POSTGRES_DB" \
-| docker run --rm -i --network careerpolaris_net \
+| docker run --rm -i --network "${NETWORK:?run through make}" \
     -e AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" \
     -e AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY" \
     -e AWS_DEFAULT_REGION="$BACKUP_S3_REGION" \
