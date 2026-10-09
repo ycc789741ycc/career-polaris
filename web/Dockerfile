@@ -61,11 +61,12 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --chmod=755 docker-entrypoint.d/10-write-config.sh /docker-entrypoint.d/10-write-config.sh
 
 USER root
-# libexpat 2.8.4 and pcre2 10.48, as the base ships them, carry CVE-2026-93990
-# and CVE-2026-103111 (both HIGH). The fixes are pinned here until an
-# nginx-unprivileged tag ships libexpat 2.8.5 and pcre2 10.49 or later; then
-# each line goes, and `make scan` shows it is safe to drop.
-RUN apk add --no-cache libexpat=2.8.5-r0 pcre2=10.49-r0 \
+# libexpat 2.8.4, pcre2 10.48 and tiff 4.7.1, as the base ships them, carry
+# CVE-2026-93990, CVE-2026-103111 and CVE-2026-4775 (all HIGH). The fixes are
+# pinned here until an nginx-unprivileged tag ships libexpat 2.8.5, pcre2 10.49
+# and tiff 4.7.2 or later; then each goes, and `make scan` shows it is safe to
+# drop.
+RUN apk add --no-cache libexpat=2.8.5-r0 pcre2=10.49-r0 tiff=4.7.2-r0 \
  && chown 101:101 /usr/share/nginx/html
 USER 101
 
