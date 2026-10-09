@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthProvider";
 import { loadConfig } from "./config";
+import { isPrivacyPath, PrivacyPolicy } from "./features/PrivacyPolicy";
 import { StartupBoundary, StartupError } from "./StartupError";
 // Order matters: the design system, its fonts, the role tokens mapped onto
 // it, then the prototype's layout patterns.
@@ -20,9 +21,14 @@ try {
   root.render(
     <StrictMode>
       <StartupBoundary>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        {/* Public: the OAuth consent screens link here before anyone signs in. */}
+        {isPrivacyPath(window.location.pathname) ? (
+          <PrivacyPolicy />
+        ) : (
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        )}
       </StartupBoundary>
     </StrictMode>,
   );

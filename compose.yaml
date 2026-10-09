@@ -174,6 +174,7 @@ services:
     image: careerpolaris-web:prod
     environment:
       WEB_API_BASE_URL: ${WEB_API_BASE_URL:?WEB_API_BASE_URL is required}
+      WEB_PRIVACY_CONTACT_EMAIL: ${WEB_PRIVACY_CONTACT_EMAIL:?WEB_PRIVACY_CONTACT_EMAIL is required}
     ports:
       - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${WEB_PUBLISHED_PORT:-21471}:8080"
 

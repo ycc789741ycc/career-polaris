@@ -16,6 +16,7 @@ describe("api client", () => {
   it("reads configuration on the first request, not before", async () => {
     (window as unknown as { __APP_CONFIG__?: unknown }).__APP_CONFIG__ = {
       apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
     };
     const fetchMock = vi
       .fn()
@@ -50,6 +51,7 @@ describe("a refused request", () => {
   async function refusal(response: Response): Promise<unknown> {
     (window as unknown as { __APP_CONFIG__?: unknown }).__APP_CONFIG__ = {
       apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
     try {

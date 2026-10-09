@@ -17,6 +17,7 @@ import { SignInScreen } from "./SignInScreen";
 function configure(): void {
   (window as unknown as { __APP_CONFIG__?: unknown }).__APP_CONFIG__ = {
     apiBaseUrl: "http://api.test",
+    privacyContactEmail: "privacy@example.test",
   };
 }
 
@@ -69,6 +70,13 @@ function renderScreen() {
 }
 
 describe("sign-in screen", () => {
+  it("links to the privacy policy before anyone signs in", () => {
+    renderScreen();
+    expect(
+      screen.getByRole("link", { name: "Privacy policy" }),
+    ).toHaveAttribute("href", "/privacy");
+  });
+
   it("keeps submit disabled until both fields have something in them", async () => {
     const user = userEvent.setup();
     renderScreen();

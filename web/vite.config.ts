@@ -15,6 +15,7 @@ function runtimeConfig(): Plugin {
       server.middlewares.use("/config.js", (_request, response) => {
         const body = JSON.stringify({
           apiBaseUrl: process.env.WEB_API_BASE_URL ?? "",
+          privacyContactEmail: process.env.WEB_PRIVACY_CONTACT_EMAIL ?? "",
         });
         response.setHeader("content-type", "application/javascript");
         response.setHeader("cache-control", "no-store");

@@ -57,6 +57,7 @@ describe("completeCallback", () => {
   beforeEach(() => {
     (window as unknown as { __APP_CONFIG__?: unknown }).__APP_CONFIG__ = {
       apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
     };
     fetchMock = vi.fn(async () => new Response("{}", { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);

@@ -191,7 +191,10 @@ function renderPlan(
 
 describe("gap plan screen", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => vi.unstubAllGlobals());
 

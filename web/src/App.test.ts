@@ -12,6 +12,7 @@ describe("shell status", () => {
   beforeEach(() => {
     (window as unknown as { __APP_CONFIG__?: unknown }).__APP_CONFIG__ = {
       apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
     };
   });
   afterEach(() => vi.unstubAllGlobals());

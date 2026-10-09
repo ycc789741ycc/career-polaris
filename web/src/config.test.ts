@@ -9,8 +9,12 @@ afterEach(() => setConfig(undefined));
 
 describe("runtime configuration", () => {
   it("accepts a well-formed config", () => {
-    setConfig({ apiBaseUrl: "http://localhost:8000" });
-    expect(loadConfig()).toEqual({ apiBaseUrl: "http://localhost:8000" });
+    const config = {
+      apiBaseUrl: "http://localhost:8000",
+      privacyContactEmail: "privacy@example.test",
+    };
+    setConfig(config);
+    expect(loadConfig()).toEqual(config);
   });
 
   it("names the variable to fix when config.js was never written", () => {
@@ -19,7 +23,12 @@ describe("runtime configuration", () => {
   });
 
   it("rejects an empty base URL rather than building requests against nothing", () => {
-    setConfig({ apiBaseUrl: "" });
+    setConfig({ apiBaseUrl: "", privacyContactEmail: "privacy@example.test" });
     expect(() => loadConfig()).toThrow(/apiBaseUrl/);
+  });
+
+  it("refuses to start without a privacy contact, which the policy page names", () => {
+    setConfig({ apiBaseUrl: "http://localhost:8000" });
+    expect(() => loadConfig()).toThrow(/privacyContactEmail/);
   });
 });
