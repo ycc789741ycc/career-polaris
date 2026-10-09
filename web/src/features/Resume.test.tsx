@@ -355,7 +355,10 @@ function renderResume(saved: ResumeSummary[] = [summary]) {
 
 describe("résumé screen", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -955,7 +958,10 @@ describe("the grey note under a line", () => {
 
 describe("the page as it prints (ADR 0038)", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1101,7 +1107,10 @@ describe("the page's measures", () => {
 
 describe("templates of your own (ADR 0040)", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -1257,7 +1266,10 @@ describe("templates of your own (ADR 0040)", () => {
 
 describe("sections you choose (ADR 0039, ADR 0043)", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => vi.unstubAllGlobals());
 

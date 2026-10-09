@@ -66,6 +66,7 @@ set_value JIRA_OAUTH_CLIENT_SECRET "$(pw)"
 set_value JIRA_API_BASE_URL https://api.atlassian.com
 set_value JIRA_OAUTH_BASE_URL https://auth.atlassian.com
 set_value WEB_API_BASE_URL http://localhost:21470
+set_value WEB_PRIVACY_CONTACT_EMAIL privacy@example.test
 # The release job pushes to this repository owner's packages; a pull request
 # has no owner's registry to push to and leaves it blank.
 if [ -n "${GITHUB_REPOSITORY_OWNER:-}" ]; then

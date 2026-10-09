@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { AppIcon } from "../components/AppIcon";
+import { PRIVACY_PATH } from "../features/PrivacyPolicy";
 import { Button, ErrorNote, Field } from "../components/ui";
 import { useAuth } from "./AuthProvider";
 import { googleStartUrl, signInMethods } from "./session";
@@ -171,7 +172,8 @@ export function SignInScreen() {
             analysed until you do. There is no password reset yet, and your
             address is not verified. Keep your password somewhere safe.
             {googleOffered &&
-              " Signing in with Google proves your address: an account with the same address is linked to Google, and any password on it stops working."}
+              " Signing in with Google proves your address: an account with the same address is linked to Google, and any password on it stops working."}{" "}
+            <a href={PRIVACY_PATH}>Privacy policy</a>
           </p>
         </form>
       </div>

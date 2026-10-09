@@ -192,7 +192,10 @@ function renderRoles(focus: Focus | null, activity: Activity | null = null) {
 
 describe("the role map's one Advisor target", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -391,7 +394,10 @@ describe("the role map's one Advisor target", () => {
 
 describe("the selected role's fit", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -441,7 +447,10 @@ describe("the role map while an analysis runs", () => {
   };
 
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -525,7 +534,10 @@ describe("the role map while an analysis runs", () => {
 
 describe("an opening found through a job site", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -556,7 +568,10 @@ describe("an opening found through a job site", () => {
 
 describe("how much of the market the role map takes in", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -594,7 +609,10 @@ describe("how much of the market the role map takes in", () => {
 
 describe("ten roles, chosen by the system", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -609,7 +627,10 @@ describe("ten roles, chosen by the system", () => {
 
 describe("what the role map leaves out", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -644,7 +665,10 @@ describe("what the role map leaves out", () => {
 
 describe("no roles of your own", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -662,7 +686,10 @@ describe("no roles of your own", () => {
 
 describe("the role map toolbar", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());

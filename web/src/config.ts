@@ -11,6 +11,8 @@
 
 export interface AppConfig {
   apiBaseUrl: string;
+  /** Where the privacy policy sends requests about personal data. */
+  privacyContactEmail: string;
 }
 
 declare global {
@@ -21,11 +23,11 @@ declare global {
 
 export function loadConfig(): AppConfig {
   const raw = window.__APP_CONFIG__;
-  const missing = (["apiBaseUrl"] as const).filter((key) => !raw?.[key]);
+  const missing = (["apiBaseUrl", "privacyContactEmail"] as const).filter((key) => !raw?.[key]);
   if (missing.length > 0) {
     throw new Error(
       `config.js is missing ${missing.join(", ")}. It is generated from the ` +
-        `environment — check WEB_API_BASE_URL.`,
+        `environment — check WEB_API_BASE_URL and WEB_PRIVACY_CONTACT_EMAIL.`,
     );
   }
   return raw as AppConfig;

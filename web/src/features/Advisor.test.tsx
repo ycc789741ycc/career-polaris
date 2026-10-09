@@ -194,7 +194,10 @@ function renderAdvisor(
 
 describe("the Advisor's one target role", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     window.localStorage.clear();
     serve();
   });
@@ -514,7 +517,10 @@ describe("what a focus aims at", () => {
 
 describe("Advisor jobs in the background (ADR 0042)", () => {
   beforeEach(() => {
-    window.__APP_CONFIG__ = { apiBaseUrl: "http://api.test" };
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
