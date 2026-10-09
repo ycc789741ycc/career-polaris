@@ -64,7 +64,7 @@ RUN_HERMETIC := docker run --rm --network none
 RUN_ON_NET   := docker run --rm --network $(NETWORK) --env-file $(ENV_FILE)
 
 # .env templates per machine (infra/env/), each declaring exactly the names
-# .env.example does. infra/check-env.sh compares them, reading every file from
+# .env.example does. scripts/check-env.sh compares them, reading every file from
 # stdin in a container with no network, so nothing is mounted.
 ENV_TEMPLATES   := $(wildcard infra/env/*.env.example)
 CHECK_ENV_IMAGE := careerpolaris-backend:prod
@@ -160,13 +160,13 @@ build-app: require-env check-mode
 # machine runs only the tunnel, on the host's network), because the app's
 # compose file expects it.
 start-infra: require-infra-services
-	@infra/tunnel-up.sh check
+	@scripts/tunnel-up.sh check
 	@docker network inspect $(NETWORK) >/dev/null 2>&1 || docker network create $(NETWORK) >/dev/null
 	$(COMPOSE_INFRA) up -d
 	@echo "Waiting for infra to report healthy..."
-	@infra/wait-for-healthy.sh
-	@infra/tunnel-up.sh
-	@infra/bootstrap-roles.sh
+	@scripts/wait-for-healthy.sh
+	@scripts/tunnel-up.sh
+	@scripts/bootstrap-roles.sh
 
 # Both modes migrate first: pending migrations run to completion BEFORE any
 # container serves traffic, and a failed migration fails the start. Starting
@@ -205,7 +205,7 @@ stats: require-env
 # Where the disk goes: free space, volume sizes, the largest Postgres
 # relations, and object storage by bucket. Read-only. Needs infra up.
 disk-usage: require-env
-	@infra/disk-usage.sh
+	@scripts/disk-usage.sh
 
 # --- migrations -------------------------------------------------------------
 
@@ -236,7 +236,7 @@ lint:
 	$(RUN_HERMETIC) -e SITE_HOSTNAME=lint.invalid $(PROXY_IMAGE) \
 	    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 	for f in .env.example $(ENV_TEMPLATES); do echo "### FILE $$f"; cat "$$f"; echo; done \
-	  | $(RUN_HERMETIC) -i $(BACKEND_TEST_IMAGE) sh -c "$$(cat infra/check-env.sh)" check-env templates
+	  | $(RUN_HERMETIC) -i $(BACKEND_TEST_IMAGE) sh -c "$$(cat scripts/check-env.sh)" check-env templates
 
 # web/tsconfig.json lists no files, only a reference to tsconfig.app.json, so a
 # bare `tsc --noEmit` there checks nothing. Name the project that holds src/.
@@ -329,7 +329,7 @@ clean-up-cache:
 # tag an earlier run left unpushed. Asks first; YES=1 does not. Runs git on the
 # host, with your own credentials.
 release:
-	@BUMP="$(BUMP)" YES="$(YES)" infra/tag-release.sh
+	@BUMP="$(BUMP)" YES="$(YES)" scripts/tag-release.sh
 
 # CI only, for a version tag on master after every gate has passed: builds the
 # prod images for every platform in RELEASE_PLATFORMS, pushes them to
@@ -337,12 +337,12 @@ release:
 # digest. Refuses a HEAD with no vX.Y.Z tag or not on origin/master. Needs a buildx builder that can build
 # those platforms.
 push-app: require-env
-	@infra/push-release.sh
+	@scripts/push-release.sh
 
 # On the droplet and the compute machine, in place of build-app: pulls the
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
-	@infra/pull-release.sh "$(RELEASE)"
+	@scripts/pull-release.sh "$(RELEASE)"
 
 # On a deployed place: compares its .env with the template it was copied from
 # (TEMPLATE=infra/env/<machine>.env.example). Fails on a name .env lacks or a
@@ -356,7 +356,7 @@ check-env: require-env
 	@docker image inspect $(CHECK_ENV_IMAGE) >/dev/null 2>&1 || { \
 	  echo "ERROR: $(CHECK_ENV_IMAGE) is missing. Run: make pull-app RELEASE=release.env"; exit 1; }
 	@for f in $(TEMPLATE) $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
-	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat infra/check-env.sh)" \
+	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat scripts/check-env.sh)" \
 	      check-env place $(TEMPLATE) $(ENV_FILE)
 
 # --- backups ----------------------------------------------------------------
@@ -365,14 +365,14 @@ check-env: require-env
 # reads the database; run it where Postgres runs. The droplet's crontab runs
 # it nightly; the bucket's lifecycle rule decides how long dumps are kept.
 backup-db: require-env
-	@infra/backup-db.sh
+	@scripts/backup-db.sh
 
 # DESTRUCTIVE: replaces a database with a dump from the backup bucket.
 # BACKUP= names the dump (`make backup-db` prints it); RESTORE_DB= the
 # database to restore into, default POSTGRES_DB. Stop the app first. Never a
 # dependency of anything.
 restore-db: require-env
-	@infra/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
+	@scripts/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
 
 # DESTRUCTIVE. Never a dependency of a build, start, stop or test target.
 clean-up-infra: require-env

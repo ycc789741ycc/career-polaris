@@ -177,7 +177,8 @@ backend/
   tests/      unit/ and integration/, each mirroring src/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
 proxy/        Caddy, the edge on the droplet (ADR 0053)
-infra/        infra compose project, DB roles, health wait, tunnel, backups, releases
+infra/        infra compose project and the per-machine .env templates
+scripts/      DB roles, health wait, tunnel, backups, releases, env checks
 prototype/    design reference screens for the v3 journey (prototype/README.md)
 docs/         domain model, architecture, plan, decisions
 ```

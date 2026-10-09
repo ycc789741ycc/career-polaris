@@ -181,7 +181,8 @@ backend/src/
 backend/tests/{unit,integration}/   each mirrors src/
 web/          React + Vite SPA, on the prototype's Organic design system (ADR 0004)
 proxy/        Caddy plus caddy-ratelimit, the edge on the droplet (ADR 0053)
-infra/        infra compose, DB roles, health wait, tunnel, backups, releases
+infra/        infra compose and the per-machine .env templates
+scripts/      DB roles, health wait, tunnel, backups, releases, env checks
 ```
 
 The backend is packaged by component, as the design guideline requires (its ADR
@@ -766,7 +767,7 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
 - **Two places** (ADR 0051). A DigitalOcean droplet (1 vCPU, 2 GB) runs
   `serving,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
   operator's machine runs `compute,tunnel`: the worker and the crawler, which
-  hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
+  hold the embedding model. They meet through Tailscale (`scripts/tunnel-up.sh`
   forwards only 5432 to Postgres on loopback; the compute side dials out). Files
   are in Spaces; the local S3 gateway is `local` only. Every published port binds to
   `PUBLISHED_BIND_ADDRESS` (`127.0.0.1`), because Docker goes around `ufw`;

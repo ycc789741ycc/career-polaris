@@ -54,7 +54,7 @@ needs Docker and `make`, and nothing else.
 
 1. **Create it.** Ubuntu 26.04 LTS (24.04 works too), 1 vCPU, 2 GB. Add your
    SSH key, and turn on monitoring (the agent's memory and disk alerts).
-   Under Advanced options → User data, paste `infra/bootstrap-droplet.sh`,
+   Under Advanced options → User data, paste `scripts/bootstrap-droplet.sh`,
    so the host is prepared (step 4) before anyone can log in.
 2. **Reserved IP** (Networking → Reserved IPs), assigned to the droplet. Use
    it, never the droplet's own address, in `SITE_HOSTNAME`: a replacement
@@ -68,7 +68,7 @@ needs Docker and `make`, and nothing else.
      anyway (`PUBLISHED_BIND_ADDRESS`).
    - Tailscale traffic arrives on the tunnel, not through this firewall, and
      needs no rule.
-4. **The host.** `infra/bootstrap-droplet.sh`, as root, does all of it, and
+4. **The host.** `scripts/bootstrap-droplet.sh`, as root, does all of it, and
    running it again changes nothing already in place:
    - SSH by key only. It refuses to run while no `authorized_keys` holds a
      key.
@@ -82,7 +82,7 @@ needs Docker and `make`, and nothing else.
 
    Pasted as User data, it has run by the time you log in; its output is in
    `/var/log/cloud-init-output.log`. On a droplet created without it, clone
-   the repository (next step) and run `infra/bootstrap-droplet.sh`.
+   the repository (next step) and run `scripts/bootstrap-droplet.sh`.
 5. **The repository,** at `/srv/careerpolaris`:
    `git clone https://github.com/<owner>/career-polaris.git /srv/careerpolaris`.
 6. **`.env`,** from the droplet's template, which already holds this
