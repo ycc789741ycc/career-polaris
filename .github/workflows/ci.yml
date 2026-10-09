@@ -3,8 +3,9 @@
 # It installs no language toolchain: every step is a container, so what runs here
 # and what runs on a laptop are the same images with the same pinned versions.
 #
-# MODE=prod throughout, stated rather than left to the default: prod is the only
-# mode CI or any deployed environment may use. The dev image is never built here.
+# The runner is the `ci` machine (deploy/ci/, ADR 0062), which ci-env.sh writes
+# into .machine: the prod images, nothing mounted. The dev image is never built
+# here.
 #
 # Every pull request and every push to master runs the gates. Only a version
 # tag (v1.2.3) on a commit already on master is released (ADR 0055, 0060): the
@@ -43,7 +44,7 @@ jobs:
         run: ./.github/workflows/ci-env.sh
 
       - run: make build-infra
-      - run: make build-app MODE=prod
+      - run: make build-app
 
       - name: Lint
         run: make lint
@@ -56,7 +57,7 @@ jobs:
         run: make test-unit
 
       - run: make start-infra
-      - run: make migrate MODE=prod
+      - run: make migrate
 
       - name: Integration tests
         run: make test-integration
@@ -76,7 +77,7 @@ jobs:
 
       - name: Stop
         if: always()
-        run: make stop-app MODE=prod || true; make stop-infra || true
+        run: make stop-app || true; make stop-infra || true
 
   release:
     needs: verify

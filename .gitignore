@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Which deploy/<machine>/ this checkout is (ADR 0062); .machine.example says local
+.machine
 
 # Python
 __pycache__/
