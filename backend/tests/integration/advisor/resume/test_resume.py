@@ -123,6 +123,7 @@ async def world(
         database,
         object_store=store,
         connectors={},
+        token_refreshers={},
         resume_max_bytes=settings.resume_max_bytes,
         resume_max_pages=settings.resume_max_pages,
         http_timeout_seconds=5,

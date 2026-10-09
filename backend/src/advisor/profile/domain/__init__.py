@@ -1,4 +1,17 @@
+from advisor.profile.domain.account_report import (
+    AccountReportReply,
+    ReportAction,
+    ReportDecision,
+    ReportedAccount,
+    ReportedStatus,
+    get_report_decision,
+    get_report_end,
+    get_report_retry,
+    parse_cycle_period,
+    parse_reported_status,
+)
 from advisor.profile.domain.connection import ConnectionStatus, SourceConnection
+from advisor.profile.domain.constants import REPORT_JITTER_SECONDS
 from advisor.profile.domain.events import ProfileEvent, ProfileUpdated, SourceSynced
 from advisor.profile.domain.evidence import (
     CitationError,
@@ -37,6 +50,8 @@ from advisor.profile.domain.timeline import (
 )
 
 __all__ = [
+    "REPORT_JITTER_SECONDS",
+    "AccountReportReply",
     "CareerPosition",
     "CareerPositionFilter",
     "CareerPositionRepository",
@@ -57,6 +72,10 @@ __all__ = [
     "ProfileVersion",
     "ProfileVersionFilter",
     "ProfileVersionRepository",
+    "ReportAction",
+    "ReportDecision",
+    "ReportedAccount",
+    "ReportedStatus",
     "Repository",
     "ResumeFile",
     "ResumeFileFilter",
@@ -70,6 +89,11 @@ __all__ = [
     "assert_citations_exist",
     "assert_position_readings_valid",
     "get_date_label",
+    "get_report_decision",
+    "get_report_end",
+    "get_report_retry",
     "get_shown_date",
+    "parse_cycle_period",
+    "parse_reported_status",
     "total_experience_months",
 ]

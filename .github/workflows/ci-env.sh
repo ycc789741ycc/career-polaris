@@ -73,9 +73,10 @@ if [ -n "${GITHUB_REPOSITORY_OWNER:-}" ]; then
   set_value RELEASE_REGISTRY "ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
 fi
 
-# Optional settings that are off while blank: Google sign-in, and the tunnel,
-# proxy and backups CI never runs. Every other blank is a missing CI value.
-MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+|RELEASE_REGISTRY)=$'
+# Optional settings that are off while blank: Google sign-in, Atlassian's
+# personal data report (ADR 0061), and the tunnel, proxy and backups CI never
+# runs. Every other blank is a missing CI value.
+MAY_BE_BLANK='^(GOOGLE_OAUTH_[A-Z_]+|AUTH_PUBLIC_API_BASE_URL|JIRA_REPORTING_OWNER_ID|TUNNEL_AUTH_KEY|TUNNEL_HOSTNAME|SITE_HOSTNAME|BACKUP_S3_[A-Z_]+|RELEASE_REGISTRY)=$'
 blank=$(grep -E '^[A-Z_]+=$' .env | grep -vE "$MAY_BE_BLANK" || true)
 if [ -n "$blank" ]; then
   echo "These variables from .env.example have no CI value yet:"

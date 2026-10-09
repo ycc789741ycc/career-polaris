@@ -47,6 +47,7 @@ class _Services:
             database,
             object_store=None,  # type: ignore[arg-type]
             connectors={},
+            token_refreshers={},
             resume_max_bytes=10_000,
             resume_max_pages=5,
             http_timeout_seconds=1,

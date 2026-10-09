@@ -51,6 +51,8 @@ class SourceConnection(Base, OwnedMixin, TimestampMixin):
     )
     # Set while a sync is queued or running; null when idle (ADR 0018).
     sync_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Atlassian's accountId, which the personal data report names (ADR 0061).
+    external_account_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class ResumeFile(Base, OwnedMixin, TimestampMixin):

@@ -10,7 +10,10 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.profile import jobs
+from advisor.profile.domain import ReportAction, ReportDecision
+from advisor.profile.domain.constants import REPORT_CYCLE_SECONDS
 from advisor.profile.factory import create_profile_service
+from advisor.profile.infra.account_report import AtlassianAccountReporter
 from advisor.profile.infra.connectors import (
     GitHubConnector,
     JiraConnector,
@@ -22,8 +25,11 @@ from advisor.profile.infra.connectors.jira import (
     SCOPE_DESCRIPTIONS as JIRA_SCOPE_DESCRIPTIONS,
 )
 from advisor.profile.infra.oauth import (
+    OAuthTokenRefresher,
+    TokenGrant,
     authorize_url,
     exchange_code,
+    parse_token_grant,
     sign_state,
     verify_state,
 )
@@ -51,7 +57,9 @@ __all__ = [
     "ACCEPTED_TYPES",
     "GITHUB_SCOPE_DESCRIPTIONS",
     "JIRA_SCOPE_DESCRIPTIONS",
+    "REPORT_CYCLE_SECONDS",
     "AnswerRecord",
+    "AtlassianAccountReporter",
     "CitationError",
     "CitationHandles",
     "ConnectionView",
@@ -59,13 +67,17 @@ __all__ = [
     "EvidenceView",
     "GitHubConnector",
     "JiraConnector",
+    "OAuthTokenRefresher",
     "PendingSourceView",
     "PositionReading",
     "ProfileService",
     "ProfileSnapshot",
+    "ReportAction",
+    "ReportDecision",
     "ResumeFileView",
     "SourceProcessingView",
     "TimelineError",
+    "TokenGrant",
     "assert_citations_exist",
     "assert_position_readings_valid",
     "authorize_url",
@@ -73,6 +85,7 @@ __all__ = [
     "exchange_code",
     "get_evidence_line",
     "jobs",
+    "parse_token_grant",
     "sign_state",
     "verify_state",
 ]

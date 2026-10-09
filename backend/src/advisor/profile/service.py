@@ -6,6 +6,7 @@ one user. Facts only — a score never lives here.
 
 from __future__ import annotations
 
+import random
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from datetime import date, datetime
 from fnmatch import fnmatchcase
 
 from advisor.profile.domain import (
+    REPORT_JITTER_SECONDS,
     CareerPosition,
     CareerPositionFilter,
     CitationError,
@@ -27,6 +29,9 @@ from advisor.profile.domain import (
     ProfileUpdated,
     ProfileVersion,
     ProfileVersionFilter,
+    ReportAction,
+    ReportDecision,
+    ReportedAccount,
     ResumeFile,
     ResumeFileFilter,
     ResumeStatus,
@@ -37,13 +42,18 @@ from advisor.profile.domain import (
     assert_citations_exist,
     assert_position_readings_valid,
     get_date_label,
+    get_report_decision,
+    get_report_end,
+    get_report_retry,
     get_shown_date,
     total_experience_months,
 )
 from advisor.profile.domain import (
     Position as PositionValue,
 )
+from advisor.profile.infra.account_report import AccountReporter
 from advisor.profile.infra.connectors import Connector, EvidenceDraft
+from advisor.profile.infra.oauth import TokenRefresher
 from advisor.profile.infra.resume_parser import parse
 from kernel.clock import utcnow
 from kernel.crypto import decrypt, encrypt
@@ -184,6 +194,9 @@ class ProfileService:
         *,
         object_store: ObjectStore,
         connectors: dict[str, Connector],
+        token_refreshers: dict[str, TokenRefresher],
+        account_reporter: AccountReporter | None,
+        reporting_owner_id: uuid.UUID | None,
         resume_max_bytes: int,
         resume_max_pages: int,
         http_timeout_seconds: float,
@@ -192,6 +205,9 @@ class ProfileService:
         self._uow = uow
         self._store = object_store
         self._connectors = connectors
+        self._token_refreshers = token_refreshers
+        self._account_reporter = account_reporter
+        self._reporting_owner_id = reporting_owner_id
         self._resume_max_bytes = resume_max_bytes
         self._resume_max_pages = resume_max_pages
         self._http_timeout = http_timeout_seconds
@@ -230,6 +246,7 @@ class ProfileService:
             timeout_seconds=self._http_timeout, user_agent=self._user_agent
         ) as client:
             account = await connector.account_name(client, access_token)
+            account_id = await connector.account_id(client, access_token)
 
         async with self._uow.for_owner(owner_id) as mine:
             existing = await _connection(mine, kind)
@@ -242,6 +259,7 @@ class ProfileService:
                 scopes=scopes,
                 expires_at=expires_at,
                 account=account,
+                account_id=account_id,
             )
             if existing is None:
                 stored = await mine.connections.create(connection)
@@ -321,13 +339,14 @@ class ProfileService:
             connection = await _connection(mine, kind)
             if connection is None:
                 raise NotFoundError(f"{kind} is not connected", kind=kind)
-            token = decrypt(connection.encrypted_access_token, context=str(owner_id))
             connection_id = connection.id
 
         async with GuardedClient(
             timeout_seconds=self._http_timeout, user_agent=self._user_agent
         ) as client:
+            token = await self._get_access_token(client, owner_id, connection)
             account = await connector.account_name(client, token)
+            account_id = await connector.account_id(client, token)
             drafts = await connector.fetch(client, token)
 
         written = await self._write_evidence(
@@ -342,10 +361,104 @@ class ProfileService:
         async with self._uow.for_owner(owner_id) as mine:
             synced = await mine.connections.get(connection_id)
             if synced is not None:
-                synced.synced(utcnow(), account=account)
+                synced.synced(utcnow(), account=account, account_id=account_id)
                 await mine.connections.update(synced)
             mine.record(SourceSynced(owner_id=owner_id, kind=kind, evidence=written))
         return written
+
+    async def report_jira_account(self, owner_id: uuid.UUID) -> ReportDecision:
+        """Name this user's Atlassian account to Atlassian, and act on the reply
+        (ADR 0061). Worker ``sync`` queue only.
+
+        Each connection reports itself, as its owner, so nothing reads across
+        users to find whom to report. The report is sent with the token of the
+        app owner's own Jira connection (``JIRA_REPORTING_OWNER_ID``), as
+        Atlassian recommends. A report that cannot be sent is tried again a
+        day later, never dropped; only a connection that is gone ends them.
+        """
+        jitter = random.randint(0, REPORT_JITTER_SECONDS)  # noqa: S311 - spacing, not security
+        async with self._uow.for_owner(owner_id) as mine:
+            connection = await _connection(mine, "jira")
+        if connection is None:
+            return get_report_end()
+        if self._account_reporter is None or self._reporting_owner_id is None:
+            log.warning("account_report.off", reason="JIRA_REPORTING_OWNER_ID is not set")
+            return get_report_retry(jitter_seconds=jitter)
+        account_id = connection.external_account_id
+        if account_id is None:
+            # Connected before the id was kept; its next sync records it.
+            log.warning("account_report.no_account_id", connection_id=str(connection.id))
+            return get_report_retry(jitter_seconds=jitter)
+
+        fetched_at = connection.last_synced_at or connection.updated_at or utcnow()
+        async with self._uow.for_owner(self._reporting_owner_id) as theirs:
+            reporting = await _connection(theirs, "jira")
+        if reporting is None:
+            log.error(
+                "account_report.no_reporting_connection",
+                reason="the account named by JIRA_REPORTING_OWNER_ID has no Jira connection",
+            )
+            return get_report_retry(jitter_seconds=jitter)
+
+        try:
+            async with GuardedClient(
+                timeout_seconds=self._http_timeout, user_agent=self._user_agent
+            ) as client:
+                token = await self._get_access_token(client, self._reporting_owner_id, reporting)
+                reply = await self._account_reporter.report(
+                    client, token, [ReportedAccount(account_id, fetched_at)]
+                )
+        except UpstreamFailedError as exc:
+            log.error("account_report.failed", error=exc.message, **exc.context)
+            return get_report_retry(jitter_seconds=jitter)
+
+        decision = get_report_decision(reply, account_id, jitter_seconds=jitter)
+        if decision.action is ReportAction.DISCONNECT:
+            await self.disconnect(owner_id, "jira")
+        log.info(
+            "account_report.sent",
+            action=str(decision.action),
+            next_report_in_seconds=decision.next_report_in_seconds,
+        )
+        return decision
+
+    async def _get_access_token(
+        self, client: GuardedClient, owner_id: uuid.UUID, connection: SourceConnection
+    ) -> str:
+        """The connection's access token, refreshed first if it is about to run out.
+
+        The rotated pair is saved before it is used: the old refresh token is
+        spent the moment the provider answers, so losing the new one here
+        would mean reconnecting.
+        """
+        context = str(owner_id)
+        now = utcnow()
+        if not connection.is_token_expiring(now):
+            return decrypt(connection.encrypted_access_token, context=context)
+
+        kind = connection.kind
+        refresher = self._token_refreshers.get(kind)
+        if refresher is None or connection.encrypted_refresh_token is None:
+            raise UpstreamFailedError(
+                f"The {kind} connection has expired. Reconnect to keep syncing.", kind=kind
+            )
+        grant = await refresher.refresh(
+            client, decrypt(connection.encrypted_refresh_token, context=context), now=now
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await mine.connections.get(connection.id)
+            if stored is None:
+                raise NotFoundError(f"{kind} is not connected", kind=kind)
+            stored.update_tokens(
+                encrypted_access_token=encrypt(grant.access_token, context=context),
+                encrypted_refresh_token=(
+                    encrypt(grant.refresh_token, context=context) if grant.refresh_token else None
+                ),
+                expires_at=grant.expires_at,
+            )
+            await mine.connections.update(stored)
+        log.info("connection.token_refreshed", kind=kind)
+        return grant.access_token
 
     # -- resume -------------------------------------------------------------
 

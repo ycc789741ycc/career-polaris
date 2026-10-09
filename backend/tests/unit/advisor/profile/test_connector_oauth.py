@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import httpx
 import pytest
 
 from advisor.profile.infra.oauth import (
     STATE_TTL_SECONDS,
+    OAuthTokenRefresher,
     authorize_url,
     endpoints_for,
+    parse_token_grant,
     sign_state,
     verify_state,
 )
-from kernel.errors import UnauthenticatedError, ValidationError
+from kernel.errors import UnauthenticatedError, UpstreamFailedError, ValidationError
 
 SECRET = "test-signing-secret"
 JIRA_BASE = "https://auth.atlassian.com"
@@ -120,3 +125,86 @@ def test_jira_asks_for_consent_so_a_reconnect_can_switch_accounts() -> None:
         "jira", jira_oauth_base=JIRA_BASE, client_id="c", redirect_uri="r", state="s"
     )
     assert "prompt=consent" in url
+
+
+# --- token grants and refreshing ------------------------------------------------
+
+NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+
+
+def test_a_grant_with_a_lifetime_expires_that_many_seconds_from_now() -> None:
+    grant = parse_token_grant(
+        "jira",
+        {
+            "access_token": "a",
+            "refresh_token": "r",
+            "expires_in": 3600,
+            "scope": "read:jira-work offline_access",
+        },
+        now=NOW,
+    )
+    assert grant.expires_at == NOW + timedelta(hours=1)
+    assert grant.refresh_token == "r"
+    assert grant.scopes == ("read:jira-work", "offline_access")
+
+
+def test_a_grant_without_a_lifetime_has_no_known_expiry() -> None:
+    grant = parse_token_grant("github", {"access_token": "a", "scope": "repo"}, now=NOW)
+    assert grant.expires_at is None
+    assert grant.refresh_token is None
+
+
+def test_a_grant_without_an_access_token_is_refused() -> None:
+    with pytest.raises(UpstreamFailedError, match="no access token"):
+        parse_token_grant("jira", {"refresh_token": "r"}, now=NOW)
+
+
+class FakeTokenEndpoint:
+    """Answers ``request`` with one canned response and keeps what was sent."""
+
+    def __init__(self, status: int, body: Any) -> None:
+        self.status = status
+        self.body = body
+        self.sent: list[dict[str, Any]] = []
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        self.sent.append({"method": method, "url": url, **kwargs})
+        return httpx.Response(self.status, json=self.body)
+
+
+def _refresher() -> OAuthTokenRefresher:
+    return OAuthTokenRefresher(
+        "jira", jira_oauth_base=JIRA_BASE, client_id="client", client_secret="secret"
+    )
+
+
+async def test_a_refresh_trades_the_refresh_token_for_a_rotated_pair() -> None:
+    endpoint = FakeTokenEndpoint(
+        200, {"access_token": "new-a", "refresh_token": "new-r", "expires_in": 3600}
+    )
+
+    grant = await _refresher().refresh(endpoint, "old-r", now=NOW)  # type: ignore[arg-type]
+
+    assert (grant.access_token, grant.refresh_token) == ("new-a", "new-r")
+    assert grant.expires_at == NOW + timedelta(hours=1)
+    (sent,) = endpoint.sent
+    assert sent["url"] == f"{JIRA_BASE}/oauth/token"
+    assert sent["json"] == {
+        "grant_type": "refresh_token",
+        "client_id": "client",
+        "client_secret": "secret",
+        "refresh_token": "old-r",
+    }
+
+
+@pytest.mark.parametrize("status", [400, 401, 403])
+async def test_a_refused_refresh_asks_the_user_to_reconnect(status: int) -> None:
+    endpoint = FakeTokenEndpoint(status, {"error": "invalid_grant"})
+    with pytest.raises(UpstreamFailedError, match="Reconnect Jira"):
+        await _refresher().refresh(endpoint, "spent", now=NOW)  # type: ignore[arg-type]
+
+
+async def test_a_provider_outage_during_a_refresh_is_an_upstream_failure() -> None:
+    endpoint = FakeTokenEndpoint(503, {})
+    with pytest.raises(UpstreamFailedError, match="did not refresh"):
+        await _refresher().refresh(endpoint, "r", now=NOW)  # type: ignore[arg-type]

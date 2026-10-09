@@ -8,6 +8,7 @@ secrets (design-guideline shared-context: Configuration).
 
 from __future__ import annotations
 
+import uuid
 from enum import StrEnum
 from functools import lru_cache
 
@@ -111,6 +112,10 @@ class Settings(BaseSettings):
     )
     jira_api_base_url: str | None = Field(default=None, alias="JIRA_API_BASE_URL")
     jira_oauth_base_url: str | None = Field(default=None, alias="JIRA_OAUTH_BASE_URL")
+    # The CareerPolaris account whose Jira connection belongs to the Atlassian
+    # app's owner: its token sends the personal data report (ADR 0061). Blank
+    # turns reporting off, which the worker logs; the app runs either way.
+    jira_reporting_owner_id: uuid.UUID | None = Field(default=None, alias="JIRA_REPORTING_OWNER_ID")
 
     # --- AI gateway ---------------------------------------------------------
     ai_request_timeout_seconds: int = Field(default=120, alias="AI_REQUEST_TIMEOUT_SECONDS")
@@ -210,6 +215,11 @@ class Settings(BaseSettings):
         if upper not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return upper
+
+    @field_validator("jira_reporting_owner_id", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator("assessment_confidence_threshold")
     @classmethod

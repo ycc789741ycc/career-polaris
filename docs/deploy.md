@@ -173,6 +173,7 @@ the two disagree on.
    | `S3_*` | As on the droplet |
    | `TUNNEL_AUTH_KEY`, `TUNNEL_HOSTNAME` | The `tag:careerpolaris-compute` key, `careerpolaris-compute` |
    | `DB_POOL_SIZE` | `3` |
+   | `JIRA_REPORTING_OWNER_ID` | Blank at first; see step 5 (ADR 0061) |
    | Everything else the worker reads | As on the droplet, especially `MASTER_ENCRYPTION_KEY` and the connector secrets |
 
 4. **Start it:**
@@ -183,6 +184,24 @@ the two disagree on.
    make start-infra          # the tunnel, then waits until Postgres answers through it
    make start-app            # migrates (nothing pending: the edge did), then worker and crawler
    ```
+
+5. **Turn on Atlassian's personal data report** (ADR 0061), once, after the
+   first release is up. Every Jira connection is reported weekly with your
+   own Jira token; until this is done the worker logs `account_report.off`
+   daily and reports nothing.
+
+   1. Sign up at `https://$SITE_HOSTNAME` and connect Jira with the Atlassian
+      account that owns the OAuth app.
+   2. Find your account id: it is the `id` in the reply to `GET /api/v1/me`,
+      which the SPA sends on sign-in (the browser's developer tools, Network
+      tab).
+   3. Put it in this machine's `.env` as `JIRA_REPORTING_OWNER_ID`, then
+      `make stop-app && make start-app`.
+
+   Keep that Jira connection: disconnecting it, deleting the account, or
+   leaving it unused until Atlassian expires its refresh token stops every
+   report (`account_report.no_reporting_connection` or
+   `account_report.failed` in the worker's log) until you reconnect.
 
 The crawler fetches job boards from this machine's address. Its politeness
 rules (per-host caps, backing off after a 429 or 403) do not change.
