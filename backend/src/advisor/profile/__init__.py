@@ -22,8 +22,11 @@ from advisor.profile.infra.connectors.jira import (
     SCOPE_DESCRIPTIONS as JIRA_SCOPE_DESCRIPTIONS,
 )
 from advisor.profile.infra.oauth import (
+    OAuthTokenRefresher,
+    TokenGrant,
     authorize_url,
     exchange_code,
+    parse_token_grant,
     sign_state,
     verify_state,
 )
@@ -59,6 +62,7 @@ __all__ = [
     "EvidenceView",
     "GitHubConnector",
     "JiraConnector",
+    "OAuthTokenRefresher",
     "PendingSourceView",
     "PositionReading",
     "ProfileService",
@@ -66,6 +70,7 @@ __all__ = [
     "ResumeFileView",
     "SourceProcessingView",
     "TimelineError",
+    "TokenGrant",
     "assert_citations_exist",
     "assert_position_readings_valid",
     "authorize_url",
@@ -73,6 +78,7 @@ __all__ = [
     "exchange_code",
     "get_evidence_line",
     "jobs",
+    "parse_token_grant",
     "sign_state",
     "verify_state",
 ]

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
+
+from advisor.profile.domain.constants import TOKEN_REFRESH_MARGIN_SECONDS
 
 
 class ConnectionStatus(StrEnum):
@@ -67,6 +69,32 @@ class SourceConnection:
         self.external_account = account
         self.status = ConnectionStatus.CONNECTED
         self.last_error = None
+
+    def update_tokens(
+        self,
+        *,
+        encrypted_access_token: str,
+        encrypted_refresh_token: str | None,
+        expires_at: datetime | None,
+    ) -> None:
+        """A refreshed pair replaces the old one; the account stays as it was.
+
+        Atlassian rotates refresh tokens, so the old one is spent: keeping it
+        when no new one came back would only fail the next refresh later.
+        """
+        self.encrypted_access_token = encrypted_access_token
+        self.encrypted_refresh_token = encrypted_refresh_token
+        self.token_expires_at = expires_at
+
+    def is_token_expiring(self, at: datetime) -> bool:
+        """Whether the access token runs out within the refresh margin.
+
+        A token with no known expiry (GitHub's) never needs refreshing.
+        """
+        if self.token_expires_at is None:
+            return False
+        margin = timedelta(seconds=TOKEN_REFRESH_MARGIN_SECONDS)
+        return self.token_expires_at - margin <= at
 
     @property
     def is_syncing(self) -> bool:

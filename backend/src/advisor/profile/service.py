@@ -44,6 +44,7 @@ from advisor.profile.domain import (
     Position as PositionValue,
 )
 from advisor.profile.infra.connectors import Connector, EvidenceDraft
+from advisor.profile.infra.oauth import TokenRefresher
 from advisor.profile.infra.resume_parser import parse
 from kernel.clock import utcnow
 from kernel.crypto import decrypt, encrypt
@@ -184,6 +185,7 @@ class ProfileService:
         *,
         object_store: ObjectStore,
         connectors: dict[str, Connector],
+        token_refreshers: dict[str, TokenRefresher],
         resume_max_bytes: int,
         resume_max_pages: int,
         http_timeout_seconds: float,
@@ -192,6 +194,7 @@ class ProfileService:
         self._uow = uow
         self._store = object_store
         self._connectors = connectors
+        self._token_refreshers = token_refreshers
         self._resume_max_bytes = resume_max_bytes
         self._resume_max_pages = resume_max_pages
         self._http_timeout = http_timeout_seconds
@@ -321,12 +324,12 @@ class ProfileService:
             connection = await _connection(mine, kind)
             if connection is None:
                 raise NotFoundError(f"{kind} is not connected", kind=kind)
-            token = decrypt(connection.encrypted_access_token, context=str(owner_id))
             connection_id = connection.id
 
         async with GuardedClient(
             timeout_seconds=self._http_timeout, user_agent=self._user_agent
         ) as client:
+            token = await self._get_access_token(client, owner_id, connection)
             account = await connector.account_name(client, token)
             drafts = await connector.fetch(client, token)
 
@@ -346,6 +349,44 @@ class ProfileService:
                 await mine.connections.update(synced)
             mine.record(SourceSynced(owner_id=owner_id, kind=kind, evidence=written))
         return written
+
+    async def _get_access_token(
+        self, client: GuardedClient, owner_id: uuid.UUID, connection: SourceConnection
+    ) -> str:
+        """The connection's access token, refreshed first if it is about to run out.
+
+        The rotated pair is saved before it is used: the old refresh token is
+        spent the moment the provider answers, so losing the new one here
+        would mean reconnecting.
+        """
+        context = str(owner_id)
+        now = utcnow()
+        if not connection.is_token_expiring(now):
+            return decrypt(connection.encrypted_access_token, context=context)
+
+        kind = connection.kind
+        refresher = self._token_refreshers.get(kind)
+        if refresher is None or connection.encrypted_refresh_token is None:
+            raise UpstreamFailedError(
+                f"The {kind} connection has expired. Reconnect to keep syncing.", kind=kind
+            )
+        grant = await refresher.refresh(
+            client, decrypt(connection.encrypted_refresh_token, context=context), now=now
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await mine.connections.get(connection.id)
+            if stored is None:
+                raise NotFoundError(f"{kind} is not connected", kind=kind)
+            stored.update_tokens(
+                encrypted_access_token=encrypt(grant.access_token, context=context),
+                encrypted_refresh_token=(
+                    encrypt(grant.refresh_token, context=context) if grant.refresh_token else None
+                ),
+                expires_at=grant.expires_at,
+            )
+            await mine.connections.update(stored)
+        log.info("connection.token_refreshed", kind=kind)
+        return grant.access_token
 
     # -- resume -------------------------------------------------------------
 

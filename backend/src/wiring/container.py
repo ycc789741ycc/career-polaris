@@ -28,6 +28,7 @@ from advisor.market import FreshWindows, MarketService, create_market_service
 from advisor.profile import (
     GitHubConnector,
     JiraConnector,
+    OAuthTokenRefresher,
     ProfileService,
     create_profile_service,
 )
@@ -160,6 +161,17 @@ def build(settings: Settings | None = None) -> Container:
         connectors={
             "github": GitHubConnector(must(settings.github_api_base_url, "GITHUB_API_BASE_URL")),
             "jira": JiraConnector(must(settings.jira_api_base_url, "JIRA_API_BASE_URL")),
+        },
+        # GitHub's OAuth-app tokens never expire; Atlassian's last an hour.
+        token_refreshers={
+            "jira": OAuthTokenRefresher(
+                "jira",
+                jira_oauth_base=must(settings.jira_oauth_base_url, "JIRA_OAUTH_BASE_URL"),
+                client_id=must(settings.jira_oauth_client_id, "JIRA_OAUTH_CLIENT_ID"),
+                client_secret=must(
+                    settings.jira_oauth_client_secret, "JIRA_OAUTH_CLIENT_SECRET"
+                ).get_secret_value(),
+            ),
         },
         resume_max_bytes=settings.resume_max_bytes,
         resume_max_pages=settings.resume_max_pages,

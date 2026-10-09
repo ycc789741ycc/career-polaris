@@ -17,7 +17,8 @@ import json
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
 from kernel.errors import UnauthenticatedError, UpstreamFailedError, ValidationError
@@ -147,6 +148,90 @@ async def exchange_code(
     if not isinstance(payload, dict) or "access_token" not in payload:
         raise UpstreamFailedError(f"{kind} returned no access token")
     return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TokenGrant:
+    """What a provider's token endpoint handed back, as the profile stores it."""
+
+    access_token: str
+    refresh_token: str | None
+    scopes: tuple[str, ...]
+    expires_at: datetime | None
+
+
+def parse_token_grant(kind: str, payload: dict[str, Any], *, now: datetime) -> TokenGrant:
+    """A token endpoint's reply. ``expires_in`` (seconds) becomes a time;
+    without it (GitHub's OAuth apps) the token has no known expiry."""
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise UpstreamFailedError(f"{kind} returned no access token")
+    refresh_token = payload.get("refresh_token")
+    expires_in = payload.get("expires_in")
+    return TokenGrant(
+        access_token=access_token,
+        refresh_token=refresh_token if isinstance(refresh_token, str) and refresh_token else None,
+        scopes=tuple(str(payload.get("scope", "")).split()),
+        expires_at=(
+            now + timedelta(seconds=int(expires_in))
+            if isinstance(expires_in, int | float) and expires_in > 0
+            else None
+        ),
+    )
+
+
+class TokenRefresher(Protocol):
+    """Trades a connection's refresh token for a fresh grant."""
+
+    async def refresh(
+        self, client: GuardedClient, refresh_token: str, *, now: datetime
+    ) -> TokenGrant: ...
+
+
+class OAuthTokenRefresher(TokenRefresher):
+    """The ``refresh_token`` grant against one provider's token endpoint."""
+
+    def __init__(
+        self, kind: str, *, jira_oauth_base: str, client_id: str, client_secret: str
+    ) -> None:
+        self._kind = kind
+        self._token_url = endpoints_for(kind, jira_oauth_base=jira_oauth_base).token_url
+        self._client_id = client_id
+        self._client_secret = client_secret
+
+    async def refresh(
+        self, client: GuardedClient, refresh_token: str, *, now: datetime
+    ) -> TokenGrant:
+        response = await client.request(
+            "POST",
+            self._token_url,
+            headers={"accept": "application/json", "content-type": "application/json"},
+            json={
+                "grant_type": "refresh_token",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "refresh_token": refresh_token,
+            },
+        )
+        if response.status_code in (400, 401, 403):
+            # Revoked, expired after months unused, or already rotated away:
+            # only signing in again gets a new one.
+            raise UpstreamFailedError(
+                f"{self._kind.capitalize()} no longer accepts this connection. "
+                f"Reconnect {self._kind.capitalize()} to keep syncing.",
+                status=response.status_code,
+            )
+        if response.status_code >= 400:
+            raise UpstreamFailedError(
+                f"{self._kind} did not refresh the token", status=response.status_code
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise UpstreamFailedError(f"{self._kind} returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise UpstreamFailedError(f"{self._kind} returned no access token")
+        return parse_token_grant(self._kind, payload, now=now)
 
 
 def _b64(raw: bytes) -> str:

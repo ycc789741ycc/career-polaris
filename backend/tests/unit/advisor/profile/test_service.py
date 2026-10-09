@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -26,6 +26,7 @@ from advisor.profile.domain import (
     SourceSynced,
 )
 from advisor.profile.infra.connectors import Connector, EvidenceDraft
+from advisor.profile.infra.oauth import TokenGrant, TokenRefresher
 from kernel.crypto import decrypt
 from kernel.errors import NotFoundError, UpstreamFailedError, ValidationError
 from tests.unit.advisor.profile.fakes import FakeObjectStore, FakeProfileUnitOfWork
@@ -67,6 +68,26 @@ class FakeConnector(Connector):
         return self.drafts
 
 
+class FakeRefresher(TokenRefresher):
+    """Hands out a rotated pair per refresh, or refuses as a provider would."""
+
+    def __init__(self, *, refuses: bool = False) -> None:
+        self.refuses = refuses
+        self.spent: list[str] = []
+
+    async def refresh(self, client: Any, refresh_token: str, *, now: datetime) -> TokenGrant:
+        self.spent.append(refresh_token)
+        if self.refuses:
+            raise UpstreamFailedError("Jira no longer accepts this connection. Reconnect Jira.")
+        n = len(self.spent)
+        return TokenGrant(
+            access_token=f"access-{n}",
+            refresh_token=f"refresh-{n}",
+            scopes=(),
+            expires_at=now + timedelta(hours=1),
+        )
+
+
 def _draft(ref: str, fact: str = "Shipped the thing") -> EvidenceDraft:
     return EvidenceDraft(
         external_ref=ref,
@@ -77,12 +98,16 @@ def _draft(ref: str, fact: str = "Shipped the thing") -> EvidenceDraft:
 
 
 def _service(
-    uow: FakeProfileUnitOfWork, *, connector: FakeConnector | None = None
+    uow: FakeProfileUnitOfWork,
+    *,
+    connector: FakeConnector | None = None,
+    refresher: FakeRefresher | None = None,
 ) -> ProfileService:
     return ProfileService(
         uow,
         object_store=FakeObjectStore(),  # type: ignore[arg-type]
         connectors={"github": connector or FakeConnector()},
+        token_refreshers={"github": refresher} if refresher else {},
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -334,6 +359,81 @@ async def test_a_sync_refreshes_the_account_name() -> None:
     assert view.account == "octo-renamed"
 
 
+async def _store_expiring(profile: ProfileService, *, minutes_left: int) -> None:
+    await profile.store_connection(
+        OWNER,
+        kind="github",
+        access_token="access-0",
+        refresh_token="refresh-0",
+        scopes=(),
+        expires_at=datetime.now(UTC) + timedelta(minutes=minutes_left),
+    )
+
+
+async def test_a_sync_refreshes_a_token_about_to_expire_and_keeps_the_rotated_pair() -> None:
+    uow = FakeProfileUnitOfWork()
+    connector, refresher = FakeConnector([_draft("pr/1")]), FakeRefresher()
+    profile = _service(uow, connector=connector, refresher=refresher)
+    await _store_expiring(profile, minutes_left=1)
+
+    await profile.sync_connection(OWNER, "github")
+
+    assert refresher.spent == ["refresh-0"]
+    assert connector.tokens == ["access-1"]
+    (stored,) = uow.store.connections.values()
+    assert decrypt(stored.encrypted_access_token, context=str(OWNER)) == "access-1"
+    assert decrypt(stored.encrypted_refresh_token or "", context=str(OWNER)) == "refresh-1"
+    assert stored.token_expires_at is not None
+    assert not stored.is_token_expiring(datetime.now(UTC))
+
+
+async def test_a_second_sync_uses_the_rotated_refresh_token_not_the_spent_one() -> None:
+    uow = FakeProfileUnitOfWork()
+    refresher = FakeRefresher()
+    profile = _service(uow, refresher=refresher)
+    await _store_expiring(profile, minutes_left=1)
+    await profile.sync_connection(OWNER, "github")
+    (stored,) = uow.store.connections.values()
+    stored.token_expires_at = datetime.now(UTC)
+
+    await profile.sync_connection(OWNER, "github")
+
+    assert refresher.spent == ["refresh-0", "refresh-1"]
+
+
+async def test_a_token_with_time_to_spare_is_not_refreshed() -> None:
+    uow = FakeProfileUnitOfWork()
+    refresher = FakeRefresher()
+    profile = _service(uow, refresher=refresher)
+    await _store_expiring(profile, minutes_left=50)
+
+    await profile.sync_connection(OWNER, "github")
+
+    assert refresher.spent == []
+
+
+async def test_a_refused_refresh_fails_the_sync_and_asks_to_reconnect() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow, refresher=FakeRefresher(refuses=True))
+    await _store_expiring(profile, minutes_left=-60)
+
+    with pytest.raises(UpstreamFailedError):
+        await profile.sync_connection(OWNER, "github")
+
+    (connection,) = uow.store.connections.values()
+    assert connection.status is ConnectionStatus.FAILED
+    assert "Reconnect" in (connection.last_error or "")
+
+
+async def test_an_expired_token_with_nothing_to_refresh_it_fails_the_sync() -> None:
+    uow = FakeProfileUnitOfWork()
+    profile = _service(uow)
+    await _store_expiring(profile, minutes_left=-60)
+
+    with pytest.raises(UpstreamFailedError, match="Reconnect"):
+        await profile.sync_connection(OWNER, "github")
+
+
 async def test_disconnecting_removes_that_sources_evidence_and_nothing_else() -> None:
     uow = FakeProfileUnitOfWork()
     profile = _service(uow, connector=FakeConnector([_draft("pr/1"), _draft("pr/2")]))
@@ -435,6 +535,7 @@ def _service_with_store(uow: FakeProfileUnitOfWork) -> tuple[ProfileService, Fak
         uow,
         object_store=store,  # type: ignore[arg-type]
         connectors={"github": FakeConnector([_draft("pr/1")])},
+        token_refreshers={},
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -705,6 +806,7 @@ async def test_a_parse_that_stops_unexpectedly_is_recorded_and_still_raised() ->
         uow,
         object_store=store,  # type: ignore[arg-type]
         connectors={},
+        token_refreshers={},
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,

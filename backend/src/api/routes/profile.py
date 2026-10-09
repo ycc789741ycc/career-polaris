@@ -16,6 +16,7 @@ from advisor.profile import (
     JIRA_SCOPE_DESCRIPTIONS,
     authorize_url,
     exchange_code,
+    parse_token_grant,
     sign_state,
     verify_state,
 )
@@ -35,6 +36,7 @@ from api.schemas.profile import (
     ResumeFilePage,
     ResumeUpload,
 )
+from kernel.clock import utcnow
 from kernel.config import Settings, must
 from kernel.fetch import GuardedClient
 from kernel.paging import paginate
@@ -132,13 +134,14 @@ async def complete_authorization(
             redirect_uri=_redirect_uri(settings, kind),
         )
 
+    grant = parse_token_grant(kind, token, now=utcnow())
     connection = await deps.profile.store_connection(
         user,
         kind=kind,
-        access_token=str(token["access_token"]),
-        refresh_token=token.get("refresh_token"),
-        scopes=tuple(str(token.get("scope", "")).split()),
-        expires_at=None,
+        access_token=grant.access_token,
+        refresh_token=grant.refresh_token,
+        scopes=grant.scopes,
+        expires_at=grant.expires_at,
     )
     await deps.profile.request_sync(user, kind)
     await enqueue("profile.sync_connection", owner_id=str(user), kind=kind)
