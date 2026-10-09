@@ -55,6 +55,21 @@ async def test_jira_without_a_user_is_refused() -> None:
         await JiraConnector(API).account_name(client, "t")  # type: ignore[arg-type]
 
 
+async def test_jira_keeps_the_atlassian_account_id_for_the_data_report() -> None:
+    client = FakeClient({SITES: [SITE], MYSELF: {"displayName": "Ada", "accountId": "5b10ac8d"}})
+    assert await JiraConnector(API).account_id(client, "t") == "5b10ac8d"  # type: ignore[arg-type]
+
+
+async def test_jira_without_an_account_id_is_refused() -> None:
+    client = FakeClient({SITES: [SITE], MYSELF: {"displayName": "Ada"}})
+    with pytest.raises(UpstreamFailedError, match="account id"):
+        await JiraConnector(API).account_id(client, "t")  # type: ignore[arg-type]
+
+
+async def test_github_keeps_no_account_id() -> None:
+    assert await GitHubConnector(API).account_id(FakeClient({}), "t") is None  # type: ignore[arg-type]
+
+
 async def test_github_names_the_login() -> None:
     client = FakeClient({f"{API}/user": {"login": "octo"}})
     assert await GitHubConnector(API).account_name(client, "t") == "octo"  # type: ignore[arg-type]

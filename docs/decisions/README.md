@@ -66,6 +66,7 @@ new record that supersedes the old one.
 | [0058](0058-run-the-versity-s3-gateway-in-place-of-minio.md) | Development and CI run the Versity S3 Gateway, not MinIO | Accepted |
 | [0059](0059-rename-the-repository-to-career-polaris.md) | The Git repository is called `career-polaris` | Accepted |
 | [0060](0060-release-only-a-version-tag-on-master.md) | CI releases only a version tag on a commit already on master | Accepted |
+| [0061](0061-report-jira-accounts-to-atlassian-per-connection.md) | Each Jira connection reports its Atlassian account, with the app owner's token | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

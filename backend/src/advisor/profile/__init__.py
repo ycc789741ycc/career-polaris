@@ -10,7 +10,10 @@ import only what is listed here (import-linter contract
 """
 
 from advisor.profile import jobs
+from advisor.profile.domain import ReportAction, ReportDecision
+from advisor.profile.domain.constants import REPORT_CYCLE_SECONDS
 from advisor.profile.factory import create_profile_service
+from advisor.profile.infra.account_report import AtlassianAccountReporter
 from advisor.profile.infra.connectors import (
     GitHubConnector,
     JiraConnector,
@@ -54,7 +57,9 @@ __all__ = [
     "ACCEPTED_TYPES",
     "GITHUB_SCOPE_DESCRIPTIONS",
     "JIRA_SCOPE_DESCRIPTIONS",
+    "REPORT_CYCLE_SECONDS",
     "AnswerRecord",
+    "AtlassianAccountReporter",
     "CitationError",
     "CitationHandles",
     "ConnectionView",
@@ -67,6 +72,8 @@ __all__ = [
     "PositionReading",
     "ProfileService",
     "ProfileSnapshot",
+    "ReportAction",
+    "ReportDecision",
     "ResumeFileView",
     "SourceProcessingView",
     "TimelineError",

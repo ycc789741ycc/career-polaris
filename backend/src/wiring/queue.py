@@ -12,7 +12,9 @@ from functools import lru_cache
 from typing import Any
 
 from procrastinate import App
+from procrastinate.exceptions import AlreadyEnqueued
 
+from advisor.profile import REPORT_CYCLE_SECONDS, ReportAction, ReportDecision
 from advisor.rolemap import BuildRequestView, MarketWait
 from advisor.target import TargetRef
 from kernel.config import get_settings
@@ -38,6 +40,27 @@ async def enqueue(name: str, **kwargs: Any) -> None:
 async def enqueue_later(name: str, *, seconds: int, **kwargs: Any) -> None:
     """Defer a task by name to run no sooner than ``seconds`` from now."""
     await queue().configure_task(name=name, schedule_in={"seconds": seconds}).defer_async(**kwargs)
+
+
+async def queue_jira_report(owner_id: uuid.UUID | str, *, seconds: int) -> None:
+    """Schedule this user's next Atlassian personal data report (ADR 0061).
+
+    One per user: the queueing lock refuses a second while one waits, so
+    connecting, every sync and the report itself can all ask without
+    starting a second chain.
+    """
+    try:
+        await (
+            queue()
+            .configure_task(
+                name="profile.report_jira_account",
+                schedule_in={"seconds": seconds},
+                queueing_lock=f"profile.report_jira_account:{owner_id}",
+            )
+            .defer_async(owner_id=str(owner_id))
+        )
+    except AlreadyEnqueued:
+        log.debug("account_report.already_scheduled")
 
 
 async def queue_build(owner_id: uuid.UUID, requested: BuildRequestView) -> None:
@@ -84,7 +107,23 @@ def _register(app: App) -> None:
 
     @app.task(name="profile.sync_connection", queue=str(Queue.SYNC))
     async def sync_connection(owner_id: str, kind: str) -> None:
+        if kind == "jira":
+            # Starts a new connection's reports, and re-arms a chain that was
+            # ever lost; a no-op while one waits (ADR 0061). Before the sync,
+            # so one that fails still leaves its data reported.
+            await queue_jira_report(owner_id, seconds=REPORT_CYCLE_SECONDS)
         await profile_jobs.sync_connection(deps(), owner_id=owner_id, kind=kind)
+
+    @app.task(name="profile.report_jira_account", queue=str(Queue.SYNC))
+    async def report_jira_account(owner_id: str) -> None:
+        # Each connection reports itself, as its owner: nothing reads across
+        # users to find whom to report (ADR 0061).
+        decision: ReportDecision = await profile_jobs.report_jira_account(deps(), owner_id=owner_id)
+        if decision.action is ReportAction.SYNC:
+            await deps().profile.request_sync(uuid.UUID(owner_id), "jira")
+            await enqueue("profile.sync_connection", owner_id=owner_id, kind="jira")
+        if decision.next_report_in_seconds is not None:
+            await queue_jira_report(owner_id, seconds=decision.next_report_in_seconds)
 
     @app.task(name="profile.parse_resume", queue=str(Queue.SYNC))
     async def parse_resume(owner_id: str, resume_id: str) -> None:

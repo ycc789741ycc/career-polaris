@@ -6,6 +6,9 @@ unit of work (ADR 0011).
 
 from __future__ import annotations
 
+import uuid
+
+from advisor.profile.infra.account_report import AccountReporter
 from advisor.profile.infra.connectors import Connector
 from advisor.profile.infra.oauth import TokenRefresher
 from advisor.profile.infra.unit_of_work import SqlAlchemyProfileUnitOfWork
@@ -24,12 +27,16 @@ def create_profile_service(
     resume_max_pages: int,
     http_timeout_seconds: float,
     user_agent: str,
+    account_reporter: AccountReporter | None = None,
+    reporting_owner_id: uuid.UUID | None = None,
 ) -> ProfileService:
     return ProfileService(
         SqlAlchemyProfileUnitOfWork(database),
         object_store=object_store,
         connectors=connectors,
         token_refreshers=token_refreshers,
+        account_reporter=account_reporter,
+        reporting_owner_id=reporting_owner_id,
         resume_max_bytes=resume_max_bytes,
         resume_max_pages=resume_max_pages,
         http_timeout_seconds=http_timeout_seconds,

@@ -43,4 +43,10 @@ class Connector(Protocol):
         """Who the token belongs to, as the user would recognise it."""
         ...
 
+    async def account_id(self, client: GuardedClient, access_token: str) -> str | None:
+        """The provider's stable id for that account, kept only where the
+        provider asks us to report on what we hold about it (Atlassian, ADR
+        0061). Everyone else keeps none."""
+        return None
+
     async def fetch(self, client: GuardedClient, access_token: str) -> list[EvidenceDraft]: ...

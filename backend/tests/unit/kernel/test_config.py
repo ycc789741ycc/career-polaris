@@ -108,6 +108,24 @@ def test_cors_origins_are_parsed_from_a_list(
     assert get_settings().cors_origins == ["http://localhost:5173", "https://app.test"]
 
 
+@pytest.mark.parametrize("value", ["", "  "])
+def test_a_blank_jira_reporting_owner_leaves_reporting_off(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("JIRA_REPORTING_OWNER_ID", value)
+    get_settings.cache_clear()
+    assert get_settings().jira_reporting_owner_id is None
+
+
+def test_the_jira_reporting_owner_is_an_account_id(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("JIRA_REPORTING_OWNER_ID", "not-a-uuid")
+    get_settings.cache_clear()
+    with pytest.raises(PydanticValidationError):
+        get_settings()
+
+
 def test_log_level_must_be_known(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "chatty")
     get_settings.cache_clear()

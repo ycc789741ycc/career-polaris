@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -17,14 +18,24 @@ from advisor.profile import (
     get_evidence_line,
 )
 from advisor.profile.domain import (
+    AccountReportReply,
     CareerPosition,
     CareerPositionFilter,
     ConnectionStatus,
     EvidenceGranularity,
     ProfileUpdated,
+    ReportAction,
+    ReportedAccount,
+    ReportedStatus,
     ResumeStatus,
     SourceSynced,
 )
+from advisor.profile.domain.constants import (
+    REPORT_CYCLE_SECONDS,
+    REPORT_JITTER_SECONDS,
+    REPORT_RETRY_SECONDS,
+)
+from advisor.profile.infra.account_report import AccountReporter
 from advisor.profile.infra.connectors import Connector, EvidenceDraft
 from advisor.profile.infra.oauth import TokenGrant, TokenRefresher
 from kernel.crypto import decrypt
@@ -54,12 +65,16 @@ class FakeConnector(Connector):
         self.replaced_refs = replaced_refs
         self.fails = fails
         self.account = account
+        self.external_id: str | None = None
         self.tokens: list[str] = []
 
     async def account_name(self, client: Any, token: str) -> str:
         if self.account is None:
             raise UpstreamFailedError("GitHub did not return an account")
         return self.account
+
+    async def account_id(self, client: Any, token: str) -> str | None:
+        return self.external_id
 
     async def fetch(self, client: Any, token: str) -> list[EvidenceDraft]:
         self.tokens.append(token)
@@ -108,6 +123,8 @@ def _service(
         object_store=FakeObjectStore(),  # type: ignore[arg-type]
         connectors={"github": connector or FakeConnector()},
         token_refreshers={"github": refresher} if refresher else {},
+        account_reporter=None,
+        reporting_owner_id=None,
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -536,6 +553,8 @@ def _service_with_store(uow: FakeProfileUnitOfWork) -> tuple[ProfileService, Fak
         object_store=store,  # type: ignore[arg-type]
         connectors={"github": FakeConnector([_draft("pr/1")])},
         token_refreshers={},
+        account_reporter=None,
+        reporting_owner_id=None,
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -807,6 +826,8 @@ async def test_a_parse_that_stops_unexpectedly_is_recorded_and_still_raised() ->
         object_store=store,  # type: ignore[arg-type]
         connectors={},
         token_refreshers={},
+        account_reporter=None,
+        reporting_owner_id=None,
         resume_max_bytes=10_000,
         resume_max_pages=5,
         http_timeout_seconds=1,
@@ -823,3 +844,170 @@ async def test_a_parse_that_stops_unexpectedly_is_recorded_and_still_raised() ->
     (stored,) = uow.store.resumes.values()
     assert stored.status is ResumeStatus.FAILED and stored.parse_error
     assert (await profile.processing(OWNER)).parsing == ()
+
+
+# --- the Atlassian personal data report (ADR 0061) ---------------------------------
+
+APP_OWNER = uuid.UUID("00000000-0000-0000-0000-0000000000aa")
+
+
+class FakeReporter(AccountReporter):
+    def __init__(self, reply: AccountReportReply | None = None, *, fails: bool = False) -> None:
+        self.reply = reply or AccountReportReply()
+        self.fails = fails
+        self.sent: list[tuple[str, list[ReportedAccount]]] = []
+
+    async def report(
+        self, client: Any, access_token: str, accounts: Sequence[ReportedAccount]
+    ) -> AccountReportReply:
+        self.sent.append((access_token, list(accounts)))
+        if self.fails:
+            raise UpstreamFailedError("Atlassian's personal data report failed with 503")
+        return self.reply
+
+
+def _jira_service(
+    uow: FakeProfileUnitOfWork,
+    reporter: FakeReporter | None,
+    *,
+    reporting_owner_id: uuid.UUID | None = APP_OWNER,
+    refresher: FakeRefresher | None = None,
+) -> ProfileService:
+    jira = FakeConnector([_draft("jira:issue:1")])
+    jira.external_id = "atl-user"
+    return ProfileService(
+        uow,
+        object_store=FakeObjectStore(),  # type: ignore[arg-type]
+        connectors={"jira": jira},
+        token_refreshers={"jira": refresher} if refresher else {},
+        account_reporter=reporter,
+        reporting_owner_id=reporting_owner_id,
+        resume_max_bytes=10_000,
+        resume_max_pages=5,
+        http_timeout_seconds=1,
+        user_agent="test",
+    )
+
+
+async def _connect_jira(
+    profile: ProfileService, owner: uuid.UUID, token: str, *, expires_at: datetime | None = None
+) -> None:
+    await profile.store_connection(
+        owner,
+        kind="jira",
+        access_token=token,
+        refresh_token=f"{token}-refresh",
+        scopes=(),
+        expires_at=expires_at,
+    )
+
+
+async def test_a_report_names_the_account_with_the_app_owners_token() -> None:
+    uow, reporter = FakeProfileUnitOfWork(), FakeReporter()
+    profile = _jira_service(uow, reporter)
+    await _connect_jira(profile, APP_OWNER, "owner-token")
+    await _connect_jira(profile, OWNER, "user-token")
+    await profile.sync_connection(OWNER, "jira")
+
+    decision = await profile.report_jira_account(OWNER)
+
+    ((token, (account,)),) = reporter.sent
+    assert token == "owner-token"
+    assert account.account_id == "atl-user"
+    synced = next(c for c in uow.store.connections.values() if c.owner_id == OWNER)
+    assert account.updated_at == synced.last_synced_at
+    assert decision.action is ReportAction.NONE
+    assert decision.next_report_in_seconds is not None
+    assert REPORT_CYCLE_SECONDS <= decision.next_report_in_seconds
+    assert decision.next_report_in_seconds <= REPORT_CYCLE_SECONDS + REPORT_JITTER_SECONDS
+
+
+async def test_a_closed_account_loses_its_connection_and_every_jira_fact() -> None:
+    uow = FakeProfileUnitOfWork()
+    reporter = FakeReporter(AccountReportReply(statuses={"atl-user": ReportedStatus.CLOSED}))
+    profile = _jira_service(uow, reporter)
+    await _connect_jira(profile, APP_OWNER, "owner-token")
+    await _connect_jira(profile, OWNER, "user-token")
+    await profile.sync_connection(OWNER, "jira")
+    assert any(e.owner_id == OWNER for e in uow.store.evidence.values())
+
+    decision = await profile.report_jira_account(OWNER)
+
+    assert decision.action is ReportAction.DISCONNECT
+    assert decision.next_report_in_seconds is None
+    assert await profile.connections(OWNER) == []
+    assert not any(e.owner_id == OWNER for e in uow.store.evidence.values())
+    assert [c.owner_id for c in uow.store.connections.values()] == [APP_OWNER]
+
+
+async def test_an_updated_account_asks_for_a_sync() -> None:
+    uow = FakeProfileUnitOfWork()
+    reporter = FakeReporter(AccountReportReply(statuses={"atl-user": ReportedStatus.UPDATED}))
+    profile = _jira_service(uow, reporter)
+    await _connect_jira(profile, APP_OWNER, "owner-token")
+    await _connect_jira(profile, OWNER, "user-token")
+
+    assert (await profile.report_jira_account(OWNER)).action is ReportAction.SYNC
+
+
+async def test_a_disconnected_account_ends_its_reports_without_sending_one() -> None:
+    reporter = FakeReporter()
+    decision = await _jira_service(FakeProfileUnitOfWork(), reporter).report_jira_account(OWNER)
+    assert decision.next_report_in_seconds is None
+    assert reporter.sent == []
+
+
+@pytest.mark.parametrize("configured", ["no_owner", "no_reporter"])
+async def test_reporting_left_off_tries_again_a_day_later(configured: str) -> None:
+    uow, reporter = FakeProfileUnitOfWork(), FakeReporter()
+    profile = (
+        _jira_service(uow, reporter, reporting_owner_id=None)
+        if configured == "no_owner"
+        else _jira_service(uow, None)
+    )
+    await _connect_jira(profile, OWNER, "user-token")
+
+    decision = await profile.report_jira_account(OWNER)
+
+    assert decision.action is ReportAction.NONE
+    assert decision.next_report_in_seconds is not None
+    assert decision.next_report_in_seconds >= REPORT_RETRY_SECONDS
+    assert reporter.sent == []
+
+
+async def test_without_the_app_owners_own_connection_it_tries_again_a_day_later() -> None:
+    uow, reporter = FakeProfileUnitOfWork(), FakeReporter()
+    profile = _jira_service(uow, reporter)
+    await _connect_jira(profile, OWNER, "user-token")
+
+    decision = await profile.report_jira_account(OWNER)
+
+    assert (decision.next_report_in_seconds or 0) >= REPORT_RETRY_SECONDS
+    assert reporter.sent == []
+
+
+async def test_a_failed_report_is_tried_again_a_day_later_and_erases_nothing() -> None:
+    uow, reporter = FakeProfileUnitOfWork(), FakeReporter(fails=True)
+    profile = _jira_service(uow, reporter)
+    await _connect_jira(profile, APP_OWNER, "owner-token")
+    await _connect_jira(profile, OWNER, "user-token")
+
+    decision = await profile.report_jira_account(OWNER)
+
+    assert decision.action is ReportAction.NONE
+    assert (decision.next_report_in_seconds or 0) >= REPORT_RETRY_SECONDS
+    assert len(await profile.connections(OWNER)) == 1
+
+
+async def test_the_app_owners_token_is_refreshed_before_it_reports() -> None:
+    uow, reporter, refresher = FakeProfileUnitOfWork(), FakeReporter(), FakeRefresher()
+    profile = _jira_service(uow, reporter, refresher=refresher)
+    await _connect_jira(
+        profile, APP_OWNER, "owner-token", expires_at=datetime.now(UTC) - timedelta(minutes=5)
+    )
+    await _connect_jira(profile, OWNER, "user-token")
+
+    await profile.report_jira_account(OWNER)
+
+    assert refresher.spent == ["owner-token-refresh"]
+    assert reporter.sent[0][0] == "access-1"

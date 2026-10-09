@@ -262,6 +262,12 @@ contract.
   `SameSite=Strict` cookie stored hashed. A reused refresh token revokes its
   whole chain. There is no address verification or password reset yet — both
   wait on email delivery. Why, and what it costs: `docs/decisions/0001`.
+- **Atlassian is told which accounts we hold data about** (ADR 0061). Each
+  Jira connection keeps its `accountId` and reports itself weekly
+  (`profile.report_jira_account`, one queueing lock per user) with the token of
+  the operator's own Jira connection, `JIRA_REPORTING_OWNER_ID` (blank: off).
+  A `closed` reply disconnects it, erasing every Jira fact. Jira tokens last an
+  hour and are refreshed before use; the refresh token rotates.
 - **The AI credential is write-only.** It can be set, tested, replaced or
   deleted; a read returns provider, model and the last four characters.
 - **Nothing reaches an LLM except through `kernel.ai_gateway`**, which estimates

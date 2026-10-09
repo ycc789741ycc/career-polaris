@@ -32,6 +32,7 @@ def connection(row: models.SourceConnection) -> SourceConnection:
         last_synced_at=row.last_synced_at,
         token_expires_at=row.token_expires_at,
         sync_started_at=row.sync_started_at,
+        external_account_id=row.external_account_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -53,6 +54,7 @@ def apply_connection(row: models.SourceConnection, entity: SourceConnection) -> 
     row.last_synced_at = entity.last_synced_at
     row.token_expires_at = entity.token_expires_at
     row.sync_started_at = entity.sync_started_at
+    row.external_account_id = entity.external_account_id
 
 
 # --- resume file -----------------------------------------------------------

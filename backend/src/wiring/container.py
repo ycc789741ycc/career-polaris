@@ -26,6 +26,7 @@ from advisor.identity import (
 )
 from advisor.market import FreshWindows, MarketService, create_market_service
 from advisor.profile import (
+    AtlassianAccountReporter,
     GitHubConnector,
     JiraConnector,
     OAuthTokenRefresher,
@@ -177,6 +178,11 @@ def build(settings: Settings | None = None) -> Container:
         resume_max_pages=settings.resume_max_pages,
         http_timeout_seconds=settings.crawl_http_timeout_seconds,
         user_agent=settings.service_name,
+        # Atlassian's personal data report (ADR 0061); off while no owner is named.
+        account_reporter=AtlassianAccountReporter(
+            must(settings.jira_api_base_url, "JIRA_API_BASE_URL")
+        ),
+        reporting_owner_id=settings.jira_reporting_owner_id,
     )
     market = create_market_service(
         database,

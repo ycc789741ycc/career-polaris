@@ -80,6 +80,27 @@ class JiraConnector(Connector):
         ``read:jira-user`` scope already covers. The email is left out when the
         user's Atlassian privacy settings hide it.
         """
+        site, me = await self._myself(client, access_token)
+        name = me.get("displayName")
+        if not name:
+            raise UpstreamFailedError("Jira did not return an account")
+        email = me.get("emailAddress")
+        person = f"{name} ({email})" if email else str(name)
+        return f"{person} · {site.get('name') or 'jira'}"
+
+    async def account_id(self, client: GuardedClient, access_token: str) -> str | None:
+        """The Atlassian ``accountId``, which the personal data report names
+        (ADR 0061)."""
+        _site, me = await self._myself(client, access_token)
+        account_id = me.get("accountId")
+        if not isinstance(account_id, str) or not account_id:
+            raise UpstreamFailedError("Jira did not return an account id")
+        return account_id
+
+    async def _myself(
+        self, client: GuardedClient, access_token: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The first site granted, and the person ``/myself`` names on it."""
         sites = await self.sites(client, access_token)
         site = next((s for s in sites if s.get("id")), None)
         if site is None:
@@ -88,12 +109,7 @@ class JiraConnector(Connector):
             f"{self._base}/ex/jira/{site['id']}/rest/api/3/myself",
             headers=_headers(access_token),
         )
-        name = me.get("displayName") if isinstance(me, dict) else None
-        if not name:
-            raise UpstreamFailedError("Jira did not return an account")
-        email = me.get("emailAddress") if isinstance(me, dict) else None
-        person = f"{name} ({email})" if email else str(name)
-        return f"{person} · {site.get('name') or 'jira'}"
+        return site, me if isinstance(me, dict) else {}
 
     async def fetch(self, client: GuardedClient, access_token: str) -> list[EvidenceDraft]:
         sites = await self.sites(client, access_token)

@@ -36,6 +36,9 @@ class SourceConnection:
     # Set when a sync is queued and cleared when it ends either way, so the page
     # can show the sync running and an analysis can wait for it (ADR 0018).
     sync_started_at: datetime | None = None
+    # The provider's id for the account, where we report on it (Atlassian's
+    # accountId, ADR 0061). None for GitHub.
+    external_account_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -60,6 +63,7 @@ class SourceConnection:
         scopes: tuple[str, ...],
         expires_at: datetime | None,
         account: str | None,
+        account_id: str | None = None,
     ) -> None:
         """New tokens clear any earlier failure."""
         self.encrypted_access_token = encrypted_access_token
@@ -67,6 +71,7 @@ class SourceConnection:
         self.scopes = scopes
         self.token_expires_at = expires_at
         self.external_account = account
+        self.external_account_id = account_id
         self.status = ConnectionStatus.CONNECTED
         self.last_error = None
 
@@ -108,10 +113,11 @@ class SourceConnection:
         self.last_error = error
         self.sync_started_at = None
 
-    def synced(self, at: datetime, *, account: str) -> None:
+    def synced(self, at: datetime, *, account: str, account_id: str | None = None) -> None:
         """A sync also refreshes whose account this is, in case it was renamed."""
         self.sync_started_at = None
         self.last_synced_at = at
         self.external_account = account
+        self.external_account_id = account_id
         self.status = ConnectionStatus.CONNECTED
         self.last_error = None
