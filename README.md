@@ -93,16 +93,20 @@ for local embedding and matching. WeasyPrint for PDFs. React and Vite with an
 You need **Docker** and **`make`**, and nothing else. Every toolchain, database,
 linter and migration runs in a container.
 
-`.env.example` sets `COMPOSE_PROFILES=serving,compute,local`, which runs
-everything on one machine. A deployment splits it across two places
+A checkout names its machine in `.machine`, a folder in `deploy/` that says what
+runs there and how big it is; `.env` holds only the app's settings and secrets
+([ADR 0062](docs/decisions/0062-keep-each-machines-shape-in-its-own-deploy-folder.md)).
+`local` runs everything on one machine, from the dev images with your source
+mounted. A deployment splits it across two places
 ([`docs/deploy.md`](docs/deploy.md)).
 
 ```sh
-cp .env.example .env      # fill in every blank
-make build-infra          # pull the pinned Postgres and S3 gateway images
-make build-app            # build the prod images, plus the test images the gates use
-make start-infra          # start infra, wait until healthy, create least-privilege DB roles
-make start-app            # run migrations to completion, then start api, worker, crawler and web
+cp .env.example .env          # fill in every blank
+cp .machine.example .machine  # this checkout is `local`
+make build-infra              # pull the pinned Postgres and S3 gateway images
+make build-app                # build local's images, plus the test images the gates use
+make start-infra              # start infra, wait until healthy, create least-privilege DB roles
+make start-app                # run migrations to completion, then start api, worker, crawler and web
 ```
 
 Open **http://localhost:21471**. The host ports are this repo's block:
@@ -119,16 +123,14 @@ data. Only `make clean-up-infra` deletes it.
 
 ### Developing with live source
 
-```sh
-make build-app MODE=dev   # once, and again after a dependency change
-make start-app MODE=dev
-```
-
-This bind-mounts `backend/` and `web/src` read-only. When you save a file, the
-api, the worker and the SPA (through Vite HMR) reload within a couple of
+`local` bind-mounts `backend/` and `web/src` read-only. When you save a file,
+the api, the worker and the SPA (through Vite HMR) reload within a couple of
 seconds. The crawler does not reload, because it would hit real job boards on
-every save. `MODE` defaults to `prod`, which has nothing mounted and is the only
-mode CI and deployed environments use.
+every save. Run `make build-app` again after a dependency change.
+
+The prod images, with nothing mounted, run on every other machine. To try them
+on a laptop, use a second clone whose `.machine` says `ci`: its stack takes
+`-ci` names and ports 21474–21477, so it runs beside `local`.
 
 ## Tests and quality gates
 
@@ -177,7 +179,7 @@ backend/
   tests/      unit/ and integration/, each mirroring src/
 web/          React + Vite SPA on the prototype's design system (ADR 0004)
 proxy/        Caddy, the edge on the droplet (ADR 0053)
-infra/        infra compose project and the per-machine .env templates
+deploy/       compose bases, and one folder per machine with its app and infra files (ADR 0062)
 scripts/      DB roles, health wait, tunnel, backups, releases, env checks
 prototype/    design reference screens for the v3 journey (prototype/README.md)
 docs/         domain model, architecture, plan, decisions

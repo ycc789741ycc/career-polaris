@@ -66,9 +66,13 @@ flowchart LR
   A & WK --> SP[("Spaces")]
 ```
 
-- **What runs where** is `COMPOSE_PROFILES` in each place's `.env`. There is
-  one image and one pair of compose files. Development and CI run
-  `serving,compute,local` on one machine, with a local S3 gateway (ADR 0058) in place of Spaces.
+- **What runs where** is the machine's folder in `deploy/`, named by each
+  checkout's `.machine`: which services run, their ceilings, Postgres's sizing
+  and the published ports, with `.env` holding only the app's settings and
+  secrets ([ADR 0062](decisions/0062-keep-each-machines-shape-in-its-own-deploy-folder.md)).
+  There is one image. Development (`local`) and CI (`ci`) run everything on one
+  machine, with a local S3 gateway (ADR 0058) in place of Spaces, under names of
+  their own, so either runs beside a deployed stack.
 - **The compute machine may be off.** The queue and the outbox are in
   Postgres on the droplet, so work waits for it. The worker and the crawler each
   write a heartbeat to `presence.process`. Lost-work limits and a build's

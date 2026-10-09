@@ -1,11 +1,13 @@
 # Deploying CareerPolaris: the droplet and the compute machine
 
-The app runs in two places (ADR 0051):
+The app runs in two places (ADR 0051). Each is a machine in `deploy/`, whose
+folder holds what runs there and how big it is (ADR 0062); a checkout names its
+machine in `.machine`:
 
-| Place | Runs | `COMPOSE_PROFILES` |
+| Place | Runs | `.machine` |
 |---|---|---|
-| **Droplet**: DigitalOcean, 1 vCPU, 2 GB | Caddy (ADR 0053), `web`, `api`, Postgres, the tunnel | `serving,proxy,tunnel` |
-| **Compute**: the operator's own machine | `worker`, `crawler`, the tunnel | `compute,tunnel` |
+| **Droplet**: DigitalOcean, 1 vCPU, 2 GB | Caddy (ADR 0053), `web`, `api`, Postgres, the tunnel | `droplet-1vcpu-2gb` |
+| **Compute**: the operator's Mac, M5 Pro, 48 GB | `worker`, `crawler`, the tunnel | `compute-m5pro-48gb` |
 
 Files live in a DigitalOcean Spaces bucket, which both places reach. The
 compute side reaches Postgres through a Tailscale tunnel that it dials out
@@ -65,7 +67,7 @@ needs Docker and `make`, and nothing else.
      UDP 443.
    - Nothing else. Docker's port publishing goes around `ufw` but not around
      a Cloud Firewall. Every other published port binds to `127.0.0.1`
-     anyway (`PUBLISHED_BIND_ADDRESS`).
+     anyway, in `deploy/droplet-1vcpu-2gb/`.
    - Tailscale traffic arrives on the tunnel, not through this firewall, and
      needs no rule.
 4. **The host.** `scripts/bootstrap-droplet.sh`, as root, does all of it, and
@@ -85,30 +87,31 @@ needs Docker and `make`, and nothing else.
    the repository (next step) and run `scripts/bootstrap-droplet.sh`.
 5. **The repository,** at `/srv/careerpolaris`:
    `git clone https://github.com/<owner>/career-polaris.git /srv/careerpolaris`.
-6. **`.env`,** from the droplet's template, which already holds this
-   machine's sizes and every production setting that is not a secret:
+6. **The machine and `.env`.** The machine's sizes are already in
+   `deploy/droplet-1vcpu-2gb/`; `.env` holds only settings and secrets:
 
    ```
-   cp infra/env/droplet-1vcpu-2gb.env.example .env && chmod 600 .env
+   echo droplet-1vcpu-2gb > .machine
+   cp .env.example .env && chmod 600 .env
    ```
 
-   Fill in every blank, as below. `FORWARDED_ALLOW_IPS` waits for the next
-   step.
+   Fill it in as below. `FORWARDED_ALLOW_IPS` waits for the next step.
 7. **Start it.** `careerpolaris_net` exists once `start-infra` has run. Read its
-   subnet into `FORWARDED_ALLOW_IPS`, then check `.env` against its template,
-   before the first `start-app`.
+   subnet into `FORWARDED_ALLOW_IPS`, then check `.env`, before the first
+   `start-app`.
 
    ```
    make build-infra          # pulls Postgres and Tailscale
    make pull-app RELEASE=release.env   # the release's images, by digest
    make start-infra          # Postgres, then the tunnel forwards 5432 to it
    docker network inspect careerpolaris_net -f '{{(index .IPAM.Config 0).Subnet}}'
-   make check-env TEMPLATE=infra/env/droplet-1vcpu-2gb.env.example
+   make check-env
    make start-app            # migrates, then api, web and Caddy
    ```
 
-   `check-env` fails on a setting `.env` lacks or leaves blank, and lists
-   the values that differ from the template. It prints no secret.
+   `check-env` compares `.env` with `.env.example`: it fails on a setting
+   `.env` lacks or leaves blank, and lists the values that differ and the
+   names `.env.example` no longer declares. It prints no secret.
 
    Caddy asks Let's Encrypt for `SITE_HOSTNAME`'s certificate on its first
    start. Ports 80 and 443 must already be open.
@@ -123,16 +126,20 @@ needs Docker and `make`, and nothing else.
    - run `make restore-db BACKUP=<key> RESTORE_DB=<scratch>`;
    - drop the scratch database again.
 
-### The droplet's `.env`: what the template leaves blank
+### The droplet's `.env`
 
-The template (`infra/env/droplet-1vcpu-2gb.env.example`) sets the profiles,
-`APP_ENV`, the secure cookie, the Postgres host and the sizes: each
-container's memory and CPU ceiling (no CPU above 1.0, since there is one
-vCPU), Postgres's own memory settings and `DB_POOL_SIZE`. What it leaves blank
-is this machine's alone:
+Every container's memory and CPU ceiling (no CPU above 1.0, since there is one
+vCPU) and Postgres's own memory settings are in `deploy/droplet-1vcpu-2gb/`,
+not here. `.env` takes `.env.example`'s defaults, except:
 
 | Setting | Value |
 |---|---|
+| `APP_ENV` | `production` |
+| `AUTH_COOKIE_SECURE` | `true` |
+| `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_SUPERUSER` | `postgres`, `5432`, `careerpolaris`, `postgres` |
+| `DB_POOL_SIZE` | `3`: Postgres takes 50 connections here |
+| `TUNNEL_HOSTNAME` | `careerpolaris-serving` |
+| `GITHUB_API_BASE_URL`, `JIRA_API_BASE_URL`, `JIRA_OAUTH_BASE_URL` | `https://api.github.com`, `https://api.atlassian.com`, `https://auth.atlassian.com` |
 | `SITE_HOSTNAME` | `<reserved-ip>.sslip.io`, until there is a domain |
 | `CORS_ALLOWED_ORIGINS`, `WEB_API_BASE_URL`, `OAUTH_REDIRECT_BASE_URL`, `AUTH_PUBLIC_API_BASE_URL` | `https://$SITE_HOSTNAME`, each written out |
 | `POSTGRES_SUPERUSER_PASSWORD`, `APP_RW_PASSWORD`, `CRAWLER_RW_PASSWORD`, `AGGREGATOR_PASSWORD`, `MIGRATOR_PASSWORD`, `AUTH_JWT_SECRET` | Each its own `openssl rand -hex 32` |
@@ -152,21 +159,22 @@ The GitHub and Jira OAuth apps list `https://$SITE_HOSTNAME/connections/…/call
 as their callbacks (see `.env.example`).
 
 After a day of use, `make stats` shows each container against its ceiling.
-If one sits near it or reports `oom_killed=true`, raise its limit in the
-template, by pull request, and then in `.env`; `check-env` lists any value
-the two disagree on.
+If one sits near it or reports `oom_killed=true`, raise its limit in
+`deploy/droplet-1vcpu-2gb/`, by pull request, then `git pull` and restart
+there.
 
 ## 3. The compute machine
 
 1. **Disk encryption on.** This machine holds `MASTER_ENCRYPTION_KEY`, every
    user's connector tokens and a migrator credential. Keep it a machine
    nobody else signs in to.
-2. **Docker and `make`,** then clone the repository.
-3. **`.env`,** with `chmod 600`:
+2. **Docker and `make`,** then clone the repository, and name the machine:
+   `echo compute-m5pro-48gb > .machine`. A compute machine of another spec
+   gets a folder of its own in `deploy/` first, by pull request.
+3. **`.env`,** from `.env.example`, with `chmod 600`:
 
    | Setting | Value |
    |---|---|
-   | `COMPOSE_PROFILES` | `compute,tunnel` |
    | `POSTGRES_HOST` | The droplet's tunnel address, `100.x.y.z` |
    | `POSTGRES_PORT` | `5432` |
    | `DATABASE_URL`, `CRAWLER_DATABASE_URL`, `MIGRATOR_DATABASE_URL` | As on the droplet, with host `100.x.y.z:5432` |
@@ -206,6 +214,14 @@ the two disagree on.
 The crawler fetches job boards from this machine's address. Its politeness
 rules (per-host caps, backing off after a 429 or 403) do not change.
 
+**Developing on the same Mac.** Keep a second clone for development, whose
+`.machine` says `local` (`cp .machine.example .machine`) and whose `.env` names
+the local `postgres` and `objectstore` services — never the droplet's tunnel
+address. Its stacks are `careerpolaris-app-local` and
+`careerpolaris-infra-local` on `careerpolaris_net_local`, so starting or
+stopping them never touches the worker, the crawler or the tunnel; and either
+clone refuses to act on the other's stack.
+
 ## 4. A release
 
 Tag `origin/master` with the next version and push the tag:
@@ -224,8 +240,8 @@ the GitHub Release (`gh release download v0.1.0 -p release.env`) and copy it
 to both machines, next to `.env`.
 
 1. **Edge first.** Run `git pull`, `make pull-app RELEASE=release.env`, then
-   `make check-env TEMPLATE=infra/env/droplet-1vcpu-2gb.env.example`: a
-   release that added a setting fails here, naming it, rather than at start.
+   `make check-env`: a release that added a setting fails here, naming it,
+   rather than at start.
    Then `make stop-app` and `make start-app`, which migrates under the lock.
 2. **Then compute,** with the same `release.env`. A compute machine still on the
    previous image refuses to start against the newer schema, and says which
@@ -236,7 +252,7 @@ to both machines, next to `.env`.
 - **The SPA says "Processing is offline".** The compute machine is off,
   asleep, or off the tailnet.
   - Run `make stats` there.
-  - Run `docker compose -f infra/compose.yml exec tunnel tailscale --socket=/var/run/tailscale/tailscaled.sock status`.
+  - Run `docker compose -f deploy/compute-m5pro-48gb/compose.infra.yaml exec tunnel tailscale --socket=/var/run/tailscale/tailscaled.sock status`.
   - Work started meanwhile waits and runs when the machine is back.
 - **`start-infra` on compute times out.** The edge is down, or
   `POSTGRES_HOST` is not its tunnel address.
@@ -244,3 +260,23 @@ to both machines, next to `.env`.
   Cloud Firewall, or `SITE_HOSTNAME` does not resolve to the droplet.
 - **Disk.** Run `make disk-usage` on the droplet. Old images go with
   `docker image prune`, after a release has settled.
+
+## 6. Once: moving a place onto its machine folder (ADR 0062)
+
+A place set up before ADR 0062 chose its services with `COMPOSE_PROFILES` and
+its sizes in `.env`. With the release that brings `deploy/`, on each machine,
+edge first:
+
+1. `git pull`, then `echo <machine> > .machine` (`droplet-1vcpu-2gb` or
+   `compute-m5pro-48gb`).
+2. Delete from `.env` what is now the machine's: `COMPOSE_PROFILES`,
+   `PUBLISHED_BIND_ADDRESS`, every `*_PUBLISHED_PORT`, `*_MEM_LIMIT` and
+   `*_CPUS`, `DOCKER_LOG_*`, and `POSTGRES_SHARED_BUFFERS`, `_WORK_MEM`,
+   `_EFFECTIVE_CACHE_SIZE` and `_MAX_CONNECTIONS`. `make check-env` lists any
+   left as extras; left there they are only ignored.
+3. `make pull-app RELEASE=release.env`, `make start-infra`, `make start-app`.
+
+The project and network names are the ones these places already had, so the
+containers are recreated in place and every volume — Postgres's data, the
+proxy's certificates, the Tailscale identity, the model cache — is kept.
+
