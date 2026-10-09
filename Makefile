@@ -84,7 +84,7 @@ PYTEST_FILTER :=
 VITEST_FILTER :=
 endif
 
-.PHONY: help require-env require-machine require-own-stack require-machine-images \
+.PHONY: help require-env require-machine require-own-stack require-machine-images require-infra-up \
         require-dev-images build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
@@ -136,6 +136,13 @@ require-machine-images: require-machine
 	    echo "ERROR: $$image is missing. Run: make build-app"; \
 	    echo "  (a deployed place pulls its release instead: make pull-app RELEASE=release.env)"; exit 1; }; \
 	done
+
+# App targets never start infra; they fail here, with the command to run, when
+# this machine's infra is not up. start-infra creates the network on every
+# machine, even one whose infra has no service on it.
+require-infra-up: require-machine
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || { \
+	  echo "ERROR: $(NETWORK) does not exist: this machine's infra is not up. Run: make start-infra"; exit 1; }
 
 # `format` and `lock` run local's tools, whatever machine this checkout is.
 require-dev-images:
@@ -216,7 +223,7 @@ disk-usage: require-machine
 
 # A one-off container from this machine's own image. On local it sees the
 # mounted source, so a migration written a moment ago applies without a rebuild.
-migrate: require-own-stack require-machine-images
+migrate: require-own-stack require-machine-images require-infra-up
 	$(COMPOSE_APP) run --rm migrate
 
 # --- test -------------------------------------------------------------------
@@ -227,9 +234,7 @@ test-unit:
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx vitest run $(VITEST_FILTER)
 
 # Assumes infra is already up and migrated. Never starts infra itself.
-test-integration: require-machine
-	@docker network inspect $(NETWORK) >/dev/null 2>&1 || { \
-	  echo "ERROR: $(NETWORK) does not exist: infra is not up. Run: make start-infra"; exit 1; }
+test-integration: require-infra-up
 	$(RUN_ON_NET) $(BACKEND_TEST_IMAGE) pytest tests/integration $(PYTEST_FILTER)
 
 # --- gates ------------------------------------------------------------------
