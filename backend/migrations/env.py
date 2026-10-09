@@ -22,7 +22,7 @@ config.set_main_option("sqlalchemy.url", url)
 target_metadata = metadata
 
 # `public` had its default grants revoked, so Alembic's bookkeeping table gets
-# a schema of its own, created by infra/bootstrap-roles.sh.
+# a schema of its own, created by scripts/bootstrap-roles.sh.
 VERSION_TABLE_SCHEMA = "migrations"
 
 
