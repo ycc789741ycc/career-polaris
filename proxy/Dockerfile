@@ -8,6 +8,10 @@
 # against.
 
 FROM caddy:2.11.6-builder-alpine AS build
+# The builder ships Go 1.27.1, whose standard library carries CVE-2026-78667
+# (HIGH, net/http). Go fetches the pinned 1.27.2 toolchain for the build; drop
+# this once a builder tag ships 1.27.2 or later, which `make scan` shows.
+ENV GOTOOLCHAIN=go1.27.2
 RUN xcaddy build v2.11.6 \
       --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
  # The builder gives the binary a file capability to bind ports below 1024.
