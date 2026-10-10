@@ -12,8 +12,12 @@ FROM caddy:2.11.6-builder-alpine AS build
 # (HIGH, net/http). Go fetches the pinned 1.27.2 toolchain for the build; drop
 # this once a builder tag ships 1.27.2 or later, which `make scan` shows.
 ENV GOTOOLCHAIN=go1.27.2
+# Caddy 2.11.6 requires golang.org/x/net v0.59.0, which carries CVE-2026-78669
+# (HIGH, HTTP/2 SETTINGS flood); the replace builds v0.60.0 instead. Drop it
+# once a Caddy release requires 0.60.0 or later, which `make scan` shows.
 RUN xcaddy build v2.11.6 \
       --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+      --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
  # The builder gives the binary a file capability to bind ports below 1024.
  # Under no-new-privileges such a binary cannot even be executed, so it is
  # copied without one; the sysctl in compose opens the ports instead.
