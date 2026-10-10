@@ -88,9 +88,6 @@ class Credential(ApiModel):
 
 class AiSourceRequest(RequestModel):
     source: Literal["own", "platform"]
-    # Needed the first time the platform's key is chosen: the user's evidence
-    # then goes to CareerPolaris's provider account, not their own.
-    accept_platform_terms: bool = False
 
 
 class PlatformQuota(ApiModel):
@@ -108,8 +105,6 @@ class AiSourceBody(ApiModel):
     has_credential: bool
     is_platform_on: bool
     is_eligible: bool
-    platform_model: str | None
-    has_accepted_platform_terms: bool
     # None while the platform's key is off.
     platform_quota: PlatformQuota | None
 
@@ -120,8 +115,6 @@ class AiSourceBody(ApiModel):
             has_credential=view.has_credential,
             is_platform_on=view.is_platform_on,
             is_eligible=view.is_eligible,
-            platform_model=view.platform_model,
-            has_accepted_platform_terms=view.has_accepted_platform_terms,
             platform_quota=quota,
         )
 

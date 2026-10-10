@@ -171,7 +171,6 @@ def ai_source(row: models.AiSourceChoice) -> AiSourceChoice:
         id=row.id,
         owner_id=row.owner_id,
         source=AiSource(row.source),
-        platform_terms_accepted_at=row.platform_terms_accepted_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -185,7 +184,6 @@ def ai_source_row(entity: AiSourceChoice) -> models.AiSourceChoice:
 
 def apply_ai_source(row: models.AiSourceChoice, entity: AiSourceChoice) -> None:
     row.source = str(entity.source)
-    row.platform_terms_accepted_at = entity.platform_terms_accepted_at
 
 
 def budget(row: models.AiUsageBudget) -> AiUsageBudget:

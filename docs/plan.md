@@ -4127,3 +4127,20 @@ rows, and the cap check passes an unpriced call. The estimate still shows the
 high guess, now saying it won't count toward the cap, and AI settings says the
 same under the monthly budget. Rows stored before are taken as priced.
 
+## CareerPolaris AI by default, and settings by source
+**Done** (ADR 0066, migration 0053), on
+`feature/no-ticket/ai-settings-by-source`.
+
+* AI settings asks first which AI runs the work: CareerPolaris AI or your own
+  provider, as two radio cards. CareerPolaris AI shows only its free quota as
+  a percentage, with a standing line on where evidence goes. Your own provider
+  shows the key form and the monthly budget. A stored key is kept while the
+  platform runs.
+* An eligible account runs on CareerPolaris AI until it picks otherwise. There
+  is no terms checkbox, and saving a key chooses it. Migration 0053 gave every
+  earlier key holder with no choice an `own` choice, and dropped
+  `platform_terms_accepted_at`.
+* The platform's model is never sent to the SPA or named in settings, the
+  shell or an estimate: it is "CareerPolaris AI". A finished plan or résumé
+  keeps the model id it recorded.
+

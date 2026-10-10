@@ -15,7 +15,12 @@ import {
   Loading,
   PillToggle,
 } from "../components/ui";
-import { hasAi, modelName, useShell } from "../shell/ShellContext";
+import {
+  getShownModel,
+  hasAi,
+  modelName,
+  useShell,
+} from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -167,8 +172,8 @@ export function FillTheGap({
       onCancel={() => setWriteCost(null)}
     >
       Writing questions for the gaps of <strong>{target.label}</strong> costs
-      about <strong>${writeCost.cost_usd}</strong> on {writeCost.model_id},
-      charged to your own provider.
+      about <strong>${writeCost.cost_usd}</strong> on{" "}
+      {getShownModel(status, writeCost.model_id)}, charged to your own provider.
     </CostConfirm>
   );
 

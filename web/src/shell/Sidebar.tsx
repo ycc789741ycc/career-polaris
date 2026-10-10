@@ -87,7 +87,7 @@ export function Sidebar({
                   : quotaUsed !== null
                     ? `${modelName(status)} · ${quotaUsed}% of free quota used`
                     : isOnPlatform(status)
-                      ? `${modelName(status)} · CareerPolaris AI`
+                      ? modelName(status)
                       : `${modelName(status)}${keyFailed ? " · key failed" : ""}`}
               </span>
             </span>

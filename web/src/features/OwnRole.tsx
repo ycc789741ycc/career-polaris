@@ -6,7 +6,7 @@ import type {
   OwnPostingPage,
 } from "../api/types";
 import { Button, ErrorNote, Eyebrow, FitBadge } from "../components/ui";
-import { useShell } from "../shell/ShellContext";
+import { getShownModel, useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { recordTargetUse } from "./advisorTarget";
@@ -332,7 +332,7 @@ export function MyRoles({
   currentTarget: string | null;
   onChanged: () => Promise<void>;
 }) {
-  const { navigate, account } = useShell();
+  const { navigate, account, status } = useShell();
   const flash = useToast();
   const { refresh: refreshActivity } = useActivity();
   const [pricing, setPricing] = useState<{
@@ -426,8 +426,10 @@ export function MyRoles({
           Reading what {pricing.posting.title} asks for, scoring your fit to it
           and writing your follow-up questions about its gaps will cost about{" "}
           <strong>${pricing.estimate.cost_usd}</strong>
-          {pricing.estimate.model_id ? ` on ${pricing.estimate.model_id}` : ""},
-          charged to your own provider
+          {pricing.estimate.model_id
+            ? ` on ${getShownModel(status, pricing.estimate.model_id)}`
+            : ""}
+          , charged to your own provider
           {pricing.posting.status === null &&
           pricing.posting.source === "uploaded"
             ? " — at most, since its file is not read yet"

@@ -1536,27 +1536,18 @@ export interface components {
          * @description Which key AI runs on, and what the user may choose between.
          */
         AiSourceBody: {
-            /** Has Accepted Platform Terms */
-            has_accepted_platform_terms: boolean;
             /** Has Credential */
             has_credential: boolean;
             /** Is Eligible */
             is_eligible: boolean;
             /** Is Platform On */
             is_platform_on: boolean;
-            /** Platform Model */
-            platform_model: string | null;
             platform_quota: components["schemas"]["PlatformQuota"] | null;
             /** Source */
             source: ("own" | "platform") | null;
         };
         /** AiSourceRequest */
         AiSourceRequest: {
-            /**
-             * Accept Platform Terms
-             * @default false
-             */
-            accept_platform_terms: boolean;
             /**
              * Source
              * @enum {string}

@@ -18,7 +18,12 @@ import {
   RoundCheck,
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
-import { hasAi, modelName, useShell } from "../shell/ShellContext";
+import {
+  getShownModel,
+  hasAi,
+  modelName,
+  useShell,
+} from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -258,8 +263,9 @@ export function GapPlan({
           onCancel={() => setEstimate(null)}
         >
           Drafting a plan for <strong>{estimate.label}</strong> costs about{" "}
-          <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
-          , charged to your own provider.
+          <strong>${estimate.cost.cost_usd}</strong> on{" "}
+          {getShownModel(status, estimate.cost.model_id)}, charged to your own
+          provider.
           {estimate.cost.rate_is_published === false &&
             " We have no published price for that model, so this is a high guess, and it won't count toward your monthly cap."}
         </CostConfirm>

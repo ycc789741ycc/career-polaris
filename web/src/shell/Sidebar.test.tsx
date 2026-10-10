@@ -79,8 +79,6 @@ describe("sidebar", () => {
           has_credential: false,
           is_platform_on: true,
           is_eligible: true,
-          platform_model: "claude-haiku-4-5",
-          has_accepted_platform_terms: true,
           platform_quota: {
             allowed_usd: "2",
             spent_usd: spent,
@@ -96,7 +94,7 @@ describe("sidebar", () => {
       />,
     );
     expect(
-      screen.getByText("claude-haiku-4-5 · 25% of free quota used"),
+      screen.getByText("CareerPolaris AI · 25% of free quota used"),
     ).toBeInTheDocument();
     expect(
       screen.queryByLabelText("free quota used up"),
@@ -110,7 +108,7 @@ describe("sidebar", () => {
       />,
     );
     expect(
-      screen.getByText("claude-haiku-4-5 · 100% of free quota used"),
+      screen.getByText("CareerPolaris AI · 100% of free quota used"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("free quota used up")).toBeInTheDocument();
   });
@@ -126,8 +124,6 @@ describe("sidebar", () => {
             has_credential: false,
             is_platform_on: true,
             is_eligible: true,
-            platform_model: "claude-haiku-4-5",
-            has_accepted_platform_terms: true,
             platform_quota: null,
           },
         })}
@@ -135,9 +131,7 @@ describe("sidebar", () => {
       />,
     );
     expect(screen.queryByLabelText("needs a key")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("claude-haiku-4-5 · CareerPolaris AI"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("CareerPolaris AI")).toBeInTheDocument();
   });
 
   it("shows no profile confidence: it belongs to Strengths now", () => {

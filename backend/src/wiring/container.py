@@ -144,7 +144,7 @@ def build(settings: Settings | None = None) -> Container:
     identity = create_identity_service(
         database,
         default_monthly_cap_usd=default_cap,
-        platform_ai_model=settings.platform_ai_model if settings.platform_ai_enabled else None,
+        is_platform_on=settings.platform_ai_enabled,
     )
 
     # Only the api signs tokens; the worker never does, so the secret is
