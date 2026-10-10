@@ -1,20 +1,22 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { Button } from "../components/ui";
 import { AWAY_NOTICE, isProcessingAway, useActivity } from "../shell/activity";
 import {
   chargedTo,
-  getPlatformQuota,
-  getQuotaLabel,
+  isOnPlatform,
   type ShellStatus,
   useShell,
 } from "../shell/ShellContext";
 
 /**
- * "Before we spend anything": the estimate for a run, and nothing happens
- * until the user says yes (domain model 2.10). It says whose key pays, and on
- * CareerPolaris's, what is left of this month's quota (ADR 0064). While the
+ * "Before we spend anything": the estimate for a run on the user's own key,
+ * and nothing happens until they say yes (domain model 2.10). While the
  * machine that runs the work is away, it says so: the run is queued, and
  * starts when it is back (ADR 0052).
+ *
+ * On CareerPolaris AI the money is ours, bounded by the free quota, so there
+ * is nothing to confirm: it shows nothing and starts the run at once
+ * (ADR 0067). A run the quota can't take is refused when it starts.
  */
 export function CostConfirm({
   children,
@@ -28,11 +30,17 @@ export function CostConfirm({
   onCancel: () => void;
 }) {
   const { activity } = useActivity();
-  const { status, refresh } = useShell();
-  // The quota moves with every run, so read it again when asked to confirm.
+  const { status } = useShell();
+  const onPlatform = isOnPlatform(status);
+  // Once only, even when React mounts twice in development.
+  const started = useRef(false);
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!onPlatform || started.current) return;
+    started.current = true;
+    onConfirm();
+  }, [onPlatform, onConfirm]);
+
+  if (onPlatform) return null;
   return (
     <div
       className="callout"
@@ -68,11 +76,8 @@ export function CostConfirm({
   );
 }
 
-/** "Runs on CareerPolaris's AI (claude-haiku-4-5) · 62% of this month's free
- * quota left", or "Runs on your own key on claude-opus-5". Pure. */
+/** "Runs on your own key on claude-opus-5.": who pays, which is only ever
+ * said on the user's own key. Pure. */
 export function getPayerLine(status: ShellStatus): string {
-  const line = `Runs on ${chargedTo(status)}`;
-  const quota = getPlatformQuota(status);
-  if (!quota) return `${line}.`;
-  return `${line} · ${getQuotaLabel(quota).left}% of this month's free quota left.`;
+  return `Runs on ${chargedTo(status)}.`;
 }
