@@ -27,7 +27,7 @@ from advisor.identity.domain.credential import (
     CredentialView,
     Provider,
     ProviderCredential,
-    requires_base_url,
+    accepts_base_url,
 )
 from advisor.identity.domain.events import (
     IdentityEvent,
@@ -142,6 +142,7 @@ __all__ = [
     "TokenKind",
     "UsageBudgetExceeded",
     "WeakPasswordError",
+    "accepts_base_url",
     "access_token_expiry",
     "assert_acceptable",
     "assert_acceptable_claims",
@@ -152,6 +153,5 @@ __all__ = [
     "new_refresh_token",
     "normalize_email",
     "refresh_token_expiry",
-    "requires_base_url",
     "resolve_federated_account",
 ]

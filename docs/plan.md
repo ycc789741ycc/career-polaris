@@ -4083,3 +4083,14 @@ differs from the plan below:
 * A CAPTCHA (Cloudflare Turnstile) on sign-up, once there is a domain and
   Cloudflare in front.
 * A smaller quota for a Google account opened in the last few days.
+
+## No self-hosted model
+**Done** (ADR 0065, migration 0051), on `refactor/no-ticket/drop-local-model`.
+A hosted service cannot reach a model on the user's machine, so the "Local"
+provider went: its adapter, its enum value and its rule that a base URL is
+required. Stored local credentials are deleted; their owners are asked for a
+key again. A base URL stays, optional, for an OpenAI key only, so an
+OpenAI-compatible cloud (Azure OpenAI, Groq, Together) can still be reached.
+AI settings shows the field only for OpenAI, and the database refuses it on
+any other provider.
+

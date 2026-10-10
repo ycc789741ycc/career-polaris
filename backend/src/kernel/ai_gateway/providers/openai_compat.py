@@ -1,8 +1,8 @@
 """OpenAI and any OpenAI-compatible endpoint.
 
-This adapter also covers the "Local" provider in the UI: a model the user runs
-themselves, reachable at a public URL they control. The SSRF guard still
-applies, so it cannot point at our own network.
+An OpenAI key may name its own endpoint, an OpenAI-compatible cloud (Azure
+OpenAI, Groq, Together) at a public URL. The SSRF guard still applies, so it
+cannot point at our own network.
 """
 
 from __future__ import annotations
@@ -26,8 +26,6 @@ from kernel.fetch import GuardedClient
 class OpenAICompatibleProvider(Provider):
     name = "openai"
     default_base_url = "https://api.openai.com/v1"
-    # OpenAI sends a stream's usage in a last chunk only when asked to.
-    asks_for_stream_usage = True
 
     def _headers(self, request: Request) -> dict[str, str]:
         return {
@@ -45,7 +43,8 @@ class OpenAICompatibleProvider(Provider):
             ],
             "stream": stream,
         }
-        if stream and self.asks_for_stream_usage:
+        if stream:
+            # OpenAI sends a stream's usage in a last chunk only when asked to.
             body["stream_options"] = {"include_usage": True}
         return body
 
@@ -99,13 +98,3 @@ class OpenAICompatibleProvider(Provider):
                         output_tokens=int(usage.get("completion_tokens", 0)),
                         model=str(event.get("model") or request.model),
                     )
-
-
-class LocalProvider(OpenAICompatibleProvider):
-    """Same wire format; the user always supplies the base URL."""
-
-    name = "local"
-    default_base_url = ""
-    # A server of the user's own may refuse a field it does not know, and its
-    # calls cost us nothing to estimate.
-    asks_for_stream_usage = False

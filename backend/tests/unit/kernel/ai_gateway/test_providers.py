@@ -12,7 +12,6 @@ import pytest
 from kernel.ai_gateway.providers import (
     AnthropicProvider,
     GoogleProvider,
-    LocalProvider,
     OpenAICompatibleProvider,
     Provider,
     Request,
@@ -123,15 +122,6 @@ async def test_openai_asks_for_the_usage_and_reads_it_from_the_last_chunk() -> N
     assert [e for e in events if isinstance(e, Usage)] == [
         Usage(input_tokens=900, output_tokens=40, model="gpt-5-mini-2025-08-07")
     ]
-
-
-async def test_a_local_model_is_not_asked_for_usage_it_may_not_understand() -> None:
-    recorder = _Recorder(200, _sse({"choices": [{"delta": {"content": "Hi"}}]}))
-
-    events = await _events(LocalProvider(), recorder)
-
-    assert "stream_options" not in recorder.sent[0]
-    assert events == [TextDelta("Hi")]
 
 
 async def test_google_yields_its_whole_reply_with_the_usage_it_reported() -> None:

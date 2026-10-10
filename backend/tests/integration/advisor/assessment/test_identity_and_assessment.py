@@ -178,17 +178,17 @@ async def test_one_user_cannot_load_anothers_credential(
         await identity.load(other_account)
 
 
-async def test_a_self_hosted_model_on_a_private_address_is_refused(
+async def test_an_openai_compatible_endpoint_on_a_private_address_is_refused(
     identity: IdentityService, account: uuid.UUID
 ) -> None:
-    """'Local' means a public URL the user controls, not our own network."""
+    """A base URL names a public cloud, never our own network."""
     from kernel.errors import BlockedAddressError
 
     with pytest.raises(BlockedAddressError):
         await identity.set_credential(
             account,
-            provider="local",
-            model="llama",
+            provider="openai",
+            model="llama-3.3-70b",
             api_key="k",
             base_url="http://169.254.169.254/v1",
         )

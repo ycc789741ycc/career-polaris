@@ -438,3 +438,48 @@ async def test_switching_source_resumes_paused_work() -> None:
     await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
 
     assert not (await identity.account(owner)).background_jobs_paused
+
+
+# --- which endpoint a key may name (ADR 0065) ---------------------------------
+
+
+async def test_only_an_openai_key_may_name_its_own_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Hermetic: the SSRF guard would resolve the host. Its rules are tested
+    # in tests/unit/kernel/fetch.
+    from advisor.identity import service
+
+    monkeypatch.setattr(service, "assert_public_url", lambda url: None)
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+
+    with pytest.raises(ValidationError, match="OpenAI-compatible"):
+        await identity.set_credential(
+            owner,
+            provider="anthropic",
+            model="claude-haiku-4-5",
+            api_key="sk-ant-1234",
+            base_url="https://proxy.example.com",
+        )
+
+    view = await identity.set_credential(
+        owner,
+        provider="openai",
+        model="llama-3.3-70b",
+        api_key="gsk-1234",
+        base_url="https://api.groq.com/openai/v1",
+    )
+    assert view.base_url == "https://api.groq.com/openai/v1"
+
+
+async def test_a_self_hosted_model_is_not_a_provider() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+
+    with pytest.raises(ValidationError, match="unknown provider"):
+        await identity.set_credential(
+            owner, provider="local", model="llama", api_key="k", base_url=None
+        )

@@ -348,8 +348,8 @@ class Settings(BaseSettings):
         return self.master_encryption_key
 
 
-# The providers the platform's own key may be for. Never "local": the
-# operator's key is for a provider we can price.
+# The providers the platform's own key may be for: the same three a user's
+# key may be for (ADR 0065).
 PLATFORM_AI_PROVIDERS = ("anthropic", "openai", "google")
 
 # Beats a process may miss before it reads as away: one late beat is a busy
