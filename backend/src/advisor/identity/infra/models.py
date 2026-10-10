@@ -219,6 +219,11 @@ class AiUsageLedger(Base, OwnedMixin):
     is_estimated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # False when pricing.json had no rate for the model: cost_usd is the high
+    # fallback, which the user's cap does not count.
+    is_rate_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     # Whose key paid: "own" or "platform" (ADR 0064).
     funding: Mapped[str] = mapped_column(
         String(16), nullable=False, default="own", server_default="own"

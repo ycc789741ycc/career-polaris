@@ -66,6 +66,9 @@ class UsageRecord:
     estimated_cost_usd: Decimal
     is_estimated: bool
     funding: Funding
+    # False when ``pricing.json`` has no rate for the model, so ``cost_usd``
+    # is the deliberately high fallback, not what the provider billed.
+    is_rate_published: bool = True
 
 
 class CredentialStore(Protocol):
@@ -98,10 +101,16 @@ class PlatformSpend(Protocol):
 
 class BudgetGuard(Protocol):
     async def check(
-        self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding
+        self,
+        owner_id: uuid.UUID,
+        estimated_cost_usd: Decimal,
+        *,
+        funding: Funding,
+        is_priced: bool = True,
     ) -> None:
         """Raise ``BudgetExceededError`` when a call on the user's own key
-        would breach their cap."""
+        would breach their cap. A call on a model with no published rate is
+        not held to it: its cost would only be our guess."""
         ...
 
     async def record(self, usage: UsageRecord) -> None: ...

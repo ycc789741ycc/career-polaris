@@ -80,3 +80,6 @@ class AiUsageEntry:
     # was cut short.
     is_estimated: bool = False
     funding: AiFunding = AiFunding.OWN
+    # False when the model had no published rate: ``cost_usd`` is the high
+    # fallback, and the user's cap does not count it.
+    is_rate_published: bool = True

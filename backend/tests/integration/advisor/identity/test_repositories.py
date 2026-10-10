@@ -193,6 +193,35 @@ async def test_the_months_spend_sums_by_whose_key_paid(
     assert (own, platform) == (Decimal("0.25"), Decimal("1.50"))
 
 
+async def test_the_months_spend_sums_only_priced_calls_when_asked(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    now = datetime.now(UTC)
+    async with uow.for_owner(account) as mine:
+        for is_rate_published, cost in ((True, "0.40"), (False, "6.00")):
+            await mine.usage.create(
+                AiUsageEntry(
+                    id=uuid.uuid4(),
+                    owner_id=account,
+                    task="assessment",
+                    provider="openai",
+                    model="gpt-5-mini" if is_rate_published else "llama-3.3-70b",
+                    template_version="v1",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal(cost),
+                    occurred_at=now,
+                    is_rate_published=is_rate_published,
+                )
+            )
+
+    async with uow.for_owner(account) as mine:
+        priced = await mine.usage.total_cost(AiUsageEntryFilter(is_rate_published=True))
+        everything = await mine.usage.total_cost(AiUsageEntryFilter())
+    assert (priced, everything) == (Decimal("0.40"), Decimal("6.40"))
+
+
 async def test_a_users_choice_of_key_is_theirs_alone(
     database: Database, account: uuid.UUID, other_account: uuid.UUID
 ) -> None:

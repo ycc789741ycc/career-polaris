@@ -250,7 +250,8 @@ export function AiSettings() {
           <h3>Monthly budget</h3>
           <p className="subcopy">
             Background work spends your money, so it stops at this cap and tells
-            you rather than running past it.
+            you rather than running past it. Calls on a model we have no price
+            for aren&apos;t counted toward it.
           </p>
           <ErrorNote error={budget.error} />
           {budget.data && (

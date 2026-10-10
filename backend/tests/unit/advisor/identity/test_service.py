@@ -483,3 +483,38 @@ async def test_a_self_hosted_model_is_not_a_provider() -> None:
         await identity.set_credential(
             owner, provider="local", model="llama", api_key="k", base_url=None
         )
+
+
+# --- a model with no published rate -------------------------------------------
+
+
+async def test_a_model_with_no_published_rate_does_not_count_toward_the_cap() -> None:
+    """Its cost is only our deliberately high guess; it must not pause work."""
+    uow = FakeIdentityUnitOfWork()
+    auth, identity = _auth(uow), _identity(uow)
+    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
+    for is_rate_published, cost in ((True, "0.25"), (False, "9.00")):
+        await identity.record(
+            UsageRecord(
+                owner_id=owner,
+                task="assessment",
+                provider="openai",
+                model="llama-3.3-70b" if not is_rate_published else "gpt-5-mini",
+                template_version="v1",
+                input_tokens=10,
+                output_tokens=10,
+                cost_usd=Decimal(cost),
+                estimated_input_tokens=10,
+                estimated_cost_usd=Decimal(cost),
+                is_estimated=False,
+                funding=Funding.OWN,
+                is_rate_published=is_rate_published,
+            )
+        )
+
+    budget = await identity.budget(owner, today=datetime.now(UTC).date())
+    assert budget.spent_this_month_usd == Decimal("0.25")
+    # An unpriced call is never refused by the cap, however high its guess.
+    await identity.check(owner, Decimal("50"), funding=Funding.OWN, is_priced=False)
+    assert not (await identity.account(owner)).background_jobs_paused

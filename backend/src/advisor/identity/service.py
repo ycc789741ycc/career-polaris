@@ -297,11 +297,13 @@ class IdentityService(CredentialStore, BudgetGuard):
         async with self._uow.for_owner(owner_id) as mine:
             budget = await _budget(mine)
             # The cap is the user's own money: what the platform's key paid
-            # for is metered apart (ADR 0064).
+            # for is metered apart (ADR 0064), and a model with no published
+            # rate has only our guess at its cost, which is not held against it.
             spent = await mine.usage.total_cost(
                 AiUsageEntryFilter(
                     occurred_since=datetime(month.year, month.month, month.day, tzinfo=UTC),
                     funding=AiFunding.OWN,
+                    is_rate_published=True,
                 )
             )
         cap = budget.monthly_cap_usd if budget is not None else self._default_cap
@@ -356,9 +358,14 @@ class IdentityService(CredentialStore, BudgetGuard):
             mine.record(ProviderCredentialFailed(owner_id=owner_id, reason=reason))
 
     async def check(
-        self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding
+        self,
+        owner_id: uuid.UUID,
+        estimated_cost_usd: Decimal,
+        *,
+        funding: Funding,
+        is_priced: bool = True,
     ) -> None:
-        if funding is Funding.PLATFORM:
+        if funding is Funding.PLATFORM or not is_priced:
             return
         state = await self._budget_state(owner_id, utcnow().date())
         if state.would_exceed(estimated_cost_usd):
@@ -396,6 +403,7 @@ class IdentityService(CredentialStore, BudgetGuard):
                     estimated_cost_usd=usage.estimated_cost_usd,
                     is_estimated=usage.is_estimated,
                     funding=AiFunding(str(usage.funding)),
+                    is_rate_published=usage.is_rate_published,
                 )
             )
 

@@ -282,6 +282,7 @@ class AiGateway:
                 estimated_cost_usd=estimate.cost_usd,
                 is_estimated=completion.is_estimated,
                 funding=key.funding,
+                is_rate_published=pricing.rate_for(request.model).is_published,
             )
         )
         if reservation is not None and self._platform_spend is not None:
@@ -391,7 +392,12 @@ class AiGateway:
         reported none.
         """
         key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
-        await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
+        await self._budget.check(
+            owner_id,
+            estimate.cost_usd,
+            funding=key.funding,
+            is_priced=estimate.rate_is_published,
+        )
         provider = key.provider
         last_error: Exception | None = None
         reservation = await self._create_reservation(key, request)
@@ -523,7 +529,12 @@ class AiGateway:
         by then is still recorded.
         """
         key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
-        await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
+        await self._budget.check(
+            owner_id,
+            estimate.cost_usd,
+            funding=key.funding,
+            is_priced=estimate.rate_is_published,
+        )
         reservation = await self._create_reservation(key, request)
         try:
             tally = _Tally()

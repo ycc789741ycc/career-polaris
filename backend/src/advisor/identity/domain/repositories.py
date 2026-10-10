@@ -129,6 +129,7 @@ class AiSourceChoiceRepository(Repository[AiSourceChoice, AiSourceChoiceFilter],
 class AiUsageEntryFilter:
     occurred_since: datetime | None = None
     funding: AiFunding | None = None
+    is_rate_published: bool | None = None
 
 
 class AiUsageEntryRepository(Repository[AiUsageEntry, AiUsageEntryFilter], Protocol):
