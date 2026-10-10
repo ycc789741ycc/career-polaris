@@ -135,8 +135,11 @@ class JobPostingRepository(Repository[JobPosting, JobPostingFilter], Protocol):
         """
         ...
 
-    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
-        """``get_open_in_scope`` without descriptions, newest first.
+    async def get_open_heads_in_scope(
+        self, scope: PostingScope, posting_ids: tuple[uuid.UUID, ...] | None = None
+    ) -> list[PostingHead]:
+        """``get_open_in_scope`` without descriptions, newest first; only
+        ``posting_ids`` among them when given.
 
         Extra method: the same OR as ``get_open_in_scope``, reading only the
         columns matching and listing need, so a scope of thousands crosses

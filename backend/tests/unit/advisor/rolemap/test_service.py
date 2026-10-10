@@ -1400,6 +1400,25 @@ async def test_every_opening_gets_its_own_fit_from_its_roles() -> None:
 
 
 @pytest.mark.usefixtures("embedded")
+async def test_scoring_fits_reads_the_roles_openings_not_the_market() -> None:
+    """``compute_fits`` and the role map read each role's members by id: a
+    posting in scope that no role holds is never read, and no read is of the
+    whole scope."""
+    rolemap, _uow, _role_id, backend, data = await _role_with_openings(TwoDimensionGateway())
+    market = rolemap._market
+    assert isinstance(market, FakeMarket)
+    market.postings.append(_posting("Designer"))
+
+    await rolemap.compute_fits(OWNER)
+    [role] = await rolemap.map_roles(OWNER)
+
+    assert role.opening_count == 2
+    assert market.heads_read
+    members = {backend.id, data.id}
+    assert all(read is not None and set(read) == members for read in market.heads_read)
+
+
+@pytest.mark.usefixtures("embedded")
 async def test_working_out_the_openings_fits_is_never_an_ai_call() -> None:
     class NoCalls:
         async def run(self, *args: Any, **kwargs: Any) -> Any:

@@ -210,11 +210,15 @@ class SqlAlchemyJobPostingRepository(
         )
         return [mappers.job_posting(row) for row in rows.scalars()]
 
-    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
+    async def get_open_heads_in_scope(
+        self, scope: PostingScope, posting_ids: tuple[uuid.UUID, ...] | None = None
+    ) -> list[PostingHead]:
         in_scope = _in_scope(scope)
-        if in_scope is None:
+        if in_scope is None or posting_ids == ():
             return []
         posting = models.JobPosting
+        if posting_ids is not None:
+            in_scope = and_(in_scope, posting.id.in_(posting_ids))
         rows = await self._session.execute(
             select(
                 posting.id,

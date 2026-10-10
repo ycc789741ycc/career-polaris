@@ -486,7 +486,12 @@ class RoleMapService:
         for member in members:
             keys_by_role.setdefault(member.role_id, []).append(member.posting_key)
 
-        in_scope = {_posting_key(p): p for p in await self._market.posting_heads_in_scope(owner_id)}
+        # Only the members are read: one role's few dozen, never the market.
+        member_ids = [i for m in members if (i := _posting_id(m.posting_key)) is not None]
+        in_scope = {
+            _posting_key(p): p
+            for p in await self._market.posting_heads_in_scope(owner_id, member_ids)
+        }
         return [
             (role, [in_scope[key] for key in keys_by_role.get(role.id, []) if key in in_scope])
             for role in roles
@@ -1293,7 +1298,9 @@ class RoleMapService:
         ]
         if not pairs:
             return
-        vectors = await self._posting_vectors(owner_id)
+        vectors = await self._posting_vectors(
+            list({p.id: p for _role, postings, _fit in pairs for p in postings}.values())
+        )
         user_scores = {s.dimension_key: s.score for s in strengths}
         derived = 0
         for role, postings, fit in pairs:
@@ -1337,12 +1344,11 @@ class RoleMapService:
                     derived += 1
         log.info("rolemap.opening_fits_derived", roles=len(pairs), openings=derived)
 
-    async def _posting_vectors(self, owner_id: uuid.UUID) -> dict[str, list[float]]:
-        """Every posting in scope's vector, by its key; ones the crawler has not
-        embedded yet are embedded here. Local, no AI."""
-        scope = await self._embedded(
-            await self._market.scope_with_vectors(owner_id, self._embedding_model)
-        )
+    async def _posting_vectors(self, postings: list[PostingHeadView]) -> dict[str, list[float]]:
+        """These postings' vectors, by key; ones the crawler has not embedded
+        yet are embedded here. Local, no AI."""
+        stored = await self._market.vectors_by_id([p.id for p in postings], self._embedding_model)
+        scope = await self._embedded([(_posting_key(p), p, stored.get(p.id)) for p in postings])
         return {key: vector for key, _posting, vector in scope}
 
     async def _embedded(
@@ -1788,6 +1794,15 @@ class RoleMapService:
 def _posting_key(posting: PostingHeadView) -> str:
     """The key a posting is matched under (see ``MarketService.scope_with_vectors``)."""
     return str(posting.id)
+
+
+def _posting_id(posting_key: str) -> uuid.UUID | None:
+    """The shared posting a member key names; ``None`` for a key that names
+    none (``_posting_key`` makes every key a build stores)."""
+    try:
+        return uuid.UUID(posting_key)
+    except ValueError:
+        return None
 
 
 def _requirements_read(extraction: _RoleExtraction) -> RequirementsReadView:

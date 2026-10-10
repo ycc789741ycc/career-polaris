@@ -477,6 +477,20 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
         # A city is no place a search covers, so worldwide work is not in it.
         assert await in_scope("Taipei") == set()
 
+        # Asked for by id, only those of them in scope come back.
+        async with uow.shared() as market:
+            remote = PostingScope(markets=("Remote",))
+            some = await market.postings.get_open_heads_in_scope(
+                remote, (postings["taiwan"].id, postings["elsewhere"].id)
+            )
+            taiwan_only = await market.postings.get_open_heads_in_scope(
+                PostingScope(markets=("Taiwan",)), (postings["elsewhere"].id,)
+            )
+            nothing = await market.postings.get_open_heads_in_scope(remote, ())
+        assert {h.id for h in some} == {postings["taiwan"].id, postings["elsewhere"].id}
+        assert taiwan_only == []
+        assert nothing == []
+
         # Off the search's current list, a posting leaves every scope, still
         # open (ADR 0027).
         async with uow.shared() as market:
