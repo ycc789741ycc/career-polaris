@@ -905,3 +905,15 @@ under `epic/no-ticket/platform-ai`:
   platform's key failing answers `ai_platform_unavailable` (503) and leaves
   the user's credential and jobs alone. Every ledger row records `funding`
   (migration 0048), and the user's monthly cap counts only `own`.
+- **Meter the platform's spend** (ADR 0064). `kernel.limits.SpendMeter`
+  keeps `limits.spend_window` (spent per subject digest, UTC day or calendar
+  month) and `limits.spend_reservation` (held by calls in progress, lapsing
+  at `expires_at`; migration 0049). A platform call reserves its ceiling
+  against the account's month (`PLATFORM_AI_MONTHLY_QUOTA_USD`,
+  `ai_platform_quota_reached`, 402) and everyone's day and month
+  (`PLATFORM_AI_DAILY_CEILING_USD`, `_MONTHLY_CEILING_USD`,
+  `ai_platform_unavailable`), locking each window's row; each attempt's real
+  cost is settled into it, and the rest released when the call ends. A call
+  whose ceiling exceeds `PLATFORM_AI_MAX_CALL_USD` is refused
+  (`ai_platform_call_too_large`). The limits are named in
+  `wiring.platform_ai.PlatformSpendMeter`, the gateway's `PlatformSpend`.

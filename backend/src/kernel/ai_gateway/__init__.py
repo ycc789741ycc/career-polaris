@@ -4,6 +4,7 @@ from kernel.ai_gateway.ports import (
     CredentialStore,
     Funding,
     PlatformCredential,
+    PlatformSpend,
     ProviderCredential,
     UsageRecord,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "Estimate",
     "Funding",
     "PlatformCredential",
+    "PlatformSpend",
     "PromptTemplate",
     "ProviderCredential",
     "Result",
