@@ -3981,6 +3981,25 @@ Spend is reserved instead, then settled.
   * the global ceiling refuses a second account once the first has used it.
 
 ## Choose your AI
+**Done** (ADR 0064, migration 0050), on
+`feature/no-ticket/platform-ai-choice`. Where the build differs from the plan
+below:
+
+* No row never means the platform's key, even for an eligible account with no
+  key of its own: choosing it is when the user accepts where their evidence
+  goes. With nothing to run on, a call fails as before
+  (`ai_credential_missing`), now naming both ways in.
+* Switching resumes paused background work, as storing a new key does.
+* The quota comes from `wiring.platform_ai.PlatformSpendMeter`, which the
+  route reads beside `identity`'s view; `identity` knows nothing of the
+  meter.
+* `CostConfirm` reads who pays from the shell's status, which it refreshes
+  when it opens, rather than from each estimate: funding is decided per call,
+  as the user's current choice.
+* Copy elsewhere that says "on your key" for work already done (a résumé's
+  last-generated line, a job card) is left as it is: it may have run on
+  either.
+
 
 * **Domain.** `identity` gets an `AiSource` (`own | platform`) per account,
   in a table of its own (`identity.ai_source_choice`, RLS, migration 0050),

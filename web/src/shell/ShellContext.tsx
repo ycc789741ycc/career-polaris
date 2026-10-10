@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect } from "react";
-import type { Credential, Me } from "../api/types";
+import type { AiSource, Credential, Me } from "../api/types";
 import type { AdvisorTab, Focus, Screen } from "./navigation";
 
 /** What the sidebar and header show about the account, loaded once. */
 export interface ShellStatus {
   me: Me | null;
   credential: Credential | null;
+  /** Which key AI runs on (ADR 0064); absent until it has loaded. */
+  aiSource?: AiSource | null;
 }
 
 /** Where a navigate() lands beyond the screen. Leaving focus out keeps it. */
@@ -65,7 +67,29 @@ export function useHeading(heading: string | null): void {
   }, [heading, setHeading]);
 }
 
-/** The model a screen names in its copy: the configured one, or a stand-in. */
-export function modelName(credential: Credential | null): string {
-  return credential?.model ?? "your model";
+/** Whether the user's AI runs on CareerPolaris's key rather than their own. */
+export function isOnPlatform(status: ShellStatus): boolean {
+  return status.aiSource?.source === "platform";
+}
+
+/** Whether there is any AI to run the user's work on: their own key, or
+ * CareerPolaris's once they chose it. */
+export function hasAi(status: ShellStatus): boolean {
+  return isOnPlatform(status) || status.credential !== null;
+}
+
+/** The model a screen names in its copy: the one in use, or a stand-in. */
+export function modelName(status: ShellStatus): string {
+  if (isOnPlatform(status)) {
+    return status.aiSource?.platform_model ?? "CareerPolaris's model";
+  }
+  return status.credential?.model ?? "your model";
+}
+
+/** Who pays, as a run's copy says it: "your own key on claude-opus-5", or
+ * "CareerPolaris's AI (claude-haiku-4-5)". */
+export function chargedTo(status: ShellStatus): string {
+  return isOnPlatform(status)
+    ? `CareerPolaris's AI (${modelName(status)})`
+    : `your own key on ${modelName(status)}`;
 }

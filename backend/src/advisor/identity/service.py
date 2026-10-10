@@ -1,4 +1,4 @@
-"""Accounts, the AI credential and the usage budget.
+"""Accounts, the AI credential, which key AI runs on, and the usage budget.
 
 Other components and the composition root reach this only through
 ``advisor.identity`` (import-linter contract ``identity-public-surface``).
@@ -16,12 +16,19 @@ from advisor.identity.domain import (
     SUGGESTED_MODELS,
     Account,
     AiFunding,
+    AiSource,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
+    AiSourceRefusal,
+    AiSourceStanding,
     AiUsageBudget,
     AiUsageBudgetFilter,
     AiUsageEntry,
     AiUsageEntryFilter,
     BudgetState,
     CredentialView,
+    FederatedIdentityFilter,
+    FederatedProvider,
     IdentityUnitOfWork,
     OwnerIdentity,
     Provider,
@@ -30,11 +37,19 @@ from advisor.identity.domain import (
     ProviderCredentialFilter,
     UsageBudgetExceeded,
     billing_month_start,
+    get_choice_refusal,
+    get_source_in_use,
     requires_base_url,
 )
 from advisor.identity.google import GoogleSignIn, GoogleStart
 from advisor.identity.infra.google import GoogleEndpoints, GoogleOidc
-from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, Funding, UsageRecord
+from kernel.ai_gateway.ports import (
+    BudgetGuard,
+    CredentialStore,
+    Funding,
+    PlatformCredential,
+    UsageRecord,
+)
 from kernel.ai_gateway.ports import ProviderCredential as GatewayCredential
 from kernel.clock import utcnow
 from kernel.crypto import encrypt, last_four
@@ -42,6 +57,8 @@ from kernel.errors import (
     BudgetExceededError,
     CredentialMissingError,
     NotFoundError,
+    PlatformAiNotEligibleError,
+    PlatformAiUnavailableError,
     ValidationError,
 )
 from kernel.fetch import assert_public_url
@@ -49,6 +66,8 @@ from kernel.fetch import assert_public_url
 __all__ = [
     "SUGGESTED_MODELS",
     "AccountView",
+    "AiSource",
+    "AiSourceView",
     "AuthService",
     "BudgetView",
     "CredentialView",
@@ -77,6 +96,21 @@ class BudgetView:
     remaining_usd: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class AiSourceView:
+    """Which key AI runs on, and what the user may choose between."""
+
+    # None when there is nothing to run on: no key stored, nothing chosen.
+    source: AiSource | None
+    has_credential: bool
+    is_platform_on: bool
+    # Google has verified this account's address (ADR 0064).
+    is_eligible: bool
+    # The model the platform's key runs, shown and never chosen.
+    platform_model: str | None
+    has_accepted_platform_terms: bool
+
+
 class IdentityService(CredentialStore, BudgetGuard):
     """Accounts, the AI credential, and the budget that guards it.
 
@@ -86,9 +120,17 @@ class IdentityService(CredentialStore, BudgetGuard):
     ports, which is why the gateway needs no import of this module.
     """
 
-    def __init__(self, uow: IdentityUnitOfWork, *, default_monthly_cap_usd: Decimal) -> None:
+    def __init__(
+        self,
+        uow: IdentityUnitOfWork,
+        *,
+        default_monthly_cap_usd: Decimal,
+        platform_ai_model: str | None = None,
+    ) -> None:
         self._uow = uow
         self._default_cap = default_monthly_cap_usd
+        # None while the platform's key is off.
+        self._platform_model = platform_ai_model
 
     # -- accounts -----------------------------------------------------------
 
@@ -158,6 +200,76 @@ class IdentityService(CredentialStore, BudgetGuard):
         async with self._uow.for_owner(owner_id) as mine:
             await _delete_credential(mine)
 
+    # -- which key AI runs on (ADR 0064) -------------------------------------
+
+    async def ai_source(self, owner_id: uuid.UUID) -> AiSourceView:
+        async with self._uow.for_owner(owner_id) as mine:
+            choice = await _ai_source(mine)
+            standing = await self._standing(mine, owner_id)
+        return self._ai_source_view(choice, standing)
+
+    async def set_ai_source(
+        self, owner_id: uuid.UUID, *, source: str, accept_platform_terms: bool
+    ) -> AiSourceView:
+        """Switch to the user's own key or the platform's.
+
+        Switching is free and takes effect from the next call. The first
+        switch to the platform's key needs the user to accept that their
+        evidence goes to the operator's provider; after that, never again.
+        Like a new key, a switch is a reason to try paused work again.
+        """
+        try:
+            chosen = AiSource(source)
+        except ValueError as exc:
+            raise ValidationError(f"unknown AI source {source!r}", source=source) from exc
+        now = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            choice = await _ai_source(mine)
+            standing = await self._standing(mine, owner_id)
+            has_accepted = accept_platform_terms or (
+                choice is not None and choice.platform_terms_accepted_at is not None
+            )
+            refusal = get_choice_refusal(chosen, standing, has_accepted_terms=has_accepted)
+            if refusal is not None:
+                raise _refusal_error(refusal)
+            accepted_at = now if accept_platform_terms and chosen is AiSource.PLATFORM else None
+            if choice is None:
+                choice = AiSourceChoice.create_choice(owner_id, chosen)
+                choice.update_source(chosen, terms_accepted_at=accepted_at)
+                await mine.ai_sources.create(choice)
+            else:
+                choice.update_source(chosen, terms_accepted_at=accepted_at)
+                await mine.ai_sources.update(choice)
+            account = await mine.accounts.get(owner_id)
+            if account is not None:
+                account.resume_background_jobs()
+                await mine.accounts.update(account)
+        return self._ai_source_view(choice, standing)
+
+    async def _standing(self, mine: OwnerIdentity, owner_id: uuid.UUID) -> AiSourceStanding:
+        google = await mine.federated.get_count(
+            FederatedIdentityFilter(provider=str(FederatedProvider.GOOGLE), account_id=owner_id)
+        )
+        return AiSourceStanding(
+            has_credential=await _credential(mine) is not None,
+            is_platform_on=self._platform_model is not None,
+            is_eligible=google > 0,
+        )
+
+    def _ai_source_view(
+        self, choice: AiSourceChoice | None, standing: AiSourceStanding
+    ) -> AiSourceView:
+        return AiSourceView(
+            source=get_source_in_use(choice, standing),
+            has_credential=standing.has_credential,
+            is_platform_on=standing.is_platform_on,
+            is_eligible=standing.is_eligible,
+            platform_model=self._platform_model,
+            has_accepted_platform_terms=(
+                choice is not None and choice.platform_terms_accepted_at is not None
+            ),
+        )
+
     # -- budget -------------------------------------------------------------
 
     async def budget(self, owner_id: uuid.UUID, *, today: date | None = None) -> BudgetView:
@@ -197,12 +309,29 @@ class IdentityService(CredentialStore, BudgetGuard):
 
     # -- kernel.ai_gateway ports -------------------------------------------
 
-    async def load(self, owner_id: uuid.UUID) -> GatewayCredential:
+    async def load(self, owner_id: uuid.UUID) -> GatewayCredential | PlatformCredential:
+        """The key this call runs on, as the user chose it.
+
+        Eligibility is checked on every call, not only when the user chose:
+        an account whose Google identity is gone no longer runs on the
+        platform's key.
+        """
         async with self._uow.for_owner(owner_id) as mine:
+            choice = await _ai_source(mine)
             credential = await _credential(mine)
+            standing = await self._standing(mine, owner_id)
+        source = get_source_in_use(choice, standing)
+        if source is AiSource.PLATFORM:
+            if not standing.is_eligible:
+                raise PlatformAiNotEligibleError(
+                    "CareerPolaris's AI is for accounts signed in with Google; "
+                    "use your own key instead",
+                    owner_id=str(owner_id),
+                )
+            return PlatformCredential(owner_id=owner_id)
         if credential is None:
             raise CredentialMissingError(
-                "no AI provider is configured; analysis runs on your own model",
+                "no AI provider is configured; add your own key or use CareerPolaris's AI",
                 owner_id=str(owner_id),
             )
         return GatewayCredential(
@@ -279,6 +408,27 @@ async def _credential(mine: OwnerIdentity) -> ProviderCredential | None:
 async def _delete_credential(mine: OwnerIdentity) -> None:
     for credential in await mine.credentials.get_list(ProviderCredentialFilter()):
         await mine.credentials.delete(credential.id)
+
+
+async def _ai_source(mine: OwnerIdentity) -> AiSourceChoice | None:
+    choices = await mine.ai_sources.get_list(AiSourceChoiceFilter(), page_size=1)
+    return choices[0] if choices else None
+
+
+def _refusal_error(refusal: AiSourceRefusal) -> Exception:
+    match refusal:
+        case AiSourceRefusal.NO_CREDENTIAL:
+            return ValidationError("add a key of your own before switching to it")
+        case AiSourceRefusal.PLATFORM_OFF:
+            return PlatformAiUnavailableError("CareerPolaris's AI is switched off")
+        case AiSourceRefusal.NOT_ELIGIBLE:
+            return PlatformAiNotEligibleError(
+                "CareerPolaris's AI is for accounts signed in with Google"
+            )
+        case AiSourceRefusal.TERMS_NOT_ACCEPTED:
+            return ValidationError(
+                "accept that your evidence goes to CareerPolaris's AI provider to use it"
+            )
 
 
 async def _budget(mine: OwnerIdentity) -> AiUsageBudget | None:

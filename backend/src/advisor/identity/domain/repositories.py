@@ -27,6 +27,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from advisor.identity.domain.account import Account
+from advisor.identity.domain.ai_source import AiSourceChoice
 from advisor.identity.domain.budget import AiFunding, AiUsageBudget, AiUsageEntry
 from advisor.identity.domain.credential import ProviderCredential
 from advisor.identity.domain.events import IdentityEvent
@@ -117,6 +118,14 @@ class AiUsageBudgetRepository(Repository[AiUsageBudget, AiUsageBudgetFilter], Pr
 
 
 @dataclass(frozen=True, slots=True)
+class AiSourceChoiceFilter:
+    """One choice per user; the owner scope is the only filter."""
+
+
+class AiSourceChoiceRepository(Repository[AiSourceChoice, AiSourceChoiceFilter], Protocol): ...
+
+
+@dataclass(frozen=True, slots=True)
 class AiUsageEntryFilter:
     occurred_since: datetime | None = None
     funding: AiFunding | None = None
@@ -143,6 +152,7 @@ class OwnerIdentity(Authentication, Protocol):
     credentials: ProviderCredentialRepository
     budgets: AiUsageBudgetRepository
     usage: AiUsageEntryRepository
+    ai_sources: AiSourceChoiceRepository
 
     def record(self, event: IdentityEvent) -> None: ...
 

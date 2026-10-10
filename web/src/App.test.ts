@@ -17,10 +17,11 @@ describe("shell status", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("reads the account and the credential, and nothing about the analysis", async () => {
+  it("reads the account, the credential and which AI runs, and nothing about the analysis", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/ai-credential")) return json(null);
+      if (url.endsWith("/ai-source")) return json(null);
       return json({ id: "u1", email: "maya@example.com" });
     });
     vi.stubGlobal("fetch", fetch);
@@ -30,6 +31,7 @@ describe("shell status", () => {
     expect(status).toEqual({
       me: { id: "u1", email: "maya@example.com" },
       credential: null,
+      aiSource: null,
     });
     const urls = fetch.mock.calls.map(([input]) => String(input));
     expect(urls.some((url) => /assessments|questions/.test(url))).toBe(false);

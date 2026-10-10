@@ -171,6 +171,23 @@ class AiUsageBudget(Base, OwnedMixin, TimestampMixin):
     monthly_cap_usd: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
 
 
+class AiSourceChoice(Base, OwnedMixin, TimestampMixin):
+    """Which key a user's AI runs on, once they have chosen (ADR 0064)."""
+
+    __tablename__ = "ai_source_choice"
+    __table_args__ = (
+        UniqueConstraint("owner_id", name="uq_ai_source_choice_owner_id"),
+        CheckConstraint("source IN ('own', 'platform')", name="source"),
+        {"schema": "identity"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    platform_terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class AiUsageLedger(Base, OwnedMixin):
     """One row per AI call, including calls whose output we then rejected —
     the provider billed for those too."""

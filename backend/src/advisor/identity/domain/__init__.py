@@ -1,4 +1,12 @@
 from advisor.identity.domain.account import Account
+from advisor.identity.domain.ai_source import (
+    AiSource,
+    AiSourceChoice,
+    AiSourceRefusal,
+    AiSourceStanding,
+    get_choice_refusal,
+    get_source_in_use,
+)
 from advisor.identity.domain.budget import (
     AiFunding,
     AiUsageBudget,
@@ -47,6 +55,8 @@ from advisor.identity.domain.password import (
 from advisor.identity.domain.repositories import (
     AccountFilter,
     AccountRepository,
+    AiSourceChoiceFilter,
+    AiSourceChoiceRepository,
     AiUsageBudgetFilter,
     AiUsageBudgetRepository,
     AiUsageEntryFilter,
@@ -87,6 +97,12 @@ __all__ = [
     "AccountFilter",
     "AccountRepository",
     "AiFunding",
+    "AiSource",
+    "AiSourceChoice",
+    "AiSourceChoiceFilter",
+    "AiSourceChoiceRepository",
+    "AiSourceRefusal",
+    "AiSourceStanding",
     "AiUsageBudget",
     "AiUsageBudgetFilter",
     "AiUsageBudgetRepository",
@@ -131,6 +147,8 @@ __all__ = [
     "assert_acceptable_claims",
     "billing_month_start",
     "digest",
+    "get_choice_refusal",
+    "get_source_in_use",
     "new_refresh_token",
     "normalize_email",
     "refresh_token_expiry",

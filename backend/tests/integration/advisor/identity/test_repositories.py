@@ -17,6 +17,9 @@ from sqlalchemy import text
 from advisor.identity.domain import (
     AccountFilter,
     AiFunding,
+    AiSource,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
     AiUsageEntry,
     AiUsageEntryFilter,
     CredentialStatus,
@@ -188,6 +191,24 @@ async def test_the_months_spend_sums_by_whose_key_paid(
         own = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.OWN))
         platform = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.PLATFORM))
     assert (own, platform) == (Decimal("0.25"), Decimal("1.50"))
+
+
+async def test_a_users_choice_of_key_is_theirs_alone(
+    database: Database, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    choice = AiSourceChoice.create_choice(account, AiSource.OWN)
+    choice.update_source(AiSource.PLATFORM, terms_accepted_at=datetime.now(UTC))
+    async with uow.for_owner(account) as mine:
+        await mine.ai_sources.create(choice)
+
+    async with uow.for_owner(account) as mine:
+        [stored] = await mine.ai_sources.get_list(AiSourceChoiceFilter())
+    async with uow.for_owner(other_account) as theirs:
+        assert await theirs.ai_sources.get_count(AiSourceChoiceFilter()) == 0
+
+    assert stored.source is AiSource.PLATFORM
+    assert stored.platform_terms_accepted_at is not None
 
 
 async def test_identity_events_reach_the_outbox_as_the_dispatcher_reads_them(

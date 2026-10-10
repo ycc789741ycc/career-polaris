@@ -70,6 +70,31 @@ describe("sidebar", () => {
     expect(screen.getByText("claude-opus-5")).toBeInTheDocument();
   });
 
+  it("names CareerPolaris's AI when the work runs on it, with no key of one's own", () => {
+    render(
+      <Sidebar
+        current="sources"
+        status={status({
+          credential: null,
+          aiSource: {
+            source: "platform",
+            has_credential: false,
+            is_platform_on: true,
+            is_eligible: true,
+            platform_model: "claude-haiku-4-5",
+            has_accepted_platform_terms: true,
+            platform_quota: null,
+          },
+        })}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText("needs a key")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("claude-haiku-4-5 · CareerPolaris AI"),
+    ).toBeInTheDocument();
+  });
+
   it("shows no profile confidence: it belongs to Strengths now", () => {
     render(
       <Sidebar current="sources" status={status()} onNavigate={() => {}} />,

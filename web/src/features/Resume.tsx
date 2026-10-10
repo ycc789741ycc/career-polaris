@@ -30,7 +30,7 @@ import {
   VerdictBadge,
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
-import { modelName, useShell } from "../shell/ShellContext";
+import { hasAi, modelName, useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -106,7 +106,7 @@ export function Resume({
   const flash = useToast();
   // A job just started: the shell polls it, and the tab shows its card.
   const { refresh: refreshActivity } = useActivity();
-  const model = modelName(status.credential);
+  const model = modelName(status);
   const ref: Ref = target.ref;
 
   // Opens with this Target's résumé, if it has one.
@@ -339,7 +339,7 @@ export function Resume({
     label: string,
     regenerates: string | null = null,
   ) {
-    if (!status.credential) {
+    if (!hasAi(status)) {
       flash("Writing runs on your model — add a key.");
       navigate("model");
       return;
@@ -368,7 +368,7 @@ export function Resume({
       );
       return;
     }
-    if (!status.credential) {
+    if (!hasAi(status)) {
       flash("Sections are filled on your model — add a key.");
       navigate("model");
       return;
@@ -965,6 +965,7 @@ export function Resume({
                   Try again
                 </Button>
                 {(resume.error?.code?.startsWith("ai_credential") ||
+                  resume.error?.code?.startsWith("ai_platform") ||
                   resume.error?.code === "ai_budget_exceeded") && (
                   <Button variant="ghost" onClick={() => navigate("model")}>
                     Open AI &amp; model

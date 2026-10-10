@@ -141,7 +141,11 @@ def build(settings: Settings | None = None) -> Container:
     object_store = ObjectStore(settings)
 
     default_cap = Decimal(str(settings.ai_default_monthly_budget_usd))
-    identity = create_identity_service(database, default_monthly_cap_usd=default_cap)
+    identity = create_identity_service(
+        database,
+        default_monthly_cap_usd=default_cap,
+        platform_ai_model=settings.platform_ai_model if settings.platform_ai_enabled else None,
+    )
 
     # Only the api signs tokens; the worker never does, so the secret is
     # resolved lazily rather than at wiring time.

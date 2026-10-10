@@ -10,6 +10,8 @@ from __future__ import annotations
 from advisor.identity.domain import (
     Account,
     AiFunding,
+    AiSource,
+    AiSourceChoice,
     AiUsageBudget,
     AiUsageEntry,
     CredentialStatus,
@@ -162,6 +164,28 @@ def apply_credential(row: models.ProviderCredential, entity: ProviderCredential)
     row.status = str(entity.status)
     row.last_error = entity.last_error
     row.last_verified_at = entity.last_verified_at
+
+
+def ai_source(row: models.AiSourceChoice) -> AiSourceChoice:
+    return AiSourceChoice(
+        id=row.id,
+        owner_id=row.owner_id,
+        source=AiSource(row.source),
+        platform_terms_accepted_at=row.platform_terms_accepted_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def ai_source_row(entity: AiSourceChoice) -> models.AiSourceChoice:
+    row = models.AiSourceChoice(id=entity.id, owner_id=entity.owner_id)
+    apply_ai_source(row, entity)
+    return row
+
+
+def apply_ai_source(row: models.AiSourceChoice, entity: AiSourceChoice) -> None:
+    row.source = str(entity.source)
+    row.platform_terms_accepted_at = entity.platform_terms_accepted_at
 
 
 def budget(row: models.AiUsageBudget) -> AiUsageBudget:

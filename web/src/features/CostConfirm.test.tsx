@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Activity } from "../api/types";
 import { ActivityContext } from "../shell/activity";
 import { AWAY, ONLINE } from "../test/activity";
-import { CostConfirm } from "./CostConfirm";
+import { CostConfirm, getPayerLine } from "./CostConfirm";
 
 function activity(processing: Activity["processing"]): Activity {
   return {
@@ -47,5 +47,48 @@ describe("the cost estimate", () => {
     renderWith(ONLINE);
 
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
+
+describe("who pays", () => {
+  it("names CareerPolaris's AI and what is left of the month", () => {
+    expect(
+      getPayerLine({
+        me: null,
+        credential: null,
+        aiSource: {
+          source: "platform",
+          has_credential: false,
+          is_platform_on: true,
+          is_eligible: true,
+          platform_model: "claude-haiku-4-5",
+          has_accepted_platform_terms: true,
+          platform_quota: {
+            allowed_usd: "2",
+            spent_usd: "0.75",
+            remaining_usd: "1.25",
+          },
+        },
+      }),
+    ).toBe(
+      "Runs on CareerPolaris's AI (claude-haiku-4-5) · $1.25 of $2.00 left this month.",
+    );
+  });
+
+  it("names the user's own key and model", () => {
+    expect(
+      getPayerLine({
+        me: null,
+        credential: {
+          provider: "anthropic",
+          model: "claude-opus-5",
+          base_url: null,
+          last_four: "abcd",
+          status: "active",
+          last_error: null,
+        },
+        aiSource: null,
+      }),
+    ).toBe("Runs on your own key on claude-opus-5.");
   });
 });
