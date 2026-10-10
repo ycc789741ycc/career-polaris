@@ -224,6 +224,7 @@ def usage(row: models.AiUsageLedger) -> AiUsageEntry:
         estimated_cost_usd=row.estimated_cost_usd,
         is_estimated=row.is_estimated,
         funding=AiFunding(row.funding),
+        is_rate_published=row.is_rate_published,
     )
 
 
@@ -246,3 +247,4 @@ def apply_usage(row: models.AiUsageLedger, entity: AiUsageEntry) -> None:
     row.estimated_cost_usd = entity.estimated_cost_usd
     row.is_estimated = entity.is_estimated
     row.funding = str(entity.funding)
+    row.is_rate_published = entity.is_rate_published

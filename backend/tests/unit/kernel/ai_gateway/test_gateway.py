@@ -77,12 +77,19 @@ class StubBudget(BudgetGuard):
         self.recorded: list[UsageRecord] = []
         self.checked: list[Decimal] = []
         self.fundings: list[Funding] = []
+        self.priced: list[bool] = []
 
     async def check(
-        self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding
+        self,
+        owner_id: uuid.UUID,
+        estimated_cost_usd: Decimal,
+        *,
+        funding: Funding,
+        is_priced: bool = True,
     ) -> None:
         self.checked.append(estimated_cost_usd)
         self.fundings.append(funding)
+        self.priced.append(is_priced)
         if self.cap is not None and estimated_cost_usd > self.cap:
             raise BudgetExceededError("monthly cap would be exceeded", cap=str(self.cap))
 
@@ -850,3 +857,44 @@ async def test_the_users_own_key_holds_nothing_on_the_platforms_meter(
     )
 
     assert spend.reserved == [] and spend.spent == [] and spend.released == 0
+
+
+# -- a model with no published rate -------------------------------------------
+
+
+async def test_a_model_with_no_published_rate_is_recorded_and_checked_as_unpriced(
+    clean_env: None, stub_provider
+) -> None:
+    stub_provider(['{"name": "x", "score": 1}'])
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials._credential = ProviderCredential(
+        provider="stub",
+        model="llama-3.3-70b",
+        base_url="https://llm.example.com",
+        encrypted_api_key=encrypt("sk-test-key", context=str(OWNER)),
+        owner_id=OWNER,
+    )
+    budget = StubBudget()
+    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=budget)
+
+    await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert budget.priced == [False]
+    [usage] = budget.recorded
+    assert usage.is_rate_published is False
+
+
+async def test_a_priced_model_is_recorded_as_priced(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(['{"name": "x", "score": 1}'])
+
+    await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert budget.priced == [True]
+    assert budget.recorded[0].is_rate_published is True

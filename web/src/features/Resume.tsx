@@ -668,7 +668,7 @@ export function Resume({
           <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
           , charged to your own provider.
           {estimate.cost.rate_is_published === false &&
-            " We have no published price for that model, so this is a deliberately high guess."}
+            " We have no published price for that model, so this is a high guess, and it won't count toward your monthly cap."}
         </CostConfirm>
       )}
 

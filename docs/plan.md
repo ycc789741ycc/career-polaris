@@ -4117,3 +4117,13 @@ price exactly".
   `-preview` ids its API takes. A unit test holds that every suggestion is
   priced.
 
+## Don't hold a guess against the user's cap
+**Done** (no ADR, migration 0052), on
+`feature/no-ticket/uncapped-unpriced-models`. A call on a model with no
+published rate was recorded at the $15 / $75 fallback, and the user's monthly
+cap summed it, so the cap ran out about ten times too early and paused their
+work. The ledger now records `is_rate_published`; the cap counts only priced
+rows, and the cap check passes an unpriced call. The estimate still shows the
+high guess, now saying it won't count toward the cap, and AI settings says the
+same under the monthly budget. Rows stored before are taken as priced.
+

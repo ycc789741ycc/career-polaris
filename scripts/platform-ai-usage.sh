@@ -69,12 +69,13 @@ SELECT left(encode(digest(owner_id::text, 'sha256'), 'hex'), 12) AS account,
 
 \echo
 \echo '== Spend by task this month, by whose key paid =='
-SELECT task, funding, count(*) AS calls,
+\echo '   priced = false: no published rate, so spent_usd is the high fallback guess.'
+SELECT task, funding, is_rate_published AS priced, count(*) AS calls,
        round(sum(cost_usd), 4) AS spent_usd,
        round(avg(cost_usd), 5) AS mean_call_usd
   FROM identity.ai_usage_ledger
  WHERE occurred_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
- GROUP BY task, funding
+ GROUP BY task, funding, is_rate_published
  ORDER BY sum(cost_usd) DESC;
 
 \echo
@@ -89,6 +90,7 @@ SELECT template_version,
        round((percentile_cont(0.5) WITHIN GROUP (ORDER BY input_tokens::numeric / estimated_input_tokens))::numeric, 2) AS median_input_ratio
   FROM identity.ai_usage_ledger
  WHERE NOT is_estimated
+   AND is_rate_published
    AND estimated_cost_usd > 0
    AND estimated_input_tokens > 0
    AND occurred_at >= now() - interval '30 days'

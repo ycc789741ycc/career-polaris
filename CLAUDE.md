@@ -969,3 +969,11 @@ under `epic/no-ticket/platform-ai`:
   time. A unit test holds that every suggested model has a published rate;
   Google's suggestions are the API's ids, `gemini-3-pro-preview` and
   `gemini-3-flash-preview`.
+- **A model we can't price doesn't count toward the user's cap** (no ADR).
+  The ledger records `is_rate_published` (migration 0052); when it is false,
+  `cost_usd` is the high fallback guess. `IdentityService._budget_state` sums
+  only own-key, priced rows, and `BudgetGuard.check(..., is_priced=False)`
+  never refuses, so a guess never pauses anyone's work. The platform key is
+  unaffected: its model is always priced. AI settings and the unpriced-estimate
+  copy say so; `make platform-ai-usage` shows the column and leaves unpriced
+  rows out of the calibration.

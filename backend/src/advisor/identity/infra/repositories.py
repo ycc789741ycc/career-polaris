@@ -300,6 +300,8 @@ class SqlAlchemyAiUsageEntryRepository(
             conditions.append(models.AiUsageLedger.occurred_at >= filter.occurred_since)
         if filter.funding is not None:
             conditions.append(models.AiUsageLedger.funding == str(filter.funding))
+        if filter.is_rate_published is not None:
+            conditions.append(models.AiUsageLedger.is_rate_published.is_(filter.is_rate_published))
         return conditions
 
     async def total_cost(self, filter: AiUsageEntryFilter) -> Decimal:

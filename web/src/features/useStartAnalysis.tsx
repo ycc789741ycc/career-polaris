@@ -67,8 +67,8 @@ export function useStartAnalysis({
       {estimate.rate_is_published === false && (
         <>
           {" "}
-          We have no published price for that model, so this is a deliberately
-          high guess.
+          We have no published price for that model, so this is a high guess,
+          and it won&apos;t count toward your monthly cap.
         </>
       )}
     </CostConfirm>
