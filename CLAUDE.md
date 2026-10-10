@@ -121,7 +121,13 @@ compose network and assumes infra is up and migrated — it tells you to run
 into a test target. `scan` covers Python dependencies, npm dependencies, and the
 prod images themselves. It hands each image to Trivy as a `docker save` stream,
 rather than mounting the Docker socket, which would give the scanner root on the
-host. Between pushes, Dependabot (`.github/dependabot.yml`) opens security
+host. It audits only what ships (`uv export --no-dev`, `npm audit --omit=dev`).
+Because advisory databases move daily, CI's scan blocks only a version tag and
+a change to what it reads (`.github/workflows/scan-gate.sh`); elsewhere a
+finding is a warning, and the daily `scan.yml` on master opens one issue for it
+(ADR 0063). A fix nobody can take yet is excepted with a reason and an expiry,
+at most 30 days, in `.trivyignore.yaml` or `backend/pip-audit-ignore.txt`.
+Between pushes, Dependabot (`.github/dependabot.yml`) opens security
 updates as advisories land and weekly grouped bumps, each held a week
 (`cooldown`); CI gates its PRs like any other. It cannot see images pinned in
 the Makefile, which stay manual. It never rebases on its own (comment

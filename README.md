@@ -143,6 +143,12 @@ make typecheck
 make scan                        # Python and npm dependencies, plus the prod images (Trivy)
 ```
 
+In CI the scan blocks a release and any change to dependencies, Dockerfiles or
+the Makefile; on other changes a finding is only a warning, and the daily scan
+of master (`.github/workflows/scan.yml`) opens an issue for it. A fix that
+cannot be taken yet is excepted for at most 30 days in `.trivyignore.yaml` or
+`backend/pip-audit-ignore.txt` (`docs/decisions/0063`).
+
 Between pushes, Dependabot watches the same dependencies
 (`.github/dependabot.yml`): a security update as soon as an advisory names one
 we lock, and once a week grouped minor and patch bumps for npm, uv, the base

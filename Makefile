@@ -62,6 +62,9 @@ PROXY_IMAGE        := careerpolaris-proxy:prod
 BACKEND_TEST_IMAGE := careerpolaris-backend:test
 WEB_TEST_IMAGE     := careerpolaris-web:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
+# Time-boxed exceptions to the scan (docs/decisions/0063).
+TRIVY_IGNORE       := .trivyignore.yaml
+PIP_AUDIT_IGNORE   := backend/pip-audit-ignore.txt
 
 # Local's source-writing tools run as the invoking user, so the files they
 # rewrite stay owned by that user on every host.
@@ -266,23 +269,53 @@ typecheck:
 # The images reach Trivy as a `docker save` stream on stdin rather than by
 # mounting the Docker socket, which would hand the scanner root on the host.
 #
+# pip-audit and npm audit read what production installs, not the test image's
+# whole environment: pytest, Vite and ESLint never ship, so an advisory against
+# one of them must not block a release. pip-audit audits the lockfile's runtime
+# set (`uv export --no-dev`), hashed, so it resolves nothing itself.
+#
 # pip-audit runs without --strict on purpose: torch is installed from the
 # CPU-only wheel index, and its local version (`2.14.0+cpu`) has no PyPI entry
 # to look up. Coverage for it comes from the image scan below, which reads the
 # installed packages directly — so nothing is unscanned, and the strict flag is
 # not quietly hiding a real advisory.
+#
+# A finding that cannot be fixed yet is excepted, with a reason and an expiry
+# date, in .trivyignore.yaml (Trivy) or backend/pip-audit-ignore.txt
+# (pip-audit); npm audit has no exceptions, so a transitive fix is forced with
+# `overrides` in web/package.json. An expired exception blocks again
+# (docs/decisions/0063). The ignore file reaches Trivy as a variable, so
+# nothing is mounted.
+#
+# Whether a failure here blocks a pull request is CI's decision, not this
+# target's (.github/workflows/scan-gate.sh): it always exits non-zero on a
+# finding.
 scan:
 	@for image in $(PROD_IMAGES); do \
 	  docker image inspect $$image >/dev/null 2>&1 || { \
 	    echo "ERROR: $$image is missing; scan covers the prod images."; \
 	    echo "  Run make build-app in a checkout whose .machine is ci (CI does)."; exit 1; }; \
 	done
-	docker run --rm $(BACKEND_TEST_IMAGE) pip-audit
-	docker run --rm $(WEB_TEST_IMAGE) npm audit --audit-level=high
+	@today=$$(date -u +%F); flags=""; \
+	while read -r id expires reason; do \
+	  case "$$id" in ''|\#*) continue ;; esac; \
+	  [[ $$expires =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$$ && -n $$reason ]] || { \
+	    echo "ERROR: $(PIP_AUDIT_IGNORE): $$id needs an expiry date (YYYY-MM-DD) and a reason."; exit 1; }; \
+	  if [[ $$expires < $$today ]]; then \
+	    echo "pip-audit: the exception for $$id expired on $$expires and is enforced again."; \
+	  else flags="$$flags --ignore-vuln $$id"; fi; \
+	done < $(PIP_AUDIT_IGNORE); \
+	echo "pip-audit: production dependencies"; \
+	docker run --rm -e PIP_AUDIT_FLAGS="$$flags" $(BACKEND_TEST_IMAGE) sh -c \
+	  'uv export --frozen --no-dev --no-emit-project --format requirements-txt --quiet > /tmp/requirements.txt \
+	   && pip-audit --disable-pip --require-hashes -r /tmp/requirements.txt $$PIP_AUDIT_FLAGS'
+	docker run --rm $(WEB_TEST_IMAGE) npm audit --omit=dev --audit-level=high
 	@for image in $(PROD_IMAGES); do \
 	  echo "trivy: $$image"; \
-	  docker save $$image | docker run --rm -i --entrypoint sh $(SCANNER_IMAGE) -c \
-	    'cat > /tmp/image.tar && trivy image --quiet --input /tmp/image.tar \
+	  docker save $$image | docker run --rm -i -e TRIVY_IGNORE_YAML="$$(cat $(TRIVY_IGNORE))" \
+	    --entrypoint sh $(SCANNER_IMAGE) -c \
+	    'cat > /tmp/image.tar && printf "%s\n" "$$TRIVY_IGNORE_YAML" > /tmp/ignore.yaml \
+	     && trivy image --quiet --input /tmp/image.tar --ignorefile /tmp/ignore.yaml \
 	       --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed' \
 	    || exit 1; \
 	done
