@@ -142,6 +142,9 @@ class ProviderCredential(Base, OwnedMixin, TimestampMixin):
     __tablename__ = "provider_credential"
     __table_args__ = (
         UniqueConstraint("owner_id", name="uq_provider_credential_owner_id"),
+        CheckConstraint("provider IN ('anthropic', 'openai', 'google')", name="provider"),
+        # Only an OpenAI key may name its own endpoint (ADR 0065).
+        CheckConstraint("base_url IS NULL OR provider = 'openai'", name="base_url"),
         {"schema": "identity"},
     )
 

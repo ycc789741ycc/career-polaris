@@ -282,7 +282,7 @@ The rest is unchanged:
 | Original requirements: Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
 | Original requirements: User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
 | prototype `Model.dc.html` "What runs on your key" | Follow-up questions are "written when the evidence leaves a score uncertain" | Written per gap of the target role (decision 27) |
-| prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google and any OpenAI-compatible base URL |
+| prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google, and an OpenAI key may name an OpenAI-compatible cloud's base URL; there is no self-hosted model (ADR 0065) |
 | prototype `Roles.dc.html` vs `Gaps.dc.html` | 81% fit and 160–196k on the role; 86% and 165–190k in the Advisor | Correct: role fit versus opening fit (2.2). The Advisor shows the opening's, because the Target has one. |
 
 ## 3. Proposed bounded contexts

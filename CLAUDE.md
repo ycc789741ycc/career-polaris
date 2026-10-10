@@ -948,3 +948,10 @@ under `epic/no-ticket/platform-ai`:
   gateway logs `platform_ai.spend` per settled attempt. `docs/deploy.md`
   section 7 is the runbook: a provider project of its own with a hard spend
   limit, the key on both machines, rotating it, and turning it off.
+- **No self-hosted model** (ADR 0065). A hosted service cannot reach the
+  user's machine, so the providers are Anthropic, OpenAI and Google;
+  `Provider.LOCAL` and `LocalProvider` are gone, and migration 0051 deleted
+  stored `local` credentials. Only an OpenAI key may name a base URL
+  (`accepts_base_url`), for an OpenAI-compatible cloud (Azure OpenAI, Groq,
+  Together), behind the SSRF guard; the database checks both
+  (`ck_provider_credential_provider`, `_base_url`).

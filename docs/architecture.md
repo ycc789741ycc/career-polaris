@@ -339,7 +339,7 @@ Crawled pages, uploaded PDF/DOCX files, pasted JDs, repository and ticket conten
   - Evidence ids cited by the AI must exist in *this user's* profile, or the output is rejected. This also blocks invented résumé claims.
 - **SSRF protection** (`kernel.fetch`):
   - Block private, loopback, link-local and cloud-metadata addresses, and re-check after every redirect and DNS resolution.
-  - Applies to personal-site crawling, to every source the crawler fetches, and to the **user-supplied LLM base URL**. A "Local" model therefore means an endpoint at a public URL the user controls, not one on the server's network.
+  - Applies to personal-site crawling, to every source the crawler fetches, and to the **base URL an OpenAI key may name** for an OpenAI-compatible cloud (Azure OpenAI, Groq, Together). There is no self-hosted model option: a hosted service cannot reach the user's machine ([ADR 0065](decisions/0065-there-is-no-self-hosted-model-option.md)).
 - **Auth:** the API verifies JWT signature, issuer, audience and expiry on every request. Login OAuth (Google, our own exchange in `identity`, stored in `identity.federated_identity`) and connector OAuth (handled by `profile`) are separate flows with separate token storage — they share no code path. Login OAuth keeps no Google token at all: the ID token is verified once and discarded (ADR 0008).
 
 ## 5. AI gateway (`kernel/ai_gateway`)

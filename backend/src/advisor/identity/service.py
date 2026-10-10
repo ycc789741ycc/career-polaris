@@ -36,10 +36,10 @@ from advisor.identity.domain import (
     ProviderCredentialFailed,
     ProviderCredentialFilter,
     UsageBudgetExceeded,
+    accepts_base_url,
     billing_month_start,
     get_choice_refusal,
     get_source_in_use,
-    requires_base_url,
 )
 from advisor.identity.google import GoogleSignIn, GoogleStart
 from advisor.identity.infra.google import GoogleEndpoints, GoogleOidc
@@ -162,9 +162,9 @@ class IdentityService(CredentialStore, BudgetGuard):
         if not model.strip():
             raise ValidationError("a model is required")
 
-        if requires_base_url(chosen) and not base_url:
+        if base_url and not accepts_base_url(chosen):
             raise ValidationError(
-                "a self-hosted model needs a base URL you control", provider=provider
+                "only OpenAI-compatible endpoints take a base URL", provider=provider
             )
         if base_url:
             # The same SSRF guard the gateway will apply, surfaced at save time

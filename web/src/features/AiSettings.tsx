@@ -77,7 +77,8 @@ export function AiSettings() {
         provider,
         model,
         api_key: apiKey,
-        base_url: baseUrl || null,
+        // Only an OpenAI key may name its own endpoint (ADR 0065).
+        base_url: provider === "openai" && baseUrl.trim() ? baseUrl.trim() : null,
       });
       setApiKey("");
       setSaved(true);
@@ -186,15 +187,15 @@ export function AiSettings() {
           />
         </Field>
 
-        {provider === "local" && (
+        {provider === "openai" && (
           <Field
-            label="Base URL"
-            hint="A public URL you control. A model on your own laptop is not reachable from here."
+            label="Base URL (optional)"
+            hint="Leave blank for OpenAI. For an OpenAI-compatible cloud such as Azure OpenAI, Groq or Together, at its public URL."
           >
             <input
               className="input"
               value={baseUrl}
-              placeholder="https://llm.example.com/v1"
+              placeholder="https://api.openai.com/v1"
               onChange={(event) => setBaseUrl(event.target.value)}
             />
           </Field>
