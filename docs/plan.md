@@ -4094,3 +4094,26 @@ OpenAI-compatible cloud (Azure OpenAI, Groq, Together) can still be reached.
 AI settings shows the field only for OpenAI, and the database refuses it on
 any other provider.
 
+## Price every suggested model, kept current
+**Done** (no ADR), on `feature/no-ticket/pricing-sync`. The app would not
+start with `PLATFORM_AI_MODEL=gpt-5.1`: `pricing.json` priced only Anthropic
+models, although Settings suggested OpenAI and Google ones as models "we can
+price exactly".
+
+* `make sync-pricing` reads LiteLLM's community-kept price listing for every
+  model in the table and every suggested one, taking only the provider's own
+  entry (or Google's on Vertex), never a reseller's. It is mount-free, like
+  `gen-client`, and leaves its summary in `tmp/pricing-summary.md`.
+* `.github/workflows/pricing.yml` runs it every Monday, then the unit tests
+  against the new table, and opens a pull request when a rate changed, closing
+  an older one. A rate that went free or fell by more than half is flagged. An
+  optional `PRICING_PR_TOKEN` secret lets CI run on that pull request.
+* Prices never change at run time: a third party's typo would otherwise meter
+  everyone's spend, and the api and the worker could disagree mid-call.
+* Seeded: `gpt-5.1` ($1.25 / $10 per million), `gpt-5-mini`,
+  `gemini-3-pro-preview` and `gemini-3-flash-preview`. Every Anthropic rate the
+  listing has matched ours.
+* Google's suggestions were not API ids (`gemini-3-pro`); they are now the
+  `-preview` ids its API takes. A unit test holds that every suggestion is
+  priced.
+

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
@@ -127,3 +128,137 @@ def estimate_ceiling(
         cost_usd=cost_of(model, input_tokens=input_tokens, output_tokens=output_tokens),
         rate_is_published=rate.is_published,
     )
+
+
+# -- keeping the table current (make sync-pricing) ------------------------------
+
+# Where a listing's rate for one of our models may be, in order: the provider's
+# own id, then Google's under its API's prefix, then Google's on Vertex, which
+# Google prices the same. Resellers' entries (azure/, deepinfra/, …) are never
+# read: their prices are their own.
+_LISTING_PROVIDERS = frozenset(
+    {"anthropic", "openai", "gemini", "vertex_ai", "vertex_ai-language-models"}
+)
+_LISTING_KEYS = ("{model}", "gemini/{model}", "vertex_ai/{model}")
+_PER_MILLION = Decimal(1_000_000)
+# A listed rate that falls by more than this share is called out for review.
+SUSPICIOUS_DROP = Decimal("0.5")
+
+
+@dataclass(frozen=True, slots=True)
+class RateChange:
+    """One model's rate before and after a sync."""
+
+    model: str
+    old: Rate | None
+    new: Rate
+
+    @property
+    def is_suspicious(self) -> bool:
+        """Free, or more than half off: worth a person's look before it
+        meters anyone's spend."""
+        if self.new.input_per_mtok <= 0 or self.new.output_per_mtok <= 0:
+            return True
+        if self.old is None:
+            return False
+        return (
+            self.new.input_per_mtok < self.old.input_per_mtok * SUSPICIOUS_DROP
+            or self.new.output_per_mtok < self.old.output_per_mtok * SUSPICIOUS_DROP
+        )
+
+
+def get_listed_rate(listing: Mapping[str, object], model: str) -> Rate | None:
+    """``model``'s rate in a LiteLLM price listing, per million tokens, or
+    None when the listing does not have it from the provider itself."""
+    for pattern in _LISTING_KEYS:
+        entry = listing.get(pattern.format(model=model))
+        if not isinstance(entry, Mapping):
+            continue
+        if entry.get("litellm_provider") not in _LISTING_PROVIDERS:
+            continue
+        cost_in = entry.get("input_cost_per_token")
+        cost_out = entry.get("output_cost_per_token")
+        if not isinstance(cost_in, int | float) or not isinstance(cost_out, int | float):
+            continue
+        return Rate(
+            input_per_mtok=_per_million(cost_in),
+            output_per_mtok=_per_million(cost_out),
+            is_published=True,
+        )
+    return None
+
+
+def get_synced_table(
+    table: Mapping[str, object], listing: Mapping[str, object], also: Iterable[str] = ()
+) -> tuple[dict[str, object], list[RateChange], list[str]]:
+    """The price table with every model's rate taken from ``listing``.
+
+    Covers the models already in the table and ``also`` (the ones Settings
+    suggests). A model the listing lacks keeps its rate and is named in the
+    second list. Everything but ``models`` is kept as it was.
+    """
+    models: dict[str, dict[str, float]] = dict(table["models"])  # type: ignore[call-overload]
+    changes: list[RateChange] = []
+    missing: list[str] = []
+    for model in sorted(set(models) | set(also)):
+        listed = get_listed_rate(listing, model)
+        if listed is None:
+            missing.append(model)
+            continue
+        entry = models.get(model)
+        old = (
+            Rate(
+                input_per_mtok=Decimal(str(entry["input_per_mtok"])),
+                output_per_mtok=Decimal(str(entry["output_per_mtok"])),
+                is_published=True,
+            )
+            if entry is not None
+            else None
+        )
+        if old != listed:
+            changes.append(RateChange(model=model, old=old, new=listed))
+        models[model] = {
+            "input_per_mtok": float(listed.input_per_mtok),
+            "output_per_mtok": float(listed.output_per_mtok),
+        }
+    synced = {key: value for key, value in table.items() if key != "models"}
+    synced["models"] = dict(sorted(models.items()))
+    return synced, changes, missing
+
+
+def get_sync_summary(changes: list[RateChange], missing: list[str]) -> str:
+    """What a sync changed, as the body of the pull request that carries it."""
+    lines = ["Rates per million tokens, from LiteLLM's price listing.", ""]
+    if changes:
+        lines += ["| Model | Input | Output | |", "|---|---|---|---|"]
+        for change in changes:
+            flag = (
+                "⚠ free or more than half off: check before merging"
+                if (change.is_suspicious)
+                else ("new" if change.old is None else "")
+            )
+            lines.append(
+                f"| `{change.model}` | {_was(change.old, 'input')}{change.new.input_per_mtok:f}"
+                f" | {_was(change.old, 'output')}{change.new.output_per_mtok:f} | {flag} |"
+            )
+    else:
+        lines.append("No rate changed.")
+    if missing:
+        lines += [
+            "",
+            "Not in the listing, so left as they were: "
+            + ", ".join(f"`{model}`" for model in missing)
+            + ".",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _per_million(cost_per_token: float) -> Decimal:
+    return (Decimal(str(cost_per_token)) * _PER_MILLION).normalize()
+
+
+def _was(old: Rate | None, side: str) -> str:
+    if old is None:
+        return ""
+    value = old.input_per_mtok if side == "input" else old.output_per_mtok
+    return f"{value.normalize():f} → "

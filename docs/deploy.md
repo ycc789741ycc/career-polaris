@@ -308,7 +308,12 @@ what cap the bill: Google accounts are free to make.
    holds.
 2. **The model.** `PLATFORM_AI_MODEL` must be in
    `backend/src/kernel/ai_gateway/pricing.json`; the api and the worker refuse
-   to start otherwise. Pick a cheap one: every quota is in dollars.
+   to start otherwise. Pick a cheap one: every quota is in dollars. The weekly
+   pricing pull request (`pricing.yml`) keeps the rates current; when it
+   changes the platform model's row, check it against the provider's own
+   pricing page before merging, then release. A model the table lacks can be
+   added by running `make sync-pricing` after adding it to the suggestions,
+   or by hand.
 3. **Both machines.** Put `PLATFORM_AI_PROVIDER`, `PLATFORM_AI_MODEL` and
    `PLATFORM_AI_API_KEY` in the `.env` of the droplet (the api streams the
    résumé chat) and of the compute machine (the worker runs every job), with
