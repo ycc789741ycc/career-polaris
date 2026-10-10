@@ -7,9 +7,12 @@
 # into .machine: the prod images, nothing mounted. The dev image is never built
 # here.
 #
-# Every pull request and every push to master runs the gates. Only a version
-# tag (v1.2.3) on a commit already on master is released (ADR 0055, 0060): the
-# gates run again on the tagged commit, then the prod images for every platform
+# Every pull request and every push to master runs the gates. The scan among
+# them blocks only a version tag or a change to what it reads; the daily scan
+# on master is scan.yml (docs/decisions/0063).
+#
+# Only a version tag (v1.2.3) on a commit already on master is released
+# (ADR 0055, 0060): the gates run again on the tagged commit, then the prod images for every platform
 # the app runs on are pushed to GHCR, and release.env, naming each by digest, is
 # attached to the tag's GitHub Release for the droplet and the compute machine.
 name: CI
@@ -37,6 +40,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The commit and its first parent: scan-gate.sh compares the two.
+          fetch-depth: 2
 
       - name: Create the environment file
         # Every environment supplies the same variable names from .env.example,
@@ -68,8 +74,25 @@ jobs:
           git diff --exit-code web/src/api/schema.d.ts \
             || { echo "The API contract changed. Run 'make gen-client' and commit."; exit 1; }
 
+      # The scan blocks a version tag, and any change to what it reads; on any
+      # other change a finding is news about master, which the daily scan
+      # (scan.yml) owns, so it is reported here and does not fail the run
+      # (docs/decisions/0063).
+      - name: Decide whether the scan blocks
+        id: scan-gate
+        run: ./.github/workflows/scan-gate.sh
+
       - name: Dependency and image scan
+        id: scan
+        continue-on-error: ${{ steps.scan-gate.outputs.blocking != 'true' }}
         run: make scan
+
+      - name: Report an advisory scan finding
+        if: steps.scan.outcome == 'failure' && steps.scan-gate.outputs.blocking != 'true'
+        run: |
+          msg='make scan found a vulnerability this change does not touch. It does not block this run; the daily scan on master tracks it in an issue.'
+          echo "::warning title=Advisory scan finding::$msg"
+          { echo '### Advisory scan finding'; echo; echo "$msg"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Diagnostics on failure
         if: failure()

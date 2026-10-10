@@ -1,0 +1,90 @@
+# The daily vulnerability scan of master (docs/decisions/0063).
+#
+# Advisory databases change every day, so a vulnerability disclosed in a
+# dependency nobody touched shows up here, not on an unrelated pull request.
+# The same `make scan` CI's gates run, on the `ci` machine's prod images.
+#
+# A failure opens one issue, "Vulnerability scan failing on master", or comments
+# on the one already open; a clean run closes it. The fix is a Dependabot
+# security PR, a bump of our own, or a time-boxed exception in .trivyignore.yaml
+# or backend/pip-audit-ignore.txt. Until then releases stay blocked, because a
+# version tag's scan always blocks.
+name: Scan
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # 03:17 UTC daily, off the hour GitHub's queue peaks at
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write  # the one tracking issue
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create the environment file
+        run: ./.github/workflows/ci-env.sh
+
+      - run: make build-app
+
+      - name: Dependency and image scan
+        id: scan
+        continue-on-error: true
+        # Actions runs bash with pipefail, so make's exit status survives tee.
+        run: make scan 2>&1 | tee scan.log
+
+      - name: Open or update the tracking issue
+        if: steps.scan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='Vulnerability scan failing on master'
+          {
+            echo "The daily \`make scan\` of master failed on $(date -u +%F): $RUN_URL"
+            echo
+            echo 'Releases are blocked until it passes. Take the fix (a Dependabot security PR, or a bump of our own), or add a time-boxed exception in `.trivyignore.yaml` or `backend/pip-audit-ignore.txt` (docs/decisions/0063).'
+            echo
+            echo '<details><summary>Last 150 lines of the scan</summary>'
+            echo
+            echo '```'
+            tail -n 150 scan.log
+            echo '```'
+            echo '</details>'
+          } > body.md
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
+
+      - name: Close the tracking issue
+        if: steps.scan.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title='Vulnerability scan failing on master'
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "The daily scan passes again: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+      - name: Fail the run
+        # The issue is the notice; a red run keeps the badge and the Actions tab honest.
+        if: steps.scan.outcome == 'failure'
+        run: exit 1

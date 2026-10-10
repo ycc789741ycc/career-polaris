@@ -1,0 +1,14 @@
+# Exceptions to the Trivy image scan in `make scan` (docs/decisions/0063).
+#
+# Only for a finding that has a fix nobody can take yet: the base image has not
+# shipped it, or the upgrade breaks something. Every entry names who decided
+# and why in `statement`, and expires in at most 30 days (`expired_at`); Trivy
+# enforces it again from that date, so an exception is renewed on purpose or
+# not at all. Delete an entry as soon as its fix is in.
+#
+#   vulnerabilities:
+#     - id: CVE-2026-12345
+#       paths: ["usr/lib/x86_64-linux-gnu/libexample.so.1"]  # optional
+#       statement: libexample's fix needs bookworm 12.14; python slim lags
+#       expired_at: 2026-11-09
+vulnerabilities: []

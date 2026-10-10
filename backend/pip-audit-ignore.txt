@@ -1,0 +1,8 @@
+# Exceptions to pip-audit in `make scan` (docs/decisions/0063).
+#
+# One per line: the advisory id, the date it expires (YYYY-MM-DD, at most 30
+# days on), and why. From the day after that date it is enforced again, so an
+# exception is renewed on purpose or not at all. Delete a line as soon as its
+# fix is in. A line without a date or a reason fails the scan.
+#
+#   GHSA-xxxx-xxxx-xxxx  2026-11-09  fix needs pydantic 3, which we cannot take yet

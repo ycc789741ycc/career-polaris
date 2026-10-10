@@ -7,6 +7,7 @@
 #
 # Every PR it opens runs CI's `verify` like any other: `make scan`, lint,
 # typecheck and both test tiers. Dependabot never runs make; CI checks its work.
+# Its PRs change lockfiles, so the scan blocks them (docs/decisions/0063).
 #
 # `rebase-strategy: disabled`: master requires PRs to be up to date, so
 # rebasing every open PR on each merge would rerun `verify` on all of them.
