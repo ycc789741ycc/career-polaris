@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ScreenMeta } from "./navigation";
-import type { ShellStatus } from "./ShellContext";
+import { hasAi, modelName, type ShellStatus } from "./ShellContext";
 
 /** Kicker and title on the left; model, target and account on the right. */
 export function PageHeader({
@@ -17,7 +17,7 @@ export function PageHeader({
   onSignOut: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const model = status.credential?.model;
+  const model = hasAi(status) ? modelName(status) : null;
 
   return (
     <header className="page-header">

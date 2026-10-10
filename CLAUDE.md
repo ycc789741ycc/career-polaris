@@ -917,3 +917,16 @@ under `epic/no-ticket/platform-ai`:
   whose ceiling exceeds `PLATFORM_AI_MAX_CALL_USD` is refused
   (`ai_platform_call_too_large`). The limits are named in
   `wiring.platform_ai.PlatformSpendMeter`, the gateway's `PlatformSpend`.
+- **Choose your AI** (ADR 0064). `identity.ai_source_choice` (RLS,
+  migration 0050) records `own` or `platform` and when the user accepted
+  that their evidence goes to the operator's provider. No row means their own
+  key if they stored one: the platform's is never taken without being chosen.
+  `identity.load` returns a `PlatformCredential` for a `platform` choice and
+  checks on every call that the account has a Google identity
+  (`ai_platform_not_eligible`, 403). `GET /ai-source` says what runs, what may
+  be chosen and this month's quota; `PUT /ai-source` switches
+  (`accept_platform_terms` the first time) and resumes paused work. In the
+  SPA, AI settings has "Which AI runs your work" (`AiSourcePanel`, shown only
+  while the platform is on); the shell's `hasAi`, `modelName` and
+  `chargedTo` read `ShellStatus.aiSource`; `CostConfirm` says who pays and
+  what is left of the month; an `ai_platform_*` failure links to AI settings.

@@ -13,6 +13,9 @@ from advisor.identity.domain import (
     Account,
     AccountFilter,
     AccountRepository,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
+    AiSourceChoiceRepository,
     AiUsageBudget,
     AiUsageBudgetFilter,
     AiUsageBudgetRepository,
@@ -48,6 +51,7 @@ class Store:
     credentials: dict[uuid.UUID, ProviderCredential] = field(default_factory=dict)
     budgets: dict[uuid.UUID, AiUsageBudget] = field(default_factory=dict)
     usage: dict[uuid.UUID, AiUsageEntry] = field(default_factory=dict)
+    ai_sources: dict[uuid.UUID, AiSourceChoice] = field(default_factory=dict)
     events: list[IdentityEvent] = field(default_factory=list)
 
 
@@ -131,6 +135,14 @@ class FakeBudgets(FakeRepository[AiUsageBudget, AiUsageBudgetFilter], AiUsageBud
         return True
 
 
+class FakeAiSources(FakeRepository[AiSourceChoice, AiSourceChoiceFilter], AiSourceChoiceRepository):
+    owner_field = "owner_id"
+    noun = "AI source choice"
+
+    def matches(self, entity: AiSourceChoice, filter: AiSourceChoiceFilter) -> bool:
+        return True
+
+
 class FakeUsage(FakeRepository[AiUsageEntry, AiUsageEntryFilter], AiUsageEntryRepository):
     created_field = "occurred_at"
     updated_field = None
@@ -163,6 +175,7 @@ class FakeOwner(FakeAuthentication, OwnerIdentity):
         self.credentials = FakeCredentials(store.credentials, owner_id=owner_id)
         self.budgets = FakeBudgets(store.budgets, owner_id=owner_id)
         self.usage = FakeUsage(store.usage, owner_id=owner_id)
+        self.ai_sources = FakeAiSources(store.ai_sources, owner_id=owner_id)
         self.pending: list[IdentityEvent] = []
 
     def record(self, event: IdentityEvent) -> None:

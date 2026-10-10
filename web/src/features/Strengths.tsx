@@ -12,7 +12,12 @@ import {
   ProgressBar,
 } from "../components/ui";
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
-import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import {
+  chargedTo,
+  modelName,
+  useHeading,
+  useShell,
+} from "../shell/ShellContext";
 import { EmptyRadar, getAnalysisSteps, RunProgress } from "./RunProgress";
 import { dayLabel } from "./time";
 import { useStartAnalysis } from "./useStartAnalysis";
@@ -82,14 +87,14 @@ export function Strengths() {
           evidence.data ? `all ${evidence.data.length} facts` : "every fact"
         } from your sources. Usually takes 1–2 minutes.`}
         startedAt={activity?.analysis?.started_at ?? null}
-        steps={getAnalysisSteps(evidence.data, modelName(status.credential))}
+        steps={getAnalysisSteps(evidence.data, modelName(status))}
         previewTitle="Your skill radar will appear here"
         preview={<EmptyRadar axes={dimensions.length} />}
         previewNote="It is drawn once every dimension is scored."
         leaveCopy="The analysis keeps running if you leave this page. When it finishes, your role map starts building automatically."
         back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
-        costCopy={`Charged to your own key on ${modelName(
-          status.credential,
+        costCopy={`Charged to ${chargedTo(
+          status,
         )}, at the estimate you confirmed before it started.`}
       />
     );
@@ -220,9 +225,7 @@ export function Strengths() {
           <div className="panel panel-column">
             {active && (
               <div>
-                <Eyebrow>
-                  Evidence · cited by {modelName(status.credential)}
-                </Eyebrow>
+                <Eyebrow>Evidence · cited by {modelName(status)}</Eyebrow>
                 <h3 style={{ fontSize: 25, margin: "10px 0 4px" }}>
                   {active.name}
                 </h3>

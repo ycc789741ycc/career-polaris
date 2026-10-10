@@ -15,7 +15,7 @@ import {
   Loading,
   PillToggle,
 } from "../components/ui";
-import { modelName, useShell } from "../shell/ShellContext";
+import { hasAi, modelName, useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -48,7 +48,7 @@ export function FillTheGap({
   const flash = useToast();
   // A job just started: the shell polls it, and the tab shows its card.
   const { refresh: refreshActivity } = useActivity();
-  const model = modelName(status.credential);
+  const model = modelName(status);
   const [set, setSet] = useState<QuestionSet | null | undefined>(undefined);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [writeCost, setWriteCost] = useState<PlanEstimate | null>(null);
@@ -111,7 +111,7 @@ export function FillTheGap({
 
   const price = () =>
     run(async () => {
-      if (!status.credential) {
+      if (!hasAi(status)) {
         flash("Questions are written on your model — add a key.");
         navigate("model");
         return;

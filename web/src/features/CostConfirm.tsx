@@ -1,10 +1,17 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Button } from "../components/ui";
 import { AWAY_NOTICE, isProcessingAway, useActivity } from "../shell/activity";
+import {
+  chargedTo,
+  isOnPlatform,
+  type ShellStatus,
+  useShell,
+} from "../shell/ShellContext";
 
 /**
- * "Before we spend anything": the estimate for a run on the user's own key,
- * and nothing happens until they say yes (domain model 2.10). While the
+ * "Before we spend anything": the estimate for a run, and nothing happens
+ * until the user says yes (domain model 2.10). It says whose key pays, and on
+ * CareerPolaris's, what is left of this month's quota (ADR 0064). While the
  * machine that runs the work is away, it says so: the run is queued, and
  * starts when it is back (ADR 0052).
  */
@@ -20,6 +27,11 @@ export function CostConfirm({
   onCancel: () => void;
 }) {
   const { activity } = useActivity();
+  const { status, refresh } = useShell();
+  // The quota moves with every run, so read it again when asked to confirm.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   return (
     <div
       className="callout"
@@ -33,6 +45,11 @@ export function CostConfirm({
       <p className="callout-note" style={{ fontSize: 14, lineHeight: 1.6 }}>
         {children}
       </p>
+      {status.aiSource?.source && (
+        <p className="callout-note" style={{ fontSize: 13.5 }}>
+          {getPayerLine(status)}
+        </p>
+      )}
       {isProcessingAway(activity) && (
         <p className="callout-note" role="note" style={{ fontSize: 14 }}>
           {AWAY_NOTICE}.
@@ -48,4 +65,15 @@ export function CostConfirm({
       </div>
     </div>
   );
+}
+
+/** "Runs on CareerPolaris's AI (claude-haiku-4-5) · $1.25 of $2 left this
+ * month", or "Runs on your own key on claude-opus-5". Pure. */
+export function getPayerLine(status: ShellStatus): string {
+  const line = `Runs on ${chargedTo(status)}`;
+  const quota = status.aiSource?.platform_quota;
+  if (!isOnPlatform(status) || !quota) return `${line}.`;
+  return `${line} · $${Number(quota.remaining_usd).toFixed(2)} of $${Number(
+    quota.allowed_usd,
+  ).toFixed(2)} left this month.`;
 }

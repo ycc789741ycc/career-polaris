@@ -1,7 +1,12 @@
 import { AppIcon } from "../components/AppIcon";
 import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
-import type { ShellStatus } from "./ShellContext";
+import {
+  hasAi,
+  isOnPlatform,
+  modelName,
+  type ShellStatus,
+} from "./ShellContext";
 
 /** The prototype's left rail: the numbered journey and the model. Profile
  * confidence belongs to Strengths (domain decision 28). */
@@ -14,8 +19,9 @@ export function Sidebar({
   status: ShellStatus;
   onNavigate: (screen: Screen) => void;
 }) {
-  const noKey = !status.credential;
-  const keyFailed = status.credential?.status === "failed";
+  const noKey = !hasAi(status);
+  const keyFailed =
+    !isOnPlatform(status) && status.credential?.status === "failed";
   const { activity } = useActivity();
   const running: Partial<Record<Screen, boolean>> = {
     sources: sourcesBusy(activity),
@@ -71,9 +77,11 @@ export function Sidebar({
             <span style={{ minWidth: 0 }}>
               {MODEL_SCREEN.label}
               <span className="nav-note">
-                {status.credential
-                  ? `${status.credential.model}${keyFailed ? " · key failed" : ""}`
-                  : "No key yet"}
+                {noKey
+                  ? "No key yet"
+                  : isOnPlatform(status)
+                    ? `${modelName(status)} · CareerPolaris AI`
+                    : `${modelName(status)}${keyFailed ? " · key failed" : ""}`}
               </span>
             </span>
             {(noKey || keyFailed) && (

@@ -28,7 +28,12 @@ import {
 } from "../components/ui";
 import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
-import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import {
+  chargedTo,
+  modelName,
+  useHeading,
+  useShell,
+} from "../shell/ShellContext";
 import { recordTargetUse } from "./advisorTarget";
 import { CostConfirm } from "./CostConfirm";
 import { targetQuery } from "./target";
@@ -241,7 +246,6 @@ export function Roles() {
   }
 
   if (waiting) {
-    const model = modelName(status.credential);
     return (
       <RunProgress
         label="Role map progress"
@@ -270,7 +274,7 @@ export function Roles() {
           label: "Back to Strengths",
           onClick: () => navigate("strengths"),
         }}
-        costCopy={`Charged to your own key on ${model}, at the estimate you confirmed before it started. Searching only ${
+        costCopy={`Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
           scope.data && scope.data.target_locations.length > 0
             ? scope.data.target_locations.join(" and ")
             : "your locations"
@@ -294,7 +298,7 @@ export function Roles() {
               activity?.role_map?.status === "ready"
                 ? activity.role_map.finished_at
                 : (state.data?.market_data_at ?? null),
-            model: modelName(status.credential),
+            model: modelName(status),
             scope: scope.data ?? null,
             rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
           })}

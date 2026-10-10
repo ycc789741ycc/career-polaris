@@ -9,21 +9,24 @@ from decimal import Decimal
 
 import pytest
 
-from advisor.identity import AuthService, IdentityService, Provider
+from advisor.identity import AiSource, AuthService, IdentityService, Provider
 from advisor.identity.domain import (
     MAX_FAILED_ATTEMPTS,
     CredentialStatus,
+    FederatedIdentity,
     IdTokenClaims,
     ProviderCredentialFailed,
     UsageBudgetExceeded,
     digest,
 )
-from kernel.ai_gateway.ports import Funding, UsageRecord
+from kernel.ai_gateway.ports import Funding, PlatformCredential, UsageRecord
 from kernel.crypto import decrypt
 from kernel.errors import (
     BudgetExceededError,
     ConflictError,
     CredentialMissingError,
+    PlatformAiNotEligibleError,
+    PlatformAiUnavailableError,
     RateLimitedError,
     UnauthenticatedError,
     ValidationError,
@@ -313,4 +316,125 @@ async def test_the_cap_counts_only_what_the_users_own_key_paid_for() -> None:
     assert budget.spent_this_month_usd == Decimal("0.25")
     # A platform call is not the user's cap to refuse.
     await identity.check(owner, Decimal("50"), funding=Funding.PLATFORM)
+    assert not (await identity.account(owner)).background_jobs_paused
+
+
+# --- which key AI runs on (ADR 0064) -----------------------------------------
+
+
+def _platform_identity(uow: FakeIdentityUnitOfWork) -> IdentityService:
+    return IdentityService(
+        uow, default_monthly_cap_usd=Decimal("20"), platform_ai_model="claude-haiku-4-5"
+    )
+
+
+async def _google_account(uow: FakeIdentityUnitOfWork) -> uuid.UUID:
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+    identity = FederatedIdentity.linked(
+        owner, provider="google", subject="google-sub-1", email="ada@example.com"
+    )
+    uow.store.federated[identity.id] = identity
+    return owner
+
+
+async def test_with_nothing_chosen_ai_runs_on_the_users_own_key_if_they_have_one() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    view = await identity.ai_source(owner)
+    assert view.source is None and view.is_eligible and view.is_platform_on
+    with pytest.raises(CredentialMissingError):
+        await identity.load(owner)
+
+    await identity.set_credential(
+        owner, provider="anthropic", model="claude", api_key="sk-own-1234", base_url=None
+    )
+    assert (await identity.ai_source(owner)).source == AiSource.OWN
+    assert not isinstance(await identity.load(owner), PlatformCredential)
+
+
+async def test_a_google_account_switches_to_the_platform_once_it_accepts_the_terms() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    with pytest.raises(ValidationError, match="accept"):
+        await identity.set_ai_source(owner, source="platform", accept_platform_terms=False)
+
+    view = await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+    assert view.source == AiSource.PLATFORM
+    assert view.has_accepted_platform_terms
+    assert view.platform_model == "claude-haiku-4-5"
+    assert await identity.load(owner) == PlatformCredential(owner_id=owner)
+
+
+async def test_switching_back_and_forth_asks_for_the_terms_only_once() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+    await identity.set_credential(
+        owner, provider="anthropic", model="claude", api_key="sk-own-1234", base_url=None
+    )
+
+    await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+    await identity.set_ai_source(owner, source="own", accept_platform_terms=False)
+    view = await identity.set_ai_source(owner, source="platform", accept_platform_terms=False)
+
+    assert view.source == AiSource.PLATFORM
+
+
+async def test_an_account_without_google_cannot_use_the_platforms_key() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = (await _auth(uow).register(email="bo@example.com", password=PASSWORD)).account_id
+
+    assert not (await identity.ai_source(owner)).is_eligible
+    with pytest.raises(PlatformAiNotEligibleError):
+        await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+
+
+async def test_losing_the_google_identity_stops_the_platforms_key_at_the_next_call() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+    await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+
+    uow.store.federated.clear()
+
+    with pytest.raises(PlatformAiNotEligibleError):
+        await identity.load(owner)
+
+
+async def test_the_platform_cannot_be_chosen_while_it_is_off() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = await _google_account(uow)
+
+    assert not (await identity.ai_source(owner)).is_platform_on
+    with pytest.raises(PlatformAiUnavailableError):
+        await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+
+
+async def test_ones_own_key_cannot_be_chosen_before_it_is_stored() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    with pytest.raises(ValidationError, match="key of your own"):
+        await identity.set_ai_source(owner, source="own", accept_platform_terms=False)
+
+
+async def test_switching_source_resumes_paused_work() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+    await identity.set_credential(
+        owner, provider="anthropic", model="claude", api_key="sk-own-1234", base_url=None
+    )
+    await identity.mark_failed(owner, "401 from provider")
+    assert (await identity.account(owner)).background_jobs_paused
+
+    await identity.set_ai_source(owner, source="platform", accept_platform_terms=True)
+
     assert not (await identity.account(owner)).background_jobs_paused

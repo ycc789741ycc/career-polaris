@@ -13,6 +13,7 @@ import {
   StatTile,
 } from "../components/ui";
 import { useShell } from "../shell/ShellContext";
+import { AiSourcePanel } from "./AiSourcePanel";
 import { messageOf, useAsync } from "./useAsync";
 
 // The prototype's "What runs on your key", with questions written per gap of
@@ -40,7 +41,8 @@ const USES = [
  * The AI settings screen.
  *
  * The key is write-only: it is sent, and only ever read back as its last four
- * characters. Everything the app does with AI runs on it, so the budget lives
+ * characters. Everything the app does with AI runs on it, or on CareerPolaris's
+ * key when the user chose that (ADR 0064), so the choice and the budget live
  * here too.
  */
 export function AiSettings() {
@@ -206,6 +208,7 @@ export function AiSettings() {
       </div>
 
       <div className="stack" style={{ gap: 20 }}>
+        <AiSourcePanel />
         <div className="callout">
           <Eyebrow style={{ marginBottom: 6 }}>What runs on your key</Eyebrow>
           <div className="divided">
