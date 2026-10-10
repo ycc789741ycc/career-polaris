@@ -4035,6 +4035,20 @@ below:
   card and the `CostConfirm` wording.
 
 ## Watch the platform's spend
+**Done** (no ADR), on `feature/no-ticket/platform-ai-watch`. Where the build
+differs from the plan below:
+
+* `make platform-ai-usage` is a script, `scripts/platform-ai-usage.sh`, not
+  a CLI module: like `disk-usage`, it runs psql in the Postgres container as
+  the superuser, inside one `BEGIN READ ONLY` transaction, so it needs no new
+  database role. Accounts appear as the first 12 hex digits of a SHA-256 of
+  their id.
+* Its last table compares estimates with what calls really cost, per
+  template version, over 30 days: the calibration branch 1 kept the
+  estimates for.
+* The near-ceiling warning is once per window per process: with the api and
+  the worker each counting, it may come twice, never more.
+
 
 * **`make platform-ai-usage`** is a supporting target that only reads. It
   runs `cli/platform_ai_usage.py` from the app image on the compose network

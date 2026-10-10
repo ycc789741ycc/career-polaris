@@ -12,8 +12,10 @@ Turns the work someone has actually done — GitHub, Jira, their résumé — in
 picture of where they stand (a skill radar) and what is worth aiming at (a role
 map of real openings), with every claim traceable to evidence.
 
-All AI runs on **the user's own provider key**. The platform runs only the work
-that needs no model: crawling, parsing, embedding, matching.
+All AI runs on **the user's own provider key**, or, for a Google-verified
+account that chooses it, on **the platform's key under a monthly quota** (ADR
+0064). The platform otherwise runs only the work that needs no model:
+crawling, parsing, embedding, matching.
 
 ## Read these first
 
@@ -136,7 +138,10 @@ and Node versions and TypeScript's major are upgraded on purpose, not by it.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
-`logs`, `stats`, `disk-usage`, `backup-db`, `release BUMP=` (tags
+`logs`, `stats`, `disk-usage`, `platform-ai-usage` (what AI has cost: the
+platform key against its ceilings, top accounts by digest, spend by task, and
+each prompt's estimate against what calls cost; read-only, where Postgres
+runs), `backup-db`, `release BUMP=` (tags
 `origin/master` with the next version and pushes it), `push-app` (CI's release) and
 `pull-app RELEASE=release.env` (a deployed place's), `check-env` (a deployed
 place's `.env` against `.env.example`, whose `# may-be-blank:` line names the
@@ -930,3 +935,11 @@ under `epic/no-ticket/platform-ai`:
   while the platform is on); the shell's `hasAi`, `modelName` and
   `chargedTo` read `ShellStatus.aiSource`; `CostConfirm` says who pays and
   what is left of the month; an `ai_platform_*` failure links to AI settings.
+- **Watch the platform's spend** (no ADR). `make platform-ai-usage` reads the
+  ledger and `limits` in one read-only transaction, as `disk-usage` does.
+  `wiring.platform_ai` logs `platform_ai.near_ceiling` (WARN, once per window
+  and process) at 80% of everyone's day or month, and
+  `platform_ai.ceiling_reached` (ERROR) when a ceiling refuses a call; the
+  gateway logs `platform_ai.spend` per settled attempt. `docs/deploy.md`
+  section 7 is the runbook: a provider project of its own with a hard spend
+  limit, the key on both machines, rotating it, and turning it off.

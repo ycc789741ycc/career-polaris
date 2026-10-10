@@ -31,7 +31,8 @@ flowchart LR
 ```
 
 Every claim it makes cites your own work, and all AI runs on **your own LLM
-key**.
+key**, or, if you signed in with Google and choose it, on CareerPolaris's own
+AI under a monthly quota.
 
 ## What it does
 
@@ -43,7 +44,7 @@ key**.
 | **Fill the gap** | The Advisor's first step: a few questions for each gap between your evidence and your target role, each saying why it is asked and what closing the gap is worth. Submit them together; your answers become evidence, at no cost. Your gap plan and résumé then say they are outdated, and you regenerate them when you choose ([ADR 0023](docs/decisions/0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md), [ADR 0035](docs/decisions/0035-regenerate-the-plan-and-resume-only-when-asked.md)). |
 | **Gap plan** | Aim at one **Target** from the role map — a role, and optionally one opening in it ([ADR 0022](docs/decisions/0022-make-a-target-a-role-and-an-optional-opening.md)) — and get gaps ranked by the fit points each is worth, broken into milestones, tasks and projects. Plans are versioned per Target, and finished work carries forward. |
 | **Résumé** | A résumé written for the Target from cited evidence, with requirement coverage, in-place editing saved as versions, a streamed revision chat whose proposals apply only when you accept them, and PDF export. |
-| **Accounts** | Email and password sign-in, or optional sign-in with Google. A write-only AI credential, plus a usage budget and ledger. |
+| **Accounts** | Email and password sign-in, or optional sign-in with Google. A write-only AI credential, a choice between it and CareerPolaris's AI, plus a usage budget and ledger. |
 
 Not built yet: suggesting a successor Target when a role splits, interview
 reports (the hiring bar is estimated for now), email verification and password
@@ -65,7 +66,10 @@ Design choices that are deliberate:
   provider, the model and the last four characters.
 - **Nothing reaches an LLM except through `kernel.ai_gateway`.** The gateway
   estimates cost, checks the budget, decrypts the key for exactly one call,
-  validates the output against a schema and writes a ledger row.
+  validates the output against a schema and writes a ledger row with the
+  provider's own token counts. On CareerPolaris's key it first reserves the
+  most the call can cost against the account's monthly quota and everyone's
+  daily and monthly ceilings, and settles what it really cost.
 - **It runs in two places.** A small droplet runs the api, the SPA, Postgres
   and Caddy, the only thing on the internet. The operator's own machine runs
   the worker and the crawler, which hold the embedding model, and reaches

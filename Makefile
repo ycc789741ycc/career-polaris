@@ -92,7 +92,7 @@ endif
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
-        check-env
+        check-env platform-ai-usage
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -102,7 +102,7 @@ help:
 	@echo "Gates (their own targets, never folded into a test target):"
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
-	@echo "  migrate format gen-client lock logs stats disk-usage backup-db check-env"
+	@echo "  migrate format gen-client lock logs stats disk-usage platform-ai-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
@@ -221,6 +221,12 @@ stats: require-machine
 # relations, and object storage by bucket. Read-only. Needs infra up.
 disk-usage: require-machine
 	@scripts/disk-usage.sh
+
+# What AI has cost (ADR 0064): the platform key's spend against its ceilings,
+# its top accounts by digest, spend by task, and each prompt's estimate against
+# what calls cost. Read-only. Needs infra up, where Postgres runs.
+platform-ai-usage: require-machine
+	@scripts/platform-ai-usage.sh
 
 # --- migrations -------------------------------------------------------------
 
