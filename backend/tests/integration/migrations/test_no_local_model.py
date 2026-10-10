@@ -23,13 +23,14 @@ _INSERT = (
 @pytest.mark.parametrize(
     ("provider", "base_url", "constraint"),
     [
-        ("local", "https://llm.example.com/v1", "ck_provider_credential_provider"),
+        # No base URL, so only the provider check can refuse it.
+        ("local", None, "ck_provider_credential_provider"),
         ("anthropic", "https://proxy.example.com", "ck_provider_credential_base_url"),
     ],
     ids=["local", "base-url-off-openai"],
 )
 async def test_a_credential_we_cannot_call_is_refused(
-    database: Database, account: uuid.UUID, provider: str, base_url: str, constraint: str
+    database: Database, account: uuid.UUID, provider: str, base_url: str | None, constraint: str
 ) -> None:
     with pytest.raises(IntegrityError, match=constraint):
         async with database.for_user(account) as session:
