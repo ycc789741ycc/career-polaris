@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from advisor.identity.domain import (
     Account,
+    AiFunding,
     AiUsageBudget,
     AiUsageEntry,
     CredentialStatus,
@@ -198,6 +199,7 @@ def usage(row: models.AiUsageLedger) -> AiUsageEntry:
         estimated_input_tokens=row.estimated_input_tokens,
         estimated_cost_usd=row.estimated_cost_usd,
         is_estimated=row.is_estimated,
+        funding=AiFunding(row.funding),
     )
 
 
@@ -219,3 +221,4 @@ def apply_usage(row: models.AiUsageLedger, entity: AiUsageEntry) -> None:
     row.estimated_input_tokens = entity.estimated_input_tokens
     row.estimated_cost_usd = entity.estimated_cost_usd
     row.is_estimated = entity.is_estimated
+    row.funding = str(entity.funding)

@@ -27,7 +27,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from advisor.identity.domain.account import Account
-from advisor.identity.domain.budget import AiUsageBudget, AiUsageEntry
+from advisor.identity.domain.budget import AiFunding, AiUsageBudget, AiUsageEntry
 from advisor.identity.domain.credential import ProviderCredential
 from advisor.identity.domain.events import IdentityEvent
 from advisor.identity.domain.federated import FederatedIdentity
@@ -119,6 +119,7 @@ class AiUsageBudgetRepository(Repository[AiUsageBudget, AiUsageBudgetFilter], Pr
 @dataclass(frozen=True, slots=True)
 class AiUsageEntryFilter:
     occurred_since: datetime | None = None
+    funding: AiFunding | None = None
 
 
 class AiUsageEntryRepository(Repository[AiUsageEntry, AiUsageEntryFilter], Protocol):

@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from advisor.identity.domain import (
     AccountFilter,
+    AiFunding,
     AiUsageEntry,
     AiUsageEntryFilter,
     CredentialStatus,
@@ -150,6 +151,7 @@ async def test_a_ledger_row_keeps_its_estimate_beside_what_the_call_used(
         estimated_input_tokens=1_200,
         estimated_cost_usd=Decimal("0.003700"),
         is_estimated=False,
+        funding=AiFunding.PLATFORM,
     )
     async with uow.for_owner(account) as mine:
         await mine.usage.create(entry)
@@ -157,6 +159,35 @@ async def test_a_ledger_row_keeps_its_estimate_beside_what_the_call_used(
         stored = await mine.usage.get(entry.id)
 
     assert stored == entry
+
+
+async def test_the_months_spend_sums_by_whose_key_paid(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    now = datetime.now(UTC)
+    async with uow.for_owner(account) as mine:
+        for funding, cost in ((AiFunding.OWN, "0.25"), (AiFunding.PLATFORM, "1.50")):
+            await mine.usage.create(
+                AiUsageEntry(
+                    id=uuid.uuid4(),
+                    owner_id=account,
+                    task="assessment",
+                    provider="anthropic",
+                    model="claude",
+                    template_version="v1",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal(cost),
+                    occurred_at=now,
+                    funding=funding,
+                )
+            )
+
+    async with uow.for_owner(account) as mine:
+        own = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.OWN))
+        platform = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.PLATFORM))
+    assert (own, platform) == (Decimal("0.25"), Decimal("1.50"))
 
 
 async def test_identity_events_reach_the_outbox_as_the_dispatcher_reads_them(

@@ -15,6 +15,7 @@ from advisor.identity.auth import AuthService, Session
 from advisor.identity.domain import (
     SUGGESTED_MODELS,
     Account,
+    AiFunding,
     AiUsageBudget,
     AiUsageBudgetFilter,
     AiUsageEntry,
@@ -33,7 +34,7 @@ from advisor.identity.domain import (
 )
 from advisor.identity.google import GoogleSignIn, GoogleStart
 from advisor.identity.infra.google import GoogleEndpoints, GoogleOidc
-from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, UsageRecord
+from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, Funding, UsageRecord
 from kernel.ai_gateway.ports import ProviderCredential as GatewayCredential
 from kernel.clock import utcnow
 from kernel.crypto import encrypt, last_four
@@ -183,9 +184,12 @@ class IdentityService(CredentialStore, BudgetGuard):
         month = billing_month_start(today)
         async with self._uow.for_owner(owner_id) as mine:
             budget = await _budget(mine)
+            # The cap is the user's own money: what the platform's key paid
+            # for is metered apart (ADR 0064).
             spent = await mine.usage.total_cost(
                 AiUsageEntryFilter(
-                    occurred_since=datetime(month.year, month.month, month.day, tzinfo=UTC)
+                    occurred_since=datetime(month.year, month.month, month.day, tzinfo=UTC),
+                    funding=AiFunding.OWN,
                 )
             )
         cap = budget.monthly_cap_usd if budget is not None else self._default_cap
@@ -222,7 +226,11 @@ class IdentityService(CredentialStore, BudgetGuard):
             await _pause(mine, owner_id, reason)
             mine.record(ProviderCredentialFailed(owner_id=owner_id, reason=reason))
 
-    async def check(self, owner_id: uuid.UUID, estimated_cost_usd: Decimal) -> None:
+    async def check(
+        self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding
+    ) -> None:
+        if funding is Funding.PLATFORM:
+            return
         state = await self._budget_state(owner_id, utcnow().date())
         if state.would_exceed(estimated_cost_usd):
             async with self._uow.for_owner(owner_id) as mine:
@@ -258,6 +266,7 @@ class IdentityService(CredentialStore, BudgetGuard):
                     estimated_input_tokens=usage.estimated_input_tokens,
                     estimated_cost_usd=usage.estimated_cost_usd,
                     is_estimated=usage.is_estimated,
+                    funding=AiFunding(str(usage.funding)),
                 )
             )
 

@@ -18,7 +18,7 @@ from advisor.identity.domain import (
     UsageBudgetExceeded,
     digest,
 )
-from kernel.ai_gateway.ports import UsageRecord
+from kernel.ai_gateway.ports import Funding, UsageRecord
 from kernel.crypto import decrypt
 from kernel.errors import (
     BudgetExceededError,
@@ -257,14 +257,15 @@ async def test_spending_past_the_cap_pauses_and_refuses() -> None:
             estimated_input_tokens=12,
             estimated_cost_usd=Decimal("0.70"),
             is_estimated=False,
+            funding=Funding.OWN,
         )
     )
 
     budget = await identity.budget(owner, today=datetime.now(UTC).date())
     assert budget.spent_this_month_usd == Decimal("0.75")
-    await identity.check(owner, Decimal("0.2"))
+    await identity.check(owner, Decimal("0.2"), funding=Funding.OWN)
     with pytest.raises(BudgetExceededError):
-        await identity.check(owner, Decimal("0.5"))
+        await identity.check(owner, Decimal("0.5"), funding=Funding.OWN)
 
     assert (await identity.account(owner)).background_jobs_paused
     assert uow.store.events == [
@@ -282,3 +283,34 @@ async def test_a_negative_cap_is_refused() -> None:
         await _identity(FakeIdentityUnitOfWork()).set_budget(
             uuid.uuid4(), monthly_cap_usd=Decimal("-1")
         )
+
+
+async def test_the_cap_counts_only_what_the_users_own_key_paid_for() -> None:
+    """The platform's spend is the operator's money, metered apart (ADR 0064)."""
+    uow = FakeIdentityUnitOfWork()
+    auth, identity = _auth(uow), _identity(uow)
+    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
+    for funding, cost in ((Funding.OWN, "0.25"), (Funding.PLATFORM, "5.00")):
+        await identity.record(
+            UsageRecord(
+                owner_id=owner,
+                task="assessment",
+                provider="anthropic",
+                model="claude",
+                template_version="v1",
+                input_tokens=10,
+                output_tokens=10,
+                cost_usd=Decimal(cost),
+                estimated_input_tokens=10,
+                estimated_cost_usd=Decimal(cost),
+                is_estimated=False,
+                funding=funding,
+            )
+        )
+
+    budget = await identity.budget(owner, today=datetime.now(UTC).date())
+    assert budget.spent_this_month_usd == Decimal("0.25")
+    # A platform call is not the user's cap to refuse.
+    await identity.check(owner, Decimal("50"), funding=Funding.PLATFORM)
+    assert not (await identity.account(owner)).background_jobs_paused

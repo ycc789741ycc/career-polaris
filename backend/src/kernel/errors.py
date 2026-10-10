@@ -27,6 +27,8 @@ class ErrorCode(StrEnum):
     CREDENTIAL_FAILED = "ai_credential_failed"
     PROVIDER_UNAVAILABLE = "ai_provider_unavailable"
     OUTPUT_INVALID = "ai_output_invalid"
+    # AI on the platform's key (ADR 0064)
+    PLATFORM_UNAVAILABLE = "ai_platform_unavailable"
     # Evidence / assessment
     EVIDENCE_NOT_OWNED = "evidence_not_owned"
     DIMENSION_COUNT_INVALID = "dimension_count_invalid"
@@ -73,6 +75,7 @@ CredentialMissingError = _error("CredentialMissingError", ErrorCode.CREDENTIAL_M
 CredentialFailedError = _error("CredentialFailedError", ErrorCode.CREDENTIAL_FAILED)
 ProviderUnavailableError = _error("ProviderUnavailableError", ErrorCode.PROVIDER_UNAVAILABLE)
 OutputInvalidError = _error("OutputInvalidError", ErrorCode.OUTPUT_INVALID)
+PlatformAiUnavailableError = _error("PlatformAiUnavailableError", ErrorCode.PLATFORM_UNAVAILABLE)
 
 EvidenceNotOwnedError = _error("EvidenceNotOwnedError", ErrorCode.EVIDENCE_NOT_OWNED)
 DimensionCountError = _error("DimensionCountError", ErrorCode.DIMENSION_COUNT_INVALID)
@@ -101,6 +104,8 @@ HTTP_STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.CREDENTIAL_FAILED: 502,
     ErrorCode.PROVIDER_UNAVAILABLE: 502,
     ErrorCode.OUTPUT_INVALID: 502,
+    # Ours, not the user's: switched off, used up for now, or its key failing.
+    ErrorCode.PLATFORM_UNAVAILABLE: 503,
     ErrorCode.EVIDENCE_NOT_OWNED: 422,
     ErrorCode.DIMENSION_COUNT_INVALID: 422,
     ErrorCode.BLOCKED_ADDRESS: 400,

@@ -1,5 +1,6 @@
 from advisor.identity.domain.account import Account
 from advisor.identity.domain.budget import (
+    AiFunding,
     AiUsageBudget,
     AiUsageEntry,
     BudgetState,
@@ -85,6 +86,7 @@ __all__ = [
     "AccountAction",
     "AccountFilter",
     "AccountRepository",
+    "AiFunding",
     "AiUsageBudget",
     "AiUsageBudgetFilter",
     "AiUsageBudgetRepository",

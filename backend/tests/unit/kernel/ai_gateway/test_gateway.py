@@ -12,7 +12,14 @@ from pydantic import BaseModel
 
 from kernel.ai_gateway import pricing, templates
 from kernel.ai_gateway.gateway import AiGateway
-from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, ProviderCredential, UsageRecord
+from kernel.ai_gateway.ports import (
+    BudgetGuard,
+    CredentialStore,
+    Funding,
+    PlatformCredential,
+    ProviderCredential,
+    UsageRecord,
+)
 from kernel.ai_gateway.providers import (
     REGISTRY,
     Completion,
@@ -22,12 +29,13 @@ from kernel.ai_gateway.providers import (
     TextDelta,
     Usage,
 )
-from kernel.config import get_settings
+from kernel.config import InvalidConfigurationError, get_settings
 from kernel.crypto import encrypt
 from kernel.errors import (
     BudgetExceededError,
     CredentialFailedError,
     OutputInvalidError,
+    PlatformAiUnavailableError,
 )
 from kernel.progress import WRITING_CAP, JobCancelledError, Progress
 
@@ -42,7 +50,7 @@ class Answer(BaseModel):
 class StubCredentials(CredentialStore):
     def __init__(self, encrypted_key: str) -> None:
         self.failures: list[str] = []
-        self._credential = ProviderCredential(
+        self._credential: ProviderCredential | PlatformCredential = ProviderCredential(
             provider="stub",
             model="claude-opus-5",
             base_url="https://llm.example.com",
@@ -50,8 +58,11 @@ class StubCredentials(CredentialStore):
             owner_id=OWNER,
         )
 
-    async def load(self, owner_id: uuid.UUID) -> ProviderCredential:
+    async def load(self, owner_id: uuid.UUID) -> ProviderCredential | PlatformCredential:
         return self._credential
+
+    def use_platform(self) -> None:
+        self._credential = PlatformCredential(owner_id=OWNER)
 
     async def mark_failed(self, owner_id: uuid.UUID, reason: str) -> None:
         self.failures.append(reason)
@@ -62,9 +73,13 @@ class StubBudget(BudgetGuard):
         self.cap = cap
         self.recorded: list[UsageRecord] = []
         self.checked: list[Decimal] = []
+        self.fundings: list[Funding] = []
 
-    async def check(self, owner_id: uuid.UUID, estimated_cost_usd: Decimal) -> None:
+    async def check(
+        self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding
+    ) -> None:
         self.checked.append(estimated_cost_usd)
+        self.fundings.append(funding)
         if self.cap is not None and estimated_cost_usd > self.cap:
             raise BudgetExceededError("monthly cap would be exceeded", cap=str(self.cap))
 
@@ -565,3 +580,118 @@ async def test_the_ceiling_covers_every_attempt_at_its_output_limit(
     floor = pricing.cost_of("claude-opus-5", input_tokens=0, output_tokens=attempts * 4_096)
     assert estimate.ceiling_cost_usd >= floor
     assert estimate.ceiling_cost_usd > estimate.cost_usd * attempts
+
+
+# -- the platform's key (ADR 0064) ---------------------------------------------
+
+
+@pytest.fixture
+def platform_env(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PLATFORM_AI_API_KEY", "sk-platform-key")
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "stub-platform")
+    monkeypatch.setenv("PLATFORM_AI_MODEL", "claude-haiku-4-5")
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def platform_provider(monkeypatch: pytest.MonkeyPatch, stub_provider):
+    """The platform's provider, registered under a name settings accept."""
+    from kernel import config
+
+    monkeypatch.setattr(config, "PLATFORM_AI_PROVIDERS", ("stub-platform",))
+
+    def install(replies: list[str | Exception]) -> StubProvider:
+        provider = StubProvider(replies)
+        monkeypatch.setitem(REGISTRY, "stub-platform", provider)
+        return provider
+
+    return install
+
+
+async def test_a_platform_call_runs_on_the_platforms_key_and_model(
+    platform_provider, platform_env: None
+) -> None:
+    provider = platform_provider(['{"name": "x", "score": 1}'])
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials.use_platform()
+    budget = StubBudget()
+    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=budget)
+
+    result = await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert provider.requests[0].api_key == "sk-platform-key"
+    assert provider.requests[0].model == "claude-haiku-4-5"
+    assert result.model_id == "claude-haiku-4-5"
+    assert budget.fundings == [Funding.PLATFORM]
+    [usage] = budget.recorded
+    assert usage.funding is Funding.PLATFORM
+    assert "sk-platform-key" not in str(usage)
+
+
+async def test_the_users_own_key_is_recorded_as_their_own(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(['{"name": "x", "score": 1}'])
+
+    await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert budget.fundings == [Funding.OWN]
+    assert budget.recorded[0].funding is Funding.OWN
+
+
+async def test_the_platforms_key_failing_leaves_the_users_state_alone(
+    platform_provider, platform_env: None
+) -> None:
+    platform_provider([CredentialFailedError("the provider rate-limited this key")])
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials.use_platform()
+    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=StubBudget())
+
+    with pytest.raises(PlatformAiUnavailableError):
+        await gw.run(
+            OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+        )
+    assert credentials.failures == [], "our key failing must not pause the user's work"
+
+
+async def test_a_platform_call_with_the_feature_off_is_refused(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, credentials, budget = gateway
+    provider = stub_provider([])
+    credentials.use_platform()
+
+    with pytest.raises(PlatformAiUnavailableError):
+        await gw.run(
+            OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+        )
+    assert provider.requests == [] and budget.checked == []
+
+
+async def test_an_estimate_says_whose_key_it_would_run_on(
+    platform_provider, platform_env: None
+) -> None:
+    platform_provider([])
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials.use_platform()
+    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=StubBudget())
+
+    estimate = await gw.estimate(OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"})
+
+    assert estimate.funding is Funding.PLATFORM
+    assert estimate.model_id == "claude-haiku-4-5"
+
+
+def test_a_platform_model_with_no_published_rate_refuses_to_start(
+    platform_provider, platform_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PLATFORM_AI_MODEL", "some-model-we-cannot-price")
+    get_settings.cache_clear()
+
+    with pytest.raises(InvalidConfigurationError, match="no published rate"):
+        AiGateway(settings=get_settings(), credentials=StubCredentials(""), budget=StubBudget())
