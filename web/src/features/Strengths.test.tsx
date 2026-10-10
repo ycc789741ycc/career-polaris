@@ -81,6 +81,7 @@ function renderStrengths(activity: Activity | null = null) {
     status: { me: null, credential: null },
     navigate: vi.fn(),
     setHeading: vi.fn(),
+    refresh: async () => {},
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>
