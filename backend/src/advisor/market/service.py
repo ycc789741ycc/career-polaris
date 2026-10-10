@@ -39,6 +39,7 @@ from advisor.market.domain import (
     NormalizedPosting,
     PostingEmbedding,
     PostingEmbeddingFilter,
+    PostingHead,
     PostingScope,
     PostingStatus,
     SalaryBand,
@@ -161,6 +162,25 @@ class PostingView:
     credited_to: str | None = None
     # The day it was posted, as its source states it, else the day it was
     # first fetched; None for a pasted JD.
+    posted_on: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PostingHeadView:
+    """A shared posting without its description: what matching, counting and
+    listing read (``posting_heads_in_scope``). ``postings_by_id`` reads the
+    description for the few a prompt needs."""
+
+    id: uuid.UUID
+    company_name: str
+    title: str
+    location: str | None
+    url: str | None
+    visibility: Visibility
+    salary: SalaryRange | None
+    company_id: uuid.UUID | None = None
+    source_kind: str | None = None
+    credited_to: str | None = None
     posted_on: date | None = None
 
 
@@ -343,8 +363,8 @@ class MarketService:
     async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
         """How much of the market the user's target locations take in."""
         locations = await self.target_locations(owner_id)
-        postings = await self.postings_in_scope(owner_id)
-        return MarketScopeView(target_locations=locations, open_posting_count=len(postings))
+        heads = await self.posting_heads_in_scope(owner_id)
+        return MarketScopeView(target_locations=locations, open_posting_count=len(heads))
 
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         """Every shared posting this user's role map is built from: the open
@@ -355,7 +375,7 @@ class MarketService:
         group. Pasted JDs are not here: each is a posting of the user's own,
         kept by Target (ADR 0033), and never on the map.
         """
-        scope = PostingScope(markets=tuple(await self.target_locations(owner_id)))
+        scope = await self._posting_scope(owner_id)
 
         async with self._uow.shared() as market:
             postings = await market.postings.get_open_in_scope(scope)
@@ -363,22 +383,54 @@ class MarketService:
 
         return [_shared_posting_view(p, names.get(p.company_id, "")) for p in postings]
 
+    async def posting_heads_in_scope(self, owner_id: uuid.UUID) -> list[PostingHeadView]:
+        """``postings_in_scope`` without descriptions, in the same order.
+
+        What a build matches and a role map counts: a scope can be thousands
+        of postings, and only the few a prompt reads need their text
+        (``postings_by_id``).
+        """
+        scope = await self._posting_scope(owner_id)
+        async with self._uow.shared() as market:
+            heads = await market.postings.get_open_heads_in_scope(scope)
+            names = await _company_names(market, {h.company_id for h in heads})
+        return [_posting_head_view(h, names.get(h.company_id, "")) for h in heads]
+
+    async def postings_by_id(self, posting_ids: Sequence[uuid.UUID]) -> list[PostingView]:
+        """These shared postings with their descriptions, in the order asked
+        for; an id with no posting is left out."""
+        if not posting_ids:
+            return []
+        async with self._uow.shared() as market:
+            postings = await market.postings.get_list(JobPostingFilter(ids=tuple(posting_ids)))
+            names = await _company_names(market, {p.company_id for p in postings})
+        by_id = {p.id: p for p in postings}
+        return [
+            _shared_posting_view(by_id[i], names.get(by_id[i].company_id, ""))
+            for i in posting_ids
+            if i in by_id
+        ]
+
     async def scope_with_vectors(
         self, owner_id: uuid.UUID, model_name: str
-    ) -> list[tuple[str, PostingView, list[float] | None]]:
+    ) -> list[tuple[str, PostingHeadView, list[float] | None]]:
         """Every posting in this user's scope, keyed by its shared id, with the
-        embedding the crawler made for it, or ``None`` where it has not yet."""
-        postings = await self.postings_in_scope(owner_id)
+        embedding the crawler made for it, or ``None`` where it has not yet.
+        Heads only: no description crosses."""
+        heads = await self.posting_heads_in_scope(owner_id)
         vectors: dict[uuid.UUID, list[float]] = {}
-        if postings:
+        if heads:
             async with self._uow.shared() as market:
                 embedded = await market.embeddings.get_list(
                     PostingEmbeddingFilter(
-                        posting_ids=tuple(p.id for p in postings), model_name=model_name
+                        posting_ids=tuple(h.id for h in heads), model_name=model_name
                     )
                 )
             vectors = {e.posting_id: e.vector for e in embedded}
-        return [(str(p.id), p, vectors.get(p.id)) for p in postings]
+        return [(str(h.id), h, vectors.get(h.id)) for h in heads]
+
+    async def _posting_scope(self, owner_id: uuid.UUID) -> PostingScope:
+        return PostingScope(markets=tuple(await self.target_locations(owner_id)))
 
     async def seed_baseline(
         self, sources: tuple[BaselineSource, ...] = BASELINE_SOURCES
@@ -594,6 +646,22 @@ def _searches(
 
 def _embedding_parts(posting: JobPosting) -> tuple[str | None, ...]:
     return (posting.title, posting.title, posting.location, posting.description)
+
+
+def _posting_head_view(head: PostingHead, company_name: str) -> PostingHeadView:
+    return PostingHeadView(
+        id=head.id,
+        company_name=company_name,
+        title=head.title,
+        location=head.location,
+        url=head.url,
+        visibility=Visibility.SHARED,
+        salary=head.salary,
+        company_id=head.company_id,
+        source_kind=head.source_kind,
+        credited_to=credited_source(head.url),
+        posted_on=head.posted_on or head.first_seen_at.date(),
+    )
 
 
 def _shared_posting_view(posting: JobPosting, company_name: str) -> PostingView:

@@ -172,6 +172,23 @@ class JobPosting:
             self.salary = posting.salary
 
 
+@dataclass(frozen=True, slots=True)
+class PostingHead:
+    """A posting without its description: what matching, counting and
+    listing read. A description is several KB and only a prompt reads it, so
+    a scope is read as heads and descriptions are fetched by id."""
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    title: str
+    location: str | None
+    url: str
+    source_kind: str
+    posted_on: date | None
+    salary: SalaryRange | None
+    first_seen_at: datetime
+
+
 @dataclass(slots=True)
 class PostingEmbedding:
     """A posting's local embedding, one per posting. Platform-paid computation."""

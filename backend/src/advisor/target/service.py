@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Any
 
 from advisor.assessment import AssessmentService
-from advisor.market import PostingView
+from advisor.market import PostingHeadView
 from advisor.rolemap import (
     FitView,
     PostingFitView,
@@ -741,7 +741,7 @@ class TargetService:
 
     async def _opening(
         self, owner_id: uuid.UUID, role: RoleView, ref: TargetRef
-    ) -> PostingView | None:
+    ) -> PostingHeadView | None:
         if ref.job_posting_id is None:
             return None
         posting_id = _uuid(ref.job_posting_id, ref)

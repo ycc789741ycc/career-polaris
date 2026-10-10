@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from advisor.market import PostingView, SourcesRequestView
+from advisor.market import PostingHeadView, PostingView, SourcesRequestView
 from advisor.rolemap.domain import (
     BuildRun,
     BuildRunFilter,
@@ -219,14 +219,18 @@ class FakeMarket:
         *,
         due: tuple[uuid.UUID, ...] = (),
         searched: dict[str, list[uuid.UUID]] | None = None,
+        vectors: dict[uuid.UUID, list[float]] | None = None,
     ) -> None:
         self.postings = postings or []
+        # What the crawler has embedded; a posting not here has no vector yet.
+        self.vectors = vectors or {}
         self.chosen = markets or []
         self.needed = (uuid.uuid4(), *due)
         self.due = due
         self.fetched: set[uuid.UUID] = set()
         self.searched = searched or {}
         self.asked: list[dict[str, Any]] = []
+        self.described: list[uuid.UUID] = []
 
     async def request_sources(self, **asked: Any) -> SourcesRequestView:
         self.asked.append(asked)
@@ -250,8 +254,35 @@ class FakeMarket:
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         return self.postings
 
+    async def posting_heads_in_scope(self, owner_id: uuid.UUID) -> list[PostingHeadView]:
+        return [head_of(p) for p in self.postings]
+
+    async def postings_by_id(self, posting_ids: Any) -> list[PostingView]:
+        """Records which ids had their descriptions read, as ``described``."""
+        ids = list(posting_ids)
+        self.described.extend(ids)
+        by_id = {p.id: p for p in self.postings}
+        return [by_id[i] for i in ids if i in by_id]
+
     async def scope_with_vectors(
         self, owner_id: uuid.UUID, model_name: str
-    ) -> list[tuple[str, PostingView, list[float] | None]]:
-        # None: nothing embedded yet, so the service embeds them itself.
-        return [(str(p.id), p, None) for p in self.postings]
+    ) -> list[tuple[str, PostingHeadView, list[float] | None]]:
+        # None: not embedded yet, so the service embeds it itself.
+        return [(str(p.id), head_of(p), self.vectors.get(p.id)) for p in self.postings]
+
+
+def head_of(posting: PostingView) -> PostingHeadView:
+    """A posting as the market reads it without its description."""
+    return PostingHeadView(
+        id=posting.id,
+        company_name=posting.company_name,
+        title=posting.title,
+        location=posting.location,
+        url=posting.url,
+        visibility=posting.visibility,
+        salary=posting.salary,
+        company_id=posting.company_id,
+        source_kind=posting.source_kind,
+        credited_to=posting.credited_to,
+        posted_on=posting.posted_on,
+    )

@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from advisor.market import (
     MarketService,
+    PostingHeadView,
     PostingView,
     SalaryRange,
     Visibility,
@@ -168,7 +169,7 @@ class _Group:
 
     candidate: RoleCandidate
     keys: set[str]
-    postings: list[PostingView]
+    postings: list[PostingHeadView]
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,7 +467,9 @@ class RoleMapService:
             by_role.setdefault(requirement.role_id, []).append(requirement)
         return [_role_view(role, by_role.get(role.id, [])) for role in roles]
 
-    async def role_postings(self, owner_id: uuid.UUID) -> list[tuple[RoleView, list[PostingView]]]:
+    async def role_postings(
+        self, owner_id: uuid.UUID
+    ) -> list[tuple[RoleView, list[PostingHeadView]]]:
         """Each analysed role with the open postings grouped into it.
 
         Postings that have since expired, or left the user's scope, drop out:
@@ -483,7 +486,7 @@ class RoleMapService:
         for member in members:
             keys_by_role.setdefault(member.role_id, []).append(member.posting_key)
 
-        in_scope = {_posting_key(p): p for p in await self._market.postings_in_scope(owner_id)}
+        in_scope = {_posting_key(p): p for p in await self._market.posting_heads_in_scope(owner_id)}
         return [
             (role, [in_scope[key] for key in keys_by_role.get(role.id, []) if key in in_scope])
             for role in roles
@@ -913,7 +916,11 @@ class RoleMapService:
                 role_id=role_id,
                 keys=group.keys,
                 postings=group.postings,
-                block=_postings_block(group.postings),
+                block=_postings_block(
+                    await self._market.postings_by_id(
+                        [p.id for p in group.postings[:MAX_POSTINGS_IN_A_PROMPT]]
+                    )
+                ),
             )
 
         await self._record_lineage(owner_id, reconciliation)
@@ -928,7 +935,7 @@ class RoleMapService:
         )
 
     async def _searched_by(
-        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingView]
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingHeadView]
     ) -> list[frozenset[int]]:
         """For each posting in scope, the candidates whose own search found
         it: the market searched each candidate's title in the user's places."""
@@ -948,7 +955,7 @@ class RoleMapService:
         candidates: list[RoleCandidate],
         members: list[list[int]],
         eligible: list[int],
-        scope: list[tuple[str, PostingView, list[float]]],
+        scope: list[tuple[str, PostingHeadView, list[float]]],
     ) -> list[float]:
         """The local fit estimate of each eligible candidate; 0 for the rest.
         Only the user's dimension names and reads are embedded, here."""
@@ -1027,7 +1034,7 @@ class RoleMapService:
         *,
         role_id: uuid.UUID,
         keys: set[str],
-        postings: list[PostingView],
+        postings: list[PostingHeadView],
         block: str,
     ) -> None:
         """Name a role, read out what it requires and estimate its bar, on the
@@ -1192,7 +1199,7 @@ class RoleMapService:
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
         opening_fits = await self._opening_fit_scores(owner_id, role_id)
 
-        by_row: dict[tuple[str, str], tuple[RoleView, PostingView]] = {}
+        by_row: dict[tuple[str, str], tuple[RoleView, PostingHeadView]] = {}
         candidates: list[MatchCandidate] = []
         for role, postings in await self.role_postings(owner_id):
             if role_id is not None and role.id != role_id:
@@ -1333,26 +1340,39 @@ class RoleMapService:
     async def _posting_vectors(self, owner_id: uuid.UUID) -> dict[str, list[float]]:
         """Every posting in scope's vector, by its key; ones the crawler has not
         embedded yet are embedded here. Local, no AI."""
-        scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
-        missing = [(key, posting) for key, posting, vector in scope if vector is None]
-        fresh: dict[str, list[float]] = {}
+        scope = await self._embedded(
+            await self._market.scope_with_vectors(owner_id, self._embedding_model)
+        )
+        return {key: vector for key, _posting, vector in scope}
+
+    async def _embedded(
+        self, scope: list[tuple[str, PostingHeadView, list[float] | None]]
+    ) -> list[tuple[str, PostingHeadView, list[float]]]:
+        """The scope with a vector for every posting: the crawler's, or one
+        embedded here for a posting it has not reached yet. Only those
+        postings' descriptions are read."""
+        missing = [posting.id for _key, posting, vector in scope if vector is None]
+        fresh: dict[uuid.UUID, list[float]] = {}
         if missing:
+            postings = await self._market.postings_by_id(missing)
             texts = [
                 "\n".join(
                     part for part in (p.title, p.title, p.location or "", p.description) if part
                 )
-                for _key, p in missing
+                for p in postings
             ]
             fresh = dict(
                 zip(
-                    (k for k, _ in missing),
+                    (p.id for p in postings),
                     embed(texts, model_name=self._embedding_model),
                     strict=True,
                 )
             )
-        return {
-            key: vector if vector is not None else fresh[key] for key, _posting, vector in scope
-        }
+        return [
+            (key, posting, vector)
+            for key, posting, stored in scope
+            if (vector := stored if stored is not None else fresh.get(posting.id)) is not None
+        ]
 
     async def _strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
         async with self._uow.for_owner(owner_id) as mine:
@@ -1596,7 +1616,7 @@ class RoleMapService:
 
     async def _scope_vectors(
         self, owner_id: uuid.UUID
-    ) -> list[tuple[str, PostingView, list[float]]]:
+    ) -> list[tuple[str, PostingHeadView, list[float]]]:
         """This user's postings, each with its embedding. No AI, no cost.
 
         Fewer than one role's worth of postings is no market to search, and
@@ -1605,23 +1625,7 @@ class RoleMapService:
         scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
         if len(scope) < MIN_POSTINGS_FOR_A_ROLE:
             return []
-
-        missing = [(key, posting) for key, posting, vector in scope if vector is None]
-        fresh: dict[str, list[float]] = {}
-        if missing:
-            # Postings the crawler has not embedded yet; embedding is local.
-            texts = [
-                "\n".join(
-                    part for part in (p.title, p.title, p.location or "", p.description) if part
-                )
-                for _key, p in missing
-            ]
-            vectors = embed(texts, model_name=self._embedding_model)
-            fresh = dict(zip((k for k, _ in missing), vectors, strict=True))
-        return [
-            (key, posting, vector if vector is not None else fresh[key])
-            for key, posting, vector in scope
-        ]
+        return await self._embedded(scope)
 
     async def _previous_members(self, owner_id: uuid.UUID) -> dict[str, set[str]]:
         """Every role's postings from the last run, retired ones included. One
@@ -1639,7 +1643,7 @@ class RoleMapService:
         return previous
 
     async def _keep_role(
-        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, postings: list[PostingView]
+        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, postings: list[PostingHeadView]
     ) -> bool:
         """Keep an already-analysed role on the map, refreshing only what needs
         no AI: its opening count and salary bands. ``False`` means there is no
@@ -1659,7 +1663,7 @@ class RoleMapService:
         *,
         role_id: uuid.UUID,
         keys: set[str],
-        postings: list[PostingView],
+        postings: list[PostingHeadView],
         extraction: _RoleExtraction,
         bar: HiringBar,
         bar_reasoning: str,
@@ -1721,7 +1725,7 @@ class RoleMapService:
             )
 
     async def _salary_bands(
-        self, owner_id: uuid.UUID, postings: list[PostingView]
+        self, owner_id: uuid.UUID, postings: list[PostingHeadView]
     ) -> dict[str, Any]:
         """One band per market the user selected, not one number per role."""
         selected = await self._market.target_locations(owner_id)
@@ -1781,7 +1785,7 @@ class RoleMapService:
             mine.record(RolesReclustered(owner_id=owner_id, roles=len(reconciliation.assignments)))
 
 
-def _posting_key(posting: PostingView) -> str:
+def _posting_key(posting: PostingHeadView) -> str:
     """The key a posting is matched under (see ``MarketService.scope_with_vectors``)."""
     return str(posting.id)
 

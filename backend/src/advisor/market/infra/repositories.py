@@ -34,6 +34,7 @@ from advisor.market.domain import (
     PostingEmbedding,
     PostingEmbeddingFilter,
     PostingEmbeddingRepository,
+    PostingHead,
     PostingScope,
     PostingStatus,
     SearchResult,
@@ -200,37 +201,38 @@ class SqlAlchemyJobPostingRepository(
         return int(getattr(result, "rowcount", 0) or 0)
 
     async def get_open_in_scope(self, scope: PostingScope) -> list[JobPosting]:
-        posting = models.JobPosting
-        either: list[ColumnElement[bool]] = []
-        for market in scope.markets:
-            # A country takes in its cities, and a region its member countries
-            # (ADR 0026): ``in_market`` in SQL.
-            for name in place_names(market):
-                if words := market_words(name):
-                    either.append(_names_every_word(posting.location, words))
-        if any(
-            target_location_option(market) is not None or search_scope(market) is not None
-            for market in scope.markets
-        ):
-            # Remote work open to anyone is in every listed place, though its
-            # location names none of them (ADR 0025).
-            either.append(_names_every_word(posting.location, WORLDWIDE_WORDS))
-        if scope.includes_baseline:
-            either.append(
-                posting.crawl_source_id.in_(
-                    select(models.CrawlSource.id).where(
-                        models.CrawlSource.origin == str(SourceOrigin.BASELINE)
-                    )
-                )
-            )
-        if not either:
+        in_scope = _in_scope(scope)
+        if in_scope is None:
             return []  # locations with no words in them, and nothing else chosen
+        posting = models.JobPosting
         rows = await self._session.execute(
-            select(posting)
-            .where(posting.status == str(PostingStatus.OPEN), or_(*either), _is_held(posting))
-            .order_by(posting.created_at.desc(), posting.id.desc())
+            select(posting).where(in_scope).order_by(posting.created_at.desc(), posting.id.desc())
         )
         return [mappers.job_posting(row) for row in rows.scalars()]
+
+    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
+        in_scope = _in_scope(scope)
+        if in_scope is None:
+            return []
+        posting = models.JobPosting
+        rows = await self._session.execute(
+            select(
+                posting.id,
+                posting.company_id,
+                posting.title,
+                posting.location,
+                posting.url,
+                posting.source_kind,
+                posting.posted_on,
+                posting.salary_min,
+                posting.salary_max,
+                posting.salary_currency,
+                posting.first_seen_at,
+            )
+            .where(in_scope)
+            .order_by(posting.created_at.desc(), posting.id.desc())
+        )
+        return [mappers.posting_head(row) for row in rows]
 
     async def thin_unheld(self, *, unseen_since: datetime, at: datetime) -> int:
         posting = models.JobPosting
@@ -253,6 +255,36 @@ class SqlAlchemyJobPostingRepository(
                 )
             )
         return len(ids)
+
+
+def _in_scope(scope: PostingScope) -> ColumnElement[bool] | None:
+    """An open, held posting in this scope; ``None`` when nothing can be."""
+    posting = models.JobPosting
+    either: list[ColumnElement[bool]] = []
+    for market in scope.markets:
+        # A country takes in its cities, and a region its member countries
+        # (ADR 0026): ``in_market`` in SQL.
+        for name in place_names(market):
+            if words := market_words(name):
+                either.append(_names_every_word(posting.location, words))
+    if any(
+        target_location_option(market) is not None or search_scope(market) is not None
+        for market in scope.markets
+    ):
+        # Remote work open to anyone is in every listed place, though its
+        # location names none of them (ADR 0025).
+        either.append(_names_every_word(posting.location, WORLDWIDE_WORDS))
+    if scope.includes_baseline:
+        either.append(
+            posting.crawl_source_id.in_(
+                select(models.CrawlSource.id).where(
+                    models.CrawlSource.origin == str(SourceOrigin.BASELINE)
+                )
+            )
+        )
+    if not either:
+        return None
+    return and_(posting.status == str(PostingStatus.OPEN), or_(*either), _is_held(posting))
 
 
 def _is_held(posting: type[models.JobPosting]) -> ColumnElement[bool]:
