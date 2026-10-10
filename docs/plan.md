@@ -3875,6 +3875,23 @@ The fix, in order of how much it matters:
   Integration: a ledger row keeps both the estimate and the real figures.
 
 ## Record who paid for a call
+**Done** (ADR 0064, migration 0048), on
+`feature/no-ticket/platform-ai-funding`. Where the build differs from the
+plan below:
+
+* The gateway, not `identity`, holds the platform's key. `load` returns a
+  `PlatformCredential` marker, and the gateway resolves the provider, model
+  and key from settings (`_Key`). `identity` never sees the key.
+* `BudgetGuard.check` takes the funding, and skips the user's cap for a
+  platform call; the meter that replaces it there is the next step.
+* The error codes start `ai_platform_`, like the gateway's other `ai_`
+  codes, so the SPA's existing "about your model" hints can match them.
+* A provider's misconfiguration is caught by `Settings` (provider and model
+  present, provider one of anthropic, openai, google, daily ceiling within
+  the monthly). The model's rate is checked when the gateway is built,
+  because the crawler must not import `kernel.ai_gateway`, even indirectly
+  through `kernel.config`.
+
 
 * **`kernel.ai_gateway.ports`.** `ProviderCredential` gains
   `funding: Funding` (`own | platform`), and `UsageRecord` carries it. The

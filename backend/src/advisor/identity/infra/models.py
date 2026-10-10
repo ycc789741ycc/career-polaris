@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -177,6 +178,7 @@ class AiUsageLedger(Base, OwnedMixin):
     __tablename__ = "ai_usage_ledger"
     __table_args__ = (
         Index("ix_ai_usage_ledger_owner_occurred", "owner_id", "occurred_at"),
+        CheckConstraint("funding IN ('own', 'platform')", name="funding"),
         {"schema": "identity"},
     )
 
@@ -196,4 +198,8 @@ class AiUsageLedger(Base, OwnedMixin):
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     is_estimated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Whose key paid: "own" or "platform" (ADR 0064).
+    funding: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="own", server_default="own"
     )

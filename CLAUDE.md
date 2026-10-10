@@ -897,3 +897,11 @@ under `epic/no-ticket/platform-ai`:
   limit (`Estimate.ceiling_cost_usd`). The ledger keeps each row's
   `estimated_input_tokens` and `estimated_cost_usd` beside what it used, and
   `is_estimated` when the counts are ours (migration 0047).
+- **Record who paid for a call** (ADR 0064). A call runs on the user's own
+  key or the platform's (`kernel.ai_gateway.Funding`). `CredentialStore.load`
+  returns the user's credential or a `PlatformCredential`, and the gateway
+  takes the platform's provider, model and key from `PLATFORM_AI_*` (blank
+  key: off; a model with no published rate refuses to start). The
+  platform's key failing answers `ai_platform_unavailable` (503) and leaves
+  the user's credential and jobs alone. Every ledger row records `funding`
+  (migration 0048), and the user's monthly cap counts only `own`.

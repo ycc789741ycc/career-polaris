@@ -10,6 +10,15 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
+
+
+class AiFunding(StrEnum):
+    """Whose key paid for a call (ADR 0064). The monthly cap guards only the
+    user's own money; the platform's is metered apart."""
+
+    OWN = "own"
+    PLATFORM = "platform"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,3 +79,4 @@ class AiUsageEntry:
     # The counts are ours, not the provider's: it reported none, or the reply
     # was cut short.
     is_estimated: bool = False
+    funding: AiFunding = AiFunding.OWN

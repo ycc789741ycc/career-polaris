@@ -214,3 +214,46 @@ def test_a_smaller_top_k_than_candidates_is_allowed() -> None:
     env = dict(MINIMAL_ENV, ROLE_CANDIDATE_COUNT="20", ROLE_MAP_TOP_K="5")
     settings = Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]
     assert (settings.role_candidate_count, settings.role_map_top_k) == (20, 5)
+
+
+def test_ai_on_the_platforms_key_is_off_until_a_key_is_set(clean_env: None) -> None:
+    settings = get_settings()
+    assert settings.platform_ai_enabled is False
+
+
+@pytest.mark.parametrize("value", ["", "  "])
+def test_a_blank_platform_key_leaves_it_off(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("PLATFORM_AI_API_KEY", value)
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "")
+    get_settings.cache_clear()
+    assert get_settings().platform_ai_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [("", "claude-haiku-4-5"), ("local", "claude-haiku-4-5"), ("anthropic", "")],
+)
+def test_a_platform_key_needs_a_priceable_provider_and_a_model(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch, provider: str, model: str
+) -> None:
+    monkeypatch.setenv("PLATFORM_AI_API_KEY", "sk-platform")
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", provider)
+    monkeypatch.setenv("PLATFORM_AI_MODEL", model)
+    get_settings.cache_clear()
+    with pytest.raises(PydanticValidationError):
+        get_settings()
+
+
+def test_the_daily_ceiling_cannot_exceed_the_monthly_one(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PLATFORM_AI_API_KEY", "sk-platform")
+    monkeypatch.setenv("PLATFORM_AI_PROVIDER", "anthropic")
+    monkeypatch.setenv("PLATFORM_AI_MODEL", "claude-haiku-4-5")
+    monkeypatch.setenv("PLATFORM_AI_DAILY_CEILING_USD", "60")
+    monkeypatch.setenv("PLATFORM_AI_MONTHLY_CEILING_USD", "50")
+    get_settings.cache_clear()
+    with pytest.raises(PydanticValidationError, match="DAILY_CEILING"):
+        get_settings()

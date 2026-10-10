@@ -266,9 +266,12 @@ class SqlAlchemyAiUsageEntryRepository(
         return entity.id
 
     def conditions(self, filter: AiUsageEntryFilter) -> list[ColumnElement[bool]]:
-        if filter.occurred_since is None:
-            return []
-        return [models.AiUsageLedger.occurred_at >= filter.occurred_since]
+        conditions: list[ColumnElement[bool]] = []
+        if filter.occurred_since is not None:
+            conditions.append(models.AiUsageLedger.occurred_at >= filter.occurred_since)
+        if filter.funding is not None:
+            conditions.append(models.AiUsageLedger.funding == str(filter.funding))
+        return conditions
 
     async def total_cost(self, filter: AiUsageEntryFilter) -> Decimal:
         result = await self._session.execute(

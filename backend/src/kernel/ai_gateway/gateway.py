@@ -20,11 +20,17 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from pydantic import ValidationError as PydanticValidationError
 
 from kernel.ai_gateway import pricing, templates
-from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, UsageRecord
+from kernel.ai_gateway.ports import (
+    BudgetGuard,
+    CredentialStore,
+    Funding,
+    PlatformCredential,
+    UsageRecord,
+)
 from kernel.ai_gateway.providers import (
     REGISTRY,
     Completion,
@@ -35,11 +41,13 @@ from kernel.ai_gateway.providers import (
     Usage,
 )
 from kernel.ai_gateway.templates import PromptTemplate
-from kernel.config import Settings
+from kernel.config import InvalidConfigurationError, Settings
 from kernel.crypto import decrypt
 from kernel.errors import (
     CredentialFailedError,
+    DomainError,
     OutputInvalidError,
+    PlatformAiUnavailableError,
     ProviderUnavailableError,
     ValidationError,
 )
@@ -111,6 +119,8 @@ class Estimate:
     model_id: str
     template_version: str
     rate_is_published: bool
+    # Whose key it would run on.
+    funding: Funding
     # The most it can cost: every retry, each to its output limit
     # (``pricing.estimate_ceiling``). Money that is not the user's is
     # reserved against this.
@@ -128,6 +138,14 @@ class AiGateway:
         self._settings = settings
         self._credentials = credentials
         self._budget = budget
+        if settings.platform_ai_enabled:
+            model = settings.platform_ai_model or ""
+            # The platform's spend is metered against these rates; a guessed
+            # one would make every quota wrong.
+            if not pricing.rate_for(model).is_published:
+                raise InvalidConfigurationError(
+                    f"PLATFORM_AI_MODEL {model!r} has no published rate in pricing.json"
+                )
 
     # -- internals ----------------------------------------------------------
 
@@ -141,49 +159,87 @@ class AiGateway:
     def _attempts(self) -> int:
         return self._settings.ai_max_output_retries + 1
 
+    async def _resolve(self, owner_id: uuid.UUID) -> _Key:
+        """The key this user's call runs on: their own, still encrypted, or
+        the platform's, which only the gateway holds."""
+        credential = await self._credentials.load(owner_id)
+        if isinstance(credential, PlatformCredential):
+            settings = self._settings
+            if settings.platform_ai_api_key is None:
+                raise PlatformAiUnavailableError(
+                    "CareerPolaris's AI is switched off; add a key of your own to continue"
+                )
+            provider_name = settings.platform_ai_provider or ""
+            return _Key(
+                owner_id=owner_id,
+                provider=REGISTRY[provider_name],
+                model=settings.platform_ai_model or "",
+                base_url=REGISTRY[provider_name].default_base_url,
+                funding=Funding.PLATFORM,
+                platform_key=settings.platform_ai_api_key,
+            )
+        provider = REGISTRY.get(credential.provider)
+        if provider is None:
+            raise ValidationError(
+                f"unknown AI provider {credential.provider!r}", provider=credential.provider
+            )
+        base_url = credential.base_url or provider.default_base_url
+        if not base_url:
+            raise ValidationError("this provider needs a base URL", provider=credential.provider)
+        return _Key(
+            owner_id=owner_id,
+            provider=provider,
+            model=credential.model,
+            base_url=base_url,
+            funding=Funding.OWN,
+            encrypted_api_key=credential.encrypted_api_key,
+        )
+
     async def _prepare(
         self,
         owner_id: uuid.UUID,
         template: PromptTemplate,
         inputs: dict[str, str],
         untrusted: frozenset[str],
-    ) -> tuple[Request, pricing.CostEstimate]:
-        credential = await self._credentials.load(owner_id)
-        provider = REGISTRY.get(credential.provider)
-        if provider is None:
-            raise ValidationError(
-                f"unknown AI provider {credential.provider!r}", provider=credential.provider
-            )
-
+    ) -> tuple[_Key, Request, pricing.CostEstimate]:
+        key = await self._resolve(owner_id)
         prompt = template.render(inputs, untrusted=untrusted)
         estimate = pricing.estimate(
-            credential.model,
+            key.model,
             prompt=template.system + prompt,
             expected_output_tokens=template.expected_output_tokens,
         )
-
-        base_url = credential.base_url or provider.default_base_url
-        if not base_url:
-            raise ValidationError("this provider needs a base URL", provider=credential.provider)
-
-        # The key is opened here and lives only for this call.
-        api_key = decrypt(credential.encrypted_api_key, context=str(owner_id))
         request = Request(
-            api_key=api_key,
-            model=credential.model,
-            base_url=base_url,
+            # The key is opened here and lives only for this call.
+            api_key=key.get_api_key(),
+            model=key.model,
+            base_url=key.base_url,
             system=template.system,
             user=prompt,
             max_output_tokens=_max_output_tokens(template),
         )
-        return request, estimate
+        return key, request, estimate
+
+    async def _fail_key(self, key: _Key, error: DomainError) -> Exception:
+        """What a provider refusing the key becomes.
+
+        The user's own key is marked failed and their jobs paused. The
+        platform's failing is ours, not theirs: it is logged for the operator
+        and the user is told it is unavailable, with nothing of theirs changed.
+        """
+        if key.funding is Funding.OWN:
+            await self._credentials.mark_failed(key.owner_id, error.message)
+            return error
+        log.error("ai.platform_key_failed", reason=error.message, provider=key.provider.name)
+        return PlatformAiUnavailableError(
+            "CareerPolaris's AI is unavailable right now; try again later or use your own key"
+        )
 
     async def _record(
         self,
-        owner_id: uuid.UUID,
+        key: _Key,
         *,
         task: str,
-        provider: Provider,
         template: PromptTemplate,
         request: Request,
         completion: Completion,
@@ -205,9 +261,9 @@ class AiGateway:
         )
         await self._budget.record(
             UsageRecord(
-                owner_id=owner_id,
+                owner_id=key.owner_id,
                 task=task,
-                provider=provider.name,
+                provider=key.provider.name,
                 model=completion.model,
                 template_version=template.version_id,
                 input_tokens=completion.input_tokens,
@@ -216,6 +272,7 @@ class AiGateway:
                 estimated_input_tokens=estimate.input_tokens,
                 estimated_cost_usd=estimate.cost_usd,
                 is_estimated=completion.is_estimated,
+                funding=key.funding,
             )
         )
         return cost
@@ -235,27 +292,34 @@ class AiGateway:
 
         This is what the first-analysis and first-role-map confirmations show.
         """
-        credential = await self._credentials.load(owner_id)
+        key = await self._resolve(owner_id)
         prompt = template.system + template.render(inputs, untrusted=untrusted)
         cost = pricing.estimate(
-            credential.model,
+            key.model,
             prompt=prompt,
             expected_output_tokens=template.expected_output_tokens,
         )
         ceiling = pricing.estimate_ceiling(
-            credential.model,
+            key.model,
             prompt=prompt,
             max_output_tokens=_max_output_tokens(template),
             attempts=self._attempts,
         )
-        log.info("ai.estimate", task=task, template=template.version_id, model=credential.model)
+        log.info(
+            "ai.estimate",
+            task=task,
+            template=template.version_id,
+            model=key.model,
+            funding=str(key.funding),
+        )
         return Estimate(
             input_tokens=cost.input_tokens,
             expected_output_tokens=cost.output_tokens,
             cost_usd=cost.cost_usd,
-            model_id=credential.model,
+            model_id=key.model,
             template_version=template.version_id,
             rate_is_published=cost.rate_is_published,
+            funding=key.funding,
             ceiling_cost_usd=ceiling.cost_usd,
         )
 
@@ -281,11 +345,9 @@ class AiGateway:
         counts the provider reported, or an estimate marked as one when it
         reported none.
         """
-        request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
-        await self._budget.check(owner_id, estimate.cost_usd)
-
-        credential = await self._credentials.load(owner_id)
-        provider = REGISTRY[credential.provider]
+        key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
+        await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
+        provider = key.provider
         last_error: Exception | None = None
 
         async with self._client() as client:
@@ -295,9 +357,8 @@ class AiGateway:
                         completion = await provider.complete(client, request)
                     else:
                         completion = await self._complete_streamed(
-                            owner_id,
+                            key,
                             client,
-                            provider,
                             request,
                             task=task,
                             template=template,
@@ -305,17 +366,15 @@ class AiGateway:
                             on_progress=on_progress,
                         )
                 except CredentialFailedError as exc:
-                    await self._credentials.mark_failed(owner_id, exc.message)
-                    raise
+                    raise await self._fail_key(key, exc) from exc
                 except ProviderUnavailableError:
                     raise
 
                 # The ledger records every call, including one whose output we
                 # then reject — the provider billed for it either way.
                 cost = await self._record(
-                    owner_id,
+                    key,
                     task=task,
-                    provider=provider,
                     template=template,
                     request=request,
                     completion=completion,
@@ -352,9 +411,8 @@ class AiGateway:
 
     async def _complete_streamed(
         self,
-        owner_id: uuid.UUID,
+        key: _Key,
         client: GuardedClient,
-        provider: Provider,
         request: Request,
         *,
         task: str,
@@ -370,7 +428,7 @@ class AiGateway:
         tally = _Tally()
         last_report = _clock()
         try:
-            async with aclosing(provider.stream(client, request)) as events:
+            async with aclosing(key.provider.stream(client, request)) as events:
                 async for event in events:
                     if tally.add(event) is None:
                         continue
@@ -387,9 +445,8 @@ class AiGateway:
         except JobCancelledError:
             if tally.parts:
                 await self._record(
-                    owner_id,
+                    key,
                     task=task,
-                    provider=provider,
                     template=template,
                     request=request,
                     completion=tally.get_completion(request, is_cut_short=True),
@@ -413,30 +470,26 @@ class AiGateway:
         A reader that stops early closes the connection, and what was written
         by then is still recorded.
         """
-        request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
-        await self._budget.check(owner_id, estimate.cost_usd)
-        credential = await self._credentials.load(owner_id)
-        provider = REGISTRY[credential.provider]
+        key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
+        await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
 
         tally = _Tally()
         is_finished = False
         async with self._client() as client:
             try:
-                async with aclosing(provider.stream(client, request)) as events:
+                async with aclosing(key.provider.stream(client, request)) as events:
                     async for event in events:
                         piece = tally.add(event)
                         if piece is not None:
                             yield piece
                 is_finished = True
             except CredentialFailedError as exc:
-                await self._credentials.mark_failed(owner_id, exc.message)
-                raise
+                raise await self._fail_key(key, exc) from exc
             finally:
                 if is_finished or tally.parts:
                     await self._record(
-                        owner_id,
+                        key,
                         task=task,
-                        provider=provider,
                         template=template,
                         request=request,
                         completion=tally.get_completion(request, is_cut_short=not is_finished),
@@ -464,7 +517,7 @@ class AiGateway:
         attempt would contradict it. Invalid output raises
         ``OutputInvalidError`` after the text.
         """
-        credential = await self._credentials.load(owner_id)
+        key = await self._resolve(owner_id)
         pending = ""
         tail: str | None = None
         async for chunk in self.stream(
@@ -483,9 +536,34 @@ class AiGateway:
             raise OutputInvalidError("the reply ended without its structured part")
         yield StreamResult(
             value=_parse(tail, output_schema),
-            model_id=credential.model,
+            model_id=key.model,
             template_version=template.version_id,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _Key:
+    """The key one call runs on, still closed.
+
+    The user's own is encrypted, bound to their id; the platform's is a
+    ``SecretStr`` from settings. ``get_api_key`` opens either, once, for the
+    request that sends it.
+    """
+
+    owner_id: uuid.UUID
+    provider: Provider
+    model: str
+    base_url: str
+    funding: Funding
+    encrypted_api_key: str | None = None
+    platform_key: SecretStr | None = None
+
+    def get_api_key(self) -> str:
+        if self.platform_key is not None:
+            return self.platform_key.get_secret_value()
+        if self.encrypted_api_key is None:
+            raise ValidationError("this call has no key to run on")
+        return decrypt(self.encrypted_api_key, context=str(self.owner_id))
 
 
 def _max_output_tokens(template: PromptTemplate) -> int:

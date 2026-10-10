@@ -138,7 +138,9 @@ class FakeUsage(FakeRepository[AiUsageEntry, AiUsageEntryFilter], AiUsageEntryRe
     noun = "AI usage entry"
 
     def matches(self, entity: AiUsageEntry, filter: AiUsageEntryFilter) -> bool:
-        return filter.occurred_since is None or entity.occurred_at >= filter.occurred_since
+        return (filter.occurred_since is None or entity.occurred_at >= filter.occurred_since) and (
+            filter.funding is None or entity.funding == filter.funding
+        )
 
     async def total_cost(self, filter: AiUsageEntryFilter) -> Decimal:
         return sum(
