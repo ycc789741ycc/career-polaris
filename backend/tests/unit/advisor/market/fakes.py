@@ -142,7 +142,7 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
     async def get_open_in_scope(self, scope: PostingScope) -> list[JobPosting]:
         baseline = {s.id for s in self._store.sources.values() if s.origin is SourceOrigin.BASELINE}
         opened = await self.get_list(JobPostingFilter(status=PostingStatus.OPEN))
-        return [
+        found = [
             p
             for p in opened
             if self._is_held(p)
@@ -151,6 +151,17 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
                 or (scope.includes_baseline and p.crawl_source_id in baseline)
             )
         ]
+        if scope.is_bounded:
+            newest = {
+                p.id
+                for p in sorted(
+                    found,
+                    key=lambda p: (p.posted_on or p.first_seen_at.date(), p.created_at, p.id),
+                    reverse=True,
+                )[: scope.baseline_limit]
+            }
+            found = [p for p in found if p.id in newest]
+        return found
 
     async def get_open_heads_in_scope(
         self, scope: PostingScope, posting_ids: tuple[uuid.UUID, ...] | None = None

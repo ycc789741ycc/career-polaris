@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import and_, delete, exists, func, insert, or_, select, update
+from sqlalchemy import Date, and_, cast, delete, exists, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
@@ -288,7 +288,21 @@ def _in_scope(scope: PostingScope) -> ColumnElement[bool] | None:
         )
     if not either:
         return None
-    return and_(posting.status == str(PostingStatus.OPEN), or_(*either), _is_held(posting))
+    in_scope = and_(posting.status == str(PostingStatus.OPEN), or_(*either), _is_held(posting))
+    if scope.is_bounded:
+        # The newest by the day it was posted, else first seen (ADR 0068).
+        newest = (
+            select(posting.id)
+            .where(in_scope)
+            .order_by(
+                func.coalesce(posting.posted_on, cast(posting.first_seen_at, Date)).desc(),
+                posting.created_at.desc(),
+                posting.id.desc(),
+            )
+            .limit(scope.baseline_limit)
+        )
+        in_scope = posting.id.in_(newest)
+    return in_scope
 
 
 def _is_held(posting: type[models.JobPosting]) -> ColumnElement[bool]:

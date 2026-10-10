@@ -202,6 +202,7 @@ def build(settings: Settings | None = None) -> Container:
             search=timedelta(hours=settings.market_search_fresh_hours),
             board=timedelta(hours=settings.market_board_fresh_hours),
         ),
+        baseline_limit=settings.baseline_scope_max_postings,
     )
     rolemap = create_rolemap_service(
         database,
