@@ -25,7 +25,8 @@ class Provider(StrEnum):
 
 
 # Shown in the settings screen. A user may type any model their provider
-# serves; these are the ones we can price without guessing.
+# serves; these are ids each provider's API takes, and every one has a
+# published rate in pricing.json (a unit test holds that).
 SUGGESTED_MODELS: dict[Provider, tuple[str, ...]] = {
     Provider.ANTHROPIC: (
         "claude-opus-5",
@@ -33,7 +34,7 @@ SUGGESTED_MODELS: dict[Provider, tuple[str, ...]] = {
         "claude-haiku-4-5",
     ),
     Provider.OPENAI: ("gpt-5.1", "gpt-5-mini"),
-    Provider.GOOGLE: ("gemini-3-pro", "gemini-3-flash"),
+    Provider.GOOGLE: ("gemini-3-pro-preview", "gemini-3-flash-preview"),
 }
 
 

@@ -138,7 +138,10 @@ and Node versions and TypeScript's major are upgraded on purpose, not by it.
 
 Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
-`logs`, `stats`, `disk-usage`, `platform-ai-usage` (what AI has cost: the
+`logs`, `stats`, `disk-usage`, `sync-pricing` (updates
+`backend/src/kernel/ai_gateway/pricing.json` from LiteLLM's price listing,
+mount-free on stdin and stdout; the weekly `pricing.yml` opens a pull request
+with it), `platform-ai-usage` (what AI has cost: the
 platform key against its ceilings, top accounts by digest, spend by task, and
 each prompt's estimate against what calls cost; read-only, where Postgres
 runs), `backup-db`, `release BUMP=` (tags
@@ -955,3 +958,14 @@ under `epic/no-ticket/platform-ai`:
   (`accepts_base_url`), for an OpenAI-compatible cloud (Azure OpenAI, Groq,
   Together), behind the SSRF guard; the database checks both
   (`ck_provider_credential_provider`, `_base_url`).
+- **Every suggested model is priced, kept current by a reviewed PR** (no
+  ADR). `make sync-pricing` (`cli/sync_pricing.py`, the pure parts
+  `get_listed_rate`, `get_synced_table` and `get_sync_summary` in
+  `kernel.ai_gateway.pricing`) reads LiteLLM's listing for every model in the
+  table and every `SUGGESTED_MODELS` entry, from the provider itself only
+  (never a reseller's price). The weekly `.github/workflows/pricing.yml` runs
+  it and the unit tests and opens a pull request when a rate changed, flagging
+  any that went free or fell by more than half. Prices never change at run
+  time. A unit test holds that every suggested model has a published rate;
+  Google's suggestions are the API's ids, `gemini-3-pro-preview` and
+  `gemini-3-flash-preview`.
