@@ -40,47 +40,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
+   * Exchanges the refresh cookie, sharing one request between concurrent
+   * callers: each exchange rotates the token, so a second one sent before the
+   * first answers carries a spent token, trips the reuse detection and revokes
+   * the whole chain, signing the user out.
+   */
+  const executeSharedRefresh = useCallback((): Promise<session.Session> => {
+    if (!inFlight.current) {
+      inFlight.current = session.refresh().finally(() => {
+        inFlight.current = null;
+      });
+    }
+    return inFlight.current;
+  }, []);
+
+  /**
    * The access token for the next API call, refreshed if it is about to expire.
-   *
-   * Concurrent callers share one refresh: without that, a page that fires
-   * several requests at once would rotate the refresh token several times and
-   * trip the reuse detection, signing the user out.
+   * A page that fires several requests at once shares one refresh.
    */
   const getToken = useCallback(async (): Promise<string | null> => {
     const held = sessionRef.current;
     if (held && held.expiresAt - Date.now() > REFRESH_MARGIN_MS) {
       return held.accessToken;
     }
-    if (!inFlight.current) {
-      inFlight.current = session.refresh().finally(() => {
-        inFlight.current = null;
-      });
-    }
     try {
-      const renewed = await inFlight.current;
+      const renewed = await executeSharedRefresh();
       adopt(renewed);
       return renewed.accessToken;
     } catch {
       adopt(null);
       return null;
     }
-  }, [adopt]);
+  }, [adopt, executeSharedRefresh]);
 
   useEffect(() => {
     setTokenSource(getToken);
   }, [getToken]);
 
   // On load, try the refresh cookie: a reload should not mean signing in again.
+  // Shared, because React's StrictMode runs this effect twice in development,
+  // and a first request the cleanup only ignores has still rotated the token.
   useEffect(() => {
     let cancelled = false;
-    session
-      .refresh()
+    executeSharedRefresh()
       .then((renewed) => !cancelled && adopt(renewed))
       .catch(() => !cancelled && adopt(null));
     return () => {
       cancelled = true;
     };
-  }, [adopt]);
+  }, [adopt, executeSharedRefresh]);
 
   const value = useMemo<AuthState>(
     () => ({
