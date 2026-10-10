@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from kernel.ai_gateway.providers.anthropic import _raise_for_status
-from kernel.ai_gateway.providers.base import Completion, Provider, Request
+from kernel.ai_gateway.providers.base import (
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+    Usage,
+)
 from kernel.fetch import GuardedClient
 
 
@@ -43,12 +50,16 @@ class GoogleProvider(Provider):
             model=request.model,
         )
 
-    async def stream(self, client: GuardedClient, request: Request) -> AsyncIterator[str]:
+    async def stream(self, client: GuardedClient, request: Request) -> AsyncGenerator[StreamEvent]:
         """Google's streaming wire format differs enough to be its own job.
 
-        Phase 1 has no streaming feature on this provider (resume chat is Phase
-        3), so the whole response is yielded as one chunk rather than leaving a
-        half-built SSE parser in the tree.
+        Until it is built, the whole reply is yielded as one piece, with the
+        usage Google reported for it.
         """
         completion = await self.complete(client, request)
-        yield completion.text
+        yield TextDelta(completion.text)
+        yield Usage(
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            model=completion.model,
+        )

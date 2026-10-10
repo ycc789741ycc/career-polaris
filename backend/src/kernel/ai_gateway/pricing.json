@@ -1,5 +1,10 @@
 {
   "_comment": "Per-million-token USD rates used for the pre-call cost estimate and the usage ledger. Anthropic rates are current as of 2026-06-24. Rates for other providers are left out deliberately rather than guessed: an unknown model falls back to `unknown_model_rate` and the estimate is labelled as such in the UI. Update this file, not the code, when a rate changes.",
+  "token_counting": {
+    "_comment": "estimate_tokens: characters of Chinese, Japanese and Korean script count tokens_per_cjk_char each; everything else chars_per_token characters to a token. Tune from `make platform-ai-usage`, which compares estimates with what providers reported.",
+    "chars_per_token": 4,
+    "tokens_per_cjk_char": 1.0
+  },
   "unknown_model_rate": { "input_per_mtok": 15.0, "output_per_mtok": 75.0 },
   "models": {
     "claude-fable-5-1":  { "input_per_mtok": 10.0, "output_per_mtok": 50.0 },

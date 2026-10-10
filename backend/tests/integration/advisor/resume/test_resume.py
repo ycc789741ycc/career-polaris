@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -43,7 +43,14 @@ from advisor.resume.domain import Layout, TemplateSpec
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
+from kernel.ai_gateway.providers import (
+    REGISTRY,
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+)
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import EvidenceNotOwnedError, NotFoundError
@@ -80,14 +87,14 @@ class StubProvider(Provider):
             model=request.model,
         )
 
-    async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
         self.calls.append(request)
         if "<<<PROPOSAL>>>" not in request.system + request.user:
             # A job's call streams too (ADR 0042): the queued reply, whole.
-            yield self.replies.pop(0) if self.replies else "{}"
+            yield TextDelta(self.replies.pop(0) if self.replies else "{}")
             return
         for chunk in self.streams.pop(0) if self.streams else []:
-            yield chunk
+            yield TextDelta(chunk)
 
 
 @dataclass

@@ -878,3 +878,22 @@ compute kept their names, so their volumes carried over; each place writes
 `.machine` and deletes the moved keys from `.env` once (`docs/deploy.md`,
 section 6). ADR 0057 is superseded.
 
+
+## Phase 13 scope
+
+AI on the platform's key, under a quota (`docs/plan.md`), one branch per step
+under `epic/no-ticket/platform-ai`:
+
+- **Count what a call really costs** (no ADR). Every call is recorded with
+  the provider's own token counts: `Provider.stream` yields `TextDelta`s and
+  a `Usage` (Anthropic's `message_start`/`message_delta`, OpenAI's
+  `include_usage` chunk, Google's `usageMetadata`), and `GuardedClient.stream`
+  reads the body as it arrives, under the size limit, closing the connection
+  when a job is cancelled or a chat reader leaves. A call is priced at the
+  rate of the model asked for, and `pricing.rate_for` reads a dated snapshot
+  id (`…-20251001`) as the model it names. `estimate_tokens` counts Chinese,
+  Japanese and Korean near a token a character (`token_counting` in
+  `pricing.json`); `estimate_ceiling` prices every attempt at its output
+  limit (`Estimate.ceiling_cost_usd`). The ledger keeps each row's
+  `estimated_input_tokens` and `estimated_cost_usd` beside what it used, and
+  `is_estimated` when the counts are ours (migration 0047).
