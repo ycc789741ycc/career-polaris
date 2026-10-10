@@ -7,7 +7,7 @@ the ledger, not the model.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 
@@ -19,7 +19,14 @@ from advisor.identity import IdentityService, create_identity_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.rolemap import create_rolemap_service
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
+from kernel.ai_gateway.providers import (
+    REGISTRY,
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+)
 from kernel.config import Settings
 from kernel.db import Database
 from tests.integration.places import WINDOWS, store_target_locations
@@ -65,8 +72,8 @@ class StubProvider(Provider):
             model=request.model,
         )
 
-    async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
-        yield ""
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
+        yield TextDelta("")
 
 
 @pytest.fixture

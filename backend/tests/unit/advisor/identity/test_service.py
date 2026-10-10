@@ -254,6 +254,9 @@ async def test_spending_past_the_cap_pauses_and_refuses() -> None:
             input_tokens=10,
             output_tokens=10,
             cost_usd=Decimal("0.75"),
+            estimated_input_tokens=12,
+            estimated_cost_usd=Decimal("0.70"),
+            is_estimated=False,
         )
     )
 

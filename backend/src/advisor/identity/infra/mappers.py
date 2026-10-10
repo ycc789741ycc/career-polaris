@@ -195,6 +195,9 @@ def usage(row: models.AiUsageLedger) -> AiUsageEntry:
         output_tokens=row.output_tokens,
         cost_usd=row.cost_usd,
         occurred_at=row.occurred_at,
+        estimated_input_tokens=row.estimated_input_tokens,
+        estimated_cost_usd=row.estimated_cost_usd,
+        is_estimated=row.is_estimated,
     )
 
 
@@ -213,3 +216,6 @@ def apply_usage(row: models.AiUsageLedger, entity: AiUsageEntry) -> None:
     row.output_tokens = entity.output_tokens
     row.cost_usd = entity.cost_usd
     row.occurred_at = entity.occurred_at
+    row.estimated_input_tokens = entity.estimated_input_tokens
+    row.estimated_cost_usd = entity.estimated_cost_usd
+    row.is_estimated = entity.is_estimated

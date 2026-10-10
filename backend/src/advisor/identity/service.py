@@ -255,6 +255,9 @@ class IdentityService(CredentialStore, BudgetGuard):
                     output_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
                     occurred_at=utcnow(),
+                    estimated_input_tokens=usage.estimated_input_tokens,
+                    estimated_cost_usd=usage.estimated_cost_usd,
+                    is_estimated=usage.is_estimated,
                 )
             )
 

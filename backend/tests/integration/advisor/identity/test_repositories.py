@@ -132,6 +132,33 @@ async def test_the_months_spend_sums_in_the_database(
         assert await nobody.usage.total_cost(AiUsageEntryFilter()) == Decimal(0)
 
 
+async def test_a_ledger_row_keeps_its_estimate_beside_what_the_call_used(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    entry = AiUsageEntry(
+        id=uuid.uuid4(),
+        owner_id=account,
+        task="assessment",
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        template_version="v1",
+        input_tokens=1_840,
+        output_tokens=612,
+        cost_usd=Decimal("0.004900"),
+        occurred_at=datetime.now(UTC),
+        estimated_input_tokens=1_200,
+        estimated_cost_usd=Decimal("0.003700"),
+        is_estimated=False,
+    )
+    async with uow.for_owner(account) as mine:
+        await mine.usage.create(entry)
+    async with uow.for_owner(account) as mine:
+        stored = await mine.usage.get(entry.id)
+
+    assert stored == entry
+
+
 async def test_identity_events_reach_the_outbox_as_the_dispatcher_reads_them(
     database: Database, account: uuid.UUID
 ) -> None:

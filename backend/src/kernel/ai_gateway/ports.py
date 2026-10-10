@@ -31,7 +31,12 @@ class ProviderCredential:
 
 @dataclass(frozen=True, slots=True)
 class UsageRecord:
-    """One row of the AIUsageLedger."""
+    """One row of the AIUsageLedger.
+
+    The counts are the provider's, unless ``is_estimated``. The estimate the
+    call was priced at before it was made is kept beside them, so the two can
+    be compared.
+    """
 
     owner_id: uuid.UUID
     task: str
@@ -41,6 +46,9 @@ class UsageRecord:
     input_tokens: int
     output_tokens: int
     cost_usd: Decimal
+    estimated_input_tokens: int
+    estimated_cost_usd: Decimal
+    is_estimated: bool
 
 
 class CredentialStore(Protocol):

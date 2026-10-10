@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
-from kernel.ai_gateway import templates
+from kernel.ai_gateway import pricing, templates
 from kernel.ai_gateway.gateway import AiGateway
 from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, ProviderCredential, UsageRecord
-from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
+from kernel.ai_gateway.providers import (
+    REGISTRY,
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+    Usage,
+)
 from kernel.config import get_settings
 from kernel.crypto import encrypt
 from kernel.errors import (
@@ -68,9 +76,11 @@ class StubProvider(Provider):
     name = "stub"
     default_base_url = "https://llm.example.com"
 
-    def __init__(self, replies: list[str | Exception]) -> None:
+    def __init__(self, replies: list[str | Exception], usage: Usage | None = None) -> None:
         self.replies = list(replies)
+        self.usage = usage
         self.requests: list[Request] = []
+        self.closed = 0
 
     async def complete(self, client: object, request: Request) -> Completion:
         self.requests.append(request)
@@ -79,17 +89,22 @@ class StubProvider(Provider):
             raise reply
         return Completion(text=reply, input_tokens=120, output_tokens=40, model=request.model)
 
-    async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
         self.requests.append(request)
-        for reply in self.replies:
-            assert isinstance(reply, str)
-            yield reply
+        try:
+            for reply in self.replies:
+                assert isinstance(reply, str)
+                yield TextDelta(reply)
+            if self.usage is not None:
+                yield self.usage
+        finally:
+            self.closed += 1
 
 
 @pytest.fixture
 def stub_provider(monkeypatch: pytest.MonkeyPatch):
-    def install(replies: list[str | Exception]) -> StubProvider:
-        provider = StubProvider(replies)
+    def install(replies: list[str | Exception], usage: Usage | None = None) -> StubProvider:
+        provider = StubProvider(replies, usage)
         monkeypatch.setitem(REGISTRY, "stub", provider)
         return provider
 
@@ -415,3 +430,138 @@ async def test_a_job_cancelled_while_it_streams_stops_and_is_still_charged(
     # What was written before the stop is billed, so the ledger has it.
     [usage] = budget.recorded
     assert usage.output_tokens > 0
+
+
+# -- what the ledger records ---------------------------------------------------
+
+
+async def test_a_streamed_call_is_recorded_with_the_providers_counts(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(
+        ['{"name": "API design", "score": 81}'],
+        usage=Usage(input_tokens=1_840, output_tokens=612, model="claude-opus-5-20261001"),
+    )
+
+    async def report(progress: Progress) -> None:
+        pass
+
+    await gw.run(
+        OWNER,
+        task="assess",
+        template=TEMPLATE,
+        inputs={"subject": "x"},
+        output_schema=Answer,
+        on_progress=report,
+    )
+
+    [usage] = budget.recorded
+    assert (usage.input_tokens, usage.output_tokens) == (1_840, 612)
+    assert usage.is_estimated is False
+    # Kept as reported, priced as asked: the dated id has no rate of its own.
+    assert usage.model == "claude-opus-5-20261001"
+    assert usage.cost_usd == pricing.cost_of("claude-opus-5", input_tokens=1_840, output_tokens=612)
+    assert usage.estimated_input_tokens > 0
+    assert usage.estimated_cost_usd == budget.checked[0]
+
+
+async def test_a_stream_that_reports_no_usage_is_recorded_as_estimated(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(['{"name": "API design", "score": 81}'])
+
+    async def report(progress: Progress) -> None:
+        pass
+
+    await gw.run(
+        OWNER,
+        task="assess",
+        template=TEMPLATE,
+        inputs={"subject": "x"},
+        output_schema=Answer,
+        on_progress=report,
+    )
+
+    [usage] = budget.recorded
+    assert usage.is_estimated is True
+    assert usage.output_tokens == pricing.estimate_tokens('{"name": "API design", "score": 81}')
+
+
+async def test_a_cancelled_stream_is_closed_and_recorded_as_estimated(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider, ticking_clock: None
+) -> None:
+    gw, _, budget = gateway
+    provider = stub_provider(['{"name": ', '"API design", ', '"score": 81}'])
+
+    async def cancel_once_writing(progress: Progress) -> None:
+        if progress.fraction > 0:
+            raise JobCancelledError
+
+    with pytest.raises(JobCancelledError):
+        await gw.run(
+            OWNER,
+            task="assess",
+            template=TEMPLATE,
+            inputs={"subject": "x"},
+            output_schema=Answer,
+            on_progress=cancel_once_writing,
+        )
+
+    assert provider.closed == 1, "stopping must close the connection, so the provider stops"
+    [usage] = budget.recorded
+    assert usage.is_estimated is True
+
+
+async def test_a_chat_reader_that_stops_early_still_pays_for_what_was_written(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    provider = stub_provider(["First part. ", "Second part. ", "Third part."])
+
+    events = gw.stream(OWNER, task="revise", template=TEMPLATE, inputs={"subject": "x"})
+    first = await anext(events)
+    await events.aclose()
+
+    assert first == "First part. "
+    assert provider.closed == 1
+    [usage] = budget.recorded
+    assert usage.is_estimated is True and usage.output_tokens > 0
+
+
+async def test_a_finished_chat_is_recorded_with_the_providers_counts(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, budget = gateway
+    stub_provider(
+        ["All ", "done."], usage=Usage(input_tokens=500, output_tokens=7, model="claude-opus-5")
+    )
+
+    text = "".join(
+        [
+            chunk
+            async for chunk in gw.stream(
+                OWNER, task="revise", template=TEMPLATE, inputs={"subject": "x"}
+            )
+        ]
+    )
+
+    assert text == "All done."
+    [usage] = budget.recorded
+    assert (usage.input_tokens, usage.output_tokens, usage.is_estimated) == (500, 7, False)
+
+
+async def test_the_ceiling_covers_every_attempt_at_its_output_limit(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget], stub_provider
+) -> None:
+    gw, _, _ = gateway
+    stub_provider([])
+
+    estimate = await gw.estimate(OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"})
+
+    attempts = get_settings().ai_max_output_retries + 1
+    # TEMPLATE expects 100 tokens; a call may write up to 4,096.
+    floor = pricing.cost_of("claude-opus-5", input_tokens=0, output_tokens=attempts * 4_096)
+    assert estimate.ceiling_cost_usd >= floor
+    assert estimate.ceiling_cost_usd > estimate.cost_usd * attempts

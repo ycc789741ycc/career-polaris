@@ -1,5 +1,12 @@
 from kernel.ai_gateway.providers.anthropic import AnthropicProvider
-from kernel.ai_gateway.providers.base import Completion, Provider, Request
+from kernel.ai_gateway.providers.base import (
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+    Usage,
+)
 from kernel.ai_gateway.providers.google import GoogleProvider
 from kernel.ai_gateway.providers.openai_compat import LocalProvider, OpenAICompatibleProvider
 
@@ -21,4 +28,7 @@ __all__ = [
     "OpenAICompatibleProvider",
     "Provider",
     "Request",
+    "StreamEvent",
+    "TextDelta",
+    "Usage",
 ]
