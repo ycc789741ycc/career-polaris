@@ -251,7 +251,7 @@ The rest is unchanged:
   - A job that would exceed the cap pauses instead of running.
 - **Keys fail.** Emit `ProviderCredentialFailed`, pause that user's scheduled jobs, and say so.
 - **Record the model on every AI-derived snapshot:** SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion.
-- **Show cost before spending.** Every AI action the user starts shows an estimate on their key first:
+- **Show cost before spending.** Every AI action the user starts on their own key shows an estimate first. On CareerPolaris AI it starts at once, bounded by the free quota ([ADR 0067](decisions/0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md)):
   - Analyze, which now includes the role-map build
   - Add to Role Map
   - Submit answers

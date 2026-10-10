@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { AnalysisEstimate } from "../api/types";
 import { useActivity } from "../shell/activity";
-import { getShownModel, isOnPlatform, useShell } from "../shell/ShellContext";
+import { getShownModel, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
 import { messageOf } from "./useAsync";
 
@@ -59,11 +59,8 @@ export function useStartAnalysis({
       onCancel={() => setEstimate(null)}
     >
       This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-      {getShownModel(status, estimate.model_id)},{" "}
-      {isOnPlatform(status)
-        ? "from your free monthly quota"
-        : "charged to your own provider"}
-      : ${estimate.analysis_cost_usd} for the analysis, at most $
+      {getShownModel(status, estimate.model_id)}, charged to your own provider:
+      ${estimate.analysis_cost_usd} for the analysis, at most $
       {estimate.role_map_cost_usd} for the role map built after it
       {estimate.max_roles > 0
         ? `, up to ${estimate.max_roles} roles`

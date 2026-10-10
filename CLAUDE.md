@@ -991,3 +991,8 @@ under `epic/no-ticket/platform-ai`:
   (`AiSourceBody` has no `platform_model`) or named: `modelName`, `chargedTo`
   and `getShownModel` say "CareerPolaris AI" (`PLATFORM_AI`) in the shell and
   in every estimate. Finished work keeps the model id it recorded.
+- **No cost confirmation on CareerPolaris AI** (ADR 0067). `CostConfirm`
+  renders nothing and calls `onConfirm` once (guarded by a ref against React's
+  double mount) when the user's work runs on the platform, so every AI action
+  starts at once there; a run the quota can't take is refused when it starts.
+  On the user's own key the estimate and "Run it" stay.

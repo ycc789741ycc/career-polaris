@@ -4144,3 +4144,12 @@ same under the monthly budget. Rows stored before are taken as priced.
   shell or an estimate: it is "CareerPolaris AI". A finished plan or résumé
   keeps the model id it recorded.
 
+## No cost confirmation on CareerPolaris AI
+**Done** (ADR 0067), on `bugfix/no-ticket/no-cost-confirm-on-platform`. The
+"Before we spend anything" confirmation still showed on CareerPolaris AI, in
+dollars, after the terms step went (ADR 0066). `CostConfirm` now starts the
+run at once and shows nothing while the user's work runs on the platform, in
+all seven flows: Analyze, rebuilding the map, Target this role, the gap plan,
+the résumé (writing, regenerating, filling a section), Fill the gap and Set
+as target. On the user's own key it is unchanged.
+
