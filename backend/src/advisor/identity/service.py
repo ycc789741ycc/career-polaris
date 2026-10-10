@@ -106,9 +106,6 @@ class AiSourceView:
     is_platform_on: bool
     # Google has verified this account's address (ADR 0064).
     is_eligible: bool
-    # The model the platform's key runs, shown and never chosen.
-    platform_model: str | None
-    has_accepted_platform_terms: bool
 
 
 class IdentityService(CredentialStore, BudgetGuard):
@@ -125,12 +122,13 @@ class IdentityService(CredentialStore, BudgetGuard):
         uow: IdentityUnitOfWork,
         *,
         default_monthly_cap_usd: Decimal,
-        platform_ai_model: str | None = None,
+        is_platform_on: bool = False,
     ) -> None:
         self._uow = uow
         self._default_cap = default_monthly_cap_usd
-        # None while the platform's key is off.
-        self._platform_model = platform_ai_model
+        # Whether the platform's key is offered. Its model is never told to
+        # the client: users see "CareerPolaris AI".
+        self._is_platform_on = is_platform_on
 
     # -- accounts -----------------------------------------------------------
 
@@ -183,6 +181,8 @@ class IdentityService(CredentialStore, BudgetGuard):
                     last_four=last_four(api_key),
                 )
             )
+            # Storing a key is choosing it (ADR 0066).
+            await _update_source(mine, owner_id, AiSource.OWN)
             # A replaced key is a reason to try the paused work again.
             account = await mine.accounts.get(owner_id)
             if account is not None:
@@ -208,38 +208,22 @@ class IdentityService(CredentialStore, BudgetGuard):
             standing = await self._standing(mine, owner_id)
         return self._ai_source_view(choice, standing)
 
-    async def set_ai_source(
-        self, owner_id: uuid.UUID, *, source: str, accept_platform_terms: bool
-    ) -> AiSourceView:
+    async def set_ai_source(self, owner_id: uuid.UUID, *, source: str) -> AiSourceView:
         """Switch to the user's own key or the platform's.
 
-        Switching is free and takes effect from the next call. The first
-        switch to the platform's key needs the user to accept that their
-        evidence goes to the operator's provider; after that, never again.
-        Like a new key, a switch is a reason to try paused work again.
+        Switching is free and takes effect from the next call. Like a new key,
+        a switch is a reason to try paused work again.
         """
         try:
             chosen = AiSource(source)
         except ValueError as exc:
             raise ValidationError(f"unknown AI source {source!r}", source=source) from exc
-        now = utcnow()
         async with self._uow.for_owner(owner_id) as mine:
-            choice = await _ai_source(mine)
             standing = await self._standing(mine, owner_id)
-            has_accepted = accept_platform_terms or (
-                choice is not None and choice.platform_terms_accepted_at is not None
-            )
-            refusal = get_choice_refusal(chosen, standing, has_accepted_terms=has_accepted)
+            refusal = get_choice_refusal(chosen, standing)
             if refusal is not None:
                 raise _refusal_error(refusal)
-            accepted_at = now if accept_platform_terms and chosen is AiSource.PLATFORM else None
-            if choice is None:
-                choice = AiSourceChoice.create_choice(owner_id, chosen)
-                choice.update_source(chosen, terms_accepted_at=accepted_at)
-                await mine.ai_sources.create(choice)
-            else:
-                choice.update_source(chosen, terms_accepted_at=accepted_at)
-                await mine.ai_sources.update(choice)
+            choice = await _update_source(mine, owner_id, chosen)
             account = await mine.accounts.get(owner_id)
             if account is not None:
                 account.resume_background_jobs()
@@ -252,7 +236,7 @@ class IdentityService(CredentialStore, BudgetGuard):
         )
         return AiSourceStanding(
             has_credential=await _credential(mine) is not None,
-            is_platform_on=self._platform_model is not None,
+            is_platform_on=self._is_platform_on,
             is_eligible=google > 0,
         )
 
@@ -264,10 +248,6 @@ class IdentityService(CredentialStore, BudgetGuard):
             has_credential=standing.has_credential,
             is_platform_on=standing.is_platform_on,
             is_eligible=standing.is_eligible,
-            platform_model=self._platform_model,
-            has_accepted_platform_terms=(
-                choice is not None and choice.platform_terms_accepted_at is not None
-            ),
         )
 
     # -- budget -------------------------------------------------------------
@@ -423,6 +403,16 @@ async def _ai_source(mine: OwnerIdentity) -> AiSourceChoice | None:
     return choices[0] if choices else None
 
 
+async def _update_source(
+    mine: OwnerIdentity, owner_id: uuid.UUID, source: AiSource
+) -> AiSourceChoice:
+    choice = await _ai_source(mine)
+    if choice is None:
+        return await mine.ai_sources.create(AiSourceChoice.create_choice(owner_id, source))
+    choice.update_source(source)
+    return await mine.ai_sources.update(choice)
+
+
 def _refusal_error(refusal: AiSourceRefusal) -> Exception:
     match refusal:
         case AiSourceRefusal.NO_CREDENTIAL:
@@ -432,10 +422,6 @@ def _refusal_error(refusal: AiSourceRefusal) -> Exception:
         case AiSourceRefusal.NOT_ELIGIBLE:
             return PlatformAiNotEligibleError(
                 "CareerPolaris's AI is for accounts signed in with Google"
-            )
-        case AiSourceRefusal.TERMS_NOT_ACCEPTED:
-            return ValidationError(
-                "accept that your evidence goes to CareerPolaris's AI provider to use it"
             )
 
 

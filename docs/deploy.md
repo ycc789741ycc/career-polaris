@@ -294,8 +294,8 @@ proxy's certificates, the Tailscale identity, the model cache — is kept.
 ## 7. CareerPolaris's own AI (ADR 0064)
 
 Off until `PLATFORM_AI_API_KEY` is set. Once it is set, a Google-verified
-account can choose to run its AI on this key, up to
-`PLATFORM_AI_MONTHLY_QUOTA_USD` a month. Everyone together is held to
+account runs its AI on this key by default (ADR 0066), up to
+`PLATFORM_AI_MONTHLY_QUOTA_USD` a month, until it stores a key of its own. Everyone together is held to
 `PLATFORM_AI_DAILY_CEILING_USD` per UTC day and
 `PLATFORM_AI_MONTHLY_CEILING_USD` per month, and any one call to
 `PLATFORM_AI_MAX_CALL_USD`. Those ceilings, not the per-account quota, are

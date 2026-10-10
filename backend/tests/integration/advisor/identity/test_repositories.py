@@ -227,7 +227,7 @@ async def test_a_users_choice_of_key_is_theirs_alone(
 ) -> None:
     uow = SqlAlchemyIdentityUnitOfWork(database)
     choice = AiSourceChoice.create_choice(account, AiSource.OWN)
-    choice.update_source(AiSource.PLATFORM, terms_accepted_at=datetime.now(UTC))
+    choice.update_source(AiSource.PLATFORM)
     async with uow.for_owner(account) as mine:
         await mine.ai_sources.create(choice)
 
@@ -237,7 +237,6 @@ async def test_a_users_choice_of_key_is_theirs_alone(
         assert await theirs.ai_sources.get_count(AiSourceChoiceFilter()) == 0
 
     assert stored.source is AiSource.PLATFORM
-    assert stored.platform_terms_accepted_at is not None
 
 
 async def test_identity_events_reach_the_outbox_as_the_dispatcher_reads_them(

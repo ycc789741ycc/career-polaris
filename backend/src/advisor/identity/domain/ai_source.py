@@ -1,9 +1,9 @@
 """Which key a user's AI runs on: their own, or the platform's (ADR 0064).
 
-The user chooses, and may switch back and forth. The platform's key is only
-for an account Google has verified, only while the operator has it switched
-on, and only once the user has accepted that their evidence goes to the
-operator's provider account. Nothing falls back from one to the other.
+The platform's key is only for an account Google has verified, and only while
+the operator has it switched on. Such an account runs on it until it chooses
+otherwise (ADR 0066); storing a key of one's own chooses that. The user may
+switch back and forth, and nothing falls back from one to the other.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ class AiSourceRefusal(StrEnum):
     NO_CREDENTIAL = "no_credential"
     PLATFORM_OFF = "platform_off"
     NOT_ELIGIBLE = "not_eligible"
-    TERMS_NOT_ACCEPTED = "terms_not_accepted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +42,6 @@ class AiSourceChoice:
     id: uuid.UUID
     owner_id: uuid.UUID
     source: AiSource
-    # When the user accepted that the platform's provider sees their
-    # evidence. Kept once given, so switching back needs no second notice.
-    platform_terms_accepted_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -53,18 +49,11 @@ class AiSourceChoice:
     def create_choice(cls, owner_id: uuid.UUID, source: AiSource) -> AiSourceChoice:
         return cls(id=uuid.uuid4(), owner_id=owner_id, source=source)
 
-    def update_source(self, source: AiSource, *, terms_accepted_at: datetime | None) -> None:
+    def update_source(self, source: AiSource) -> None:
         self.source = source
-        if self.platform_terms_accepted_at is None and terms_accepted_at is not None:
-            self.platform_terms_accepted_at = terms_accepted_at
 
 
-def get_choice_refusal(
-    source: AiSource,
-    standing: AiSourceStanding,
-    *,
-    has_accepted_terms: bool,
-) -> AiSourceRefusal | None:
+def get_choice_refusal(source: AiSource, standing: AiSourceStanding) -> AiSourceRefusal | None:
     """Why ``source`` cannot be chosen now, or None when it can."""
     if source is AiSource.OWN:
         return None if standing.has_credential else AiSourceRefusal.NO_CREDENTIAL
@@ -72,18 +61,18 @@ def get_choice_refusal(
         return AiSourceRefusal.PLATFORM_OFF
     if not standing.is_eligible:
         return AiSourceRefusal.NOT_ELIGIBLE
-    if not has_accepted_terms:
-        return AiSourceRefusal.TERMS_NOT_ACCEPTED
     return None
 
 
 def get_source_in_use(choice: AiSourceChoice | None, standing: AiSourceStanding) -> AiSource | None:
     """The key a call runs on now, or None when there is none to run on.
 
-    With no choice made, the user's own key if they stored one: the
-    platform's is never taken without the user choosing it, because choosing
-    it is when they accept where their evidence goes.
+    With no choice made, the platform's for an eligible account while it is
+    on, so a new Google user starts with nothing to set up (ADR 0066);
+    otherwise the user's own key if they stored one.
     """
-    if choice is None:
-        return AiSource.OWN if standing.has_credential else None
-    return choice.source
+    if choice is not None:
+        return choice.source
+    if standing.is_platform_on and standing.is_eligible:
+        return AiSource.PLATFORM
+    return AiSource.OWN if standing.has_credential else None

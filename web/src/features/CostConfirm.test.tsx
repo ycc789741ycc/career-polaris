@@ -61,8 +61,6 @@ describe("who pays", () => {
           has_credential: false,
           is_platform_on: true,
           is_eligible: true,
-          platform_model: "claude-haiku-4-5",
-          has_accepted_platform_terms: true,
           platform_quota: {
             allowed_usd: "2",
             spent_usd: "0.75",
@@ -70,9 +68,7 @@ describe("who pays", () => {
           },
         },
       }),
-    ).toBe(
-      "Runs on CareerPolaris's AI (claude-haiku-4-5) · 62% of this month's free quota left.",
-    );
+    ).toBe("Runs on CareerPolaris AI · 62% of this month's free quota left.");
   });
 
   it("names the user's own key and model", () => {

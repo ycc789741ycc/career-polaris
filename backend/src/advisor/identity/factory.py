@@ -18,12 +18,12 @@ def create_identity_service(
     database: Database,
     *,
     default_monthly_cap_usd: Decimal,
-    platform_ai_model: str | None = None,
+    is_platform_on: bool = False,
 ) -> IdentityService:
     return IdentityService(
         SqlAlchemyIdentityUnitOfWork(database),
         default_monthly_cap_usd=default_monthly_cap_usd,
-        platform_ai_model=platform_ai_model,
+        is_platform_on=is_platform_on,
     )
 
 

@@ -79,19 +79,31 @@ export function hasAi(status: ShellStatus): boolean {
   return isOnPlatform(status) || status.credential !== null;
 }
 
-/** The model a screen names in its copy: the one in use, or a stand-in. */
+/** What the platform's AI is called wherever it is named. Its model never is
+ * (ADR 0066). */
+export const PLATFORM_AI = "CareerPolaris AI";
+
+/** The model a screen names in its copy: the user's own, or "CareerPolaris
+ * AI" while their work runs on the platform. */
 export function modelName(status: ShellStatus): string {
-  if (isOnPlatform(status)) {
-    return status.aiSource?.platform_model ?? "CareerPolaris's model";
-  }
+  if (isOnPlatform(status)) return PLATFORM_AI;
   return status.credential?.model ?? "your model";
 }
 
+/** The model an estimate names. An estimate prices a run on the current
+ * source, so on the platform it is "CareerPolaris AI", never its model. */
+export function getShownModel(
+  status: ShellStatus,
+  modelId: string | null,
+): string | null {
+  return isOnPlatform(status) ? PLATFORM_AI : modelId;
+}
+
 /** Who pays, as a run's copy says it: "your own key on claude-opus-5", or
- * "CareerPolaris's AI (claude-haiku-4-5)". */
+ * "CareerPolaris AI". */
 export function chargedTo(status: ShellStatus): string {
   return isOnPlatform(status)
-    ? `CareerPolaris's AI (${modelName(status)})`
+    ? PLATFORM_AI
     : `your own key on ${modelName(status)}`;
 }
 

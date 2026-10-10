@@ -31,25 +31,21 @@ def _view(source: AiSource | None) -> AiSourceView:
         has_credential=False,
         is_platform_on=True,
         is_eligible=True,
-        platform_model="claude-haiku-4-5",
-        has_accepted_platform_terms=source is AiSource.PLATFORM,
     )
 
 
 class FakeIdentity:
     def __init__(self) -> None:
-        self.asked: list[tuple[str, bool]] = []
+        self.asked: list[str] = []
         self.refuse: Exception | None = None
 
     async def ai_source(self, owner_id: uuid.UUID) -> AiSourceView:
         return _view(None)
 
-    async def set_ai_source(
-        self, owner_id: uuid.UUID, *, source: str, accept_platform_terms: bool
-    ) -> AiSourceView:
+    async def set_ai_source(self, owner_id: uuid.UUID, *, source: str) -> AiSourceView:
         if self.refuse is not None:
             raise self.refuse
-        self.asked.append((source, accept_platform_terms))
+        self.asked.append(source)
         return _view(AiSource(source))
 
 
@@ -80,7 +76,8 @@ def test_the_choice_comes_with_this_months_quota(identity: FakeIdentity) -> None
     body = _client(identity, FakeSpend()).get("/ai-source").json()
 
     assert body["source"] is None
-    assert body["platform_model"] == "claude-haiku-4-5"
+    # The platform's model is never told to the client (ADR 0066).
+    assert "platform_model" not in body
     assert body["platform_quota"] == {
         "allowed_usd": "2",
         "spent_usd": "0.5",
@@ -94,14 +91,12 @@ def test_with_the_platform_off_there_is_no_quota(identity: FakeIdentity) -> None
     assert body["platform_quota"] is None
 
 
-def test_switching_passes_the_acceptance_through(identity: FakeIdentity) -> None:
-    response = _client(identity, FakeSpend()).put(
-        "/ai-source", json={"source": "platform", "accept_platform_terms": True}
-    )
+def test_switching_needs_only_the_source(identity: FakeIdentity) -> None:
+    response = _client(identity, FakeSpend()).put("/ai-source", json={"source": "platform"})
 
     assert response.status_code == 200
     assert response.json()["source"] == "platform"
-    assert identity.asked == [("platform", True)]
+    assert identity.asked == ["platform"]
 
 
 def test_an_unknown_source_is_refused_at_the_edge(identity: FakeIdentity) -> None:
@@ -114,9 +109,7 @@ def test_an_unknown_source_is_refused_at_the_edge(identity: FakeIdentity) -> Non
 def test_an_account_google_has_not_verified_is_told_so(identity: FakeIdentity) -> None:
     identity.refuse = PlatformAiNotEligibleError("for accounts signed in with Google")
 
-    response = _client(identity, FakeSpend()).put(
-        "/ai-source", json={"source": "platform", "accept_platform_terms": True}
-    )
+    response = _client(identity, FakeSpend()).put("/ai-source", json={"source": "platform"})
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "ai_platform_not_eligible"

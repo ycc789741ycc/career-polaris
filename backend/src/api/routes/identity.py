@@ -269,9 +269,7 @@ async def read_ai_source(user: CurrentUser, deps: Deps) -> AiSourceBody:
 
 @router.put("/ai-source")
 async def set_ai_source(body: AiSourceRequest, user: CurrentUser, deps: Deps) -> AiSourceBody:
-    view = await deps.identity.set_ai_source(
-        user, source=body.source, accept_platform_terms=body.accept_platform_terms
-    )
+    view = await deps.identity.set_ai_source(user, source=body.source)
     return AiSourceBody.from_view(view, await _platform_quota(user, deps))
 
 

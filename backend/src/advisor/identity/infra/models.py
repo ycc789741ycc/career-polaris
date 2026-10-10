@@ -186,9 +186,6 @@ class AiSourceChoice(Base, OwnedMixin, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
-    platform_terms_accepted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
 
 
 class AiUsageLedger(Base, OwnedMixin):

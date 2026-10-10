@@ -977,3 +977,17 @@ under `epic/no-ticket/platform-ai`:
   unaffected: its model is always priced. AI settings and the unpriced-estimate
   copy say so; `make platform-ai-usage` shows the column and leaves unpriced
   rows out of the calibration.
+- **CareerPolaris AI by default, settings by source** (ADR 0066, migration
+  0053). With no choice made, a Google-verified account runs on the
+  platform's key while it is on; there is no terms step. Storing a key
+  chooses it (`set_credential` sets `own`), and migration 0053 gave every
+  earlier key holder an `own` choice. AI settings (`AiSettings.tsx`) asks
+  first, as two radio cards, which AI runs the work:
+  - CareerPolaris AI shows only the free quota, as a percentage, with a
+    standing line on where evidence goes;
+  - their own provider shows `OwnProviderForm` and `MonthlyBudget`.
+  
+  A stored key is kept either way. The platform's model is never sent
+  (`AiSourceBody` has no `platform_model`) or named: `modelName`, `chargedTo`
+  and `getShownModel` say "CareerPolaris AI" (`PLATFORM_AI`) in the shell and
+  in every estimate. Finished work keeps the model id it recorded.
