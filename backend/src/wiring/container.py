@@ -40,10 +40,11 @@ from kernel.ai_gateway import AiGateway
 from kernel.auth import ALGORITHM, JwksResolver, StaticSecretResolver, TokenVerifier
 from kernel.config import Settings, get_settings, must
 from kernel.db import Database
-from kernel.limits import Limiter
+from kernel.limits import Limiter, SpendMeter
 from kernel.presence import PresenceView, get_presence
 from kernel.storage import ObjectStore
 from wiring.limits import Limits, create_limits
+from wiring.platform_ai import PlatformSpendMeter
 
 # Google rotates its signing keys over days; an hour keeps the fetch rare while
 # a newly published key is still picked up well before it is used.
@@ -68,6 +69,8 @@ class Container:
     object_store: ObjectStore
     limiter: Limiter
     limits: Limits
+    # None while the platform's AI key is off (ADR 0064).
+    platform_spend: PlatformSpendMeter | None
     _verifier: TokenVerifier | None = None
     _google: GoogleSignIn | None = None
 
@@ -154,7 +157,12 @@ def build(settings: Settings | None = None) -> Container:
 
     # identity supplies the gateway's credential and budget ports, which is how
     # the kernel stays free of any domain import.
-    gateway = AiGateway(settings=settings, credentials=identity, budget=identity)
+    platform_spend = (
+        PlatformSpendMeter(SpendMeter(database), settings) if settings.platform_ai_enabled else None
+    )
+    gateway = AiGateway(
+        settings=settings, credentials=identity, budget=identity, platform_spend=platform_spend
+    )
 
     profile = create_profile_service(
         database,
@@ -265,6 +273,7 @@ def build(settings: Settings | None = None) -> Container:
         object_store=object_store,
         limiter=Limiter(database),
         limits=create_limits(settings),
+        platform_spend=platform_spend,
     )
 
 

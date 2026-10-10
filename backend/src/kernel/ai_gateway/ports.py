@@ -81,6 +81,21 @@ class CredentialStore(Protocol):
         ...
 
 
+class PlatformSpend(Protocol):
+    """The meter on the platform's key (ADR 0064): a call reserves the most
+    it can cost before it is sent, settles what each attempt really cost, and
+    releases the rest when it ends."""
+
+    async def create_reservation(self, owner_id: uuid.UUID, ceiling_usd: Decimal) -> object:
+        """Raise when the account's month, or the platform's day or month,
+        has no room for ``ceiling_usd``; otherwise a handle to settle with."""
+        ...
+
+    async def update_spent(self, reservation: object, cost_usd: Decimal) -> None: ...
+
+    async def delete_reservation(self, reservation: object) -> None: ...
+
+
 class BudgetGuard(Protocol):
     async def check(
         self, owner_id: uuid.UUID, estimated_cost_usd: Decimal, *, funding: Funding

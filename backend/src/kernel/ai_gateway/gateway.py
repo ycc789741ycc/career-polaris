@@ -29,6 +29,7 @@ from kernel.ai_gateway.ports import (
     CredentialStore,
     Funding,
     PlatformCredential,
+    PlatformSpend,
     UsageRecord,
 )
 from kernel.ai_gateway.providers import (
@@ -47,6 +48,7 @@ from kernel.errors import (
     CredentialFailedError,
     DomainError,
     OutputInvalidError,
+    PlatformAiCallTooLargeError,
     PlatformAiUnavailableError,
     ProviderUnavailableError,
     ValidationError,
@@ -134,11 +136,17 @@ class AiGateway:
         settings: Settings,
         credentials: CredentialStore,
         budget: BudgetGuard,
+        platform_spend: PlatformSpend | None = None,
     ) -> None:
         self._settings = settings
         self._credentials = credentials
         self._budget = budget
+        self._platform_spend = platform_spend
         if settings.platform_ai_enabled:
+            if platform_spend is None:
+                raise InvalidConfigurationError(
+                    "the platform's AI key is set, but nothing meters what it spends"
+                )
             model = settings.platform_ai_model or ""
             # The platform's spend is metered against these rates; a guessed
             # one would make every quota wrong.
@@ -243,6 +251,7 @@ class AiGateway:
         template: PromptTemplate,
         request: Request,
         completion: Completion,
+        reservation: object | None,
     ) -> Decimal:
         """Write one attempt to the ledger, beside what it was estimated at.
 
@@ -275,7 +284,43 @@ class AiGateway:
                 funding=key.funding,
             )
         )
+        if reservation is not None and self._platform_spend is not None:
+            await self._platform_spend.update_spent(reservation, cost)
+            log.info(
+                "platform_ai.spend",
+                task=task,
+                cost_usd=str(cost),
+                is_estimated=completion.is_estimated,
+            )
         return cost
+
+    async def _create_reservation(self, key: _Key, request: Request) -> object | None:
+        """Hold the most a platform call can cost, before it is sent.
+
+        Nothing is held for the user's own key: their cap is checked against
+        the typical estimate, as it always was.
+        """
+        if key.funding is Funding.OWN:
+            return None
+        if self._platform_spend is None:
+            raise PlatformAiUnavailableError("CareerPolaris's AI is switched off")
+        ceiling = pricing.estimate_ceiling(
+            key.model,
+            prompt=request.system + request.user,
+            max_output_tokens=request.max_output_tokens,
+            attempts=self._attempts,
+        ).cost_usd
+        most = Decimal(str(self._settings.platform_ai_max_call_usd))
+        if ceiling > most:
+            raise PlatformAiCallTooLargeError(
+                "This is too large to run on CareerPolaris's AI; use your own key for it",
+                ceiling_usd=str(ceiling),
+            )
+        return await self._platform_spend.create_reservation(key.owner_id, ceiling)
+
+    async def _delete_reservation(self, reservation: object | None) -> None:
+        if reservation is not None and self._platform_spend is not None:
+            await self._platform_spend.delete_reservation(reservation)
 
     # -- public surface -----------------------------------------------------
 
@@ -349,65 +394,70 @@ class AiGateway:
         await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
         provider = key.provider
         last_error: Exception | None = None
+        reservation = await self._create_reservation(key, request)
+        try:
+            async with self._client() as client:
+                for attempt in range(self._attempts):
+                    try:
+                        if on_progress is None:
+                            completion = await provider.complete(client, request)
+                        else:
+                            completion = await self._complete_streamed(
+                                key,
+                                client,
+                                request,
+                                task=task,
+                                template=template,
+                                estimate=estimate,
+                                on_progress=on_progress,
+                                reservation=reservation,
+                            )
+                    except CredentialFailedError as exc:
+                        raise await self._fail_key(key, exc) from exc
+                    except ProviderUnavailableError:
+                        raise
 
-        async with self._client() as client:
-            for attempt in range(self._attempts):
-                try:
-                    if on_progress is None:
-                        completion = await provider.complete(client, request)
-                    else:
-                        completion = await self._complete_streamed(
-                            key,
-                            client,
-                            request,
-                            task=task,
-                            template=template,
-                            estimate=estimate,
-                            on_progress=on_progress,
-                        )
-                except CredentialFailedError as exc:
-                    raise await self._fail_key(key, exc) from exc
-                except ProviderUnavailableError:
-                    raise
-
-                # The ledger records every call, including one whose output we
-                # then reject — the provider billed for it either way.
-                cost = await self._record(
-                    key,
-                    task=task,
-                    template=template,
-                    request=request,
-                    completion=completion,
-                )
-
-                try:
-                    value = _parse(completion.text, output_schema)
-                except OutputInvalidError as exc:
-                    last_error = exc
-                    log.warning(
-                        "ai.output_invalid",
+                    # The ledger records every call, including one whose output we
+                    # then reject — the provider billed for it either way.
+                    cost = await self._record(
+                        key,
                         task=task,
-                        template=template.version_id,
-                        attempt=attempt + 1,
+                        template=template,
+                        request=request,
+                        completion=completion,
+                        reservation=reservation,
                     )
-                    request = _with_repair_note(request, str(exc))
-                    continue
 
-                return Result(
-                    value=value,
-                    model_id=completion.model,
-                    template_version=template.version_id,
-                    input_tokens=completion.input_tokens,
-                    output_tokens=completion.output_tokens,
-                    cost_usd=cost,
-                )
+                    try:
+                        value = _parse(completion.text, output_schema)
+                    except OutputInvalidError as exc:
+                        last_error = exc
+                        log.warning(
+                            "ai.output_invalid",
+                            task=task,
+                            template=template.version_id,
+                            attempt=attempt + 1,
+                        )
+                        request = _with_repair_note(request, str(exc))
+                        continue
 
-        raise OutputInvalidError(
-            f"{task}: the model did not return output matching the schema after "
-            f"{self._attempts} attempts",
-            task=task,
-            template=template.version_id,
-        ) from last_error
+                    return Result(
+                        value=value,
+                        model_id=completion.model,
+                        template_version=template.version_id,
+                        input_tokens=completion.input_tokens,
+                        output_tokens=completion.output_tokens,
+                        cost_usd=cost,
+                    )
+
+            raise OutputInvalidError(
+                f"{task}: the model did not return output matching the schema after "
+                f"{self._attempts} attempts",
+                task=task,
+                template=template.version_id,
+            ) from last_error
+        finally:
+            await self._delete_reservation(reservation)
 
     async def _complete_streamed(
         self,
@@ -419,6 +469,7 @@ class AiGateway:
         template: PromptTemplate,
         estimate: pricing.CostEstimate,
         on_progress: ProgressCallback,
+        reservation: object | None,
     ) -> Completion:
         """One attempt, streamed, reporting its share of the expected output.
         A callback that raises stops it and closes the connection; what was
@@ -450,6 +501,7 @@ class AiGateway:
                     template=template,
                     request=request,
                     completion=tally.get_completion(request, is_cut_short=True),
+                    reservation=reservation,
                 )
             raise
         return tally.get_completion(request, is_cut_short=False)
@@ -472,28 +524,32 @@ class AiGateway:
         """
         key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
         await self._budget.check(owner_id, estimate.cost_usd, funding=key.funding)
-
-        tally = _Tally()
-        is_finished = False
-        async with self._client() as client:
-            try:
-                async with aclosing(key.provider.stream(client, request)) as events:
-                    async for event in events:
-                        piece = tally.add(event)
-                        if piece is not None:
-                            yield piece
-                is_finished = True
-            except CredentialFailedError as exc:
-                raise await self._fail_key(key, exc) from exc
-            finally:
-                if is_finished or tally.parts:
-                    await self._record(
-                        key,
-                        task=task,
-                        template=template,
-                        request=request,
-                        completion=tally.get_completion(request, is_cut_short=not is_finished),
-                    )
+        reservation = await self._create_reservation(key, request)
+        try:
+            tally = _Tally()
+            is_finished = False
+            async with self._client() as client:
+                try:
+                    async with aclosing(key.provider.stream(client, request)) as events:
+                        async for event in events:
+                            piece = tally.add(event)
+                            if piece is not None:
+                                yield piece
+                    is_finished = True
+                except CredentialFailedError as exc:
+                    raise await self._fail_key(key, exc) from exc
+                finally:
+                    if is_finished or tally.parts:
+                        await self._record(
+                            key,
+                            task=task,
+                            template=template,
+                            request=request,
+                            completion=tally.get_completion(request, is_cut_short=not is_finished),
+                            reservation=reservation,
+                        )
+        finally:
+            await self._delete_reservation(reservation)
 
     async def stream_structured(
         self,

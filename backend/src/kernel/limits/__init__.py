@@ -6,6 +6,30 @@ it — is limited here, counted in Postgres.
 """
 
 from kernel.limits.limiter import Limit, Limiter, get_wait_label, get_window_start
-from kernel.limits.models import LimitCounter
+from kernel.limits.models import LimitCounter, SpendReservationRow, SpendWindowRow
+from kernel.limits.spend import (
+    Charge,
+    Reservation,
+    SpendLimit,
+    SpendMeter,
+    SpendState,
+    SpendWindow,
+    get_spend_window_start,
+)
 
-__all__ = ["Limit", "LimitCounter", "Limiter", "get_wait_label", "get_window_start"]
+__all__ = [
+    "Charge",
+    "Limit",
+    "LimitCounter",
+    "Limiter",
+    "Reservation",
+    "SpendLimit",
+    "SpendMeter",
+    "SpendReservationRow",
+    "SpendState",
+    "SpendWindow",
+    "SpendWindowRow",
+    "get_spend_window_start",
+    "get_wait_label",
+    "get_window_start",
+]

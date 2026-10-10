@@ -3916,6 +3916,22 @@ plan below:
   Integration: the migration's backfill, and the ledger filter.
 
 ## Meter the platform's spend
+**Done** (ADR 0064, migration 0049), on
+`feature/no-ticket/platform-ai-meter`. Where the build differs from the plan
+below:
+
+* The gateway holds the meter, not `identity`: `BudgetGuard` stays the
+  user's own cap, and a new port, `PlatformSpend`, reserves, settles and
+  releases. `wiring.platform_ai.PlatformSpendMeter` implements it over
+  `kernel.limits.SpendMeter` with the three limits, named once from the
+  settings. Setting the key with no meter refuses to start.
+* Each attempt's cost is settled into the windows and taken off the
+  reservation as it is recorded, so a long retry loop never counts twice.
+* A reservation holds for `AI_REQUEST_TIMEOUT_SECONDS × attempts` plus ten
+  minutes.
+* Eligibility moves to the next step, where `identity` first answers with
+  the platform's key.
+
 
 `check` followed by `record` is not enough when the money is ours:
 * Two jobs running at once can both pass the check.

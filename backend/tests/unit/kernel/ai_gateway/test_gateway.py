@@ -17,6 +17,7 @@ from kernel.ai_gateway.ports import (
     CredentialStore,
     Funding,
     PlatformCredential,
+    PlatformSpend,
     ProviderCredential,
     UsageRecord,
 )
@@ -35,6 +36,8 @@ from kernel.errors import (
     BudgetExceededError,
     CredentialFailedError,
     OutputInvalidError,
+    PlatformAiCallTooLargeError,
+    PlatformAiQuotaReachedError,
     PlatformAiUnavailableError,
 )
 from kernel.progress import WRITING_CAP, JobCancelledError, Progress
@@ -114,6 +117,30 @@ class StubProvider(Provider):
                 yield self.usage
         finally:
             self.closed += 1
+
+
+class StubSpend(PlatformSpend):
+    """The platform's meter, as calls in memory."""
+
+    def __init__(self, *, refuse: Exception | None = None) -> None:
+        self.refuse = refuse
+        self.reserved: list[Decimal] = []
+        self.spent: list[Decimal] = []
+        self.released = 0
+
+    async def create_reservation(self, owner_id: uuid.UUID, ceiling_usd: Decimal) -> object:
+        if self.refuse is not None:
+            raise self.refuse
+        self.reserved.append(ceiling_usd)
+        return "held"
+
+    async def update_spent(self, reservation: object, cost_usd: Decimal) -> None:
+        assert reservation == "held"
+        self.spent.append(cost_usd)
+
+    async def delete_reservation(self, reservation: object) -> None:
+        assert reservation == "held"
+        self.released += 1
 
 
 @pytest.fixture
@@ -615,7 +642,9 @@ async def test_a_platform_call_runs_on_the_platforms_key_and_model(
     credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
     credentials.use_platform()
     budget = StubBudget()
-    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=budget)
+    gw = AiGateway(
+        settings=get_settings(), credentials=credentials, budget=budget, platform_spend=StubSpend()
+    )
 
     result = await gw.run(
         OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
@@ -650,7 +679,12 @@ async def test_the_platforms_key_failing_leaves_the_users_state_alone(
     platform_provider([CredentialFailedError("the provider rate-limited this key")])
     credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
     credentials.use_platform()
-    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=StubBudget())
+    gw = AiGateway(
+        settings=get_settings(),
+        credentials=credentials,
+        budget=StubBudget(),
+        platform_spend=StubSpend(),
+    )
 
     with pytest.raises(PlatformAiUnavailableError):
         await gw.run(
@@ -679,7 +713,12 @@ async def test_an_estimate_says_whose_key_it_would_run_on(
     platform_provider([])
     credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
     credentials.use_platform()
-    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=StubBudget())
+    gw = AiGateway(
+        settings=get_settings(),
+        credentials=credentials,
+        budget=StubBudget(),
+        platform_spend=StubSpend(),
+    )
 
     estimate = await gw.estimate(OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"})
 
@@ -694,4 +733,120 @@ def test_a_platform_model_with_no_published_rate_refuses_to_start(
     get_settings.cache_clear()
 
     with pytest.raises(InvalidConfigurationError, match="no published rate"):
+        AiGateway(
+            settings=get_settings(),
+            credentials=StubCredentials(""),
+            budget=StubBudget(),
+            platform_spend=StubSpend(),
+        )
+
+
+def test_a_platform_key_with_nothing_to_meter_it_refuses_to_start(
+    platform_provider, platform_env: None
+) -> None:
+    with pytest.raises(InvalidConfigurationError, match="meters"):
         AiGateway(settings=get_settings(), credentials=StubCredentials(""), budget=StubBudget())
+
+
+def _platform_gateway(spend: StubSpend) -> tuple[AiGateway, StubCredentials, StubBudget]:
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials.use_platform()
+    budget = StubBudget()
+    gateway = AiGateway(
+        settings=get_settings(), credentials=credentials, budget=budget, platform_spend=spend
+    )
+    return gateway, credentials, budget
+
+
+async def test_a_platform_call_reserves_its_ceiling_settles_each_attempt_and_releases(
+    platform_provider, platform_env: None
+) -> None:
+    platform_provider(["not json", '{"name": "x", "score": 1}'])
+    spend = StubSpend()
+    gw, _, budget = _platform_gateway(spend)
+
+    estimate = await gw.estimate(OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"})
+    await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert spend.reserved == [estimate.ceiling_cost_usd]
+    assert spend.spent == [usage.cost_usd for usage in budget.recorded]
+    assert len(spend.spent) == 2
+    assert spend.released == 1
+
+
+async def test_a_failed_platform_call_still_releases_what_it_held(
+    platform_provider, platform_env: None
+) -> None:
+    platform_provider(["no", "no", "no"])
+    spend = StubSpend()
+    gw, _, _ = _platform_gateway(spend)
+
+    with pytest.raises(OutputInvalidError):
+        await gw.run(
+            OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+        )
+    assert len(spend.spent) == 3
+    assert spend.released == 1
+
+
+async def test_a_platform_call_with_no_room_is_never_sent(
+    platform_provider, platform_env: None
+) -> None:
+    provider = platform_provider(['{"name": "x", "score": 1}'])
+    spend = StubSpend(refuse=PlatformAiQuotaReachedError("You have used this month's AI."))
+    gw, _, budget = _platform_gateway(spend)
+
+    with pytest.raises(PlatformAiQuotaReachedError):
+        await gw.run(
+            OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+        )
+    assert provider.requests == [] and budget.recorded == []
+
+
+async def test_a_platform_call_too_large_for_one_call_is_refused_before_it_holds_anything(
+    platform_provider, platform_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PLATFORM_AI_MAX_CALL_USD", "0.0001")
+    get_settings.cache_clear()
+    provider = platform_provider(['{"name": "x", "score": 1}'])
+    spend = StubSpend()
+    gw, _, _ = _platform_gateway(spend)
+
+    with pytest.raises(PlatformAiCallTooLargeError):
+        await gw.run(
+            OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+        )
+    assert provider.requests == [] and spend.reserved == []
+
+
+async def test_a_platform_chat_that_stops_early_settles_and_releases(
+    platform_provider, platform_env: None
+) -> None:
+    platform_provider(["First. ", "Second."])
+    spend = StubSpend()
+    gw, _, _ = _platform_gateway(spend)
+
+    events = gw.stream(OWNER, task="revise", template=TEMPLATE, inputs={"subject": "x"})
+    await anext(events)
+    await events.aclose()
+
+    assert len(spend.spent) == 1 and spend.released == 1
+
+
+async def test_the_users_own_key_holds_nothing_on_the_platforms_meter(
+    clean_env: None, stub_provider
+) -> None:
+    stub_provider(['{"name": "x", "score": 1}'])
+    spend = StubSpend()
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    gw = AiGateway(
+        settings=get_settings(), credentials=credentials, budget=StubBudget(), platform_spend=spend
+    )
+
+    await gw.run(
+        OWNER, task="assess", template=TEMPLATE, inputs={"subject": "x"}, output_schema=Answer
+    )
+
+    assert spend.reserved == [] and spend.spent == [] and spend.released == 0
