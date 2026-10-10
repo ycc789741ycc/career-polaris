@@ -78,7 +78,8 @@ export function AiSettings() {
         model,
         api_key: apiKey,
         // Only an OpenAI key may name its own endpoint (ADR 0065).
-        base_url: provider === "openai" && baseUrl.trim() ? baseUrl.trim() : null,
+        base_url:
+          provider === "openai" && baseUrl.trim() ? baseUrl.trim() : null,
       });
       setApiKey("");
       setSaved(true);

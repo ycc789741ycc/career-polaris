@@ -28,9 +28,7 @@ def upgrade() -> None:
     # restored after (as migration 0030 does).
     op.execute(f"ALTER TABLE {_TABLE} NO FORCE ROW LEVEL SECURITY")
     op.execute("DELETE FROM identity.provider_credential WHERE provider = 'local'")
-    op.execute(
-        "UPDATE identity.provider_credential SET base_url = NULL WHERE provider <> 'openai'"
-    )
+    op.execute("UPDATE identity.provider_credential SET base_url = NULL WHERE provider <> 'openai'")
     op.execute(f"ALTER TABLE {_TABLE} FORCE ROW LEVEL SECURITY")
     op.execute(f"ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS ck_provider_credential_provider")
     op.execute(

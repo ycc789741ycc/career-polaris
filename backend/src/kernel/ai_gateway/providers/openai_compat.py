@@ -98,4 +98,3 @@ class OpenAICompatibleProvider(Provider):
                         output_tokens=int(usage.get("completion_tokens", 0)),
                         model=str(event.get("model") or request.model),
                     )
-
