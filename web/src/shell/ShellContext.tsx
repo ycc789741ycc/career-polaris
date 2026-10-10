@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect } from "react";
 import type { AiSource, Credential, Me } from "../api/types";
+import type { Settled } from "./activity";
 import type { AdvisorTab, Focus, Screen } from "./navigation";
 
 /** What the sidebar and header show about the account, loaded once. */
@@ -92,4 +93,37 @@ export function chargedTo(status: ShellStatus): string {
   return isOnPlatform(status)
     ? `CareerPolaris's AI (${modelName(status)})`
     : `your own key on ${modelName(status)}`;
+}
+
+/** This month's quota on CareerPolaris's key. */
+export type PlatformQuota = NonNullable<AiSource["platform_quota"]>;
+
+/** The share of this month's quota spent, 0–100. Pure. */
+export function getQuotaPercent(quota: PlatformQuota): number {
+  const allowed = Number(quota.allowed_usd);
+  if (!(allowed > 0)) return 100;
+  return Math.min(100, Math.max(0, (Number(quota.spent_usd) / allowed) * 100));
+}
+
+/** The quota as users see it: whole percentages used and left, which always
+ * add up to 100. Never dollars: those are the operator's. Pure. */
+export function getQuotaLabel(quota: PlatformQuota): {
+  used: number;
+  left: number;
+} {
+  const used = Math.round(getQuotaPercent(quota));
+  return { used, left: 100 - used };
+}
+
+/** The quota while the user's work runs on CareerPolaris's key, or null. */
+export function getPlatformQuota(status: ShellStatus): PlatformQuota | null {
+  return isOnPlatform(status)
+    ? (status.aiSource?.platform_quota ?? null)
+    : null;
+}
+
+/** How many runs that spend AI have finished: when it moves, the quota
+ * has. Pure. */
+export function getAiRunsSettled(settled: Settled): number {
+  return settled.analysis + settled.roleMap + settled.advisor;
 }

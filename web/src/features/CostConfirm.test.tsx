@@ -71,7 +71,7 @@ describe("who pays", () => {
         },
       }),
     ).toBe(
-      "Runs on CareerPolaris's AI (claude-haiku-4-5) · $1.25 of $2.00 left this month.",
+      "Runs on CareerPolaris's AI (claude-haiku-4-5) · 62% of this month's free quota left.",
     );
   });
 

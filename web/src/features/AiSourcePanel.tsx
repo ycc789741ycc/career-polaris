@@ -7,7 +7,11 @@ import {
   ProgressBar,
   RoundCheck,
 } from "../components/ui";
-import { useShell } from "../shell/ShellContext";
+import {
+  getQuotaLabel,
+  getQuotaPercent,
+  useShell,
+} from "../shell/ShellContext";
 import { messageOf, useAsync } from "./useAsync";
 
 /** What the user accepts before their first switch to CareerPolaris's key. */
@@ -83,12 +87,10 @@ export function AiSourcePanel() {
         <div style={{ margin: "12px 0" }}>
           <ProgressBar
             percent={getQuotaPercent(quota)}
-            label="CareerPolaris AI used this month"
+            label={`Free quota used: ${getQuotaLabel(quota).used}%`}
           />
           <p className="subcopy" style={{ fontSize: 13, marginTop: 6 }}>
-            ${Number(quota.spent_usd).toFixed(2)} of $
-            {Number(quota.allowed_usd).toFixed(2)} used this month, on{" "}
-            {data.platform_model}. It starts again on the 1st.
+            {getQuotaLine(quota, data.platform_model)}
           </p>
         </div>
       )}
@@ -118,10 +120,16 @@ export function getSourceNote(data: AiSource): string {
   return "Nothing is set up to run your work yet: use CareerPolaris's AI, with a monthly quota, or add a key of your own below.";
 }
 
-/** The share of this month's quota spent, 0–100. Pure. */
-export function getQuotaPercent(
+/** "38% of this month's free quota used · 62% left. On claude-haiku-4-5. It
+ * starts again on the 1st." In percentages only. Pure. */
+export function getQuotaLine(
   quota: NonNullable<AiSource["platform_quota"]>,
-): number {
-  const allowed = Number(quota.allowed_usd);
-  return allowed > 0 ? (Number(quota.spent_usd) / allowed) * 100 : 100;
+  model: string | null,
+): string {
+  const { used, left } = getQuotaLabel(quota);
+  if (used >= 100) {
+    return "This month's free quota is used up. It starts again on the 1st, or switch to your own key.";
+  }
+  const on = model ? ` On ${model}.` : "";
+  return `${used}% of this month's free quota used · ${left}% left.${on} It starts again on the 1st.`;
 }
