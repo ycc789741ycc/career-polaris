@@ -9,11 +9,11 @@ cd "$(dirname "$0")/.."
 set -a; . ./"${ENV_FILE:-.env}"; set +a
 : "${POSTGRES_SUPERUSER:?}" "${POSTGRES_DB:?}"
 
-COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
+COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f "${INFRA_COMPOSE_FILE:?run through make}")
 
 running() { [ -n "$("${COMPOSE[@]}" ps -q --status running "$1" 2>/dev/null)" ]; }
 
-# Each place runs part of the infra (COMPOSE_PROFILES): report what is here.
+# Each machine runs part of the infra (its compose.infra.yaml): report what is here.
 if ! running postgres && ! running objectstore; then
   echo "ERROR: neither Postgres nor object storage runs here. Run: make start-infra"
   exit 1
@@ -28,7 +28,8 @@ echo "== Volumes =="
 # Every volume on the host is listed by `docker system df -v`; keep this stack's.
 docker system df -v --format '{{range .Volumes}}{{.Name}} {{.Size}}{{println}}{{end}}' \
   | awk 'BEGIN { printf "%-32s %s\n", "VOLUME", "SIZE" }
-                $1 ~ /^careerpolaris-(infra|app)_/ { printf "%-32s %s\n", $1, $2 }'
+                index($1, app "_") == 1 || index($1, infra "_") == 1 { printf "%-32s %s\n", $1, $2 }' \
+        app="${APP_PROJECT:?run through make}" infra="${INFRA_PROJECT:?run through make}"
 
 echo
 echo "== Postgres: database size, then the 15 largest relations =="

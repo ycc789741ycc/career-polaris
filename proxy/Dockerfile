@@ -1,6 +1,6 @@
 # The edge proxy (ADR 0053): TLS, one origin for the SPA and the api, and the
-# per-address limits the app cannot see. Runs only where COMPOSE_PROFILES
-# names `proxy` — the droplet; development and CI reach api and web directly.
+# per-address limits the app cannot see. Runs only on the droplet
+# (deploy/droplet-1vcpu-2gb/); development and CI reach api and web directly.
 #
 # Caddy itself, plus one plugin, so it is built rather than pulled. Both are
 # pinned: the Caddy version on the builder and the release it builds, and the

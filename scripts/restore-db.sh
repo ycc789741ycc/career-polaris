@@ -21,7 +21,7 @@ fi
 : "${BACKUP_S3_ENDPOINT_URL:?}" "${BACKUP_S3_REGION:?}" "${BACKUP_S3_BUCKET:?}"
 : "${BACKUP_S3_ACCESS_KEY_ID:?}" "${BACKUP_S3_SECRET_ACCESS_KEY:?}"
 
-COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
+COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f "${INFRA_COMPOSE_FILE:?run through make}")
 AWS_CLI_IMAGE=amazon/aws-cli:2.37.9
 
 if [ -z "$("${COMPOSE[@]}" ps -q --status running postgres 2>/dev/null)" ]; then
@@ -34,7 +34,7 @@ if [ "${RESTORE_CONFIRMED:-}" != "yes" ]; then
   [ "$ok" = "yes" ] || { echo "aborted"; exit 1; }
 fi
 
-docker run --rm --network careerpolaris_net \
+docker run --rm --network "${NETWORK:?run through make}" \
     -e AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" \
     -e AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY" \
     -e AWS_DEFAULT_REGION="$BACKUP_S3_REGION" \

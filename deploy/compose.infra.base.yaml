@@ -1,0 +1,108 @@
+# The infra services, as every machine runs them (ADR 0062): the datastore,
+# object storage and the private link. Never run on its own: each machine's
+# deploy/<machine>/compose.infra.yaml picks the services it runs from here with
+# `extends`, and adds what depends on the machine — the project and network
+# names, memory and CPU ceilings, Postgres's sizing and published ports.
+#
+# Infra and the app are separate compose projects, so an app target can never
+# remove an infra container. Image tags are pinned — never `latest`.
+
+# Rotated logs, for the same reasons as in compose.app.base.yaml.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  # Postgres with pgvector. Each machine that runs it sets its sizing as the
+  # `command` (shared_buffers, work_mem, effective_cache_size,
+  # max_connections), and publishes it on loopback only: for a human with a
+  # database client, and on the droplet for the tunnel to forward to. Services
+  # on the same host reach it by its service name on the network.
+  postgres:
+    <<: *logging
+    restart: unless-stopped
+    pids_limit: 512
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:?POSTGRES_SUPERUSER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?POSTGRES_SUPERUSER_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # S3 for development and CI, standing in for Spaces (ADR 0058): the Versity
+  # S3 Gateway, which keeps each object as a plain file under /data. MinIO,
+  # used until then, no longer publishes images anyone can pull. A machine
+  # publishes it so a browser can follow a presigned URL, which is signed
+  # against S3_PUBLIC_ENDPOINT_URL.
+  objectstore:
+    <<: *logging
+    restart: unless-stopped
+    pids_limit: 256
+    image: versity/versitygw:v1.8.0
+    command: ["--port", ":9000", "posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      ROOT_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+    # Root inside the container only to own its volume, which Docker creates
+    # root-owned; it holds no capability, cannot gain one, and writes nowhere
+    # but /data.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Not MinIO's old `objectdata`: MinIO kept its own format, which this
+      # gateway cannot read.
+      - objectfiles:/data
+    healthcheck:
+      # Any answer means it is serving; an unsigned request is answered 403.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9000"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # The private link between the edge and the compute side. It joins the
+  # host's own network, so the host gets the tunnel's address and its routes:
+  # every container here reaches the other side through it, and the other side
+  # reaches only what `scripts/tunnel-up.sh` forwards — Postgres, on the edge.
+  # The compute side opens no inbound port; it dials out.
+  tunnel:
+    <<: *logging
+    restart: unless-stopped
+    pids_limit: 128
+    image: tailscale/tailscale:v1.102.5
+    network_mode: host
+    cap_add: [NET_ADMIN, NET_RAW]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      # Checked by scripts/tunnel-up.sh where a machine runs the tunnel. Not
+      # `:?` here: compose reads this whole file for every machine, including
+      # those that run no tunnel.
+      TS_AUTHKEY: ${TUNNEL_AUTH_KEY:-}
+      TS_HOSTNAME: ${TUNNEL_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      # Containers keep Docker's DNS: the other side is named by its tunnel
+      # address in .env, never by a tunnel-only name.
+      TS_ACCEPT_DNS: "false"
+      # Where the CLI below and scripts/tunnel-up.sh reach the daemon.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+    volumes:
+      - tunnelstate:/var/lib/tailscale
+    healthcheck:
+      test: ["CMD", "tailscale", "--socket=/var/run/tailscale/tailscaled.sock", "status", "--peers=false"]
+      interval: 5s
+      timeout: 5s
+      retries: 24

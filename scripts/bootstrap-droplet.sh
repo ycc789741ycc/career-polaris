@@ -7,7 +7,7 @@
 #   - pasted as the droplet's User data when creating it, so it has run before
 #     anyone can log in (its output is in /var/log/cloud-init-output.log);
 #   - or on a droplet that already exists: clone the repository, then
-#     `sudo infra/bootstrap-droplet.sh`.
+#     `sudo scripts/bootstrap-droplet.sh`.
 # Running it again changes nothing that is already in place.
 #
 # A host script, not a make target in a container, because it installs Docker
@@ -51,7 +51,7 @@ export DEBIAN_FRONTEND=noninteractive
 # value it reads, so this wins over a `PasswordAuthentication yes` there.
 ssh_conf=/etc/ssh/sshd_config.d/10-careerpolaris.conf
 cat > "$ssh_conf.new" <<'EOF'
-# Written by infra/bootstrap-droplet.sh: SSH keys only.
+# Written by scripts/bootstrap-droplet.sh: SSH keys only.
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 EOF

@@ -12,7 +12,7 @@ set -a; . ./"${ENV_FILE:-.env}"; set +a
 : "${POSTGRES_SUPERUSER:?}" "${POSTGRES_DB:?}"
 : "${APP_RW_PASSWORD:?}" "${CRAWLER_RW_PASSWORD:?}" "${AGGREGATOR_PASSWORD:?}" "${MIGRATOR_PASSWORD:?}"
 
-COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f infra/compose.yml)
+COMPOSE=(docker compose --env-file "${ENV_FILE:-.env}" -f "${INFRA_COMPOSE_FILE:?run through make}")
 
 # Roles are made where Postgres runs. A compute machine reaches it across the
 # tunnel and makes nothing (docs/decisions/0051).

@@ -1,0 +1,55 @@
+# CI's runner, and anyone who wants the prod images on a laptop (ADR 0062):
+# every app service but the proxy, from the `prod` images, nothing mounted —
+# what gets scanned, pushed and promoted. Names end in `-ci` and ports take
+# 21474–21477, so a clone set to `ci` runs beside a `local` one, and beside a
+# deployed stack, on the same host.
+
+name: careerpolaris-app-ci
+
+networks:
+  default:
+    name: careerpolaris_net_ci
+    external: true
+
+# The same ceilings as `local`: about twice each service's measured use.
+services:
+  api:
+    extends: {file: ../compose.app.base.yaml, service: api}
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.0
+    ports:
+      - "127.0.0.1:21474:8000"
+
+  worker:
+    extends: {file: ../compose.app.base.yaml, service: worker}
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    volumes:
+      - modelcache:/home/app/.cache/huggingface
+
+  crawler:
+    extends: {file: ../compose.app.base.yaml, service: crawler}
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 1.0
+    volumes:
+      - modelcache:/home/app/.cache/huggingface
+
+  migrate:
+    extends: {file: ../compose.app.base.yaml, service: migrate}
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.0
+
+  web:
+    extends: {file: ../compose.app.base.yaml, service: web}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:21475:8080"
+
+volumes:
+  modelcache:

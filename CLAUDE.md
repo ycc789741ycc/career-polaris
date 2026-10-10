@@ -34,67 +34,83 @@ a bare `npm`/`pip`/`pytest`/`alembic` anywhere in this repo means a target is
 missing.
 
 ```
-cp .env.example .env      # fill in every blank; nothing has a default that matters
-make build-infra          # pull the pinned Postgres and S3 gateway images
-make build-app            # build the prod images, plus the test images the gates use
-make start-infra          # compose up, wait healthy, then the least-privilege DB roles
-make start-app            # runs migrations to completion first, then api/worker/crawler/web
+cp .env.example .env          # fill in every blank; nothing has a default that matters
+cp .machine.example .machine  # this checkout is the `local` machine
+make build-infra              # pull the pinned Postgres and S3 gateway images
+make build-app                # build this machine's images, plus the test images the gates use
+make start-infra              # compose up, wait healthy, then the least-privilege DB roles
+make start-app                # runs migrations to completion first, then api/worker/crawler/web
 ```
 
-What runs in a place is `COMPOSE_PROFILES` in its `.env` (ADR 0051, 0057):
-`serving` (api, web, Postgres), `compute` (worker, crawler), `tunnel` (Tailscale between
-them), `proxy` (Caddy, ADR 0053) and `local` (an S3 gateway, ADR 0058). Development and CI run
-`serving,compute,local`; the droplet `serving,proxy,tunnel`; the compute machine
-`compute,tunnel` (`docs/deploy.md`). Builds, `stop-app` and `stop-infra` cover
-every profile; starts run only this place's, and fail if it selects nothing or
-names a profile no service is in (`edge` became `serving` in ADR 0057).
+**What runs where is the machine, not `.env`** (ADR 0062). Each checkout names
+its machine in `.machine` (git-ignored), a folder in `deploy/` holding that
+machine's two compose files, `compose.app.yaml` and `compose.infra.yaml`. They
+pick their services from `deploy/compose.app.base.yaml` and
+`deploy/compose.infra.base.yaml` with `extends`, and say, as literals, what
+depends on the machine: which services run, memory, CPU and process ceilings,
+log rotation, Postgres's sizing, published ports, the image stage, and the
+project and network names.
 
-`build-app`, `start-app` and `stop-app` take `MODE=dev|prod`, default `prod`;
-any other value fails. Each Dockerfile has three stages, each with its own tag:
+| Machine | Runs | Images | Names |
+|---|---|---|---|
+| `local` | everything, source bind-mounted and reloading | `dev` | `careerpolaris-{app,infra}-local`, `careerpolaris_net_local`, ports 21470–21473 |
+| `ci` | everything but the proxy, nothing mounted | `prod` | `careerpolaris-{app,infra}-ci`, `careerpolaris_net_ci`, ports 21474–21477 |
+| `droplet-1vcpu-2gb` | api, web, proxy (ADR 0053), Postgres, tunnel | `prod`, pulled | `careerpolaris-{app,infra}`, `careerpolaris_net` |
+| `compute-m5pro-48gb` | worker, crawler, tunnel | `prod`, pulled | `careerpolaris-{app,infra}`, `careerpolaris_net` |
+
+`.env` holds only what the application reads, and every secret; `make lint`
+fails if a machine's shape — `*_MEM_LIMIT`, `*_CPUS`, `DOCKER_LOG_*`,
+Postgres's sizing, published ports, `COMPOSE_PROFILES` — comes back to
+`.env.example`. Raise a limit in the machine's file, by pull request, when
+`make stats` shows a service near its ceiling or `oom_killed=true`.
+
+Because the development and deployed machines use different names, a
+development clone runs beside production on the compute machine (the
+operator's Mac) without either touching the other. Every target that starts,
+stops or replaces containers or data refuses a stack another checkout started,
+and says which (`scripts/check-stack-owner.sh`).
+
+**There is no `MODE`**; passing one fails. The machine decides the image. Each
+Dockerfile has three stages, each with its own tag:
 
 | Stage | Tag | Used by |
 |---|---|---|
-| `prod` | `careerpolaris-*:prod` | `MODE=prod`: `compose.yaml` alone, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
-| `test` | `careerpolaris-*:test` | Both test tiers and every gate, in either mode, never mounted. `build-app` builds it whichever mode you ask for. |
-| `dev` | `careerpolaris-*:dev` | `MODE=dev`: `compose.yaml` + `compose.dev.yaml`, with the repo bind-mounted. Local only — never pushed, never deployed. |
+| `prod` | `careerpolaris-*:prod` | Every machine but `local`, nothing mounted. The only image CI or a deployed environment uses, and the one `scan` scans. |
+| `test` | `careerpolaris-*:test` | Both test tiers and every gate, never mounted. `build-app` builds it on every machine. |
+| `dev` | `careerpolaris-*:dev` | `local`, with the repo bind-mounted. Never pushed, never deployed. |
 
-`start-app` never builds: if the image for the mode is missing it stops and tells
-you which `make build-app` to run. Both modes migrate first. Only one mode runs at
-a time — starting one replaces the other — and `stop-app` stops whichever is
-running. The app itself never reads `MODE`.
+`start-app` never builds: if an image the machine runs is missing it stops and
+tells you to run `make build-app` (or, on a deployed machine,
+`make pull-app RELEASE=release.env`). Every machine migrates first. The app
+itself never reads which machine it is on. To run the prod images on a laptop,
+use a second clone whose `.machine` says `ci`; `make scan` runs there, as in CI.
 
 ### Developing with live source
 
-```
-make build-app MODE=dev   # once, and again after a dependency change
-make start-app MODE=dev
-```
-
-Layers `compose.dev.yaml` on `compose.yaml`: your checkout's `backend/` and
-`web/src` are bind-mounted read-only, and saving a file reloads what uses it —
-the api through uvicorn's reloader, the worker through `watchfiles`, and the SPA
-through the Vite dev server with hot module replacement, on the same port. A
-save typically shows up within a couple of seconds.
+On `local`, `make build-app` (once, and again after a dependency change) then
+`make start-app`. Your checkout's `backend/` and `web/src` are bind-mounted
+read-only, and saving a file reloads what uses it — the api through uvicorn's
+reloader, the worker through `watchfiles`, and the SPA through the Vite dev
+server with hot module replacement, on the same port. A save typically shows up
+within a couple of seconds.
 
 - The **crawler** is mounted but does not reload, because it crawls as soon as
   it starts and would hit real job boards on every save. Restart it with
-  `make stop-app && make start-app MODE=dev`.
+  `make stop-app && make start-app`.
 - Changing **dependencies**, `vite.config.ts` or `package.json` needs
-  `make build-app MODE=dev` — those live in the image, not the mount.
-- In dev, `migrate` (which `start-app` runs first) sees the mounted source, so a
+  `make build-app` — those live in the image, not the mount.
+- `migrate` (which `start-app` runs first) sees the mounted source, so a
   migration you have just written applies without a rebuild.
 
-Every source mount in the repo lives in `compose.dev.yaml` and nowhere else — never
-as `-v` in a Makefile recipe. The overlay is deliberately not called
-`compose.override.yaml`, because compose would merge that into prod automatically.
+Every source mount in the repo lives in `deploy/local/compose.app.yaml` and
+nowhere else — never as `-v` in a Makefile recipe.
 
-Hostnames in `.env` are compose service names on the `careerpolaris_net` network, not
-`localhost`. The only host-facing values are the `*_PUBLISHED_PORT` numbers,
-which are what your browser and any database client connect to. They take this
-repo's block, `21470`–`21473` (api, web, Postgres, object storage), never a
-common default like `8000`, `5173` or `5432`, so the stack runs beside other
-projects without a bind failure. Containers keep their conventional ports inside
-`careerpolaris_net`.
+Hostnames in `.env` are compose service names on the machine's network, not
+`localhost`. The only host-facing numbers are the published ports in the
+machine's files, which are what your browser and any database client connect
+to. They take this repo's block, `21470`–`21477`, never a common default like
+`8000`, `5173` or `5432`, so the stack runs beside other projects without a
+bind failure. Containers keep their conventional ports inside the network.
 
 `make test-unit` runs in a container with `--network none`, so it is hermetic by
 construction rather than by convention. `make test-integration` runs on the
@@ -116,33 +132,36 @@ Supporting targets, never dependencies of the above: `migrate`, `format`,
 `gen-client`, `lock` (regenerates `backend/uv.lock` after a dependency change),
 `logs`, `stats`, `disk-usage`, `backup-db`, `release BUMP=` (tags
 `origin/master` with the next version and pushes it), `push-app` (CI's release) and
-`pull-app RELEASE=release.env` (a deployed place's), `check-env TEMPLATE=` (a
-deployed place's `.env` against its machine's template in `infra/env/`, whose
-names `lint` keeps equal to `.env.example`'s), `clean-up-cache`, and the
+`pull-app RELEASE=release.env` (a deployed place's), `check-env` (a deployed
+place's `.env` against `.env.example`, whose `# may-be-blank:` line names the
+optional settings), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
 
 - `clean-up-cache` deletes bytecode, the pytest/mypy/ruff/import-linter caches,
-  downloaded models in `.cache/` and `web/dist`. It never touches `.env`, `tmp/`,
+  downloaded models in `.cache/` and `web/dist`. It never touches `.env`, `.machine`, `tmp/`,
   `.venv/`, `node_modules/` or `web/openapi.json`.
 
 - `stats` is one snapshot of CPU, memory and processes for every container,
   measured against its limit, plus restart and OOM-kill counts. `disk-usage`
   shows free disk, volume sizes, the largest Postgres relations and object
   storage by bucket. Both only read, and `disk-usage` needs infra up.
-- Every container has a memory, CPU and process ceiling and rotated logs. The
-  defaults are optional `*_MEM_LIMIT` / `*_CPUS` / `DOCKER_LOG_*` settings in
-  `.env`. Raise a limit there, never in the compose files, when `stats` shows a
-  service near its ceiling or `oom_killed=true`.
-- `format` and `lock` write to source, so they run through `compose.dev.yaml`,
-  where the mounts live. They need the dev images (`make build-app MODE=dev`),
-  and they run as your own uid, so the files they rewrite stay yours.
+- Every container has a memory, CPU and process ceiling and rotated logs, as
+  literals in its machine's files in `deploy/`. Raise a limit there, by pull
+  request, never in `.env`, when `stats` shows a service near its ceiling or
+  `oom_killed=true`.
+- `format` and `lock` write to source, so they run through
+  `deploy/local/compose.app.yaml`, where the mounts live, on any machine. They
+  need the dev images (`make build-app` in a `local` checkout), and they run as
+  your own uid, so the files they rewrite stay yours.
 - `gen-client` mounts nothing. The OpenAPI document leaves one container on
   stdout and enters the next on stdin, so it runs from the test images and works
   in CI. Prettier is told not to touch the generated `schema.d.ts`; otherwise
   `format` and `gen-client` would keep rewriting each other's output.
 
-Infra and the app are separate compose projects (`careerpolaris-infra`, `careerpolaris-app`) sharing
-the `careerpolaris_net` network, so an app target can never remove an infra container. App
+Infra and the app are separate compose projects (on the droplet and compute,
+`careerpolaris-infra` and `careerpolaris-app`; elsewhere with the machine's
+suffix) sharing the machine's network, so an app target can never remove an
+infra container. App
 images carry `pull_policy: never`: they are built locally, and a missing one
 should fail rather than send compose to Docker Hub for a stranger's image of the
 same name.
@@ -181,7 +200,8 @@ backend/src/
 backend/tests/{unit,integration}/   each mirrors src/
 web/          React + Vite SPA, on the prototype's Organic design system (ADR 0004)
 proxy/        Caddy plus caddy-ratelimit, the edge on the droplet (ADR 0053)
-infra/        infra compose, DB roles, health wait, tunnel, backups, releases
+deploy/       compose bases, and one folder per machine with its app and infra files (ADR 0062)
+scripts/      DB roles, health wait, tunnel, backups, releases, env checks
 ```
 
 The backend is packaged by component, as the design guideline requires (its ADR
@@ -763,14 +783,15 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 Hybrid deployment (`docs/plan.md`), one branch per step under
 `epic/no-ticket/hybrid-deploy`; `docs/deploy.md` is the runbook:
 
-- **Two places** (ADR 0051). A DigitalOcean droplet (1 vCPU, 2 GB) runs
-  `serving,proxy,tunnel`: Caddy, `web`, `api` and Postgres, about 1 GB. The
-  operator's machine runs `compute,tunnel`: the worker and the crawler, which
-  hold the embedding model. They meet through Tailscale (`infra/tunnel-up.sh`
+- **Two places** (ADR 0051; since ADR 0062 the machines
+  `droplet-1vcpu-2gb` and `compute-m5pro-48gb` in `deploy/`, not profiles). A
+  DigitalOcean droplet (1 vCPU, 2 GB) runs Caddy, `web`, `api` and Postgres,
+  about 1 GB. The operator's machine runs the worker and the crawler, which
+  hold the embedding model. They meet through Tailscale (`scripts/tunnel-up.sh`
   forwards only 5432 to Postgres on loopback; the compute side dials out). Files
-  are in Spaces; the local S3 gateway is `local` only. Every published port binds to
-  `PUBLISHED_BIND_ADDRESS` (`127.0.0.1`), because Docker goes around `ufw`;
-  infra restarts with its host; Postgres's memory is `POSTGRES_*` settings.
+  are in Spaces; the S3 gateway runs only on `local` and `ci`. Every published
+  port binds to `127.0.0.1`, because Docker goes around `ufw`; infra restarts
+  with its host; Postgres's memory is set in each machine's infra file.
   Both places migrate under an advisory lock (`cli.migrate.migration_lock`),
   and an image older than the schema refuses (`SchemaAheadError`). Found on
   the way: a fresh database could not migrate past 0013.
@@ -815,7 +836,7 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   `make pull-app RELEASE=release.env`, edge first. `pull_policy: never` stays.
 
 - **Local S3 without MinIO** (ADR 0058). MinIO no longer publishes pullable
-  images, so `local` runs the Versity S3 Gateway (`versity/versitygw`), with
+  images, so `local` and `ci` run the Versity S3 Gateway (`versity/versitygw`), with
   objects as plain files in the `objectfiles` volume and no console. The
   integration tier ensures the bucket once per session
   (`tests/integration/conftest.py`), because only the api creates it.
@@ -836,3 +857,18 @@ issuer and audience `careerpolaris` / `careerpolaris-api`, the user agent
 once, by the cookie and the issuer. Old volumes are copied once by hand
 (ADR 0056); the repo keeps no command for it. Accepted ADRs, past phases in `docs/plan.md` and the
 excalidraw drawings keep the names they were written with.
+
+## Deployment shape per machine (ADR 0062)
+
+On `epic/no-ticket/deploy-layout`, one branch per step: `infra/`'s scripts
+moved to `scripts/`; what runs on a machine, how big it is and under which names
+moved out of `.env` into `deploy/<machine>/` (see Running it); `.machine` names
+a checkout's machine; `MODE`, `COMPOSE_PROFILES`, `compose.yaml`,
+`compose.dev.yaml`, `infra/compose.yml` and the droplet's env template are
+gone. `local` and `ci` take `-local` and `-ci` names, so a development clone
+runs beside production on the compute machine, and every start, stop or
+destructive target refuses a stack another checkout started. The droplet and
+compute kept their names, so their volumes carried over; each place writes
+`.machine` and deletes the moved keys from `.env` once (`docs/deploy.md`,
+section 6). ADR 0057 is superseded.
+

@@ -1,0 +1,44 @@
+# The droplet's infra (ADR 0051, 0062): Postgres, sized for 2 GB, and the
+# tunnel the compute machine reaches it through. Files live in Spaces, so no
+# S3 gateway runs here. Names as before ADR 0062, so `pgdata` and
+# `tunnelstate` carry over untouched.
+
+name: careerpolaris-infra
+
+networks:
+  default:
+    name: careerpolaris_net
+    external: true
+
+services:
+  postgres:
+    extends: {file: ../compose.infra.base.yaml, service: postgres}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    # A quarter of its ceiling for shared buffers, and few connections: the
+    # api's pool, the worker's and the crawler's across the tunnel, migrate.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - max_connections=50
+    ports:
+      # Loopback only: the tunnel forwards its port 5432 here (it shares the
+      # host's network), and the compute side never comes in from the internet.
+      - "127.0.0.1:21472:5432"
+
+  tunnel:
+    extends: {file: ../compose.infra.base.yaml, service: tunnel}
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+
+volumes:
+  pgdata:
+  tunnelstate:

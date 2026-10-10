@@ -1,0 +1,45 @@
+# The developer's machine's infra (ADR 0062): Postgres and the S3 gateway, both
+# published on loopback for a database client and for presigned URLs. Names end
+# in `-local`, so this runs beside a deployed stack on the same host.
+
+name: careerpolaris-infra-local
+
+# External, as in the app's file: `make start-infra` creates the network, so
+# compose never owns it. A network compose owns must carry compose's labels,
+# and the one start-infra creates has none.
+networks:
+  default:
+    name: careerpolaris_net_local
+    external: true
+
+services:
+  postgres:
+    extends: {file: ../compose.infra.base.yaml, service: postgres}
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 2.0
+    # Postgres's own defaults, but for effective_cache_size, sized for a laptop.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - max_connections=100
+    ports:
+      - "127.0.0.1:21472:5432"
+
+  objectstore:
+    extends: {file: ../compose.infra.base.yaml, service: objectstore}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    ports:
+      - "127.0.0.1:21473:9000"
+
+volumes:
+  pgdata:
+  objectfiles:

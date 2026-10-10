@@ -1,0 +1,43 @@
+# The compute machine: the operator's Mac, Apple M5 Pro, 15 cores, 48 GB
+# (ADR 0051, 0062). The worker and the crawler, which hold the embedding model;
+# they reach Postgres on the droplet through the tunnel. Prod images, pulled by
+# digest (`make pull-app`). Nothing is published.
+#
+# The names are the ones this machine had before ADR 0062, so the downloaded
+# model carries over. A development clone on this same Mac uses `local`, whose
+# names end in `-local`, so the two never replace each other.
+
+name: careerpolaris-app
+
+networks:
+  default:
+    name: careerpolaris_net
+    external: true
+
+services:
+  worker:
+    extends: {file: ../compose.app.base.yaml, service: worker}
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    volumes:
+      - modelcache:/home/app/.cache/huggingface
+
+  crawler:
+    extends: {file: ../compose.app.base.yaml, service: crawler}
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 1.0
+    volumes:
+      - modelcache:/home/app/.cache/huggingface
+
+  # Runs first on every start, as on the droplet; under the advisory lock, so
+  # whichever place starts second finds nothing pending.
+  migrate:
+    extends: {file: ../compose.app.base.yaml, service: migrate}
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+
+volumes:
+  modelcache:

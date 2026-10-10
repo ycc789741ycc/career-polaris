@@ -4,9 +4,9 @@
 #         runs by default, what `make scan` scans, and the only image CI or a
 #         deployed environment ever uses.
 #   test  prod plus the test dependencies. Both test tiers and every gate run
-#         here, in either mode, never mounted.
-#   dev   test plus dev tooling, run by `make start-app MODE=dev` with the
-#         repo bind-mounted. Local only: never pushed, never deployed.
+#         here, on every machine, never mounted.
+#   dev   test plus dev tooling, run on the `local` machine (deploy/local/)
+#         with the repo bind-mounted. Never pushed, never deployed.
 #
 # `prod` is deliberately the LAST stage, so a bare `docker build` with no
 # --target yields the production image and never the dev one.
@@ -129,8 +129,8 @@ USER app
 
 
 # --- dev: test plus dev tooling --------------------------------------------
-# What `make start-app MODE=dev` runs, with the repo bind-mounted over /app by
-# compose.dev.yaml. It carries the reloaders (watchfiles, uvicorn --reload) and
+# What `make start-app` runs on the `local` machine, with the repo bind-mounted
+# over /app by deploy/local/compose.app.yaml. It carries the reloaders (watchfiles, uvicorn --reload) and
 # the tools `make format` and `make lock` use (ruff, uv). Never pushed.
 FROM test AS dev
 

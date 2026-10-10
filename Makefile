@@ -10,63 +10,69 @@
 # nothing else — no Python, no Node, no psql, no linter. If you find yourself
 # wanting to run a tool directly, a target is missing.
 #
-# Modes. `build-app`, `start-app` and `stop-app` take MODE=dev|prod, default
-# prod; anything else fails.
-#   prod  the `prod` stage, compose.yaml alone, nothing mounted. What CI and
-#         every deployed environment use, and what `scan` scans.
-#   dev   the `dev` stage, compose.yaml + compose.dev.yaml: the repo
-#         bind-mounted, reloading on save. Local only.
-# Tests and gates ignore MODE: they always run the `test` stage, never mounted,
-# which `build-app` builds in either mode. The app itself never reads MODE.
-#
-# Places. What runs here is COMPOSE_PROFILES in .env, not a make variable
-# (docs/decisions/0051, 0057): `serving` (api, web, Postgres), `compute` (worker,
-# crawler), `tunnel` (the link between them), `proxy` (Caddy, ADR 0053) and
-# `local` (an S3 gateway, ADR 0058). Development and CI name serving, compute and local. Builds and `stop-app` cover every profile;
-# starts run only this place's.
+# Machines (docs/decisions/0062). What runs here, how big it is and under which
+# names is the machine's folder in deploy/, named by the one line in .machine
+# (git-ignored; .machine.example says `local`):
+#   local               a developer's laptop: every service, the `dev` images,
+#                       the source bind-mounted and reloading on save
+#   ci                  CI's runner: every service but the proxy, the `prod`
+#                       images, nothing mounted
+#   droplet-1vcpu-2gb   api, web, proxy, Postgres and the tunnel (ADR 0051)
+#   compute-m5pro-48gb  worker, crawler and the tunnel (ADR 0051)
+# .env holds only what the application reads, and secrets; nothing about the
+# machine's shape. The machine decides the image too, so there is no MODE: local
+# runs the `dev` stage, every other machine `prod`. Tests and gates always run
+# the `test` stage, never mounted, which `build-app` builds on every machine.
+# The app itself never reads which machine it is on.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-ENV_FILE      ?= .env
-INFRA_COMPOSE := infra/compose.yml
-NETWORK       := careerpolaris_net
-
-MODE ?= prod
-
-COMPOSE_BASE := docker compose --env-file $(ENV_FILE) -f compose.yaml
-COMPOSE_DEV  := $(COMPOSE_BASE) -f compose.dev.yaml
-ifeq ($(MODE),dev)
-COMPOSE_APP  := $(COMPOSE_DEV)
-else
-COMPOSE_APP  := $(COMPOSE_BASE)
+ifeq ($(origin MODE),command line)
+$(error MODE is gone (docs/decisions/0062): the machine named in .machine decides. local runs the dev images, every other machine the prod ones)
 endif
-COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE)
-# Every profile, whatever this place runs: what builds, stops and reports use.
+
+ENV_FILE := .env
+
+MACHINE            := $(strip $(shell cat .machine 2>/dev/null))
+MACHINE_DIR        := deploy/$(MACHINE)
+APP_COMPOSE_FILE   := $(MACHINE_DIR)/compose.app.yaml
+INFRA_COMPOSE_FILE := $(MACHINE_DIR)/compose.infra.yaml
+LOCAL_COMPOSE_FILE := deploy/local/compose.app.yaml
+
+# The names this machine's files give the two compose projects and their
+# shared network, read from the files themselves so they are written once.
+APP_PROJECT   := $(shell sed -n 's/^name: *//p' $(APP_COMPOSE_FILE) 2>/dev/null)
+INFRA_PROJECT := $(shell sed -n 's/^name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
+NETWORK       := $(shell sed -n '/^networks:/,/^[^ ]/s/^    name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
+# The scripts run compose against the same files and network.
+export ENV_FILE INFRA_COMPOSE_FILE NETWORK APP_PROJECT INFRA_PROJECT
+
+COMPOSE_APP   := docker compose --env-file $(ENV_FILE) -f $(APP_COMPOSE_FILE)
+COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE_FILE)
+# The source-writing tools live with the source mounts, in local's file.
+COMPOSE_LOCAL := docker compose --env-file $(ENV_FILE) -f $(LOCAL_COMPOSE_FILE)
+# Every profile: the one-off `migrate` and local's `tools` included. What
+# builds, stops and reports use.
 ALL_PROFILES  := --profile '*'
 
-# One tag per mode, plus the test image both modes build.
-MODE_IMAGES        := careerpolaris-backend:$(MODE) careerpolaris-web:$(MODE)
 PROD_IMAGES        := careerpolaris-backend:prod careerpolaris-web:prod careerpolaris-proxy:prod
+DEV_IMAGES         := careerpolaris-backend:dev careerpolaris-web:dev
 PROXY_IMAGE        := careerpolaris-proxy:prod
 BACKEND_TEST_IMAGE := careerpolaris-backend:test
 WEB_TEST_IMAGE     := careerpolaris-web:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
 
-# The dev overlay's source-writing tools run as the invoking user, so the files
-# they rewrite stay owned by that user on every host.
+# Local's source-writing tools run as the invoking user, so the files they
+# rewrite stay owned by that user on every host.
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 
 # Hermetic: no network at all, so a unit test cannot reach infra by accident.
 RUN_HERMETIC := docker run --rm --network none
-# On the compose network, with configuration supplied at run time.
+# On this machine's compose network, with configuration supplied at run time.
 RUN_ON_NET   := docker run --rm --network $(NETWORK) --env-file $(ENV_FILE)
 
-# .env templates per machine (infra/env/), each declaring exactly the names
-# .env.example does. infra/check-env.sh compares them, reading every file from
-# stdin in a container with no network, so nothing is mounted.
-ENV_TEMPLATES   := $(wildcard infra/env/*.env.example)
 CHECK_ENV_IMAGE := careerpolaris-backend:prod
 
 PATTERN ?=
@@ -78,23 +84,22 @@ PYTEST_FILTER :=
 VITEST_FILTER :=
 endif
 
-.PHONY: help require-env check-mode require-mode-images require-app-services \
-        require-known-profiles \
-        require-infra-services build-infra build-app \
+.PHONY: help require-env require-machine require-own-stack require-machine-images require-infra-up \
+        require-dev-images build-infra build-app \
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
         check-env
 
 help:
-	@echo "Standard targets (build-app, start-app, stop-app take MODE=dev|prod):"
+	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
+	@echo "Standard targets:"
 	@echo "  build-infra build-app start-infra start-app stop-app stop-infra"
 	@echo "  test-unit test-integration"
 	@echo "Gates (their own targets, never folded into a test target):"
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
-	@echo "  migrate format gen-client lock logs stats disk-usage backup-db"
-	@echo "  check-env TEMPLATE=infra/env/<machine>.env.example (each deployed place)"
+	@echo "  migrate format gen-client lock logs stats disk-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
@@ -103,98 +108,105 @@ require-env:
 	  echo "ERROR: $(ENV_FILE) is missing. Copy .env.example to .env and fill it in."; \
 	  exit 1; }
 
-check-mode:
-	@case "$(MODE)" in dev|prod) ;; \
-	  *) echo "ERROR: MODE must be dev or prod, got '$(MODE)'."; exit 1 ;; esac
+# Which machine this checkout is: one line in .machine, naming a folder in
+# deploy/ that holds both compose files.
+require-machine: require-env
+	@[ -n "$(MACHINE)" ] || { \
+	  echo "ERROR: .machine is missing. A laptop: cp .machine.example .machine"; \
+	  echo "  A deployed place: echo <machine> > .machine, one of:"; \
+	  echo "  $(sort $(patsubst deploy/%/compose.app.yaml,%,$(wildcard deploy/*/compose.app.yaml)))"; \
+	  exit 1; }
+	@[ -f "$(APP_COMPOSE_FILE)" ] && [ -f "$(INFRA_COMPOSE_FILE)" ] || { \
+	  echo "ERROR: .machine says '$(MACHINE)', which has no compose.app.yaml and compose.infra.yaml in deploy/."; \
+	  echo "  Machines: $(sort $(patsubst deploy/%/compose.app.yaml,%,$(wildcard deploy/*/compose.app.yaml)))"; \
+	  exit 1; }
 
-# Start never builds: it fails here, with the command to run, when the image
-# for the requested mode is missing.
-require-mode-images: check-mode
-	@for image in $(MODE_IMAGES); do \
+# A stack belongs to the checkout that started it. Two clones on one host (a
+# deployment and a development one) use different machines and so different
+# names; this refuses to start or stop a stack another checkout started, which
+# is what a clone pointed at the wrong machine would otherwise do.
+require-own-stack: require-machine
+	@scripts/check-stack-owner.sh
+
+# Start never builds: it fails here, with the command to run, when an image
+# this machine runs is missing.
+require-machine-images: require-machine
+	@for image in $$($(COMPOSE_APP) $(ALL_PROFILES) config --images 2>/dev/null | sort -u); do \
 	  docker image inspect $$image >/dev/null 2>&1 || { \
-	    echo "ERROR: $$image is missing. Run: make build-app MODE=$(MODE)"; exit 1; }; \
+	    echo "ERROR: $$image is missing. Run: make build-app"; \
+	    echo "  (a deployed place pulls its release instead: make pull-app RELEASE=release.env)"; exit 1; }; \
 	done
 
-# Every profile a service is in. Compose ignores a name it does not know, so an
-# old or mistyped one would quietly leave its services out; refuse it instead.
-KNOWN_PROFILES := serving compute proxy tunnel local
+# App targets never start infra; they fail here, with the command to run, when
+# this machine's infra is not up. start-infra creates the network on every
+# machine, even one whose infra has no service on it.
+require-infra-up: require-machine
+	@docker network inspect $(NETWORK) >/dev/null 2>&1 || { \
+	  echo "ERROR: $(NETWORK) does not exist: this machine's infra is not up. Run: make start-infra"; exit 1; }
 
-require-known-profiles: require-env
-	@for profile in $$(grep -E '^COMPOSE_PROFILES=' $(ENV_FILE) | tail -1 | cut -d= -f2- | tr ',' ' '); do \
-	  case " $(KNOWN_PROFILES) " in *" $$profile "*) ;; \
-	    *) echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) names '$$profile', which no service is in."; \
-	       echo "  Known profiles: $(KNOWN_PROFILES). ('edge' is now 'serving', ADR 0057.)"; exit 1 ;; \
-	  esac; \
+# `format` and `lock` run local's tools, whatever machine this checkout is.
+require-dev-images:
+	@for image in $(DEV_IMAGES); do \
+	  docker image inspect $$image >/dev/null 2>&1 || { \
+	    echo "ERROR: $$image is missing. Run make build-app in a checkout whose .machine is local."; exit 1; }; \
 	done
-
-# A place whose COMPOSE_PROFILES selects nothing would start nothing and say
-# nothing; fail instead, with what to set.
-require-app-services: require-known-profiles
-	@[ -n "$$($(COMPOSE_BASE) config --services 2>/dev/null | grep -vx migrate)" ] || { \
-	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no app service."; \
-	  echo "  Set serving, compute, or both (development: serving,compute,local)."; exit 1; }
-
-require-infra-services: require-known-profiles
-	@[ -n "$$($(COMPOSE_INFRA) config --services 2>/dev/null)" ] || { \
-	  echo "ERROR: COMPOSE_PROFILES in $(ENV_FILE) selects no infra service."; \
-	  echo "  Set serving, tunnel or local (development: serving,compute,local)."; exit 1; }
 
 # --- build ------------------------------------------------------------------
 
-# This place's infra only: a compute machine has no use for Postgres's image.
-build-infra: require-infra-services
+# This machine's infra images only: a compute machine has no use for Postgres's.
+build-infra: require-machine
 	$(COMPOSE_INFRA) pull
 
-# The images for the requested mode, plus the `test` stage the test tiers and
-# gates run in — built whichever mode was asked for. The proxy has one stage,
-# so it is careerpolaris-proxy:prod in either mode; only a `proxy` place runs it.
-build-app: require-env check-mode
+# The images this machine runs, plus the `test` stage the test tiers and gates
+# run in and the proxy image `lint` validates the Caddyfile with — on every
+# machine. local builds the `dev` stage; every other machine `prod`.
+build-app: require-machine
 	$(COMPOSE_APP) $(ALL_PROFILES) build
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
 	docker build --target test -t $(WEB_TEST_IMAGE) web
+	docker build --target prod -t $(PROXY_IMAGE) proxy
 	docker pull $(SCANNER_IMAGE)
 
 # --- start / stop -----------------------------------------------------------
 
-# careerpolaris_net is created here even where no infra service joins it (a compute
+# The network is created here even where no infra service joins it (a compute
 # machine runs only the tunnel, on the host's network), because the app's
 # compose file expects it.
-start-infra: require-infra-services
-	@infra/tunnel-up.sh check
+start-infra: require-own-stack
+	@scripts/tunnel-up.sh check
 	@docker network inspect $(NETWORK) >/dev/null 2>&1 || docker network create $(NETWORK) >/dev/null
 	$(COMPOSE_INFRA) up -d
 	@echo "Waiting for infra to report healthy..."
-	@infra/wait-for-healthy.sh
-	@infra/tunnel-up.sh
-	@infra/bootstrap-roles.sh
+	@scripts/wait-for-healthy.sh
+	@scripts/tunnel-up.sh
+	@scripts/bootstrap-roles.sh
 
-# Both modes migrate first: pending migrations run to completion BEFORE any
-# container serves traffic, and a failed migration fails the start. Starting
-# one mode replaces the other, since both run the same services.
-start-app: require-app-services require-mode-images migrate
+# Pending migrations run to completion BEFORE any container serves traffic,
+# and a failed migration fails the start.
+start-app: require-own-stack require-machine-images migrate
 	$(COMPOSE_APP) up -d --no-build
-	@echo "MODE=$(MODE), running here:"
+	@echo "$(MACHINE), running here:"
 	@$(COMPOSE_APP) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
 
-# Stops whichever mode is running: both run the same services in one project.
-stop-app: require-env check-mode
-	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
+stop-app: require-own-stack
+	$(COMPOSE_APP) $(ALL_PROFILES) down --remove-orphans
 
 # Preserves data on purpose. Use `make clean-up-infra` to discard volumes.
-stop-infra: require-env
+stop-infra: require-own-stack
 	$(COMPOSE_INFRA) $(ALL_PROFILES) stop
 
-logs: require-env
-	$(COMPOSE_BASE) $(ALL_PROFILES) logs --tail 100 -f
+logs: require-machine
+	$(COMPOSE_APP) $(ALL_PROFILES) logs --tail 100 -f
 
 # --- resource usage ---------------------------------------------------------
 
 # One snapshot of CPU, memory and processes for this stack's containers, both
-# projects, against the limits the compose files set (MEM % is of the limit).
+# projects, against the limits the machine's files set (MEM % is of the limit).
 # Then restarts and OOM kills: a non-zero count means a limit is too tight or
-# something leaks — raise the *_MEM_LIMIT in .env, or find the leak.
-stats: require-env
-	@ids="$$($(COMPOSE_INFRA) $(ALL_PROFILES) ps -q) $$($(COMPOSE_BASE) $(ALL_PROFILES) ps -q)"; \
+# something leaks — raise it in deploy/$(MACHINE)/, by pull request, or find
+# the leak.
+stats: require-machine
+	@ids="$$($(COMPOSE_INFRA) $(ALL_PROFILES) ps -q) $$($(COMPOSE_APP) $(ALL_PROFILES) ps -q)"; \
 	 [ -n "$${ids// /}" ] || { echo "Nothing is running. Run: make start-infra"; exit 1; }; \
 	 docker stats --no-stream \
 	   --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.PIDs}}' $$ids; \
@@ -204,14 +216,14 @@ stats: require-env
 
 # Where the disk goes: free space, volume sizes, the largest Postgres
 # relations, and object storage by bucket. Read-only. Needs infra up.
-disk-usage: require-env
-	@infra/disk-usage.sh
+disk-usage: require-machine
+	@scripts/disk-usage.sh
 
 # --- migrations -------------------------------------------------------------
 
-# A one-off container from the mode's own image. In dev it sees the mounted
-# source, so a migration written a moment ago applies without a rebuild.
-migrate: require-env require-mode-images
+# A one-off container from this machine's own image. On local it sees the
+# mounted source, so a migration written a moment ago applies without a rebuild.
+migrate: require-own-stack require-machine-images require-infra-up
 	$(COMPOSE_APP) run --rm migrate
 
 # --- test -------------------------------------------------------------------
@@ -222,11 +234,15 @@ test-unit:
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx vitest run $(VITEST_FILTER)
 
 # Assumes infra is already up and migrated. Never starts infra itself.
-test-integration: require-env
+test-integration: require-infra-up
 	$(RUN_ON_NET) $(BACKEND_TEST_IMAGE) pytest tests/integration $(PYTEST_FILTER)
 
 # --- gates ------------------------------------------------------------------
 
+# The code, the Caddyfile, and every machine's compose files: each must render
+# against .env.example's names, extend only services the bases define, and
+# share one network between its app and infra projects; and .env.example must
+# hold nothing about a machine's shape (ADR 0062).
 lint:
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) ruff check .
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) ruff format --check .
@@ -235,8 +251,7 @@ lint:
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx eslint src
 	$(RUN_HERMETIC) -e SITE_HOSTNAME=lint.invalid $(PROXY_IMAGE) \
 	    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-	for f in .env.example $(ENV_TEMPLATES); do echo "### FILE $$f"; cat "$$f"; echo; done \
-	  | $(RUN_HERMETIC) -i $(BACKEND_TEST_IMAGE) sh -c "$$(cat infra/check-env.sh)" check-env templates
+	@scripts/check-deploy.sh
 
 # web/tsconfig.json lists no files, only a reference to tsconfig.app.json, so a
 # bare `tsc --noEmit` there checks nothing. Name the project that holds src/.
@@ -245,7 +260,8 @@ typecheck:
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx tsc -p tsconfig.app.json --noEmit
 
 # Dependencies, and the prod images themselves: prod is what gets promoted, so
-# prod is what gets scanned.
+# prod is what gets scanned. The prod images are built on the `ci` machine (or
+# pulled on a deployed one); a `local` checkout has only the dev images.
 #
 # The images reach Trivy as a `docker save` stream on stdin rather than by
 # mounting the Docker socket, which would hand the scanner root on the host.
@@ -258,7 +274,8 @@ typecheck:
 scan:
 	@for image in $(PROD_IMAGES); do \
 	  docker image inspect $$image >/dev/null 2>&1 || { \
-	    echo "ERROR: $$image is missing; scan covers the prod images. Run: make build-app"; exit 1; }; \
+	    echo "ERROR: $$image is missing; scan covers the prod images."; \
+	    echo "  Run make build-app in a checkout whose .machine is ci (CI does)."; exit 1; }; \
 	done
 	docker run --rm $(BACKEND_TEST_IMAGE) pip-audit
 	docker run --rm $(WEB_TEST_IMAGE) npm audit --audit-level=high
@@ -272,13 +289,12 @@ scan:
 
 # --- supporting targets -----------------------------------------------------
 
-# Applies formatting. It writes to source, so it runs through the dev overlay,
+# Applies formatting. It writes to source, so it runs through local's file,
 # where every source mount lives; the `lint` gate that checks formatting never
-# mounts anything. Needs the dev images: `make build-app MODE=dev`.
-format: require-env
-	@$(MAKE) --no-print-directory require-mode-images MODE=dev
-	$(COMPOSE_DEV) run --rm backend-tools sh -c 'ruff check --fix . && ruff format .'
-	$(COMPOSE_DEV) run --rm web-tools npx prettier --write "src/**/*.{ts,tsx}" --log-level warn
+# mounts anything. Needs the dev images.
+format: require-env require-dev-images
+	$(COMPOSE_LOCAL) run --rm backend-tools sh -c 'ruff check --fix . && ruff format .'
+	$(COMPOSE_LOCAL) run --rm web-tools npx prettier --write "src/**/*.{ts,tsx}" --log-level warn
 
 # Regenerates the checked-in API client from the API's OpenAPI document.
 # Mount-free: the document leaves one container on stdout and enters the next
@@ -293,21 +309,20 @@ gen-client: require-env
 	  || { rm -f web/src/api/schema.d.ts.tmp; exit 1; }
 
 # Regenerates backend/uv.lock after a dependency change. It writes to source,
-# so it runs through the dev overlay. Needs the dev images: `make build-app MODE=dev`.
-lock: require-env
-	@$(MAKE) --no-print-directory require-mode-images MODE=dev
-	$(COMPOSE_DEV) run --rm backend-tools uv lock
+# so it runs through local's file. Needs the dev images.
+lock: require-env require-dev-images
+	$(COMPOSE_LOCAL) run --rm backend-tools uv lock
 
 # Deletes the tool caches left in the checkout: bytecode, the pytest, mypy,
 # ruff and import-linter caches, downloaded embedding models (.cache/) and the
 # web build output. Everything it removes is regenerated on the next run, and
-# no data or configuration is touched: .env, tmp/, installed dependencies
-# (.venv/, node_modules/) and web/openapi.json stay. Package directories left
-# holding nothing once their bytecode is gone are removed too.
+# no data or configuration is touched: .env, .machine, tmp/, installed
+# dependencies (.venv/, node_modules/) and web/openapi.json stay. Package
+# directories left holding nothing once their bytecode is gone are removed too.
 #
 # Plain find/rm on the host rather than a container: it only deletes files in
 # this checkout, and a container would need the checkout bind-mounted, which is
-# only ever done in compose.dev.yaml.
+# only ever done in deploy/local/compose.app.yaml.
 CACHE_DIRS := __pycache__ .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .cache
 
 # Never descends into .git, tmp/ or installed dependencies. No -delete here:
@@ -329,7 +344,7 @@ clean-up-cache:
 # tag an earlier run left unpushed. Asks first; YES=1 does not. Runs git on the
 # host, with your own credentials.
 release:
-	@BUMP="$(BUMP)" YES="$(YES)" infra/tag-release.sh
+	@BUMP="$(BUMP)" YES="$(YES)" scripts/tag-release.sh
 
 # CI only, for a version tag on master after every gate has passed: builds the
 # prod images for every platform in RELEASE_PLATFORMS, pushes them to
@@ -337,46 +352,43 @@ release:
 # digest. Refuses a HEAD with no vX.Y.Z tag or not on origin/master. Needs a buildx builder that can build
 # those platforms.
 push-app: require-env
-	@infra/push-release.sh
+	@scripts/push-release.sh
 
 # On the droplet and the compute machine, in place of build-app: pulls the
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
-	@infra/pull-release.sh "$(RELEASE)"
+	@scripts/pull-release.sh "$(RELEASE)"
 
-# On a deployed place: compares its .env with the template it was copied from
-# (TEMPLATE=infra/env/<machine>.env.example). Fails on a name .env lacks or a
-# required value left blank, and lists values that differ from the template.
-# Run it once .env is filled in, and after each release. Prints no secret: only
-# values the template sets, and templates leave every secret blank.
+# On a deployed place: compares its .env with .env.example. Fails on a name
+# .env lacks or a required value left blank (.env.example's `# may-be-blank:`
+# line names the optional ones), and lists values that differ from
+# .env.example's. Run it once .env is filled in, and after each release. Prints
+# no secret: only values .env.example sets, and it leaves every secret blank.
 check-env: require-env
-	@[ -n "$(TEMPLATE)" ] && [ -f "$(TEMPLATE)" ] || { \
-	  echo "ERROR: name the template this .env was copied from:"; \
-	  echo "  make check-env TEMPLATE=infra/env/<machine>.env.example"; exit 1; }
 	@docker image inspect $(CHECK_ENV_IMAGE) >/dev/null 2>&1 || { \
 	  echo "ERROR: $(CHECK_ENV_IMAGE) is missing. Run: make pull-app RELEASE=release.env"; exit 1; }
-	@for f in $(TEMPLATE) $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
-	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat infra/check-env.sh)" \
-	      check-env place $(TEMPLATE) $(ENV_FILE)
+	@for f in .env.example $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
+	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat scripts/check-env.sh)" \
+	      check-env .env.example $(ENV_FILE)
 
 # --- backups ----------------------------------------------------------------
 
 # One pg_dump of the database, into the backup bucket (BACKUP_S3_*). Only
 # reads the database; run it where Postgres runs. The droplet's crontab runs
 # it nightly; the bucket's lifecycle rule decides how long dumps are kept.
-backup-db: require-env
-	@infra/backup-db.sh
+backup-db: require-machine
+	@scripts/backup-db.sh
 
 # DESTRUCTIVE: replaces a database with a dump from the backup bucket.
 # BACKUP= names the dump (`make backup-db` prints it); RESTORE_DB= the
 # database to restore into, default POSTGRES_DB. Stop the app first. Never a
 # dependency of anything.
-restore-db: require-env
-	@infra/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
+restore-db: require-own-stack
+	@scripts/restore-db.sh "$(BACKUP)" "$(RESTORE_DB)"
 
 # DESTRUCTIVE. Never a dependency of a build, start, stop or test target.
-clean-up-infra: require-env
-	@read -p "This deletes all local infra volumes. Type 'yes' to continue: " ok; \
+clean-up-infra: require-own-stack
+	@read -p "This deletes every infra volume of $(INFRA_PROJECT) ($(MACHINE)). Type 'yes' to continue: " ok; \
 	 [ "$$ok" = "yes" ] || { echo "aborted"; exit 1; }
-	$(COMPOSE_BASE) $(ALL_PROFILES) down --remove-orphans
+	$(COMPOSE_APP) $(ALL_PROFILES) down --remove-orphans
 	$(COMPOSE_INFRA) $(ALL_PROFILES) down -v

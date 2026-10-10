@@ -1,6 +1,12 @@
-# The application, as it ships. `make start-app` (MODE=prod, the default) runs
-# this file alone, with nothing mounted. `make start-app MODE=dev` layers
-# compose.dev.yaml on top.
+# The application's services, as every machine runs them (ADR 0062). Never run
+# on its own: each machine's deploy/<machine>/compose.app.yaml picks the
+# services it runs from here with `extends`, and adds what depends on the
+# machine — the project and network names, memory and CPU ceilings, published
+# ports, and, on `local`, the dev images with the source mounted.
+#
+# What lives here is what is the same everywhere: the image, the command, the
+# configuration each service reads from .env, and the hardening. Nothing here
+# depends on the machine's size, and nothing here is a secret.
 #
 # `api`, `worker` and `crawler` are one image with three commands — that is
 # what "one artifact promoted unchanged" means here.
@@ -10,25 +16,8 @@
 # would put the master encryption key and the connector secrets inside the
 # crawler and the SPA, which architecture.md section 4 forbids.
 #
-# The network is created by `start-infra`, which is why `start-app` needs infra
-# to be up and cannot bring it up itself.
-#
-# Which services run here is the COMPOSE_PROFILES setting in .env
-# (docs/decisions/0051):
-#   serving  api and web: light, always on, beside Postgres
-#   compute  worker and crawler: the embedding model, PDF renders and syncs
-#   proxy    Caddy, the only thing on the internet: the droplet alone
-# Development and CI name both. `migrate` is in neither: `make migrate` runs it
-# wherever the app starts, under a lock.
-
-# Its own compose project, separate from infra's, so --remove-orphans here can
-# only ever affect application containers.
-name: careerpolaris-app
-
-networks:
-  default:
-    name: careerpolaris_net
-    external: true
+# Paths are relative to this file: compose resolves an extended service's
+# paths against the file it came from.
 
 # Docker's default json-file driver keeps every line a container writes,
 # forever, which is how a quiet host eventually runs out of disk. Rotate it.
@@ -36,25 +25,26 @@ x-logging: &logging
   logging:
     driver: json-file
     options:
-      max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
-      max-file: "${DOCKER_LOG_MAX_FILE:-3}"
+      max-size: 10m
+      max-file: "3"
 
 x-hardened: &hardened
   <<: *logging
   security_opt:
     - no-new-privileges:true
-  # These images are built locally by `make build-app`, never pulled. Without
-  # this, a missing tag sends compose to Docker Hub — at best a confusing error,
-  # at worst a stranger's public image that happens to share the name.
+  # These images are built locally by `make build-app` or pulled by digest by
+  # `make pull-app`, never pulled by name. Without this, a missing tag sends
+  # compose to Docker Hub — at best a confusing error, at worst a stranger's
+  # public image that happens to share the name.
   pull_policy: never
 
 x-backend: &backend
   <<: *hardened
   build:
-    context: ./backend
+    context: ../backend
     target: prod
   image: careerpolaris-backend:prod
-  # These processes only ever write to the caches declared below.
+  # These processes only ever write to the caches a machine mounts.
   read_only: true
   tmpfs:
     # Nothing here writes to /tmp itself; the cap is for libraries that do.
@@ -63,27 +53,12 @@ x-backend: &backend
 x-long-running: &long-running
   restart: unless-stopped
 
-# Resource limits. Each service gets a memory ceiling, a CPU share and a
-# process cap, so one runaway — a crawl that parses something huge, a PDF
-# render that balloons — is OOM-killed and restarted on its own instead of
-# starving Postgres and everything else on the host. memswap_limit equals
-# mem_limit so an overrun is killed promptly and visibly, rather than swapping
-# the host to a crawl. `make stats` shows usage against these ceilings, and any
-# restarts or OOM kills.
-#
-# The defaults are about twice what each service was measured using, so they
-# are optional settings: override them per environment in .env, never here.
-
 services:
   # Verifies tokens, serves HTTP, starts connector OAuth. Holds the master key.
   api:
     <<: [*backend, *long-running]
-    profiles: ["serving"]
-    mem_limit: ${API_MEM_LIMIT:-768m}
-    memswap_limit: ${API_MEM_LIMIT:-768m}
-    cpus: ${API_CPUS:-1.0}
     pids_limit: 256
-    env_file: .env
+    env_file: ../.env
     command:
       - uvicorn
       - api.main:app
@@ -92,30 +67,18 @@ services:
       - --port
       - "8000"
       # The client's own address from X-Forwarded-For, believed only when the
-      # proxy sent it (ADR 0054): set FORWARDED_ALLOW_IPS to careerpolaris_net's subnet
-      # where the proxy runs. The default believes no one.
+      # proxy sent it (ADR 0054): set FORWARDED_ALLOW_IPS to the network's
+      # subnet where the proxy runs. The default believes no one.
       - --proxy-headers
       - --forwarded-allow-ips
       - ${FORWARDED_ALLOW_IPS:-127.0.0.1}
-    ports:
-      # Loopback only: Docker's iptables rules go ahead of ufw, so 0.0.0.0
-      # would serve the api over plain HTTP to the internet on any host with a
-      # public address. A deployment's proxy reaches it on careerpolaris_net.
-      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${API_PUBLISHED_PORT:-21470}:8000"
 
   # Runs AI jobs and connector syncs. Holds the master key and connector tokens.
   worker:
     <<: [*backend, *long-running]
-    profiles: ["compute"]
-    mem_limit: ${WORKER_MEM_LIMIT:-2g}
-    memswap_limit: ${WORKER_MEM_LIMIT:-2g}
-    cpus: ${WORKER_CPUS:-2.0}
     pids_limit: 512
-    env_file: .env
+    env_file: ../.env
     command: ["python", "-m", "worker.main"]
-    volumes:
-      # The local embedding model is downloaded once and reused.
-      - modelcache:/home/app/.cache/huggingface
 
   # Parses hostile HTML from the internet, so it holds no secrets at all — not
   # the master encryption key, not a connector token, not even app_rw's
@@ -124,10 +87,6 @@ services:
   # genuinely all it needs.
   crawler:
     <<: [*backend, *long-running]
-    profiles: ["compute"]
-    mem_limit: ${CRAWLER_MEM_LIMIT:-2g}
-    memswap_limit: ${CRAWLER_MEM_LIMIT:-2g}
-    cpus: ${CRAWLER_CPUS:-1.0}
     pids_limit: 256
     command: ["python", "-m", "crawler.main"]
     environment:
@@ -142,54 +101,39 @@ services:
       CRAWL_RATE_LIMIT_PER_HOST_PER_SECOND: ${CRAWL_RATE_LIMIT_PER_HOST_PER_SECOND:-1}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
       PRESENCE_HEARTBEAT_SECONDS: ${PRESENCE_HEARTBEAT_SECONDS:-10}
-    volumes:
-      - modelcache:/home/app/.cache/huggingface
 
   # A one-off: every pending migration to completion, then exit. `make migrate`
-  # runs it — as start-app's first step, in either mode — so the app never
+  # runs it as start-app's first step, on every machine, so the app never
   # serves on a half-migrated database. Not long-running, and behind a profile
   # so `up` never starts it.
   migrate:
     <<: *backend
-    mem_limit: ${MIGRATE_MEM_LIMIT:-768m}
-    memswap_limit: ${MIGRATE_MEM_LIMIT:-768m}
-    cpus: ${MIGRATE_CPUS:-1.0}
     pids_limit: 256
     profiles: ["migrate"]
-    env_file: .env
+    env_file: ../.env
     command: ["python", "-m", "cli.migrate"]
 
   # Static bundle plus a config.js written at start. Everything it receives
   # reaches the browser, so it receives nothing else.
   web:
     <<: [*hardened, *long-running]
-    profiles: ["serving"]
-    mem_limit: ${WEB_MEM_LIMIT:-512m}
-    memswap_limit: ${WEB_MEM_LIMIT:-512m}
-    cpus: ${WEB_CPUS:-0.5}
     pids_limit: 256
     build:
-      context: ./web
+      context: ../web
       target: prod
     image: careerpolaris-web:prod
     environment:
       WEB_API_BASE_URL: ${WEB_API_BASE_URL:?WEB_API_BASE_URL is required}
       WEB_PRIVACY_CONTACT_EMAIL: ${WEB_PRIVACY_CONTACT_EMAIL:?WEB_PRIVACY_CONTACT_EMAIL is required}
-    ports:
-      - "${PUBLISHED_BIND_ADDRESS:-127.0.0.1}:${WEB_PUBLISHED_PORT:-21471}:8080"
 
   # The edge (ADR 0053): TLS for SITE_HOSTNAME, one origin for the SPA and
   # the api, a cap on request bodies, timeouts for slow clients, and limits
-  # per client address. Its own profile, so development never binds 80/443.
+  # per client address. Only the droplet runs it.
   proxy:
     <<: [*hardened, *long-running]
-    profiles: ["proxy"]
-    mem_limit: ${PROXY_MEM_LIMIT:-128m}
-    memswap_limit: ${PROXY_MEM_LIMIT:-128m}
-    cpus: ${PROXY_CPUS:-0.5}
     pids_limit: 128
     build:
-      context: ./proxy
+      context: ../proxy
       target: prod
     image: careerpolaris-proxy:prod
     read_only: true
@@ -208,18 +152,3 @@ services:
       EDGE_READ_HEADER_TIMEOUT: ${EDGE_READ_HEADER_TIMEOUT:-10s}
       EDGE_READ_BODY_TIMEOUT: ${EDGE_READ_BODY_TIMEOUT:-120s}
       EDGE_IDLE_TIMEOUT: ${EDGE_IDLE_TIMEOUT:-2m}
-    ports:
-      # Public on purpose, and the only service that is.
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      # Certificates and the ACME account: keep them, or every restart asks
-      # Let's Encrypt again and soon hits its rate limit.
-      - proxydata:/data
-      - proxyconfig:/config
-
-volumes:
-  modelcache:
-  proxydata:
-  proxyconfig:
