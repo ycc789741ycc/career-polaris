@@ -935,6 +935,11 @@ under `epic/no-ticket/platform-ai`:
   while the platform is on); the shell's `hasAi`, `modelName` and
   `chargedTo` read `ShellStatus.aiSource`; `CostConfirm` says who pays and
   what is left of the month; an `ai_platform_*` failure links to AI settings.
+  Users see the free quota only as a percentage of the month, never in
+  dollars (`getQuotaLabel`): in AI settings, in the sidebar on every screen
+  ("38% of free quota used", flagged at 100%), and in `CostConfirm`. The
+  shell re-reads `/ai-source` whenever an analysis, build or Advisor job
+  finishes.
 - **Watch the platform's spend** (no ADR). `make platform-ai-usage` reads the
   ledger and `limits` in one read-only transaction, as `disk-usage` does.
   `wiring.platform_ai` logs `platform_ai.near_ceiling` (WARN, once per window

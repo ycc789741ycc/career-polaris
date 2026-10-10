@@ -2,6 +2,8 @@ import { AppIcon } from "../components/AppIcon";
 import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
 import {
+  getPlatformQuota,
+  getQuotaLabel,
   hasAi,
   isOnPlatform,
   modelName,
@@ -22,6 +24,9 @@ export function Sidebar({
   const noKey = !hasAi(status);
   const keyFailed =
     !isOnPlatform(status) && status.credential?.status === "failed";
+  const quota = getPlatformQuota(status);
+  const quotaUsed = quota ? getQuotaLabel(quota).used : null;
+  const quotaGone = quotaUsed !== null && quotaUsed >= 100;
   const { activity } = useActivity();
   const running: Partial<Record<Screen, boolean>> = {
     sources: sourcesBusy(activity),
@@ -79,15 +84,23 @@ export function Sidebar({
               <span className="nav-note">
                 {noKey
                   ? "No key yet"
-                  : isOnPlatform(status)
-                    ? `${modelName(status)} · CareerPolaris AI`
-                    : `${modelName(status)}${keyFailed ? " · key failed" : ""}`}
+                  : quotaUsed !== null
+                    ? `${modelName(status)} · ${quotaUsed}% of free quota used`
+                    : isOnPlatform(status)
+                      ? `${modelName(status)} · CareerPolaris AI`
+                      : `${modelName(status)}${keyFailed ? " · key failed" : ""}`}
               </span>
             </span>
-            {(noKey || keyFailed) && (
+            {(noKey || keyFailed || quotaGone) && (
               <span
                 className="nav-flag"
-                aria-label={noKey ? "needs a key" : "key failed"}
+                aria-label={
+                  noKey
+                    ? "needs a key"
+                    : keyFailed
+                      ? "key failed"
+                      : "free quota used up"
+                }
               >
                 !
               </span>

@@ -23,10 +23,11 @@ import {
   type Place,
   type Screen,
 } from "./shell/navigation";
-import { ActivityProvider } from "./shell/activity";
+import { ActivityProvider, useActivity } from "./shell/activity";
 import { ActivityBar } from "./shell/ActivityBar";
 import { PageHeader } from "./shell/PageHeader";
 import {
+  getAiRunsSettled,
   ShellContext,
   type NavigateTo,
   type ShellStatus,
@@ -155,6 +156,13 @@ function Shell() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // A finished analysis, build or Advisor job has spent AI: read the quota
+  // again, so the sidebar's percentage moves with it.
+  const aiRunsSettled = getAiRunsSettled(useActivity().settled);
+  useEffect(() => {
+    if (aiRunsSettled > 0) void refresh();
+  }, [aiRunsSettled, refresh]);
 
   const shell = useMemo(
     () => ({

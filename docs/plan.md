@@ -3999,6 +3999,12 @@ below:
 * Copy elsewhere that says "on your key" for work already done (a résumé's
   last-generated line, a job card) is left as it is: it may have run on
   either.
+* Afterwards, on `feature/no-ticket/quota-percentage`: users see the free
+  quota as a percentage of the month only, never in dollars. AI settings says
+  "38% of this month's free quota used · 62% left", the sidebar's model note
+  "38% of free quota used" (flagged when it is used up), and `CostConfirm`
+  "62% of this month's free quota left". The shell reads the quota again
+  each time an analysis, build or Advisor job finishes.
 
 
 * **Domain.** `identity` gets an `AiSource` (`own | platform`) per account,

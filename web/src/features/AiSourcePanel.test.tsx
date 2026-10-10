@@ -3,10 +3,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiSource } from "../api/types";
-import { ShellContext, type Shell } from "../shell/ShellContext";
+import {
+  getAiRunsSettled,
+  getQuotaLabel,
+  getQuotaPercent,
+  ShellContext,
+  type Shell,
+} from "../shell/ShellContext";
 import {
   AiSourcePanel,
-  getQuotaPercent,
+  getQuotaLine,
   getSourceNote,
   PLATFORM_TERMS,
 } from "./AiSourcePanel";
@@ -107,6 +113,19 @@ describe("which AI runs your work", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows this month's free quota as a percentage", async () => {
+    serve(source({ source: "platform", has_accepted_platform_terms: true }));
+    renderPanel();
+
+    expect(
+      await screen.findByText(/25% of this month's free quota used · 75% left/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Free quota used: 25%" }),
+    ).toHaveAttribute("aria-valuenow", "25");
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+  });
+
   it("offers nothing to an account Google has not verified", async () => {
     serve(source({ is_eligible: false }));
     renderPanel();
@@ -162,5 +181,43 @@ describe("what the panel says", () => {
         remaining_usd: "1.5",
       }),
     ).toBe(25);
+  });
+
+  it("gives whole percentages used and left that add up to 100", () => {
+    const quota = (spent: string) => ({
+      allowed_usd: "2",
+      spent_usd: spent,
+      remaining_usd: "0",
+    });
+    expect(getQuotaLabel(quota("0.5"))).toEqual({ used: 25, left: 75 });
+    expect(getQuotaLabel(quota("0.333"))).toEqual({ used: 17, left: 83 });
+    // Spend past the quota (a call that cost more than its estimate) is 100.
+    expect(getQuotaLabel(quota("2.4"))).toEqual({ used: 100, left: 0 });
+  });
+
+  it("says the quota in percentages, never dollars", () => {
+    const line = getQuotaLine(
+      { allowed_usd: "2", spent_usd: "0.5", remaining_usd: "1.5" },
+      "claude-haiku-4-5",
+    );
+    expect(line).toBe(
+      "25% of this month's free quota used · 75% left. On claude-haiku-4-5. It starts again on the 1st.",
+    );
+    expect(line).not.toContain("$");
+  });
+
+  it("says when the quota is used up", () => {
+    expect(
+      getQuotaLine(
+        { allowed_usd: "2", spent_usd: "2", remaining_usd: "0" },
+        "claude-haiku-4-5",
+      ),
+    ).toMatch(/free quota is used up.*your own key/);
+  });
+
+  it("counts finished runs that spend AI, and not syncs", () => {
+    expect(
+      getAiRunsSettled({ sources: 9, analysis: 1, roleMap: 2, advisor: 3 }),
+    ).toBe(6);
   });
 });

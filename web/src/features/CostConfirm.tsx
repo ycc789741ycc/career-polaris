@@ -3,7 +3,8 @@ import { Button } from "../components/ui";
 import { AWAY_NOTICE, isProcessingAway, useActivity } from "../shell/activity";
 import {
   chargedTo,
-  isOnPlatform,
+  getPlatformQuota,
+  getQuotaLabel,
   type ShellStatus,
   useShell,
 } from "../shell/ShellContext";
@@ -67,13 +68,11 @@ export function CostConfirm({
   );
 }
 
-/** "Runs on CareerPolaris's AI (claude-haiku-4-5) · $1.25 of $2 left this
- * month", or "Runs on your own key on claude-opus-5". Pure. */
+/** "Runs on CareerPolaris's AI (claude-haiku-4-5) · 62% of this month's free
+ * quota left", or "Runs on your own key on claude-opus-5". Pure. */
 export function getPayerLine(status: ShellStatus): string {
   const line = `Runs on ${chargedTo(status)}`;
-  const quota = status.aiSource?.platform_quota;
-  if (!isOnPlatform(status) || !quota) return `${line}.`;
-  return `${line} · $${Number(quota.remaining_usd).toFixed(2)} of $${Number(
-    quota.allowed_usd,
-  ).toFixed(2)} left this month.`;
+  const quota = getPlatformQuota(status);
+  if (!quota) return `${line}.`;
+  return `${line} · ${getQuotaLabel(quota).left}% of this month's free quota left.`;
 }
