@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -25,6 +24,7 @@ from advisor.rolemap.domain.constants import (
     OPENING_WEIGHT_CEILING,
     OPENING_WEIGHT_FLOOR,
 )
+from advisor.rolemap.domain.similarity import get_similarity_matrix
 
 # How much an uncovered requirement costs, relative to a dimension scored zero
 # against its target. A requirement with no evidence at all is worse than a low
@@ -301,10 +301,7 @@ def get_requirement_relevance(
     """
     if not opening_vectors:
         return []
-    similarity = [
-        [_cosine(requirement, opening) for requirement in requirement_vectors]
-        for opening in opening_vectors
-    ]
+    similarity = get_similarity_matrix(opening_vectors, requirement_vectors)
     means = [
         sum(row[i] for row in similarity) / len(similarity) for i in range(len(requirement_vectors))
     ]
@@ -380,10 +377,3 @@ def _opening_scale(relevance: float) -> float:
     if scale < OPENING_WEIGHT_FLOOR:
         return 0.0
     return min(OPENING_WEIGHT_CEILING, scale)
-
-
-def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
-    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    if norm == 0:
-        return 0.0
-    return sum(x * y for x, y in zip(a, b, strict=True)) / norm
