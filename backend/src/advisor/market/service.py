@@ -140,6 +140,9 @@ class MarketScopeView:
 
     target_locations: list[str]
     open_posting_count: int
+    # With no location chosen, the baseline is bounded to its newest
+    # postings (ADR 0068): True when the count is at that bound.
+    is_capped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,9 +316,18 @@ class CrawlIngest:
 class MarketService:
     """Target locations, the postings in scope, and the sources a build needs."""
 
-    def __init__(self, uow: MarketUnitOfWork, *, windows: FreshWindows) -> None:
+    def __init__(
+        self,
+        uow: MarketUnitOfWork,
+        *,
+        windows: FreshWindows,
+        baseline_limit: int | None = None,
+    ) -> None:
+        """``baseline_limit``: how many of the newest baseline postings a user
+        with no location gets (ADR 0068); None: every one."""
         self._uow = uow
         self._windows = windows
+        self._baseline_limit = baseline_limit
 
     def target_location_options(self) -> list[TargetLocationOptionView]:
         """The places a user may pick from: "Remote", the regions, then the
@@ -362,17 +374,21 @@ class MarketService:
 
     async def scope(self, owner_id: uuid.UUID) -> MarketScopeView:
         """How much of the market the user's target locations take in."""
-        locations = await self.target_locations(owner_id)
+        scope = await self._posting_scope(owner_id)
         heads = await self.posting_heads_in_scope(owner_id)
-        return MarketScopeView(target_locations=locations, open_posting_count=len(heads))
+        return MarketScopeView(
+            target_locations=list(scope.markets),
+            open_posting_count=len(heads),
+            is_capped=scope.is_bounded and len(heads) >= (scope.baseline_limit or 0),
+        )
 
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         """Every shared posting this user's role map is built from: the open
         postings in their target locations.
 
-        A user who has chosen no location gets the platform's baseline postings
-        instead (domain decision 15), so a first role map has something to
-        group. Pasted JDs are not here: each is a posting of the user's own,
+        A user who has chosen no location gets the platform's newest baseline
+        postings instead (domain decision 15, ADR 0068), so a first role map
+        has something to group. Pasted JDs are not here: each is a posting of the user's own,
         kept by Target (ADR 0033), and never on the map.
         """
         scope = await self._posting_scope(owner_id)
@@ -439,7 +455,10 @@ class MarketService:
         return {e.posting_id: e.vector for e in embedded}
 
     async def _posting_scope(self, owner_id: uuid.UUID) -> PostingScope:
-        return PostingScope(markets=tuple(await self.target_locations(owner_id)))
+        return PostingScope(
+            markets=tuple(await self.target_locations(owner_id)),
+            baseline_limit=self._baseline_limit,
+        )
 
     async def seed_baseline(
         self, sources: tuple[BaselineSource, ...] = BASELINE_SOURCES

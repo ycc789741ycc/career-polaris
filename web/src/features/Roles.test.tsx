@@ -86,6 +86,7 @@ function serve(overrides: Record<string, unknown> = {}) {
     "/market-scope": {
       target_locations: ["Berlin", "Remote EU"],
       open_posting_count: 1284,
+      is_capped: false,
     },
     "/matched-postings?role_id=r1&one_per_company=false&order=newest&page=1&page_size=10":
       page([
@@ -595,15 +596,30 @@ describe("how much of the market the role map takes in", () => {
   });
 
   it("names the baseline when no location is chosen", () => {
-    expect(scopeLine({ target_locations: [], open_posting_count: 1 })).toBe(
-      "1 open posting in the platform's baseline.",
-    );
+    expect(
+      scopeLine({
+        target_locations: [],
+        open_posting_count: 1,
+        is_capped: false,
+      }),
+    ).toBe("1 open posting in the platform's baseline.");
     expect(
       scopeLine({
         target_locations: ["Berlin", "Lisbon", "Remote EU"],
         open_posting_count: 12,
+        is_capped: false,
       }),
     ).toBe("12 open postings in Berlin, Lisbon and Remote EU.");
+  });
+
+  it("says the baseline is its newest postings when it is bounded", () => {
+    expect(
+      scopeLine({
+        target_locations: [],
+        open_posting_count: 500,
+        is_capped: true,
+      }),
+    ).toBe("The newest 500 open postings in the platform's baseline.");
   });
 });
 

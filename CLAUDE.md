@@ -996,3 +996,27 @@ under `epic/no-ticket/platform-ai`:
   double mount) when the user's work runs on the platform, so every AI action
   starts at once there; a run the quota can't take is refused when it starts.
   On the user's own key the estimate and "Run it" stay.
+
+## A cheaper role-map build
+
+On `epic/no-ticket/build-cost`, one branch per step. The worker reads
+Postgres over the tunnel (ADR 0051), so a build reads as little as it can:
+
+- **Heads, not postings.** `market.posting_heads_in_scope` and
+  `scope_with_vectors` return `PostingHeadView`s, a posting without its
+  description (`PostingHead`, `get_open_heads_in_scope`). Descriptions are
+  read by id (`postings_by_id`) only for an analysed role's prompt
+  (`MAX_POSTINGS_IN_A_PROMPT`) and for a posting the crawler hasn't embedded.
+- **Members by id.** `role_postings`, which `compute_fits`, `GET /roles`,
+  matched postings and a Target's opening use, asks the market for the roles'
+  members only; the opening fits read those openings' vectors
+  (`vectors_by_id`). No step after `recluster` reads the whole scope.
+- **Cosines with numpy.** `rolemap/domain/similarity.py`
+  (`get_similarity_matrix`, `get_centroid`) computes every cosine of a step in
+  one matrix product, rounded to 12 places so ties still go to the
+  better-ranked candidate. Nothing outside it sees numpy.
+- **A bounded baseline** (ADR 0068). With no location chosen, the scope is
+  the newest `BASELINE_SCOPE_MAX_POSTINGS` (500) baseline postings, by
+  `posted_on`, else first seen (`PostingScope.baseline_limit`).
+  `GET /market-scope` says `is_capped`, and 03 Roles says "The newest 500
+  open postings in the platform's baseline".

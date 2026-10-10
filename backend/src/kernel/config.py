@@ -191,6 +191,9 @@ class Settings(BaseSettings):
     market_source_idle_days: int = Field(default=90, ge=1, alias="MARKET_SOURCE_IDLE_DAYS")
     # A posting nothing holds loses its description and embedding after this.
     posting_thin_after_days: int = Field(default=180, ge=1, alias="POSTING_THIN_AFTER_DAYS")
+    # With no location chosen, a role map reads only this many of the newest
+    # baseline postings (ADR 0068). At least a role's worth.
+    baseline_scope_max_postings: int = Field(default=500, ge=3, alias="BASELINE_SCOPE_MAX_POSTINGS")
 
     # --- Assessment ---------------------------------------------------------
     assessment_confidence_threshold: float = Field(

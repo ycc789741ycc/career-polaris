@@ -73,6 +73,7 @@ new record that supersedes the old one.
 | [0065](0065-there-is-no-self-hosted-model-option.md) | There is no self-hosted model option; only an OpenAI key may name a base URL | Accepted |
 | [0066](0066-eligible-accounts-run-on-careerpolaris-ai-by-default.md) | Eligible accounts run on CareerPolaris AI by default, and its model is never named | Accepted, amends 0064 |
 | [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
+| [0068](0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md) | A scope with no location chosen keeps only the newest baseline postings | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

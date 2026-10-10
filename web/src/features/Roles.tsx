@@ -653,13 +653,20 @@ function listed(places: readonly string[]): string {
     : `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]}`;
 }
 
-/** "1,284 open postings in Berlin and Remote EU". Pure. */
+/**
+ * "1,284 open postings in Berlin and Remote EU". With no location, the
+ * baseline is bounded to its newest postings (ADR 0068), and says so. Pure.
+ */
 export function scopeLine(scope: MarketScope): string {
   const count = `${scope.open_posting_count.toLocaleString("en")} open ${
     scope.open_posting_count === 1 ? "posting" : "postings"
   }`;
   const places = scope.target_locations;
-  if (places.length === 0) return `${count} in the platform's baseline.`;
+  if (places.length === 0) {
+    return scope.is_capped
+      ? `The newest ${count} in the platform's baseline.`
+      : `${count} in the platform's baseline.`;
+  }
   return `${count} in ${listed(places)}.`;
 }
 

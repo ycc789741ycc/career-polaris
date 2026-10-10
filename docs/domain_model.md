@@ -140,7 +140,7 @@ The prototype's role map asks *"Not seeing a role you want?"* It takes a **job t
   - which postings the role map groups (*"1,284 open postings in Berlin and Remote EU"*)
   - the salary band shown per location
   - which markets' public job APIs are crawled on demand
-- With no location chosen, the scope is the baseline alone, as before. The cap of three keeps a first build affordable and the map legible.
+- With no location chosen, the scope is the baseline alone: its newest `BASELINE_SCOPE_MAX_POSTINGS` postings ([ADR 0068](decisions/0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md)). The cap of three keeps a first build affordable and the map legible.
 - The UI puts target locations in the profile, because the user states them about themselves. The Market context still owns them, because what they decide is market scope (section 3).
 
 **Decision 22: there are no role subscriptions and no match digest.** This supersedes decision 19 and amends decisions 13 and 14. The prototype has no Subscribe button, no watchlist and no "Roles to watch".
