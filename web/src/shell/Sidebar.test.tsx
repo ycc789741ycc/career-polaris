@@ -70,6 +70,70 @@ describe("sidebar", () => {
     expect(screen.getByText("claude-opus-5")).toBeInTheDocument();
   });
 
+  it("shows how much of the free quota is used, as a percentage", () => {
+    const onPlatform = (spent: string) =>
+      status({
+        credential: null,
+        aiSource: {
+          source: "platform",
+          has_credential: false,
+          is_platform_on: true,
+          is_eligible: true,
+          platform_quota: {
+            allowed_usd: "2",
+            spent_usd: spent,
+            remaining_usd: "0",
+          },
+        },
+      });
+    const { rerender } = render(
+      <Sidebar
+        current="sources"
+        status={onPlatform("0.5")}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("CareerPolaris AI · 25% of free quota used"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("free quota used up"),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <Sidebar
+        current="sources"
+        status={onPlatform("2")}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText("CareerPolaris AI · 100% of free quota used"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("free quota used up")).toBeInTheDocument();
+  });
+
+  it("names CareerPolaris's AI when the work runs on it, with no key of one's own", () => {
+    render(
+      <Sidebar
+        current="sources"
+        status={status({
+          credential: null,
+          aiSource: {
+            source: "platform",
+            has_credential: false,
+            is_platform_on: true,
+            is_eligible: true,
+            platform_quota: null,
+          },
+        })}
+        onNavigate={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText("needs a key")).not.toBeInTheDocument();
+    expect(screen.getByText("CareerPolaris AI")).toBeInTheDocument();
+  });
+
   it("shows no profile confidence: it belongs to Strengths now", () => {
     render(
       <Sidebar current="sources" status={status()} onNavigate={() => {}} />,

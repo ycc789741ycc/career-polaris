@@ -21,6 +21,9 @@ from advisor.identity.domain import (
     Account,
     AccountFilter,
     AccountRepository,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
+    AiSourceChoiceRepository,
     AiUsageBudget,
     AiUsageBudgetFilter,
     AiUsageBudgetRepository,
@@ -217,6 +220,32 @@ class SqlAlchemyProviderCredentialRepository(
         return []
 
 
+class SqlAlchemyAiSourceChoiceRepository(
+    SqlAlchemyRepository[AiSourceChoice, models.AiSourceChoice, AiSourceChoiceFilter],
+    AiSourceChoiceRepository,
+):
+    model = models.AiSourceChoice
+    id_column = models.AiSourceChoice.id
+    created_column = models.AiSourceChoice.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.AiSourceChoice.owner_id
+    noun = "AI source choice"
+
+    def to_entity(self, row: models.AiSourceChoice) -> AiSourceChoice:
+        return mappers.ai_source(row)
+
+    def to_row(self, entity: AiSourceChoice) -> models.AiSourceChoice:
+        return mappers.ai_source_row(entity)
+
+    def apply(self, row: models.AiSourceChoice, entity: AiSourceChoice) -> None:
+        mappers.apply_ai_source(row, entity)
+
+    def id_of(self, entity: AiSourceChoice) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: AiSourceChoiceFilter) -> list[ColumnElement[bool]]:
+        return []
+
+
 class SqlAlchemyAiUsageBudgetRepository(
     SqlAlchemyRepository[AiUsageBudget, models.AiUsageBudget, AiUsageBudgetFilter],
     AiUsageBudgetRepository,
@@ -266,9 +295,14 @@ class SqlAlchemyAiUsageEntryRepository(
         return entity.id
 
     def conditions(self, filter: AiUsageEntryFilter) -> list[ColumnElement[bool]]:
-        if filter.occurred_since is None:
-            return []
-        return [models.AiUsageLedger.occurred_at >= filter.occurred_since]
+        conditions: list[ColumnElement[bool]] = []
+        if filter.occurred_since is not None:
+            conditions.append(models.AiUsageLedger.occurred_at >= filter.occurred_since)
+        if filter.funding is not None:
+            conditions.append(models.AiUsageLedger.funding == str(filter.funding))
+        if filter.is_rate_published is not None:
+            conditions.append(models.AiUsageLedger.is_rate_published.is_(filter.is_rate_published))
+        return conditions
 
     async def total_cost(self, filter: AiUsageEntryFilter) -> Decimal:
         result = await self._session.execute(

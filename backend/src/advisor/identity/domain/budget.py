@@ -10,6 +10,15 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
+
+
+class AiFunding(StrEnum):
+    """Whose key paid for a call (ADR 0064). The monthly cap guards only the
+    user's own money; the platform's is metered apart."""
+
+    OWN = "own"
+    PLATFORM = "platform"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,3 +72,14 @@ class AiUsageEntry:
     output_tokens: int
     cost_usd: Decimal
     occurred_at: datetime
+    # What the call was priced at before it was made; None on calls recorded
+    # before the ledger kept it.
+    estimated_input_tokens: int | None = None
+    estimated_cost_usd: Decimal | None = None
+    # The counts are ours, not the provider's: it reported none, or the reply
+    # was cut short.
+    is_estimated: bool = False
+    funding: AiFunding = AiFunding.OWN
+    # False when the model had no published rate: ``cost_usd`` is the high
+    # fallback, and the user's cap does not count it.
+    is_rate_published: bool = True

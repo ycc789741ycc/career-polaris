@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from advisor.identity.domain import BudgetState, Provider, billing_month_start, requires_base_url
+from advisor.identity.domain import BudgetState, Provider, accepts_base_url, billing_month_start
 
 
 def state(cap: str, spent: str) -> BudgetState:
@@ -49,7 +49,12 @@ def test_budgets_reset_on_the_first_of_the_month(today: date, expected: date) ->
     assert billing_month_start(today) == expected
 
 
-def test_only_a_self_hosted_model_needs_a_base_url() -> None:
-    assert requires_base_url(Provider.LOCAL)
-    assert not requires_base_url(Provider.ANTHROPIC)
-    assert not requires_base_url(Provider.OPENAI)
+def test_only_an_openai_key_may_name_its_own_endpoint() -> None:
+    assert accepts_base_url(Provider.OPENAI)
+    assert not accepts_base_url(Provider.ANTHROPIC)
+    assert not accepts_base_url(Provider.GOOGLE)
+
+
+def test_there_is_no_self_hosted_model() -> None:
+    """A hosted service cannot reach a model on the user's machine (ADR 0065)."""
+    assert "local" not in {str(provider) for provider in Provider}

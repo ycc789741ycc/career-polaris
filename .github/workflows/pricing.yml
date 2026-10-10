@@ -1,0 +1,89 @@
+# Keeps the AI price table current (docs/deploy.md section 7).
+#
+# Every Monday, `make sync-pricing` reads LiteLLM's price listing into
+# backend/src/kernel/ai_gateway/pricing.json, for every model the table has
+# and every model Settings suggests. When a rate changed, the unit tests run
+# against the new table and a pull request carries it, its body the summary of
+# what changed, with any rate that went free or fell by more than half
+# flagged. Prices never change at run time: these rates meter real money, so a
+# person reads the diff, and the release that ships it is the one that meters
+# by it. An older pricing pull request still open is closed in favour of the
+# new one.
+#
+# A pull request opened with GITHUB_TOKEN does not start other workflows, so
+# CI would not run on it. Set the PRICING_PR_TOKEN secret (a fine-grained token
+# with contents and pull-requests write on this repository) and CI runs as on
+# any other; without it, close and reopen the pull request to run CI.
+name: Pricing
+
+on:
+  schedule:
+    - cron: '41 4 * * 1'  # Mondays 04:41 UTC, off the hour GitHub's queue peaks at
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pricing
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write       # the pricing branch
+      pull-requests: write  # its pull request
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create the environment file
+        run: ./.github/workflows/ci-env.sh
+
+      - run: make build-app
+
+      - run: make sync-pricing
+
+      - name: See whether a rate changed
+        id: diff
+        run: |
+          if git diff --quiet -- backend/src/kernel/ai_gateway/pricing.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No rate changed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The table is baked into the image, so the tests need it rebuilt.
+      - name: Unit tests against the new table
+        if: steps.diff.outputs.changed == 'true'
+        run: make build-app && make test-unit
+
+      - name: Open the pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PRICING_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          branch="chore/no-ticket/pricing-$(date -u +%Y-%m-%d)-${GITHUB_RUN_ATTEMPT}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git commit -q -am 'chore(no-ticket): update the AI price table from LiteLLM'"'"'s listing'
+          git push -q origin "$branch"
+          {
+            cat tmp/pricing-summary.md
+            echo
+            echo "From the weekly pricing sync: $RUN_URL. The unit tests passed against this table."
+            echo
+            echo 'These rates meter real money: check any flagged row against the provider'"'"'s own pricing page before merging. Release as usual afterwards (`make release`), and each place picks it up with `make pull-app`.'
+          } > pr-body.md
+          older=$(gh pr list --state open --json number,headRefName \
+                    --jq '.[] | select(.headRefName | startswith("chore/no-ticket/pricing-")) | .number')
+          url=$(gh pr create --base master --head "$branch" \
+                  --title 'chore(no-ticket): update the AI price table' --body-file pr-body.md)
+          for number in $older; do
+            gh pr close "$number" --delete-branch --comment "Superseded by $url."
+          done

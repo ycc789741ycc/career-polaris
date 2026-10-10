@@ -24,6 +24,9 @@ export type PendingWork = Schemas["PendingWork"];
 export type Me = Schemas["Me"];
 export type Credential = Schemas["Credential"];
 export type Budget = Schemas["Budget"];
+/** Which key AI runs on, the user's own or CareerPolaris's, and this month's
+ * quota on CareerPolaris's (ADR 0064). */
+export type AiSource = Schemas["AiSourceBody"];
 
 // Profile
 export type Connection = Schemas["Connection"];

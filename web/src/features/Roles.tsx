@@ -28,7 +28,13 @@ import {
 } from "../components/ui";
 import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
-import { modelName, useHeading, useShell } from "../shell/ShellContext";
+import {
+  chargedTo,
+  getShownModel,
+  modelName,
+  useHeading,
+  useShell,
+} from "../shell/ShellContext";
 import { recordTargetUse } from "./advisorTarget";
 import { CostConfirm } from "./CostConfirm";
 import { targetQuery } from "./target";
@@ -241,7 +247,6 @@ export function Roles() {
   }
 
   if (waiting) {
-    const model = modelName(status.credential);
     return (
       <RunProgress
         label="Role map progress"
@@ -270,7 +275,7 @@ export function Roles() {
           label: "Back to Strengths",
           onClick: () => navigate("strengths"),
         }}
-        costCopy={`Charged to your own key on ${model}, at the estimate you confirmed before it started. Searching only ${
+        costCopy={`Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
           scope.data && scope.data.target_locations.length > 0
             ? scope.data.target_locations.join(" and ")
             : "your locations"
@@ -294,7 +299,7 @@ export function Roles() {
               activity?.role_map?.status === "ready"
                 ? activity.role_map.finished_at
                 : (state.data?.market_data_at ?? null),
-            model: modelName(status.credential),
+            model: modelName(status),
             scope: scope.data ?? null,
             rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
           })}
@@ -320,8 +325,8 @@ export function Roles() {
           Aiming the Advisor at {questionCost.label} starts by writing your
           follow-up questions about its gaps. That costs about{" "}
           <strong>${questionCost.cost.cost_usd}</strong> on{" "}
-          {questionCost.cost.model_id} and runs in the background — the gap plan
-          and the résumé stay open while it does.
+          {getShownModel(status, questionCost.cost.model_id)} and runs in the
+          background — the gap plan and the résumé stay open while it does.
         </CostConfirm>
       )}
       {estimate && (
@@ -333,11 +338,11 @@ export function Roles() {
           Your map covers up to {estimate.max_roles} of the roles your last
           analysis recommended. Naming them and scoring your fit against each
           will cost at most <strong>${estimate.cost_usd}</strong> on{" "}
-          {estimate.model_id} — usually less, since your locations may have
-          openings for fewer roles than that, and roles already analysed are not
-          paid for again. Searching the postings runs on our machines; your key
-          pays only for naming the roles, reading out what they require, and
-          your fit.
+          {getShownModel(status, estimate.model_id)} — usually less, since your
+          locations may have openings for fewer roles than that, and roles
+          already analysed are not paid for again. Searching the postings runs
+          on our machines; your key pays only for naming the roles, reading out
+          what they require, and your fit.
         </CostConfirm>
       )}
 

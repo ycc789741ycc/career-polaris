@@ -105,6 +105,7 @@ function renderGaps(onSubmitted = vi.fn()) {
       credential: { provider: "anthropic", model: "claude-sonnet-5" },
     },
     navigate: vi.fn(),
+    refresh: async () => {},
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>

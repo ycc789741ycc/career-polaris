@@ -87,6 +87,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Ai Source
+         * @description Which key AI runs on: the user's own, CareerPolaris's (ADR 0064), or
+         *     none yet, and this month's quota on CareerPolaris's.
+         */
+        get: operations["read_ai_source_api_v1_ai_source_get"];
+        /** Set Ai Source */
+        put: operations["set_ai_source_api_v1_ai_source_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assessments": {
         parameters: {
             query?: never;
@@ -1510,6 +1532,29 @@ export interface components {
             target: components["schemas"]["TargetRefBody"];
         };
         /**
+         * AiSourceBody
+         * @description Which key AI runs on, and what the user may choose between.
+         */
+        AiSourceBody: {
+            /** Has Credential */
+            has_credential: boolean;
+            /** Is Eligible */
+            is_eligible: boolean;
+            /** Is Platform On */
+            is_platform_on: boolean;
+            platform_quota: components["schemas"]["PlatformQuota"] | null;
+            /** Source */
+            source: ("own" | "platform") | null;
+        };
+        /** AiSourceRequest */
+        AiSourceRequest: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "own" | "platform";
+        };
+        /**
          * AnalysisEstimate
          * @description The price of Analyze: the analysis, the role-map build that follows it,
          *     and the fits that build is scored with, confirmed once (domain decision 24,
@@ -2272,6 +2317,18 @@ export interface components {
             id: string;
             /** Text */
             text: string;
+        };
+        /**
+         * PlatformQuota
+         * @description This account's month on the platform's key. Decimal strings.
+         */
+        PlatformQuota: {
+            /** Allowed Usd */
+            allowed_usd: string;
+            /** Remaining Usd */
+            remaining_usd: string;
+            /** Spent Usd */
+            spent_usd: string;
         };
         /** Position */
         Position: {
@@ -3598,6 +3655,104 @@ export interface operations {
                     "application/json": {
                         [key: string]: string[];
                     };
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_ai_source_api_v1_ai_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSourceBody"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_ai_source_api_v1_ai_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSourceBody"];
                 };
             };
             /** @description The request could not be read. */

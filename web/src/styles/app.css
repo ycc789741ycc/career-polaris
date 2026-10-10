@@ -467,6 +467,29 @@ select.input { appearance: auto; }
 }
 .pill-toggle:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* AI settings: which AI runs the user's work, as two radio cards. */
+.source-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 6px;
+}
+.source-card {
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--color-neutral-300);
+  border-radius: var(--radius-md);
+}
+.source-card .dot { margin-top: 3px; }
+.source-card:hover { border-color: var(--color-accent); }
+.source-card[data-checked] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-200);
+}
+.source-card:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
+.source-card-title { display: block; font-weight: 700; font-size: 14.5px; }
+.source-card-note { display: block; font-size: 13px; color: var(--color-neutral-800); margin-top: 3px; }
+
 .round-check {
   all: unset;
   box-sizing: border-box;

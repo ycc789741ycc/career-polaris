@@ -3684,3 +3684,472 @@ free. Found on the way: on fresh infra, five integration tests failed
 because only the api created the bucket. The integration tier now ensures it
 once per session.
 
+# Phase 13
+AI on the platform's key, under a quota.
+
+Until now every AI call ran on the user's own provider key (`CLAUDE.md`, "All
+AI runs on the user's own provider key"). This phase adds a second way to pay
+for a call: the operator's key, which the platform configures, offered to
+Google-verified accounts up to a monthly quota. A user picks which to use in
+Settings and can switch back and forth whenever they like.
+
+* **Who may use it.** Only an account with a Google identity
+  (`identity.federated_identity`), because Google has verified its address and
+  our own sign-up has not (ADR 0001, ADR 0008). An account that signed up with
+  a password becomes eligible once it signs in with Google at the same
+  address, because ADR 0008 links the two.
+* **Which model.** One provider and model, chosen by the operator. A user on
+  the platform key cannot pick a model. The model must have a published rate
+  in `pricing.json`, or the app refuses to start.
+* **What a user is told.** Their share of this month's quota used, and before
+  they first switch, that their evidence will go to the operator's provider
+  account under the operator's terms, not their own.
+* **What it waits for.** Google sign-in is off until there is a domain
+  (Phase 12, "Not yet"). Without it nobody is eligible, so the feature can be
+  built and tested now and turned on when the domain arrives.
+
+Five branches, in this order, each cut from `epic/no-ticket/platform-ai`,
+which is cut from `master`:
+
+1. "Count what a call really costs": the ledger records the provider's own
+   token counts on every path, priced at the right rate, and keeps each
+   estimate beside the real figure. A quota is only as good as the numbers
+   it settles on, and today those are mostly guesses (below).
+2. "Record who paid for a call": funding on the gateway's ports and on the
+   ledger. Nobody can use the platform key yet.
+3. "Meter the platform's spend": reserve before a call and settle after it,
+   per account and for the whole platform.
+4. "Choose your AI": the setting, the routes and the SPA.
+5. "Watch the platform's spend": the operator's read-only report, the alerts
+   and the runbook.
+
+The definition of done is Phase 5's: tests in the right tier, every gate
+passing with nothing skipped, the ADR in the first branch, and `CLAUDE.md`,
+`README.md`, `docs/architecture.md`, `docs/domain_model.md` (section 2.8)
+and `docs/deploy.md` describing what is built.
+
+ADR 0064: "Offer the platform's AI key to Google-verified accounts, under a
+quota". Its consequences name the costs:
+* The operator now pays for AI and has a bill that abuse can run up.
+* User evidence reaches a provider under the operator's data-processing terms.
+* There is a second key to rotate, on two machines.
+* Google sign-in becomes a requirement for a feature, not just one way to
+  sign in.
+
+It also changes Phase 12's "Limit what one account can do", which said "AI
+work needs no new limit… spends the user's own key". That is no longer true
+for platform calls.
+
+## Settings
+
+All in `.env.example`, read once into `Settings`:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PLATFORM_AI_PROVIDER` | blank | `anthropic`, `openai` or `google`; never `local` |
+| `PLATFORM_AI_MODEL` | blank | Must have a published rate in `pricing.json` |
+| `PLATFORM_AI_API_KEY` | blank | Secret. A blank key turns the feature off, like `GOOGLE_OAUTH_CLIENT_ID` |
+| `PLATFORM_AI_MONTHLY_QUOTA_USD` | `2` | Per eligible account, per calendar month |
+| `PLATFORM_AI_DAILY_CEILING_USD` | `5` | All accounts together, per UTC day |
+| `PLATFORM_AI_MONTHLY_CEILING_USD` | `50` | All accounts together, per calendar month |
+| `PLATFORM_AI_MAX_CALL_USD` | `0.50` | Refuse any one call whose estimate is above this |
+
+All seven go on the `# may-be-blank:` line, so `make check-env` passes on a
+place that has the feature off. If the key is set, the provider and model must
+be set too, or startup fails. The key is needed on both machines: the worker
+on compute makes most calls, and the api on the droplet streams the résumé
+revision chat.
+
+The numbers in the defaults are starting points to tune once
+`make platform-ai-usage` shows real spend.
+
+## Count what a call really costs
+**Done** (no ADR: it corrects the ledger, and decides nothing costly to
+reverse), on `bugfix/no-ticket/real-ai-call-cost`. Where the build differs
+from the plan below:
+
+* The ledger is `identity.ai_usage_ledger`, not `ai_usage_entry`.
+* Google's adapter still answers a stream with its whole reply, now followed
+  by the usage Google reported for it, rather than gaining an SSE parser.
+* A `local` model is not asked for stream usage (`asks_for_stream_usage`):
+  a server of the user's own may refuse a field it does not know. Its calls
+  are recorded as estimated.
+* Found on the way: a résumé chat whose reader left before the end recorded
+  nothing at all. It is now recorded from what was written, as estimated.
+* A retry's repair note quotes at most 2,000 characters of the validation
+  error, so `pricing.REPAIR_NOTE_TOKENS` really bounds it.
+* `Provider.stream` is typed `AsyncGenerator`, so the gateway can close it
+  (`contextlib.aclosing`) the moment a job is cancelled.
+* Rows written before migration 0047 keep no estimate and are not marked
+  estimated: nothing says which of them were streamed.
+
+
+Found in `kernel/ai_gateway` while drafting. The first four make the ledger
+wrong today, on the user's own key as well. The fifth makes estimates too
+low.
+
+1. **Every streamed call is billed from guesses.** Since ADR 0042 every
+   Advisor job passes `on_progress`, so it streams, and so does the résumé
+   chat. `_complete_streamed` and `stream` record
+   `input_tokens=estimate.input_tokens` (the prompt's characters ÷ 4) and
+   `output_tokens=estimate_tokens(text)` (the reply's characters ÷ 4). The
+   provider's own counts are thrown away: the adapters' `stream` yield text
+   only.
+2. **"Streaming" waits for the whole reply.** `GuardedClient.request` reads
+   the whole body (`response.content`), and the adapters then split it into
+   lines. So:
+   * progress jumps from 0 to the end;
+   * cancelling "mid-stream" (ADR 0042) cannot stop the provider writing, or
+     billing;
+   * the résumé chat shows nothing until the reply is complete;
+   * a long reply can exceed the client's response size limit.
+3. **A dated model id is priced at the fallback rate.** `cost_of` is passed
+   `completion.model`, the id the provider reports. Anthropic and OpenAI can
+   answer an alias with a dated snapshot (`…-20251001`, `…-2025-08-07`). That
+   id is not in `pricing.json`, so the call is priced at `unknown_model_rate`
+   ($15/$75 per million tokens). For `claude-haiku-4-5` that is 15 times the
+   real price, and on the platform key it would use up a user's quota 15
+   times too fast.
+4. **Retries are not in the estimate.** One check covers up to
+   `AI_MAX_OUTPUT_RETRIES + 1` attempts. Each retry re-sends the whole
+   prompt, plus the repair note, and may write up to `max_output_tokens`,
+   which is twice `expected_output_tokens`.
+5. **Four characters per token is low for anything but English prose.** A
+   résumé or Jira issue in Chinese or Japanese is about one token per
+   character or more, so its input can be underestimated three to four
+   times. JSON and code also run under four characters per token.
+
+The fix, in order of how much it matters:
+
+* **Settle on the provider's counts, always.** `Provider.stream` yields
+  `StreamEvent`s (`TextDelta`, then one `Usage(input_tokens, output_tokens,
+  model)` when the provider sends it). The adapters read it from:
+  * Anthropic: `message_start` and `message_delta`;
+  * OpenAI-compatible: the final chunk with
+    `stream_options: {"include_usage": true}`;
+  * Google: `usageMetadata` on the last chunk.
+
+  The gateway records the `Usage` when there is one. Otherwise, from a local
+  model or a cancelled call, it records the estimate and marks the row
+  `is_estimated`.
+* **Stream for real.** `GuardedClient` gains `stream(method, url, …)`, with
+  the same SSRF check and redirect rule, built on `httpx`'s `client.stream`.
+  It enforces the size limit as bytes arrive, and closes the connection when
+  a callback raises. Cancelling then stops the provider writing, and the
+  partial reply is billed from what arrived.
+* **Price by the model we asked for.** `cost_of` takes `request.model` (the
+  credential's or the platform's). The ledger still stores the id the
+  provider reported, so a change of snapshot remains visible.
+  `pricing.rate_for` also strips a trailing date (`-YYYYMMDD` or
+  `-YYYY-MM-DD`) before falling back, for a model asked for by its dated id.
+* **Count tokens by script.** `estimate_tokens` counts CJK, kana and Hangul
+  at one token per character, and everything else at four characters per
+  token. The constants live in `pricing.json` beside the rates, so they can
+  be tuned without a code change.
+* **Price a call as a ceiling, not a typical case.**
+  `pricing.estimate_ceiling(model, prompt, max_output_tokens, attempts)`
+  is `attempts × (input + repair note + max_output_tokens)`. The platform
+  meter (branch 3) reserves this.
+  * What the user is shown before confirming stays the typical cost, from
+    `expected_output_tokens`, labelled "about".
+  * The user's own cap, and every estimate that adds up a build
+    (`fits_cost_usd` and the rest), keep the typical figure. Otherwise every
+    confirmation would show three times its real cost.
+* **Keep the estimate beside the real figure.** `identity.ai_usage_ledger`
+  gains `estimated_input_tokens`, `estimated_cost_usd` and `is_estimated`
+  (migration 0047). `make platform-ai-usage` (branch 5) reports, per task
+  and template version:
+  * the median and 90th-percentile ratio of real to estimated cost;
+  * real output tokens against `expected_output_tokens`.
+
+  A template whose `expected_output_tokens` is off has its number changed in
+  its `.md` file, in its own PR, when that report shows it.
+* **Tests.** Unit:
+  * each adapter's stream parser, on recorded SSE fixtures, yields a `Usage`
+    with the provider's numbers;
+  * a dated id is priced at its base model's rate;
+  * the script-aware count of Chinese, Japanese, English and JSON samples;
+  * the ceiling covers retries;
+  * a cancelled stream is billed from what arrived and marked estimated.
+
+  Integration: a ledger row keeps both the estimate and the real figures.
+
+## Record who paid for a call
+**Done** (ADR 0064, migration 0048), on
+`feature/no-ticket/platform-ai-funding`. Where the build differs from the
+plan below:
+
+* The gateway, not `identity`, holds the platform's key. `load` returns a
+  `PlatformCredential` marker, and the gateway resolves the provider, model
+  and key from settings (`_Key`). `identity` never sees the key.
+* `BudgetGuard.check` takes the funding, and skips the user's cap for a
+  platform call; the meter that replaces it there is the next step.
+* The error codes start `ai_platform_`, like the gateway's other `ai_`
+  codes, so the SPA's existing "about your model" hints can match them.
+* A provider's misconfiguration is caught by `Settings` (provider and model
+  present, provider one of anthropic, openai, google, daily ceiling within
+  the monthly). The model's rate is checked when the gateway is built,
+  because the crawler must not import `kernel.ai_gateway`, even indirectly
+  through `kernel.config`.
+
+
+* **`kernel.ai_gateway.ports`.** `ProviderCredential` gains
+  `funding: Funding` (`own | platform`), and `UsageRecord` carries it. The
+  gateway decrypts only `own` keys (`context=str(owner_id)`). A `platform`
+  credential comes back with the key already loaded from `Settings`, held in
+  a type of its own so that it is never logged or serialised.
+* **The credential failing.** A `CredentialFailedError` on a `platform` call
+  must not mark the user's credential failed or pause their jobs: it is our
+  key, not theirs. It logs at ERROR, raises `PlatformAiUnavailableError`
+  (a new typed error with a stable code), and leaves the user's state alone.
+  `CredentialStore.mark_failed` takes the funding, or the gateway calls it
+  only for `own`.
+* **The ledger.** `identity.ai_usage_ledger` gains `funding` (migration 0048,
+  backfilled to `own`, NOT NULL). `AiUsageEntryFilter` filters on it, and the
+  user's own monthly cap (`BudgetState`) sums only `own` rows. That cap is
+  about their own money, not ours.
+* **`IdentityService.load`.** Picks the funding from the user's choice
+  (branch 4). Until then it always returns `own`, so this branch changes no
+  behaviour.
+* **Tests.** Unit: the gateway decrypts only `own`, a platform failure leaves
+  the user's credential alone, and the cap ignores `platform` rows.
+  Integration: the migration's backfill, and the ledger filter.
+
+## Meter the platform's spend
+**Done** (ADR 0064, migration 0049), on
+`feature/no-ticket/platform-ai-meter`. Where the build differs from the plan
+below:
+
+* The gateway holds the meter, not `identity`: `BudgetGuard` stays the
+  user's own cap, and a new port, `PlatformSpend`, reserves, settles and
+  releases. `wiring.platform_ai.PlatformSpendMeter` implements it over
+  `kernel.limits.SpendMeter` with the three limits, named once from the
+  settings. Setting the key with no meter refuses to start.
+* Each attempt's cost is settled into the windows and taken off the
+  reservation as it is recorded, so a long retry loop never counts twice.
+* A reservation holds for `AI_REQUEST_TIMEOUT_SECONDS × attempts` plus ten
+  minutes.
+* Eligibility moves to the next step, where `identity` first answers with
+  the platform's key.
+
+
+`check` followed by `record` is not enough when the money is ours:
+* Two jobs running at once can both pass the check.
+* `run` can make `AI_MAX_OUTPUT_RETRIES + 1` attempts against one check.
+
+Spend is reserved instead, then settled.
+
+* **`kernel.limits.SpendMeter`** sits next to ADR 0054's `Limiter`, in the
+  same `limits` schema, which has no RLS because it is not an owner-zone
+  table. Migration 0049:
+  * `limits.spend_window(subject, window_start, spent_usd)`
+  * `limits.spend_reservation(id, subject, window_start, amount_usd, expires_at)`
+
+  A subject is a digest, as in `limits.counter`: `platform-ai:global:day`,
+  `platform-ai:global:month` and `platform-ai:account:<digest>:month`.
+* **Reserve.** In one short transaction, with each subject's window row
+  locked (`SELECT … FOR UPDATE`, subjects always in the same order so that two
+  reserves cannot deadlock), insert a reservation for every subject only if,
+  for each one, `spent + live reservations + amount <= limit`. Otherwise
+  refuse.
+  * The amount is `pricing.estimate_ceiling` (branch 1): every attempt, each at its full `max_output_tokens`. Settling then returns what the call did not use.
+  * A reservation expires after `AI_REQUEST_TIMEOUT_SECONDS × attempts` plus
+    a margin, so a worker that crashes cannot hold quota forever.
+* **Settle.** In `record`, add the real cost of each attempt to every
+  subject's `spent_usd`. When the call ends, in `finally`, delete the
+  reservation. A cancelled job (ADR 0042) settles what it wrote, as the
+  ledger already does.
+* **The gateway.** `BudgetGuard.check` returns a `Reservation` (empty for
+  `own`), and `run`, `_complete_streamed` and `stream` release it in
+  `finally`. `estimate` reports the funding and, for `platform`, what is
+  left of the quota.
+* **Refusals.** Each is a typed error with a stable code, which the SPA maps
+  to a message:
+  * `platform_ai_quota_reached` (the account's month). The user can switch
+    to their own key.
+  * `platform_ai_unavailable` (the daily or monthly ceiling, or a blank key).
+    "Free AI is used up for today; add your own key."
+  * `platform_ai_call_too_large` (over `PLATFORM_AI_MAX_CALL_USD`).
+  * `platform_ai_not_eligible` (no Google identity).
+* **Eligibility** is checked by `identity` on every `load`, not only when the
+  user switches. If the Google identity goes, so does the platform key.
+* **Tests.** Unit: the window rules and expiry, against an in-memory twin.
+  Integration:
+  * two reserves at once, where only one fits, leave exactly one standing;
+  * an expired reservation frees its quota;
+  * settling moves the reserved amount into spend;
+  * the global ceiling refuses a second account once the first has used it.
+
+## Choose your AI
+**Done** (ADR 0064, migration 0050), on
+`feature/no-ticket/platform-ai-choice`. Where the build differs from the plan
+below:
+
+* No row never means the platform's key, even for an eligible account with no
+  key of its own: choosing it is when the user accepts where their evidence
+  goes. With nothing to run on, a call fails as before
+  (`ai_credential_missing`), now naming both ways in.
+* Switching resumes paused background work, as storing a new key does.
+* The quota comes from `wiring.platform_ai.PlatformSpendMeter`, which the
+  route reads beside `identity`'s view; `identity` knows nothing of the
+  meter.
+* `CostConfirm` reads who pays from the shell's status, which it refreshes
+  when it opens, rather than from each estimate: funding is decided per call,
+  as the user's current choice.
+* Copy elsewhere that says "on your key" for work already done (a résumé's
+  last-generated line, a job card) is left as it is: it may have run on
+  either.
+* Afterwards, on `feature/no-ticket/quota-percentage`: users see the free
+  quota as a percentage of the month only, never in dollars. AI settings says
+  "38% of this month's free quota used · 62% left", the sidebar's model note
+  "38% of free quota used" (flagged when it is used up), and `CostConfirm`
+  "62% of this month's free quota left". The shell reads the quota again
+  each time an analysis, build or Advisor job finishes.
+
+
+* **Domain.** `identity` gets an `AiSource` (`own | platform`) per account,
+  in a table of its own (`identity.ai_source_choice`, RLS, migration 0050),
+  with `platform_terms_accepted_at`. The rules:
+  * `platform` only while the account is eligible and the feature is on;
+  * `own` only while a credential is stored;
+  * no row means `own` if a credential is stored, otherwise `platform` if
+    eligible, otherwise nothing is configured, which is today's
+    `CredentialMissingError`.
+* **Switching** is free and immediate. Funding is decided per call, so if a
+  user switches while a multi-call job is running, its remaining calls use
+  the new source. Every ledger row says which source paid for it. We take
+  that over pinning a source to each job, which would mean storing it on
+  every job row.
+* **No silent fall-back.** If the user's own key fails, or the platform
+  quota runs out, the call is refused with its error. We never switch to the
+  other source for them.
+* **Routes.**
+  * `GET /ai-source` returns the choice, whether the account is eligible, and
+    the quota used and left this month.
+  * `PUT /ai-source` sets it; switching to `platform` needs
+    `accept_platform_terms: true` the first time.
+  * Schemas live in `api/schemas/identity.py`, then `make gen-client`.
+* **SPA.**
+  * Settings gets "Use CareerPolaris's AI" next to "Use your own key", with
+    the quota as a meter and the data notice before the first switch.
+  * `CostConfirm` says which source pays and, for `platform`, what is left
+    after this call.
+  * Each new refusal code has its message.
+  * The model on the platform is shown, not chosen.
+* **Tests.** Unit: the choice rules. Integration: the routes, including a
+  password-only account refused and a Google one accepted. SPA: the Settings
+  card and the `CostConfirm` wording.
+
+## Watch the platform's spend
+**Done** (no ADR), on `feature/no-ticket/platform-ai-watch`. Where the build
+differs from the plan below:
+
+* `make platform-ai-usage` is a script, `scripts/platform-ai-usage.sh`, not
+  a CLI module: like `disk-usage`, it runs psql in the Postgres container as
+  the superuser, inside one `BEGIN READ ONLY` transaction, so it needs no new
+  database role. Accounts appear as the first 12 hex digits of a SHA-256 of
+  their id.
+* Its last table compares estimates with what calls really cost, per
+  template version, over 30 days: the calibration branch 1 kept the
+  estimates for.
+* The near-ceiling warning is once per window per process: with the api and
+  the worker each counting, it may come twice, never more.
+
+
+* **`make platform-ai-usage`** is a supporting target that only reads. It
+  runs `cli/platform_ai_usage.py` from the app image on the compose network
+  as a role that can read the ledger across accounts but write nothing. It
+  shows:
+  * today's and this month's spend against both ceilings;
+  * the top 20 accounts by digest, never by address;
+  * spend by task.
+* **Logs.** One `platform_ai.spend` INFO line per settled call (task, cost,
+  account digest). One WARN line when the global spend first passes 80% of
+  either ceiling, and one ERROR line when a ceiling refuses a call.
+* **`docs/deploy.md`.**
+  * Set a hard monthly spend limit on the provider's side, on a project or
+    workspace used only for this key. That is the last line of defence if our
+    own meter has a bug.
+  * Rotating the key: change `.env` on both machines, then restart the app.
+* **Turning it off** is a blank `PLATFORM_AI_API_KEY` and a restart. Users on
+  `platform` then get `platform_ai_unavailable` until they switch.
+
+## Later, not in this phase
+
+* An admin console: per-account grants, suspensions, and changing the quota
+  without a redeploy. See the reasoning in the conversation that drafted
+  this. The settings stay in `.env` until a second operator or per-account
+  policy needs them in the database.
+* A CAPTCHA (Cloudflare Turnstile) on sign-up, once there is a domain and
+  Cloudflare in front.
+* A smaller quota for a Google account opened in the last few days.
+
+## No self-hosted model
+**Done** (ADR 0065, migration 0051), on `refactor/no-ticket/drop-local-model`.
+A hosted service cannot reach a model on the user's machine, so the "Local"
+provider went: its adapter, its enum value and its rule that a base URL is
+required. Stored local credentials are deleted; their owners are asked for a
+key again. A base URL stays, optional, for an OpenAI key only, so an
+OpenAI-compatible cloud (Azure OpenAI, Groq, Together) can still be reached.
+AI settings shows the field only for OpenAI, and the database refuses it on
+any other provider.
+
+## Price every suggested model, kept current
+**Done** (no ADR), on `feature/no-ticket/pricing-sync`. The app would not
+start with `PLATFORM_AI_MODEL=gpt-5.1`: `pricing.json` priced only Anthropic
+models, although Settings suggested OpenAI and Google ones as models "we can
+price exactly".
+
+* `make sync-pricing` reads LiteLLM's community-kept price listing for every
+  model in the table and every suggested one, taking only the provider's own
+  entry (or Google's on Vertex), never a reseller's. It is mount-free, like
+  `gen-client`, and leaves its summary in `tmp/pricing-summary.md`.
+* `.github/workflows/pricing.yml` runs it every Monday, then the unit tests
+  against the new table, and opens a pull request when a rate changed, closing
+  an older one. A rate that went free or fell by more than half is flagged. An
+  optional `PRICING_PR_TOKEN` secret lets CI run on that pull request.
+* Prices never change at run time: a third party's typo would otherwise meter
+  everyone's spend, and the api and the worker could disagree mid-call.
+* Seeded: `gpt-5.1` ($1.25 / $10 per million), `gpt-5-mini`,
+  `gemini-3-pro-preview` and `gemini-3-flash-preview`. Every Anthropic rate the
+  listing has matched ours.
+* Google's suggestions were not API ids (`gemini-3-pro`); they are now the
+  `-preview` ids its API takes. A unit test holds that every suggestion is
+  priced.
+
+## Don't hold a guess against the user's cap
+**Done** (no ADR, migration 0052), on
+`feature/no-ticket/uncapped-unpriced-models`. A call on a model with no
+published rate was recorded at the $15 / $75 fallback, and the user's monthly
+cap summed it, so the cap ran out about ten times too early and paused their
+work. The ledger now records `is_rate_published`; the cap counts only priced
+rows, and the cap check passes an unpriced call. The estimate still shows the
+high guess, now saying it won't count toward the cap, and AI settings says the
+same under the monthly budget. Rows stored before are taken as priced.
+
+## CareerPolaris AI by default, and settings by source
+**Done** (ADR 0066, migration 0053), on
+`feature/no-ticket/ai-settings-by-source`.
+
+* AI settings asks first which AI runs the work: CareerPolaris AI or your own
+  provider, as two radio cards. CareerPolaris AI shows only its free quota as
+  a percentage, with a standing line on where evidence goes. Your own provider
+  shows the key form and the monthly budget. A stored key is kept while the
+  platform runs.
+* An eligible account runs on CareerPolaris AI until it picks otherwise. There
+  is no terms checkbox, and saving a key chooses it. Migration 0053 gave every
+  earlier key holder with no choice an `own` choice, and dropped
+  `platform_terms_accepted_at`.
+* The platform's model is never sent to the SPA or named in settings, the
+  shell or an estimate: it is "CareerPolaris AI". A finished plan or résumé
+  keeps the model id it recorded.
+
+## No cost confirmation on CareerPolaris AI
+**Done** (ADR 0067), on `bugfix/no-ticket/no-cost-confirm-on-platform`. The
+"Before we spend anything" confirmation still showed on CareerPolaris AI, in
+dollars, after the terms step went (ADR 0066). `CostConfirm` now starts the
+run at once and shows nothing while the user's work runs on the platform, in
+all seven flows: Analyze, rebuilding the map, Target this role, the gap plan,
+the résumé (writing, regenerating, filling a section), Fill the gap and Set
+as target. On the user's own key it is unchanged.
+

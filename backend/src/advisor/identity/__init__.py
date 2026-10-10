@@ -1,7 +1,7 @@
 """The identity component.
 
-Accounts, sign-in (password and Google), sessions, and the user's AI credential
-and budget.
+Accounts, sign-in (password and Google), sessions, the user's AI credential and
+budget, and which key their AI runs on.
 
 This file is the component's public API. Everything else in the package is
 private: other components, the delivery mechanisms and the composition root
@@ -20,6 +20,8 @@ from advisor.identity.infra.google import (
 from advisor.identity.service import (
     SUGGESTED_MODELS,
     AccountView,
+    AiSource,
+    AiSourceView,
     AuthService,
     BudgetView,
     CredentialView,
@@ -36,6 +38,8 @@ __all__ = [
     "GOOGLE_ATTEMPT_TTL_SECONDS",
     "SUGGESTED_MODELS",
     "AccountView",
+    "AiSource",
+    "AiSourceView",
     "AuthService",
     "BudgetView",
     "CredentialView",

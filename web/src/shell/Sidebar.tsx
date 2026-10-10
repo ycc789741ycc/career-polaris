@@ -1,7 +1,14 @@
 import { AppIcon } from "../components/AppIcon";
 import { isBusy, sourcesBusy, useActivity } from "./activity";
 import { JOURNEY, MODEL_SCREEN, type Screen } from "./navigation";
-import type { ShellStatus } from "./ShellContext";
+import {
+  getPlatformQuota,
+  getQuotaLabel,
+  hasAi,
+  isOnPlatform,
+  modelName,
+  type ShellStatus,
+} from "./ShellContext";
 
 /** The prototype's left rail: the numbered journey and the model. Profile
  * confidence belongs to Strengths (domain decision 28). */
@@ -14,8 +21,12 @@ export function Sidebar({
   status: ShellStatus;
   onNavigate: (screen: Screen) => void;
 }) {
-  const noKey = !status.credential;
-  const keyFailed = status.credential?.status === "failed";
+  const noKey = !hasAi(status);
+  const keyFailed =
+    !isOnPlatform(status) && status.credential?.status === "failed";
+  const quota = getPlatformQuota(status);
+  const quotaUsed = quota ? getQuotaLabel(quota).used : null;
+  const quotaGone = quotaUsed !== null && quotaUsed >= 100;
   const { activity } = useActivity();
   const running: Partial<Record<Screen, boolean>> = {
     sources: sourcesBusy(activity),
@@ -71,15 +82,25 @@ export function Sidebar({
             <span style={{ minWidth: 0 }}>
               {MODEL_SCREEN.label}
               <span className="nav-note">
-                {status.credential
-                  ? `${status.credential.model}${keyFailed ? " · key failed" : ""}`
-                  : "No key yet"}
+                {noKey
+                  ? "No key yet"
+                  : quotaUsed !== null
+                    ? `${modelName(status)} · ${quotaUsed}% of free quota used`
+                    : isOnPlatform(status)
+                      ? modelName(status)
+                      : `${modelName(status)}${keyFailed ? " · key failed" : ""}`}
               </span>
             </span>
-            {(noKey || keyFailed) && (
+            {(noKey || keyFailed || quotaGone) && (
               <span
                 className="nav-flag"
-                aria-label={noKey ? "needs a key" : "key failed"}
+                aria-label={
+                  noKey
+                    ? "needs a key"
+                    : keyFailed
+                      ? "key failed"
+                      : "free quota used up"
+                }
               >
                 !
               </span>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
-import type { Credential, Me } from "./api/types";
+import type { AiSource, Credential, Me } from "./api/types";
 import { useAuth } from "./auth/AuthProvider";
 import { SignInScreen } from "./auth/SignInScreen";
 import { Loading } from "./components/ui";
@@ -23,10 +23,11 @@ import {
   type Place,
   type Screen,
 } from "./shell/navigation";
-import { ActivityProvider } from "./shell/activity";
+import { ActivityProvider, useActivity } from "./shell/activity";
 import { ActivityBar } from "./shell/ActivityBar";
 import { PageHeader } from "./shell/PageHeader";
 import {
+  getAiRunsSettled,
   ShellContext,
   type NavigateTo,
   type ShellStatus,
@@ -61,11 +62,12 @@ export function App() {
 
 /** What the sidebar and header need. Pieces fail independently. */
 export async function loadStatus(): Promise<ShellStatus> {
-  const [me, credential] = await Promise.all([
+  const [me, credential, aiSource] = await Promise.all([
     api.get<Me>("/me").catch(() => null),
     api.get<Credential | null>("/ai-credential").catch(() => null),
+    api.get<AiSource>("/ai-source").catch(() => null),
   ]);
-  return { me, credential };
+  return { me, credential, aiSource };
 }
 
 function Shell() {
@@ -154,6 +156,13 @@ function Shell() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // A finished analysis, build or Advisor job has spent AI: read the quota
+  // again, so the sidebar's percentage moves with it.
+  const aiRunsSettled = getAiRunsSettled(useActivity().settled);
+  useEffect(() => {
+    if (aiRunsSettled > 0) void refresh();
+  }, [aiRunsSettled, refresh]);
 
   const shell = useMemo(
     () => ({

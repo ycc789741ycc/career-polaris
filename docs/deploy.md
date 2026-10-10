@@ -155,6 +155,10 @@ not here. `.env` takes `.env.example`'s defaults, except:
 `GOOGLE_OAUTH_*` and `RELEASE_REGISTRY` stay blank: Google sign-in waits for a
 domain of your own, and the droplet pushes no images.
 
+`PLATFORM_AI_*` stay blank until you offer CareerPolaris's own AI (section 7).
+Only Google-verified accounts can use it, so it is no use before Google
+sign-in is on.
+
 The GitHub and Jira OAuth apps list `https://$SITE_HOSTNAME/connections/…/callback`
 as their callbacks (see `.env.example`).
 
@@ -260,6 +264,13 @@ to both machines, next to `.env`.
   Cloud Firewall, or `SITE_HOSTNAME` does not resolve to the droplet.
 - **Disk.** Run `make disk-usage` on the droplet. Old images go with
   `docker image prune`, after a release has settled.
+- **Users see "CareerPolaris's AI is used up for today".** Everyone's daily
+  or monthly ceiling is reached. The logs say `platform_ai.ceiling_reached`,
+  and before that `platform_ai.near_ceiling` at 80%. Run
+  `make platform-ai-usage` on the droplet to see who spent it (section 7).
+- **Users see "CareerPolaris's AI is unavailable right now".** The provider
+  refused the platform's key: `ai.platform_key_failed` in the logs names why
+  (revoked, out of credit, or rate-limited). Users' own keys are untouched.
 
 ## 6. Once: moving a place onto its machine folder (ADR 0062)
 
@@ -279,4 +290,50 @@ edge first:
 The project and network names are the ones these places already had, so the
 containers are recreated in place and every volume — Postgres's data, the
 proxy's certificates, the Tailscale identity, the model cache — is kept.
+
+## 7. CareerPolaris's own AI (ADR 0064)
+
+Off until `PLATFORM_AI_API_KEY` is set. Once it is set, a Google-verified
+account runs its AI on this key by default (ADR 0066), up to
+`PLATFORM_AI_MONTHLY_QUOTA_USD` a month, until it stores a key of its own. Everyone together is held to
+`PLATFORM_AI_DAILY_CEILING_USD` per UTC day and
+`PLATFORM_AI_MONTHLY_CEILING_USD` per month, and any one call to
+`PLATFORM_AI_MAX_CALL_USD`. Those ceilings, not the per-account quota, are
+what cap the bill: Google accounts are free to make.
+
+1. **A provider project of its own.** Create a project or workspace at the
+   provider (Anthropic, OpenAI or Google) used for nothing else, set a hard
+   monthly spend limit there a little above `PLATFORM_AI_MONTHLY_CEILING_USD`,
+   and make a key in it. If our own meter ever has a bug, that limit still
+   holds.
+2. **The model.** `PLATFORM_AI_MODEL` must be in
+   `backend/src/kernel/ai_gateway/pricing.json`; the api and the worker refuse
+   to start otherwise. Pick a cheap one: every quota is in dollars. The weekly
+   pricing pull request (`pricing.yml`) keeps the rates current; when it
+   changes the platform model's row, check it against the provider's own
+   pricing page before merging, then release. A model the table lacks can be
+   added by running `make sync-pricing` after adding it to the suggestions,
+   or by hand.
+3. **Both machines.** Put `PLATFORM_AI_PROVIDER`, `PLATFORM_AI_MODEL` and
+   `PLATFORM_AI_API_KEY` in the `.env` of the droplet (the api streams the
+   résumé chat) and of the compute machine (the worker runs every job), with
+   the same values, then `make stop-app && make start-app` on each.
+4. **Watch it.** `make platform-ai-usage` on the droplet shows:
+   - today's and this month's spend against the ceilings, and what calls in
+     progress hold;
+   - the 20 accounts that spent most, by a digest of their id;
+   - spend by task;
+   - each prompt's estimate against what calls cost.
+
+   Raise a template's `expected_output_tokens`, or `token_counting` in
+   `pricing.json`, by pull request when its median ratio sits well above 1.
+
+**Rotating the key.** Make the new key in the same provider project, put it
+in both `.env` files, and restart the app on each. Then revoke the old key at
+the provider. A call in flight on the old key fails as unavailable and can be
+run again.
+
+**Turning it off.** Blank `PLATFORM_AI_API_KEY` on both machines and restart.
+Users who chose it get "CareerPolaris's AI is switched off" until they switch
+to their own key; nothing of theirs is lost.
 

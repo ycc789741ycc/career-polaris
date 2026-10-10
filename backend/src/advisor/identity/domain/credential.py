@@ -22,11 +22,11 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     GOOGLE = "google"
-    LOCAL = "local"
 
 
 # Shown in the settings screen. A user may type any model their provider
-# serves; these are the ones we can price without guessing.
+# serves; these are ids each provider's API takes, and every one has a
+# published rate in pricing.json (a unit test holds that).
 SUGGESTED_MODELS: dict[Provider, tuple[str, ...]] = {
     Provider.ANTHROPIC: (
         "claude-opus-5",
@@ -34,8 +34,7 @@ SUGGESTED_MODELS: dict[Provider, tuple[str, ...]] = {
         "claude-haiku-4-5",
     ),
     Provider.OPENAI: ("gpt-5.1", "gpt-5-mini"),
-    Provider.GOOGLE: ("gemini-3-pro", "gemini-3-flash"),
-    Provider.LOCAL: (),
+    Provider.GOOGLE: ("gemini-3-pro-preview", "gemini-3-flash-preview"),
 }
 
 
@@ -51,9 +50,11 @@ class CredentialView:
     last_error: str | None
 
 
-def requires_base_url(provider: Provider) -> bool:
-    """A self-hosted model has no endpoint we could know in advance."""
-    return provider is Provider.LOCAL
+def accepts_base_url(provider: Provider) -> bool:
+    """Only an OpenAI key may name its own endpoint: an OpenAI-compatible
+    cloud (Azure OpenAI, Groq, Together) at a public URL. A model on the
+    user's own machine is out of reach of a hosted service (ADR 0065)."""
+    return provider is Provider.OPENAI
 
 
 @dataclass(slots=True)

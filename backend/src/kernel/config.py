@@ -124,6 +124,31 @@ class Settings(BaseSettings):
         default=20.0, alias="AI_DEFAULT_MONTHLY_BUDGET_USD"
     )
 
+    # --- AI on the platform's key (api and worker; optional, ADR 0064) -----
+    # The operator's provider, model and key, offered to Google-verified
+    # accounts up to a quota. A blank key turns it off; once it is set, the
+    # provider and a model with a published rate are required.
+    platform_ai_provider: str | None = Field(default=None, alias="PLATFORM_AI_PROVIDER")
+    platform_ai_model: str | None = Field(default=None, alias="PLATFORM_AI_MODEL")
+    platform_ai_api_key: SecretStr | None = Field(default=None, alias="PLATFORM_AI_API_KEY")
+    # What one account may spend on it in a calendar month.
+    platform_ai_monthly_quota_usd: float = Field(
+        default=2.0, gt=0, alias="PLATFORM_AI_MONTHLY_QUOTA_USD"
+    )
+    # What every account together may spend on it, per UTC day and per month.
+    platform_ai_daily_ceiling_usd: float = Field(
+        default=5.0, gt=0, alias="PLATFORM_AI_DAILY_CEILING_USD"
+    )
+    platform_ai_monthly_ceiling_usd: float = Field(
+        default=50.0, gt=0, alias="PLATFORM_AI_MONTHLY_CEILING_USD"
+    )
+    # The most one call may cost at its ceiling; a larger one is refused.
+    platform_ai_max_call_usd: float = Field(default=0.5, gt=0, alias="PLATFORM_AI_MAX_CALL_USD")
+
+    @property
+    def platform_ai_enabled(self) -> bool:
+        return self.platform_ai_api_key is not None
+
     # --- Uploads / parsing --------------------------------------------------
     resume_max_bytes: int = Field(default=10_485_760, alias="RESUME_MAX_BYTES")
     resume_max_pages: int = Field(default=30, alias="RESUME_MAX_PAGES")
@@ -216,10 +241,35 @@ class Settings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}")
         return upper
 
-    @field_validator("jira_reporting_owner_id", mode="before")
+    @field_validator(
+        "jira_reporting_owner_id",
+        "platform_ai_provider",
+        "platform_ai_model",
+        "platform_ai_api_key",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _platform_ai_complete(self) -> Settings:
+        # A key with nothing to say which provider or model it is for would
+        # fail at the first call, on someone's job, instead of at startup.
+        if not self.platform_ai_enabled:
+            return self
+        if self.platform_ai_provider not in PLATFORM_AI_PROVIDERS:
+            raise ValueError(
+                "PLATFORM_AI_PROVIDER must be one of "
+                f"{', '.join(PLATFORM_AI_PROVIDERS)} when PLATFORM_AI_API_KEY is set"
+            )
+        if self.platform_ai_model is None:
+            raise ValueError("PLATFORM_AI_MODEL is required when PLATFORM_AI_API_KEY is set")
+        if self.platform_ai_daily_ceiling_usd > self.platform_ai_monthly_ceiling_usd:
+            raise ValueError(
+                "PLATFORM_AI_DAILY_CEILING_USD must not exceed PLATFORM_AI_MONTHLY_CEILING_USD"
+            )
+        return self
 
     @field_validator("assessment_confidence_threshold")
     @classmethod
@@ -298,6 +348,10 @@ class Settings(BaseSettings):
         return self.master_encryption_key
 
 
+# The providers the platform's own key may be for: the same three a user's
+# key may be for (ADR 0065).
+PLATFORM_AI_PROVIDERS = ("anthropic", "openai", "google")
+
 # Beats a process may miss before it reads as away: one late beat is a busy
 # moment, not a machine gone.
 PRESENCE_MISSED_BEATS = 4
@@ -305,6 +359,10 @@ PRESENCE_MISSED_BEATS = 4
 
 class MissingSecretError(RuntimeError):
     """A secret this code path needs is absent from the process environment."""
+
+
+class InvalidConfigurationError(RuntimeError):
+    """A setting is present but cannot work, found at startup."""
 
 
 class Unit(StrEnum):

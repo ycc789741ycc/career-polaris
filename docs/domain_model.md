@@ -251,7 +251,7 @@ The rest is unchanged:
   - A job that would exceed the cap pauses instead of running.
 - **Keys fail.** Emit `ProviderCredentialFailed`, pause that user's scheduled jobs, and say so.
 - **Record the model on every AI-derived snapshot:** SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion.
-- **Show cost before spending.** Every AI action the user starts shows an estimate on their key first:
+- **Show cost before spending.** Every AI action the user starts on their own key shows an estimate first. On CareerPolaris AI it starts at once, bounded by the free quota ([ADR 0067](decisions/0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md)):
   - Analyze, which now includes the role-map build
   - Add to Role Map
   - Submit answers
@@ -282,7 +282,7 @@ The rest is unchanged:
 | Original requirements: Background worker | Glassdoor, LinkedIn, Indeed; "User active subscribe for the company jobs" | Not crawled (decision 6); no subscriptions (decision 22) |
 | Original requirements: User Login | Google OAuth or own account | Both (ADR 0001, ADR 0008) |
 | prototype `Model.dc.html` "What runs on your key" | Follow-up questions are "written when the evidence leaves a score uncertain" | Written per gap of the target role (decision 27) |
-| prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google and any OpenAI-compatible base URL |
+| prototype `Model.dc.html` | Provider toggle: Anthropic or OpenAI | The gateway also supports Google, and an OpenAI key may name an OpenAI-compatible cloud's base URL; there is no self-hosted model (ADR 0065) |
 | prototype `Roles.dc.html` vs `Gaps.dc.html` | 81% fit and 160–196k on the role; 86% and 165–190k in the Advisor | Correct: role fit versus opening fit (2.2). The Advisor shows the opening's, because the Target has one. |
 
 ## 3. Proposed bounded contexts
@@ -569,6 +569,7 @@ An accepted decision is not rewritten. A changed mind is a new row that supersed
 | 32 | 2026-10-03 | Where the fit lives | **In the Role Map, scored against the dimension scores the Analyzer hands over with the candidate roles; the Assessment describes only the user** | 2.5: moves RoleFit, SkillGap, UncoveredRequirement and the Top matched ranking from Assessment to Role Map ([ADR 0028](decisions/0028-score-the-fit-in-the-role-map.md)) |
 | 33 | 2026-10-03 | How many roles a build keeps, and how many an analysis recommends | **Both are deployment settings: the top k (default 10) are named, analysed and scored, of the candidates an analysis recommends (default 10); custom roles are on top** | 2.2: supersedes 23 ([ADR 0029](decisions/0029-set-the-candidate-count-and-the-top-k-as-settings.md)) |
 | 34 | 2026-10-04 | What a user brings of their own | **A posting of their own (title, optional company, JD required), aimed at from the Advisor and never on the role map; its fit is worked out locally from one AI evaluation of its JD** | 2.1: supersedes 25, amends 22 and 26; custom Roles and board discovery go ([ADR 0030](decisions/0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md)) |
+| 35 | 2026-10-10 | Who pays for AI, again | **The user, on their own key, or, if Google verified their account and they choose it, the platform, up to a monthly quota per account and daily and monthly ceilings for everyone** | 2.10: amends 7; `identity` keeps the choice, the gateway the platform's key and its meter ([ADR 0064](decisions/0064-offer-the-platforms-ai-key-to-google-verified-accounts-under-a-quota.md)) |
 
 ### 6.2 Remaining questions
 

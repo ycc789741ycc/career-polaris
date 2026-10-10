@@ -15,10 +15,7 @@ import { modelName, useShell } from "./ShellContext";
 export function ActivityBar({ screen }: { screen: Screen }) {
   const { activity } = useActivity();
   const { status } = useShell();
-  const lines = describe(
-    withoutOwnRuns(activity, screen),
-    modelName(status.credential),
-  );
+  const lines = describe(withoutOwnRuns(activity, screen), modelName(status));
   if (lines.length === 0) return null;
 
   return (

@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Assessment } from "../api/types";
 import type { Activity } from "../api/types";
@@ -76,11 +82,15 @@ function serve(latest: Assessment) {
   return fetch;
 }
 
-function renderStrengths(activity: Activity | null = null) {
+function renderStrengths(
+  activity: Activity | null = null,
+  status: Shell["status"] = { me: null, credential: null },
+) {
   const shell = {
-    status: { me: null, credential: null },
+    status,
     navigate: vi.fn(),
     setHeading: vi.fn(),
+    refresh: async () => {},
   } as unknown as Shell;
   render(
     <ShellContext.Provider value={shell}>
@@ -270,6 +280,40 @@ describe("Strengths", () => {
       "$0.10 for the analysis, at most $0.40 for the role map built after it, up to 10 roles, and at most $0.10 for scoring your fit against them.",
     );
     expect(dialog).toHaveTextContent("$0.60");
+  });
+
+  it("on CareerPolaris AI starts the analysis with no confirmation (ADR 0067)", async () => {
+    const fetch = serve(assessment({}));
+    renderStrengths(null, {
+      me: null,
+      credential: null,
+      aiSource: {
+        source: "platform",
+        has_credential: false,
+        is_platform_on: true,
+        is_eligible: true,
+        platform_quota: {
+          allowed_usd: "2",
+          spent_usd: "0",
+          remaining_usd: "2",
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-analyse" }));
+
+    await waitFor(() =>
+      expect(
+        fetch.mock.calls.some((call: unknown[]) => {
+          const [input, init] = call as [RequestInfo | URL, RequestInit?];
+          return String(input).endsWith("/assessments") && init?.method === "POST";
+        }),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByText("Before we spend anything"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/for the analysis/)).not.toBeInTheDocument();
   });
 
   it("puts Re-analyse first, then when and on what it ran", async () => {

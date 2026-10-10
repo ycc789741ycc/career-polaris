@@ -15,10 +15,15 @@ from kernel.db import Database
 
 
 def create_identity_service(
-    database: Database, *, default_monthly_cap_usd: Decimal
+    database: Database,
+    *,
+    default_monthly_cap_usd: Decimal,
+    is_platform_on: bool = False,
 ) -> IdentityService:
     return IdentityService(
-        SqlAlchemyIdentityUnitOfWork(database), default_monthly_cap_usd=default_monthly_cap_usd
+        SqlAlchemyIdentityUnitOfWork(database),
+        default_monthly_cap_usd=default_monthly_cap_usd,
+        is_platform_on=is_platform_on,
     )
 
 

@@ -339,7 +339,7 @@ Crawled pages, uploaded PDF/DOCX files, pasted JDs, repository and ticket conten
   - Evidence ids cited by the AI must exist in *this user's* profile, or the output is rejected. This also blocks invented résumé claims.
 - **SSRF protection** (`kernel.fetch`):
   - Block private, loopback, link-local and cloud-metadata addresses, and re-check after every redirect and DNS resolution.
-  - Applies to personal-site crawling, to every source the crawler fetches, and to the **user-supplied LLM base URL**. A "Local" model therefore means an endpoint at a public URL the user controls, not one on the server's network.
+  - Applies to personal-site crawling, to every source the crawler fetches, and to the **base URL an OpenAI key may name** for an OpenAI-compatible cloud (Azure OpenAI, Groq, Together). There is no self-hosted model option: a hosted service cannot reach the user's machine ([ADR 0065](decisions/0065-there-is-no-self-hosted-model-option.md)).
 - **Auth:** the API verifies JWT signature, issuer, audience and expiry on every request. Login OAuth (Google, our own exchange in `identity`, stored in `identity.federated_identity`) and connector OAuth (handled by `profile`) are separate flows with separate token storage — they share no code path. Login OAuth keeps no Google token at all: the ID token is verified once and discarded (ADR 0008).
 
 ## 5. AI gateway (`kernel/ai_gateway`)
@@ -352,21 +352,27 @@ stream(user_id, task, template, inputs) -> AsyncIterator[Chunk]  # final chunk c
 
 ```mermaid
 flowchart LR
-  A[Estimate cost] --> B{Within AIUsageBudget?}
+  K{Whose key?} -- user's own --> A[Estimate cost]
+  K -- the platform's --> R{"Reserve the ceiling: account month, everyone's day and month"}
+  R -- no room --> Z[ai_platform_quota_reached / unavailable]
+  R -- held --> C
+  A --> B{Within AIUsageBudget?}
   B -- no --> X[UsageBudgetExceeded]
-  B -- yes --> C[Decrypt ProviderCredential]
+  B -- yes --> C[Open the key]
   C --> D["Provider adapter: Anthropic / OpenAI / Google / OpenAI-compatible base URL"]
   D -- auth or quota error --> Y[ProviderCredentialFailed]
   D --> E[Validate against output schema]
   E -- invalid --> D
-  E --> F[Write AIUsageLedger row]
+  E --> F["Write AIUsageLedger row: provider's counts, funding; settle a reservation"]
   F --> G[Return result + model id + template version]
 ```
 
+- **Whose key** ([ADR 0064](decisions/0064-offer-the-platforms-ai-key-to-google-verified-accounts-under-a-quota.md)). `identity` answers `load` with the user's credential or a `PlatformCredential`, and the gateway takes the platform's provider, model and key from settings. A platform call reserves its ceiling (every retry at its output limit) in `limits.spend_reservation` through the `PlatformSpend` port, settles each attempt and releases the rest; the user's own cap counts only their own key. The platform's key failing is never the user's: it answers `ai_platform_unavailable` and pauses nothing of theirs.
+- **What the ledger records** is what the provider reported for each attempt, streamed or not, priced at the rate of the model asked for, beside the estimate it was priced at; a call cut short is marked `is_estimated`.
 - **Prompt templates** are versioned files. Each snapshot (SkillAssessment, RoleFit, QuestionSet, GapPlan, ResumeVersion) stores the model id and template version.
 - **Cost confirmation** comes from the same estimate step, run in dry-run mode. Analyze's estimate covers the analysis **and** the ten-role build that follows it (domain decision 24); "Set as target", writing questions, drafting a plan and writing or regenerating a résumé estimate their own. "Submit answers" spends nothing (ADR 0035).
 - **Callers:** `assessment` (analysis), `rolemap` (naming, requirements, difficulty, fits, and — through its fit kit, for `target` — reading and scoring a posting of the user's own), `gapfill` (questions per gap), `gapplan` (drafting) and `resume` (writing, and the revision chat through `stream_structured`: prose streams, the marker never does, and the JSON after it is validated like any `run`). Never `profile`: ingestion is outside the gateway (rule 10).
-- **Local ML is outside the gateway.** sentence-transformers runs in `crawler` (posting embeddings) and in `worker` (embedding the analysis's candidate roles, and any posting not yet embedded, to match them locally). The gateway on the user's key only **recommends candidate roles with the analysis, names roles and extracts requirements** ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)). Rule: *generative AI is paid by the user; plain computation is paid by the platform* (domain decision 7).
+- **Local ML is outside the gateway.** sentence-transformers runs in `crawler` (posting embeddings) and in `worker` (embedding the analysis's candidate roles, and any posting not yet embedded, to match them locally). The gateway on the user's key only **recommends candidate roles with the analysis, names roles and extracts requirements** ([ADR 0024](decisions/0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md)). Rule: *generative AI is paid by the user; plain computation is paid by the platform* (domain decision 7), except that a Google-verified user may choose the platform's key, under a quota (decision 35, ADR 0064).
 
 ## 6. Schedules and flows across units
 

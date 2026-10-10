@@ -1,12 +1,14 @@
-"""Identity's wire shapes: sign-in, the account, the AI credential and budget."""
+"""Identity's wire shapes: sign-in, the account, the AI credential and budget,
+and which key AI runs on."""
 
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import EmailStr, Field
 
-from advisor.identity import AccountView, BudgetView, CredentialView
+from advisor.identity import AccountView, AiSourceView, BudgetView, CredentialView
 from api.schemas.common import ApiModel, RequestModel
 
 
@@ -81,6 +83,39 @@ class Credential(ApiModel):
             last_four=credential.last_four,
             status=str(credential.status),
             last_error=credential.last_error,
+        )
+
+
+class AiSourceRequest(RequestModel):
+    source: Literal["own", "platform"]
+
+
+class PlatformQuota(ApiModel):
+    """This account's month on the platform's key. Decimal strings."""
+
+    allowed_usd: str
+    spent_usd: str
+    remaining_usd: str
+
+
+class AiSourceBody(ApiModel):
+    """Which key AI runs on, and what the user may choose between."""
+
+    source: Literal["own", "platform"] | None
+    has_credential: bool
+    is_platform_on: bool
+    is_eligible: bool
+    # None while the platform's key is off.
+    platform_quota: PlatformQuota | None
+
+    @classmethod
+    def from_view(cls, view: AiSourceView, quota: PlatformQuota | None) -> AiSourceBody:
+        return cls(
+            source=None if view.source is None else view.source.value,
+            has_credential=view.has_credential,
+            is_platform_on=view.is_platform_on,
+            is_eligible=view.is_eligible,
+            platform_quota=quota,
         )
 
 

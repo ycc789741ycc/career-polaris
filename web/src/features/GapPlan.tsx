@@ -18,7 +18,12 @@ import {
   RoundCheck,
 } from "../components/ui";
 import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
-import { modelName, useShell } from "../shell/ShellContext";
+import {
+  getShownModel,
+  hasAi,
+  modelName,
+  useShell,
+} from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { CostConfirm } from "./CostConfirm";
@@ -58,7 +63,7 @@ export function GapPlan({
   const flash = useToast();
   // A job just started: the shell polls it, and the tab shows its card.
   const { refresh: refreshActivity } = useActivity();
-  const model = modelName(status.credential);
+  const model = modelName(status);
   const ref: Ref = target.ref;
 
   // Opens with this Target's latest plan, if it has one.
@@ -112,7 +117,7 @@ export function GapPlan({
   }, [planId]);
 
   async function price(priced: Ref, label: string) {
-    if (!status.credential) {
+    if (!hasAi(status)) {
       flash("Plan drafting runs on your model — add a key.");
       navigate("model");
       return;
@@ -258,10 +263,11 @@ export function GapPlan({
           onCancel={() => setEstimate(null)}
         >
           Drafting a plan for <strong>{estimate.label}</strong> costs about{" "}
-          <strong>${estimate.cost.cost_usd}</strong> on {estimate.cost.model_id}
-          , charged to your own provider.
+          <strong>${estimate.cost.cost_usd}</strong> on{" "}
+          {getShownModel(status, estimate.cost.model_id)}, charged to your own
+          provider.
           {estimate.cost.rate_is_published === false &&
-            " We have no published price for that model, so this is a deliberately high guess."}
+            " We have no published price for that model, so this is a high guess, and it won't count toward your monthly cap."}
         </CostConfirm>
       )}
 
@@ -528,7 +534,11 @@ function FailureHint({
   code: string | undefined;
   onNavigate: (screen: "model" | "roles") => void;
 }) {
-  if (code?.startsWith("ai_credential") || code === "ai_budget_exceeded") {
+  if (
+    code?.startsWith("ai_credential") ||
+    code?.startsWith("ai_platform") ||
+    code === "ai_budget_exceeded"
+  ) {
     return (
       <p className="subcopy">
         This is about your model or budget, not the plan.{" "}

@@ -25,6 +25,7 @@ from advisor.identity.domain import (
 )
 from advisor.identity.infra.repositories import (
     SqlAlchemyAccountRepository,
+    SqlAlchemyAiSourceChoiceRepository,
     SqlAlchemyAiUsageBudgetRepository,
     SqlAlchemyAiUsageEntryRepository,
     SqlAlchemyFederatedIdentityRepository,
@@ -50,6 +51,7 @@ class SqlAlchemyOwnerIdentity(SqlAlchemyAuthentication, OwnerIdentity):
         self.credentials = SqlAlchemyProviderCredentialRepository(session, owner_id=owner_id)
         self.budgets = SqlAlchemyAiUsageBudgetRepository(session, owner_id=owner_id)
         self.usage = SqlAlchemyAiUsageEntryRepository(session, owner_id=owner_id)
+        self.ai_sources = SqlAlchemyAiSourceChoiceRepository(session, owner_id=owner_id)
         self.pending: list[IdentityEvent] = []
 
     def record(self, event: IdentityEvent) -> None:

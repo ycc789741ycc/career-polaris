@@ -9,21 +9,24 @@ from decimal import Decimal
 
 import pytest
 
-from advisor.identity import AuthService, IdentityService, Provider
+from advisor.identity import AiSource, AuthService, IdentityService, Provider
 from advisor.identity.domain import (
     MAX_FAILED_ATTEMPTS,
     CredentialStatus,
+    FederatedIdentity,
     IdTokenClaims,
     ProviderCredentialFailed,
     UsageBudgetExceeded,
     digest,
 )
-from kernel.ai_gateway.ports import UsageRecord
+from kernel.ai_gateway.ports import Funding, PlatformCredential, UsageRecord
 from kernel.crypto import decrypt
 from kernel.errors import (
     BudgetExceededError,
     ConflictError,
     CredentialMissingError,
+    PlatformAiNotEligibleError,
+    PlatformAiUnavailableError,
     RateLimitedError,
     UnauthenticatedError,
     ValidationError,
@@ -254,14 +257,18 @@ async def test_spending_past_the_cap_pauses_and_refuses() -> None:
             input_tokens=10,
             output_tokens=10,
             cost_usd=Decimal("0.75"),
+            estimated_input_tokens=12,
+            estimated_cost_usd=Decimal("0.70"),
+            is_estimated=False,
+            funding=Funding.OWN,
         )
     )
 
     budget = await identity.budget(owner, today=datetime.now(UTC).date())
     assert budget.spent_this_month_usd == Decimal("0.75")
-    await identity.check(owner, Decimal("0.2"))
+    await identity.check(owner, Decimal("0.2"), funding=Funding.OWN)
     with pytest.raises(BudgetExceededError):
-        await identity.check(owner, Decimal("0.5"))
+        await identity.check(owner, Decimal("0.5"), funding=Funding.OWN)
 
     assert (await identity.account(owner)).background_jobs_paused
     assert uow.store.events == [
@@ -279,3 +286,234 @@ async def test_a_negative_cap_is_refused() -> None:
         await _identity(FakeIdentityUnitOfWork()).set_budget(
             uuid.uuid4(), monthly_cap_usd=Decimal("-1")
         )
+
+
+async def test_the_cap_counts_only_what_the_users_own_key_paid_for() -> None:
+    """The platform's spend is the operator's money, metered apart (ADR 0064)."""
+    uow = FakeIdentityUnitOfWork()
+    auth, identity = _auth(uow), _identity(uow)
+    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
+    for funding, cost in ((Funding.OWN, "0.25"), (Funding.PLATFORM, "5.00")):
+        await identity.record(
+            UsageRecord(
+                owner_id=owner,
+                task="assessment",
+                provider="anthropic",
+                model="claude",
+                template_version="v1",
+                input_tokens=10,
+                output_tokens=10,
+                cost_usd=Decimal(cost),
+                estimated_input_tokens=10,
+                estimated_cost_usd=Decimal(cost),
+                is_estimated=False,
+                funding=funding,
+            )
+        )
+
+    budget = await identity.budget(owner, today=datetime.now(UTC).date())
+    assert budget.spent_this_month_usd == Decimal("0.25")
+    # A platform call is not the user's cap to refuse.
+    await identity.check(owner, Decimal("50"), funding=Funding.PLATFORM)
+    assert not (await identity.account(owner)).background_jobs_paused
+
+
+# --- which key AI runs on (ADR 0064) -----------------------------------------
+
+
+def _platform_identity(uow: FakeIdentityUnitOfWork) -> IdentityService:
+    return IdentityService(uow, default_monthly_cap_usd=Decimal("20"), is_platform_on=True)
+
+
+async def _google_account(uow: FakeIdentityUnitOfWork) -> uuid.UUID:
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+    identity = FederatedIdentity.linked(
+        owner, provider="google", subject="google-sub-1", email="ada@example.com"
+    )
+    uow.store.federated[identity.id] = identity
+    return owner
+
+
+async def test_a_google_account_runs_on_the_platform_with_nothing_to_set_up() -> None:
+    """The default for an eligible account, with no terms step (ADR 0066)."""
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    view = await identity.ai_source(owner)
+
+    assert view.source == AiSource.PLATFORM and view.is_eligible and view.is_platform_on
+    assert await identity.load(owner) == PlatformCredential(owner_id=owner)
+
+
+async def test_storing_a_key_chooses_it_and_switching_back_needs_no_new_key() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    await identity.set_credential(
+        owner, provider="anthropic", model="claude", api_key="sk-own-1234", base_url=None
+    )
+    assert (await identity.ai_source(owner)).source == AiSource.OWN
+    assert not isinstance(await identity.load(owner), PlatformCredential)
+
+    await identity.set_ai_source(owner, source="platform")
+    assert await identity.load(owner) == PlatformCredential(owner_id=owner)
+    # The key stays stored while the platform runs, so switching back is free.
+    view = await identity.set_ai_source(owner, source="own")
+    assert view.source == AiSource.OWN and view.has_credential
+
+
+async def test_with_nothing_chosen_an_account_without_google_runs_on_its_own_key() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = (await _auth(uow).register(email="bo@example.com", password=PASSWORD)).account_id
+
+    assert (await identity.ai_source(owner)).source is None
+    with pytest.raises(CredentialMissingError):
+        await identity.load(owner)
+
+
+async def test_with_the_platform_off_nothing_chosen_means_ones_own_key() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = await _google_account(uow)
+
+    assert (await identity.ai_source(owner)).source is None
+
+
+async def test_an_account_without_google_cannot_use_the_platforms_key() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = (await _auth(uow).register(email="bo@example.com", password=PASSWORD)).account_id
+
+    assert not (await identity.ai_source(owner)).is_eligible
+    with pytest.raises(PlatformAiNotEligibleError):
+        await identity.set_ai_source(owner, source="platform")
+
+
+async def test_losing_the_google_identity_stops_the_platforms_key_at_the_next_call() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+    await identity.set_ai_source(owner, source="platform")
+
+    uow.store.federated.clear()
+
+    with pytest.raises(PlatformAiNotEligibleError):
+        await identity.load(owner)
+
+
+async def test_the_platform_cannot_be_chosen_while_it_is_off() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = await _google_account(uow)
+
+    assert not (await identity.ai_source(owner)).is_platform_on
+    with pytest.raises(PlatformAiUnavailableError):
+        await identity.set_ai_source(owner, source="platform")
+
+
+async def test_ones_own_key_cannot_be_chosen_before_it_is_stored() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+
+    with pytest.raises(ValidationError, match="key of your own"):
+        await identity.set_ai_source(owner, source="own")
+
+
+async def test_switching_source_resumes_paused_work() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _platform_identity(uow)
+    owner = await _google_account(uow)
+    await identity.set_credential(
+        owner, provider="anthropic", model="claude", api_key="sk-own-1234", base_url=None
+    )
+    await identity.mark_failed(owner, "401 from provider")
+    assert (await identity.account(owner)).background_jobs_paused
+
+    await identity.set_ai_source(owner, source="platform")
+
+    assert not (await identity.account(owner)).background_jobs_paused
+
+
+# --- which endpoint a key may name (ADR 0065) ---------------------------------
+
+
+async def test_only_an_openai_key_may_name_its_own_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Hermetic: the SSRF guard would resolve the host. Its rules are tested
+    # in tests/unit/kernel/fetch.
+    from advisor.identity import service
+
+    monkeypatch.setattr(service, "assert_public_url", lambda url: None)
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+
+    with pytest.raises(ValidationError, match="OpenAI-compatible"):
+        await identity.set_credential(
+            owner,
+            provider="anthropic",
+            model="claude-haiku-4-5",
+            api_key="sk-ant-1234",
+            base_url="https://proxy.example.com",
+        )
+
+    view = await identity.set_credential(
+        owner,
+        provider="openai",
+        model="llama-3.3-70b",
+        api_key="gsk-1234",
+        base_url="https://api.groq.com/openai/v1",
+    )
+    assert view.base_url == "https://api.groq.com/openai/v1"
+
+
+async def test_a_self_hosted_model_is_not_a_provider() -> None:
+    uow = FakeIdentityUnitOfWork()
+    identity = _identity(uow)
+    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+
+    with pytest.raises(ValidationError, match="unknown provider"):
+        await identity.set_credential(
+            owner, provider="local", model="llama", api_key="k", base_url=None
+        )
+
+
+# --- a model with no published rate -------------------------------------------
+
+
+async def test_a_model_with_no_published_rate_does_not_count_toward_the_cap() -> None:
+    """Its cost is only our deliberately high guess; it must not pause work."""
+    uow = FakeIdentityUnitOfWork()
+    auth, identity = _auth(uow), _identity(uow)
+    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
+    for is_rate_published, cost in ((True, "0.25"), (False, "9.00")):
+        await identity.record(
+            UsageRecord(
+                owner_id=owner,
+                task="assessment",
+                provider="openai",
+                model="llama-3.3-70b" if not is_rate_published else "gpt-5-mini",
+                template_version="v1",
+                input_tokens=10,
+                output_tokens=10,
+                cost_usd=Decimal(cost),
+                estimated_input_tokens=10,
+                estimated_cost_usd=Decimal(cost),
+                is_estimated=False,
+                funding=Funding.OWN,
+                is_rate_published=is_rate_published,
+            )
+        )
+
+    budget = await identity.budget(owner, today=datetime.now(UTC).date())
+    assert budget.spent_this_month_usd == Decimal("0.25")
+    # An unpriced call is never refused by the cap, however high its guess.
+    await identity.check(owner, Decimal("50"), funding=Funding.OWN, is_priced=False)
+    assert not (await identity.account(owner)).background_jobs_paused

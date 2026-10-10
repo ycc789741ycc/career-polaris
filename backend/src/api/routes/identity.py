@@ -11,6 +11,7 @@ key (docs/architecture.md section 4).
 
 from __future__ import annotations
 
+import uuid
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -32,11 +33,14 @@ from api.dependencies import (
     refresh_token_from,
 )
 from api.schemas.identity import (
+    AiSourceBody,
+    AiSourceRequest,
     Budget,
     BudgetRequest,
     Credential,
     CredentialRequest,
     Me,
+    PlatformQuota,
     RegisterRequest,
     SessionResponse,
     SignInMethods,
@@ -252,6 +256,32 @@ async def set_credential(body: CredentialRequest, user: CurrentUser, deps: Deps)
 @router.delete("/ai-credential", status_code=204)
 async def delete_credential(user: CurrentUser, deps: Deps) -> None:
     await deps.identity.delete_credential(user)
+
+
+@router.get("/ai-source")
+async def read_ai_source(user: CurrentUser, deps: Deps) -> AiSourceBody:
+    """Which key AI runs on: the user's own, CareerPolaris's (ADR 0064), or
+    none yet, and this month's quota on CareerPolaris's."""
+    return AiSourceBody.from_view(
+        await deps.identity.ai_source(user), await _platform_quota(user, deps)
+    )
+
+
+@router.put("/ai-source")
+async def set_ai_source(body: AiSourceRequest, user: CurrentUser, deps: Deps) -> AiSourceBody:
+    view = await deps.identity.set_ai_source(user, source=body.source)
+    return AiSourceBody.from_view(view, await _platform_quota(user, deps))
+
+
+async def _platform_quota(user: uuid.UUID, deps: Deps) -> PlatformQuota | None:
+    if deps.platform_spend is None:
+        return None
+    state = await deps.platform_spend.get_account_state(user)
+    return PlatformQuota(
+        allowed_usd=str(state.allowed_usd),
+        spent_usd=str(state.spent_usd),
+        remaining_usd=str(state.remaining_usd),
+    )
 
 
 @router.get("/ai-budget")

@@ -92,7 +92,7 @@ endif
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
-        check-env
+        check-env platform-ai-usage sync-pricing
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -102,7 +102,7 @@ help:
 	@echo "Gates (their own targets, never folded into a test target):"
 	@echo "  lint typecheck scan"
 	@echo "Supporting targets (never dependencies of the above):"
-	@echo "  migrate format gen-client lock logs stats disk-usage backup-db check-env"
+	@echo "  migrate format gen-client sync-pricing lock logs stats disk-usage platform-ai-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
@@ -222,6 +222,12 @@ stats: require-machine
 disk-usage: require-machine
 	@scripts/disk-usage.sh
 
+# What AI has cost (ADR 0064): the platform key's spend against its ceilings,
+# its top accounts by digest, spend by task, and each prompt's estimate against
+# what calls cost. Read-only. Needs infra up, where Postgres runs.
+platform-ai-usage: require-machine
+	@scripts/platform-ai-usage.sh
+
 # --- migrations -------------------------------------------------------------
 
 # A one-off container from this machine's own image. On local it sees the
@@ -340,6 +346,20 @@ gen-client: require-env
 	    < web/openapi.json > web/src/api/schema.d.ts.tmp \
 	  && mv web/src/api/schema.d.ts.tmp web/src/api/schema.d.ts \
 	  || { rm -f web/src/api/schema.d.ts.tmp; exit 1; }
+
+# Brings the AI price table up to date from LiteLLM's price listing
+# (docs/deploy.md section 7): every model it has and every model Settings
+# suggests. Mount-free, like gen-client: the table goes in on stdin and comes
+# back on stdout, and what changed is left in tmp/pricing-summary.md, which
+# the weekly pricing workflow uses as its pull request. Needs the internet.
+PRICING_TABLE := backend/src/kernel/ai_gateway/pricing.json
+sync-pricing:
+	@mkdir -p tmp
+	@docker run --rm -i $(BACKEND_TEST_IMAGE) python -m cli.sync_pricing \
+	    < $(PRICING_TABLE) > $(PRICING_TABLE).tmp 2> tmp/pricing-summary.md \
+	  && mv $(PRICING_TABLE).tmp $(PRICING_TABLE) \
+	  || { rm -f $(PRICING_TABLE).tmp; cat tmp/pricing-summary.md; exit 1; }
+	@cat tmp/pricing-summary.md
 
 # Regenerates backend/uv.lock after a dependency change. It writes to source,
 # so it runs through local's file. Needs the dev images.

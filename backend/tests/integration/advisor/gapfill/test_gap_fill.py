@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -26,7 +26,14 @@ from advisor.profile import EvidenceSource, ProfileService, create_profile_servi
 from advisor.rolemap import RoleMapService, create_rolemap_service
 from advisor.target import TargetRef, TargetService, create_target_service
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
+from kernel.ai_gateway.providers import (
+    REGISTRY,
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+)
 from kernel.config import Settings
 from kernel.db import Database
 from kernel.errors import NotFoundError
@@ -57,10 +64,10 @@ class StubProvider(Provider):
             model=request.model,
         )
 
-    async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
         # A job's call streams (ADR 0042): the queued reply, in one chunk.
         self.calls.append(request)
-        yield self.replies.pop(0) if self.replies else "{}"
+        yield TextDelta(self.replies.pop(0) if self.replies else "{}")
 
 
 @dataclass

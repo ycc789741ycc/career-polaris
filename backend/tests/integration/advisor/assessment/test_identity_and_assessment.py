@@ -7,7 +7,7 @@ the ledger, not the model.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from datetime import date
 from decimal import Decimal
 
@@ -19,7 +19,14 @@ from advisor.identity import IdentityService, create_identity_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.rolemap import create_rolemap_service
 from kernel.ai_gateway import AiGateway
-from kernel.ai_gateway.providers import REGISTRY, Completion, Provider, Request
+from kernel.ai_gateway.providers import (
+    REGISTRY,
+    Completion,
+    Provider,
+    Request,
+    StreamEvent,
+    TextDelta,
+)
 from kernel.config import Settings
 from kernel.db import Database
 from tests.integration.places import WINDOWS, store_target_locations
@@ -65,8 +72,8 @@ class StubProvider(Provider):
             model=request.model,
         )
 
-    async def stream(self, client: object, request: Request) -> AsyncIterator[str]:
-        yield ""
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
+        yield TextDelta("")
 
 
 @pytest.fixture
@@ -171,17 +178,17 @@ async def test_one_user_cannot_load_anothers_credential(
         await identity.load(other_account)
 
 
-async def test_a_self_hosted_model_on_a_private_address_is_refused(
+async def test_an_openai_compatible_endpoint_on_a_private_address_is_refused(
     identity: IdentityService, account: uuid.UUID
 ) -> None:
-    """'Local' means a public URL the user controls, not our own network."""
+    """A base URL names a public cloud, never our own network."""
     from kernel.errors import BlockedAddressError
 
     with pytest.raises(BlockedAddressError):
         await identity.set_credential(
             account,
-            provider="local",
-            model="llama",
+            provider="openai",
+            model="llama-3.3-70b",
             api_key="k",
             base_url="http://169.254.169.254/v1",
         )

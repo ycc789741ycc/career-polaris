@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from advisor.identity.domain import (
     Account,
+    AiFunding,
+    AiSource,
+    AiSourceChoice,
     AiUsageBudget,
     AiUsageEntry,
     CredentialStatus,
@@ -163,6 +166,26 @@ def apply_credential(row: models.ProviderCredential, entity: ProviderCredential)
     row.last_verified_at = entity.last_verified_at
 
 
+def ai_source(row: models.AiSourceChoice) -> AiSourceChoice:
+    return AiSourceChoice(
+        id=row.id,
+        owner_id=row.owner_id,
+        source=AiSource(row.source),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def ai_source_row(entity: AiSourceChoice) -> models.AiSourceChoice:
+    row = models.AiSourceChoice(id=entity.id, owner_id=entity.owner_id)
+    apply_ai_source(row, entity)
+    return row
+
+
+def apply_ai_source(row: models.AiSourceChoice, entity: AiSourceChoice) -> None:
+    row.source = str(entity.source)
+
+
 def budget(row: models.AiUsageBudget) -> AiUsageBudget:
     return AiUsageBudget(
         id=row.id,
@@ -195,6 +218,11 @@ def usage(row: models.AiUsageLedger) -> AiUsageEntry:
         output_tokens=row.output_tokens,
         cost_usd=row.cost_usd,
         occurred_at=row.occurred_at,
+        estimated_input_tokens=row.estimated_input_tokens,
+        estimated_cost_usd=row.estimated_cost_usd,
+        is_estimated=row.is_estimated,
+        funding=AiFunding(row.funding),
+        is_rate_published=row.is_rate_published,
     )
 
 
@@ -213,3 +241,8 @@ def apply_usage(row: models.AiUsageLedger, entity: AiUsageEntry) -> None:
     row.output_tokens = entity.output_tokens
     row.cost_usd = entity.cost_usd
     row.occurred_at = entity.occurred_at
+    row.estimated_input_tokens = entity.estimated_input_tokens
+    row.estimated_cost_usd = entity.estimated_cost_usd
+    row.is_estimated = entity.is_estimated
+    row.funding = str(entity.funding)
+    row.is_rate_published = entity.is_rate_published

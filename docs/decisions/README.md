@@ -69,6 +69,10 @@ new record that supersedes the old one.
 | [0061](0061-report-jira-accounts-to-atlassian-per-connection.md) | Each Jira connection reports its Atlassian account, with the app owner's token | Accepted |
 | [0062](0062-keep-each-machines-shape-in-its-own-deploy-folder.md) | Each machine's shape lives in its own folder in deploy/, and .env holds only what the app reads | Accepted |
 | [0063](0063-block-on-the-scan-only-where-a-change-is-responsible.md) | The vulnerability scan blocks a release, and a change only when it touches what is scanned | Accepted |
+| [0064](0064-offer-the-platforms-ai-key-to-google-verified-accounts-under-a-quota.md) | Google-verified accounts may run AI on the platform's key, under a quota | Accepted |
+| [0065](0065-there-is-no-self-hosted-model-option.md) | There is no self-hosted model option; only an OpenAI key may name a base URL | Accepted |
+| [0066](0066-eligible-accounts-run-on-careerpolaris-ai-by-default.md) | Eligible accounts run on CareerPolaris AI by default, and its model is never named | Accepted, amends 0064 |
+| [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

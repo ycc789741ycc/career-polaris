@@ -7,6 +7,8 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -140,6 +142,9 @@ class ProviderCredential(Base, OwnedMixin, TimestampMixin):
     __tablename__ = "provider_credential"
     __table_args__ = (
         UniqueConstraint("owner_id", name="uq_provider_credential_owner_id"),
+        CheckConstraint("provider IN ('anthropic', 'openai', 'google')", name="provider"),
+        # Only an OpenAI key may name its own endpoint (ADR 0065).
+        CheckConstraint("base_url IS NULL OR provider = 'openai'", name="base_url"),
         {"schema": "identity"},
     )
 
@@ -169,6 +174,20 @@ class AiUsageBudget(Base, OwnedMixin, TimestampMixin):
     monthly_cap_usd: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
 
 
+class AiSourceChoice(Base, OwnedMixin, TimestampMixin):
+    """Which key a user's AI runs on, once they have chosen (ADR 0064)."""
+
+    __tablename__ = "ai_source_choice"
+    __table_args__ = (
+        UniqueConstraint("owner_id", name="uq_ai_source_choice_owner_id"),
+        CheckConstraint("source IN ('own', 'platform')", name="source"),
+        {"schema": "identity"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
 class AiUsageLedger(Base, OwnedMixin):
     """One row per AI call, including calls whose output we then rejected —
     the provider billed for those too."""
@@ -176,6 +195,7 @@ class AiUsageLedger(Base, OwnedMixin):
     __tablename__ = "ai_usage_ledger"
     __table_args__ = (
         Index("ix_ai_usage_ledger_owner_occurred", "owner_id", "occurred_at"),
+        CheckConstraint("funding IN ('own', 'platform')", name="funding"),
         {"schema": "identity"},
     )
 
@@ -191,3 +211,17 @@ class AiUsageLedger(Base, OwnedMixin):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    estimated_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    is_estimated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # False when pricing.json had no rate for the model: cost_usd is the high
+    # fallback, which the user's cap does not count.
+    is_rate_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    # Whose key paid: "own" or "platform" (ADR 0064).
+    funding: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="own", server_default="own"
+    )

@@ -1,4 +1,4 @@
-"""Accounts, the AI credential and the usage budget.
+"""Accounts, the AI credential, which key AI runs on, and the usage budget.
 
 Other components and the composition root reach this only through
 ``advisor.identity`` (import-linter contract ``identity-public-surface``).
@@ -15,12 +15,20 @@ from advisor.identity.auth import AuthService, Session
 from advisor.identity.domain import (
     SUGGESTED_MODELS,
     Account,
+    AiFunding,
+    AiSource,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
+    AiSourceRefusal,
+    AiSourceStanding,
     AiUsageBudget,
     AiUsageBudgetFilter,
     AiUsageEntry,
     AiUsageEntryFilter,
     BudgetState,
     CredentialView,
+    FederatedIdentityFilter,
+    FederatedProvider,
     IdentityUnitOfWork,
     OwnerIdentity,
     Provider,
@@ -28,12 +36,20 @@ from advisor.identity.domain import (
     ProviderCredentialFailed,
     ProviderCredentialFilter,
     UsageBudgetExceeded,
+    accepts_base_url,
     billing_month_start,
-    requires_base_url,
+    get_choice_refusal,
+    get_source_in_use,
 )
 from advisor.identity.google import GoogleSignIn, GoogleStart
 from advisor.identity.infra.google import GoogleEndpoints, GoogleOidc
-from kernel.ai_gateway.ports import BudgetGuard, CredentialStore, UsageRecord
+from kernel.ai_gateway.ports import (
+    BudgetGuard,
+    CredentialStore,
+    Funding,
+    PlatformCredential,
+    UsageRecord,
+)
 from kernel.ai_gateway.ports import ProviderCredential as GatewayCredential
 from kernel.clock import utcnow
 from kernel.crypto import encrypt, last_four
@@ -41,6 +57,8 @@ from kernel.errors import (
     BudgetExceededError,
     CredentialMissingError,
     NotFoundError,
+    PlatformAiNotEligibleError,
+    PlatformAiUnavailableError,
     ValidationError,
 )
 from kernel.fetch import assert_public_url
@@ -48,6 +66,8 @@ from kernel.fetch import assert_public_url
 __all__ = [
     "SUGGESTED_MODELS",
     "AccountView",
+    "AiSource",
+    "AiSourceView",
     "AuthService",
     "BudgetView",
     "CredentialView",
@@ -76,6 +96,18 @@ class BudgetView:
     remaining_usd: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class AiSourceView:
+    """Which key AI runs on, and what the user may choose between."""
+
+    # None when there is nothing to run on: no key stored, nothing chosen.
+    source: AiSource | None
+    has_credential: bool
+    is_platform_on: bool
+    # Google has verified this account's address (ADR 0064).
+    is_eligible: bool
+
+
 class IdentityService(CredentialStore, BudgetGuard):
     """Accounts, the AI credential, and the budget that guards it.
 
@@ -85,9 +117,18 @@ class IdentityService(CredentialStore, BudgetGuard):
     ports, which is why the gateway needs no import of this module.
     """
 
-    def __init__(self, uow: IdentityUnitOfWork, *, default_monthly_cap_usd: Decimal) -> None:
+    def __init__(
+        self,
+        uow: IdentityUnitOfWork,
+        *,
+        default_monthly_cap_usd: Decimal,
+        is_platform_on: bool = False,
+    ) -> None:
         self._uow = uow
         self._default_cap = default_monthly_cap_usd
+        # Whether the platform's key is offered. Its model is never told to
+        # the client: users see "CareerPolaris AI".
+        self._is_platform_on = is_platform_on
 
     # -- accounts -----------------------------------------------------------
 
@@ -119,9 +160,9 @@ class IdentityService(CredentialStore, BudgetGuard):
         if not model.strip():
             raise ValidationError("a model is required")
 
-        if requires_base_url(chosen) and not base_url:
+        if base_url and not accepts_base_url(chosen):
             raise ValidationError(
-                "a self-hosted model needs a base URL you control", provider=provider
+                "only OpenAI-compatible endpoints take a base URL", provider=provider
             )
         if base_url:
             # The same SSRF guard the gateway will apply, surfaced at save time
@@ -140,6 +181,8 @@ class IdentityService(CredentialStore, BudgetGuard):
                     last_four=last_four(api_key),
                 )
             )
+            # Storing a key is choosing it (ADR 0066).
+            await _update_source(mine, owner_id, AiSource.OWN)
             # A replaced key is a reason to try the paused work again.
             account = await mine.accounts.get(owner_id)
             if account is not None:
@@ -156,6 +199,56 @@ class IdentityService(CredentialStore, BudgetGuard):
     async def delete_credential(self, owner_id: uuid.UUID) -> None:
         async with self._uow.for_owner(owner_id) as mine:
             await _delete_credential(mine)
+
+    # -- which key AI runs on (ADR 0064) -------------------------------------
+
+    async def ai_source(self, owner_id: uuid.UUID) -> AiSourceView:
+        async with self._uow.for_owner(owner_id) as mine:
+            choice = await _ai_source(mine)
+            standing = await self._standing(mine, owner_id)
+        return self._ai_source_view(choice, standing)
+
+    async def set_ai_source(self, owner_id: uuid.UUID, *, source: str) -> AiSourceView:
+        """Switch to the user's own key or the platform's.
+
+        Switching is free and takes effect from the next call. Like a new key,
+        a switch is a reason to try paused work again.
+        """
+        try:
+            chosen = AiSource(source)
+        except ValueError as exc:
+            raise ValidationError(f"unknown AI source {source!r}", source=source) from exc
+        async with self._uow.for_owner(owner_id) as mine:
+            standing = await self._standing(mine, owner_id)
+            refusal = get_choice_refusal(chosen, standing)
+            if refusal is not None:
+                raise _refusal_error(refusal)
+            choice = await _update_source(mine, owner_id, chosen)
+            account = await mine.accounts.get(owner_id)
+            if account is not None:
+                account.resume_background_jobs()
+                await mine.accounts.update(account)
+        return self._ai_source_view(choice, standing)
+
+    async def _standing(self, mine: OwnerIdentity, owner_id: uuid.UUID) -> AiSourceStanding:
+        google = await mine.federated.get_count(
+            FederatedIdentityFilter(provider=str(FederatedProvider.GOOGLE), account_id=owner_id)
+        )
+        return AiSourceStanding(
+            has_credential=await _credential(mine) is not None,
+            is_platform_on=self._is_platform_on,
+            is_eligible=google > 0,
+        )
+
+    def _ai_source_view(
+        self, choice: AiSourceChoice | None, standing: AiSourceStanding
+    ) -> AiSourceView:
+        return AiSourceView(
+            source=get_source_in_use(choice, standing),
+            has_credential=standing.has_credential,
+            is_platform_on=standing.is_platform_on,
+            is_eligible=standing.is_eligible,
+        )
 
     # -- budget -------------------------------------------------------------
 
@@ -183,9 +276,14 @@ class IdentityService(CredentialStore, BudgetGuard):
         month = billing_month_start(today)
         async with self._uow.for_owner(owner_id) as mine:
             budget = await _budget(mine)
+            # The cap is the user's own money: what the platform's key paid
+            # for is metered apart (ADR 0064), and a model with no published
+            # rate has only our guess at its cost, which is not held against it.
             spent = await mine.usage.total_cost(
                 AiUsageEntryFilter(
-                    occurred_since=datetime(month.year, month.month, month.day, tzinfo=UTC)
+                    occurred_since=datetime(month.year, month.month, month.day, tzinfo=UTC),
+                    funding=AiFunding.OWN,
+                    is_rate_published=True,
                 )
             )
         cap = budget.monthly_cap_usd if budget is not None else self._default_cap
@@ -193,12 +291,29 @@ class IdentityService(CredentialStore, BudgetGuard):
 
     # -- kernel.ai_gateway ports -------------------------------------------
 
-    async def load(self, owner_id: uuid.UUID) -> GatewayCredential:
+    async def load(self, owner_id: uuid.UUID) -> GatewayCredential | PlatformCredential:
+        """The key this call runs on, as the user chose it.
+
+        Eligibility is checked on every call, not only when the user chose:
+        an account whose Google identity is gone no longer runs on the
+        platform's key.
+        """
         async with self._uow.for_owner(owner_id) as mine:
+            choice = await _ai_source(mine)
             credential = await _credential(mine)
+            standing = await self._standing(mine, owner_id)
+        source = get_source_in_use(choice, standing)
+        if source is AiSource.PLATFORM:
+            if not standing.is_eligible:
+                raise PlatformAiNotEligibleError(
+                    "CareerPolaris's AI is for accounts signed in with Google; "
+                    "use your own key instead",
+                    owner_id=str(owner_id),
+                )
+            return PlatformCredential(owner_id=owner_id)
         if credential is None:
             raise CredentialMissingError(
-                "no AI provider is configured; analysis runs on your own model",
+                "no AI provider is configured; add your own key or use CareerPolaris's AI",
                 owner_id=str(owner_id),
             )
         return GatewayCredential(
@@ -222,7 +337,16 @@ class IdentityService(CredentialStore, BudgetGuard):
             await _pause(mine, owner_id, reason)
             mine.record(ProviderCredentialFailed(owner_id=owner_id, reason=reason))
 
-    async def check(self, owner_id: uuid.UUID, estimated_cost_usd: Decimal) -> None:
+    async def check(
+        self,
+        owner_id: uuid.UUID,
+        estimated_cost_usd: Decimal,
+        *,
+        funding: Funding,
+        is_priced: bool = True,
+    ) -> None:
+        if funding is Funding.PLATFORM or not is_priced:
+            return
         state = await self._budget_state(owner_id, utcnow().date())
         if state.would_exceed(estimated_cost_usd):
             async with self._uow.for_owner(owner_id) as mine:
@@ -255,6 +379,11 @@ class IdentityService(CredentialStore, BudgetGuard):
                     output_tokens=usage.output_tokens,
                     cost_usd=usage.cost_usd,
                     occurred_at=utcnow(),
+                    estimated_input_tokens=usage.estimated_input_tokens,
+                    estimated_cost_usd=usage.estimated_cost_usd,
+                    is_estimated=usage.is_estimated,
+                    funding=AiFunding(str(usage.funding)),
+                    is_rate_published=usage.is_rate_published,
                 )
             )
 
@@ -267,6 +396,33 @@ async def _credential(mine: OwnerIdentity) -> ProviderCredential | None:
 async def _delete_credential(mine: OwnerIdentity) -> None:
     for credential in await mine.credentials.get_list(ProviderCredentialFilter()):
         await mine.credentials.delete(credential.id)
+
+
+async def _ai_source(mine: OwnerIdentity) -> AiSourceChoice | None:
+    choices = await mine.ai_sources.get_list(AiSourceChoiceFilter(), page_size=1)
+    return choices[0] if choices else None
+
+
+async def _update_source(
+    mine: OwnerIdentity, owner_id: uuid.UUID, source: AiSource
+) -> AiSourceChoice:
+    choice = await _ai_source(mine)
+    if choice is None:
+        return await mine.ai_sources.create(AiSourceChoice.create_choice(owner_id, source))
+    choice.update_source(source)
+    return await mine.ai_sources.update(choice)
+
+
+def _refusal_error(refusal: AiSourceRefusal) -> Exception:
+    match refusal:
+        case AiSourceRefusal.NO_CREDENTIAL:
+            return ValidationError("add a key of your own before switching to it")
+        case AiSourceRefusal.PLATFORM_OFF:
+            return PlatformAiUnavailableError("CareerPolaris's AI is switched off")
+        case AiSourceRefusal.NOT_ELIGIBLE:
+            return PlatformAiNotEligibleError(
+                "CareerPolaris's AI is for accounts signed in with Google"
+            )
 
 
 async def _budget(mine: OwnerIdentity) -> AiUsageBudget | None:

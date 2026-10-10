@@ -16,6 +16,10 @@ from sqlalchemy import text
 
 from advisor.identity.domain import (
     AccountFilter,
+    AiFunding,
+    AiSource,
+    AiSourceChoice,
+    AiSourceChoiceFilter,
     AiUsageEntry,
     AiUsageEntryFilter,
     CredentialStatus,
@@ -130,6 +134,109 @@ async def test_the_months_spend_sums_in_the_database(
         assert await mine.usage.get_count(AiUsageEntryFilter()) == 3
     async with uow.for_owner(uuid.uuid4()) as nobody:
         assert await nobody.usage.total_cost(AiUsageEntryFilter()) == Decimal(0)
+
+
+async def test_a_ledger_row_keeps_its_estimate_beside_what_the_call_used(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    entry = AiUsageEntry(
+        id=uuid.uuid4(),
+        owner_id=account,
+        task="assessment",
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        template_version="v1",
+        input_tokens=1_840,
+        output_tokens=612,
+        cost_usd=Decimal("0.004900"),
+        occurred_at=datetime.now(UTC),
+        estimated_input_tokens=1_200,
+        estimated_cost_usd=Decimal("0.003700"),
+        is_estimated=False,
+        funding=AiFunding.PLATFORM,
+    )
+    async with uow.for_owner(account) as mine:
+        await mine.usage.create(entry)
+    async with uow.for_owner(account) as mine:
+        stored = await mine.usage.get(entry.id)
+
+    assert stored == entry
+
+
+async def test_the_months_spend_sums_by_whose_key_paid(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    now = datetime.now(UTC)
+    async with uow.for_owner(account) as mine:
+        for funding, cost in ((AiFunding.OWN, "0.25"), (AiFunding.PLATFORM, "1.50")):
+            await mine.usage.create(
+                AiUsageEntry(
+                    id=uuid.uuid4(),
+                    owner_id=account,
+                    task="assessment",
+                    provider="anthropic",
+                    model="claude",
+                    template_version="v1",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal(cost),
+                    occurred_at=now,
+                    funding=funding,
+                )
+            )
+
+    async with uow.for_owner(account) as mine:
+        own = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.OWN))
+        platform = await mine.usage.total_cost(AiUsageEntryFilter(funding=AiFunding.PLATFORM))
+    assert (own, platform) == (Decimal("0.25"), Decimal("1.50"))
+
+
+async def test_the_months_spend_sums_only_priced_calls_when_asked(
+    database: Database, account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    now = datetime.now(UTC)
+    async with uow.for_owner(account) as mine:
+        for is_rate_published, cost in ((True, "0.40"), (False, "6.00")):
+            await mine.usage.create(
+                AiUsageEntry(
+                    id=uuid.uuid4(),
+                    owner_id=account,
+                    task="assessment",
+                    provider="openai",
+                    model="gpt-5-mini" if is_rate_published else "llama-3.3-70b",
+                    template_version="v1",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cost_usd=Decimal(cost),
+                    occurred_at=now,
+                    is_rate_published=is_rate_published,
+                )
+            )
+
+    async with uow.for_owner(account) as mine:
+        priced = await mine.usage.total_cost(AiUsageEntryFilter(is_rate_published=True))
+        everything = await mine.usage.total_cost(AiUsageEntryFilter())
+    assert (priced, everything) == (Decimal("0.40"), Decimal("6.40"))
+
+
+async def test_a_users_choice_of_key_is_theirs_alone(
+    database: Database, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    uow = SqlAlchemyIdentityUnitOfWork(database)
+    choice = AiSourceChoice.create_choice(account, AiSource.OWN)
+    choice.update_source(AiSource.PLATFORM)
+    async with uow.for_owner(account) as mine:
+        await mine.ai_sources.create(choice)
+
+    async with uow.for_owner(account) as mine:
+        [stored] = await mine.ai_sources.get_list(AiSourceChoiceFilter())
+    async with uow.for_owner(other_account) as theirs:
+        assert await theirs.ai_sources.get_count(AiSourceChoiceFilter()) == 0
+
+    assert stored.source is AiSource.PLATFORM
 
 
 async def test_identity_events_reach_the_outbox_as_the_dispatcher_reads_them(

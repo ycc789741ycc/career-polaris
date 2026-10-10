@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { AnalysisEstimate } from "../api/types";
 import { useActivity } from "../shell/activity";
+import { getShownModel, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
 import { messageOf } from "./useAsync";
 
@@ -14,6 +15,7 @@ export function useStartAnalysis({
   onStarted,
 }: { onStarted?: () => void } = {}) {
   const { refresh: refreshActivity } = useActivity();
+  const { status } = useShell();
   const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +59,8 @@ export function useStartAnalysis({
       onCancel={() => setEstimate(null)}
     >
       This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-      {estimate.model_id}, charged to your own provider: $
-      {estimate.analysis_cost_usd} for the analysis, at most $
+      {getShownModel(status, estimate.model_id)}, charged to your own provider:
+      ${estimate.analysis_cost_usd} for the analysis, at most $
       {estimate.role_map_cost_usd} for the role map built after it
       {estimate.max_roles > 0
         ? `, up to ${estimate.max_roles} roles`
@@ -67,8 +69,8 @@ export function useStartAnalysis({
       {estimate.rate_is_published === false && (
         <>
           {" "}
-          We have no published price for that model, so this is a deliberately
-          high guess.
+          We have no published price for that model, so this is a high guess,
+          and it won&apos;t count toward your monthly cap.
         </>
       )}
     </CostConfirm>

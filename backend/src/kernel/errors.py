@@ -27,6 +27,11 @@ class ErrorCode(StrEnum):
     CREDENTIAL_FAILED = "ai_credential_failed"
     PROVIDER_UNAVAILABLE = "ai_provider_unavailable"
     OUTPUT_INVALID = "ai_output_invalid"
+    # AI on the platform's key (ADR 0064)
+    PLATFORM_UNAVAILABLE = "ai_platform_unavailable"
+    PLATFORM_QUOTA_REACHED = "ai_platform_quota_reached"
+    PLATFORM_CALL_TOO_LARGE = "ai_platform_call_too_large"
+    PLATFORM_NOT_ELIGIBLE = "ai_platform_not_eligible"
     # Evidence / assessment
     EVIDENCE_NOT_OWNED = "evidence_not_owned"
     DIMENSION_COUNT_INVALID = "dimension_count_invalid"
@@ -73,6 +78,14 @@ CredentialMissingError = _error("CredentialMissingError", ErrorCode.CREDENTIAL_M
 CredentialFailedError = _error("CredentialFailedError", ErrorCode.CREDENTIAL_FAILED)
 ProviderUnavailableError = _error("ProviderUnavailableError", ErrorCode.PROVIDER_UNAVAILABLE)
 OutputInvalidError = _error("OutputInvalidError", ErrorCode.OUTPUT_INVALID)
+PlatformAiUnavailableError = _error("PlatformAiUnavailableError", ErrorCode.PLATFORM_UNAVAILABLE)
+PlatformAiQuotaReachedError = _error(
+    "PlatformAiQuotaReachedError", ErrorCode.PLATFORM_QUOTA_REACHED
+)
+PlatformAiCallTooLargeError = _error(
+    "PlatformAiCallTooLargeError", ErrorCode.PLATFORM_CALL_TOO_LARGE
+)
+PlatformAiNotEligibleError = _error("PlatformAiNotEligibleError", ErrorCode.PLATFORM_NOT_ELIGIBLE)
 
 EvidenceNotOwnedError = _error("EvidenceNotOwnedError", ErrorCode.EVIDENCE_NOT_OWNED)
 DimensionCountError = _error("DimensionCountError", ErrorCode.DIMENSION_COUNT_INVALID)
@@ -101,6 +114,12 @@ HTTP_STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.CREDENTIAL_FAILED: 502,
     ErrorCode.PROVIDER_UNAVAILABLE: 502,
     ErrorCode.OUTPUT_INVALID: 502,
+    # Ours, not the user's: switched off, used up for now, or its key failing.
+    ErrorCode.PLATFORM_UNAVAILABLE: 503,
+    # This account's month is used up; its own key still works.
+    ErrorCode.PLATFORM_QUOTA_REACHED: 402,
+    ErrorCode.PLATFORM_CALL_TOO_LARGE: 422,
+    ErrorCode.PLATFORM_NOT_ELIGIBLE: 403,
     ErrorCode.EVIDENCE_NOT_OWNED: 422,
     ErrorCode.DIMENSION_COUNT_INVALID: 422,
     ErrorCode.BLOCKED_ADDRESS: 400,
