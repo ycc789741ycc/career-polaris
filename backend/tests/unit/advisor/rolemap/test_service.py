@@ -34,10 +34,15 @@ from advisor.rolemap.domain import (
     RolesReclustered,
     reconcile,
 )
-from advisor.rolemap.service import _RoleExtraction
+from advisor.rolemap.service import MAX_POSTINGS_IN_A_PROMPT, _RoleExtraction
 from kernel.clock import utcnow
 from kernel.errors import ValidationError
-from tests.unit.advisor.rolemap.fakes import MARKET_AS_OF, FakeMarket, FakeRoleMapUnitOfWork
+from tests.unit.advisor.rolemap.fakes import (
+    MARKET_AS_OF,
+    FakeMarket,
+    FakeRoleMapUnitOfWork,
+    head_of,
+)
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 # A crawler up long before any build in these tests asked the market.
@@ -100,7 +105,7 @@ async def _store(
         OWNER,
         role_id=role_id,
         keys={str(p.id) for p in postings},
-        postings=postings,
+        postings=[head_of(p) for p in postings],
         extraction=_extraction(name),
         bar=_BAR,
         bar_reasoning="because",
@@ -150,8 +155,9 @@ async def test_keeping_a_role_refreshes_only_what_needs_no_model() -> None:
     role_id = uuid.uuid4()
     await _store(rolemap, role_id, postings[:1], "Backend Engineer")
 
-    assert await rolemap._keep_role(OWNER, role_id=role_id, postings=postings)
-    assert not await rolemap._keep_role(OWNER, role_id=uuid.uuid4(), postings=postings)
+    heads = [head_of(p) for p in postings]
+    assert await rolemap._keep_role(OWNER, role_id=role_id, postings=heads)
+    assert not await rolemap._keep_role(OWNER, role_id=uuid.uuid4(), postings=heads)
 
     [role] = await rolemap.roles(OWNER)
     assert role.opening_count == 2 and role.name == "Backend Engineer"
@@ -822,6 +828,34 @@ async def test_only_the_top_k_are_named_and_analysed() -> None:
     assert (data.role_id, data.opening_count) == (None, 3)
 
 
+@pytest.mark.usefixtures("embedded")
+async def test_a_build_reads_descriptions_only_for_what_a_prompt_shows() -> None:
+    """Matching reads heads; descriptions are read for the postings an
+    analysed role's prompt shows, at most MAX_POSTINGS_IN_A_PROMPT, and for
+    nothing the crawler has already embedded or a role kept unchanged."""
+    postings = [_posting(f"Backend Engineer {i}") for i in range(15)] + [
+        _posting(f"Designer {i}") for i in range(3)
+    ]
+    texts = [f"{p.title}\n{p.title}\n{p.location}" for p in postings]
+    market = FakeMarket(
+        postings,
+        vectors={p.id: v for p, v in zip(postings, _fake_embed(texts, model_name=""), strict=True)},
+    )
+    rolemap = _service(FakeRoleMapUnitOfWork(), market, ScriptedGateway(), top_k=1)
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+
+    await rolemap.recluster(OWNER, BUILD)
+
+    assert market.described == [p.id for p in postings[:MAX_POSTINGS_IN_A_PROMPT]]
+
+    # The same openings again: the role is kept, and nothing is read.
+    market.described.clear()
+    await rolemap.recluster(OWNER, BUILD)
+    assert market.described == []
+
+
 async def test_a_build_is_priced_for_k_roles(monkeypatch: pytest.MonkeyPatch) -> None:
     market = _market(backend=60)
     rolemap = _service(FakeRoleMapUnitOfWork(), market, ProjectingGateway(), top_k=3)
@@ -1220,7 +1254,7 @@ async def test_a_role_whose_requirements_changed_is_scored_again_alone() -> None
         OWNER,
         role_id=role_id,
         keys={"k"},
-        postings=[_posting("Backend")],
+        postings=[head_of(_posting("Backend"))],
         extraction=_extraction("Backend Engineer", weights=(0.4, 0.95)),
         bar=_BAR,
         bar_reasoning="because",
@@ -1323,7 +1357,7 @@ async def _role_with_openings(
         OWNER,
         role_id=role_id,
         keys={str(backend.id), str(data.id)},
-        postings=[backend, data],
+        postings=[head_of(backend), head_of(data)],
         extraction=_RoleExtraction.model_validate(
             {
                 "name": "Platform Engineer",

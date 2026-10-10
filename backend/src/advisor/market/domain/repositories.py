@@ -39,6 +39,7 @@ from advisor.market.domain.events import MarketEvent
 from advisor.market.domain.posting import (
     JobPosting,
     PostingEmbedding,
+    PostingHead,
     PostingScope,
     PostingStatus,
 )
@@ -131,6 +132,15 @@ class JobPostingRepository(Repository[JobPosting, JobPostingFilter], Protocol):
 
         Extra method: the scope is an OR (one of several target locations,
         or a baseline source), which a filter's AND cannot express.
+        """
+        ...
+
+    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
+        """``get_open_in_scope`` without descriptions, newest first.
+
+        Extra method: the same OR as ``get_open_in_scope``, reading only the
+        columns matching and listing need, so a scope of thousands crosses
+        the network without its descriptions.
         """
         ...
 

@@ -460,6 +460,13 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
         async def in_scope(*markets: str) -> set[str]:
             async with uow.shared() as market:
                 found = await market.postings.get_open_in_scope(PostingScope(markets=markets))
+                heads = await market.postings.get_open_heads_in_scope(PostingScope(markets=markets))
+            # The heads are the same postings, in the same order, read without
+            # their descriptions.
+            assert [h.id for h in heads] == [p.id for p in found]
+            assert [(h.title, h.location, h.salary) for h in heads] == [
+                (p.title, p.location, p.salary) for p in found
+            ]
             mine = {p.id: title for title, p in postings.items()}
             return {mine[p.id] for p in found if p.id in mine}
 

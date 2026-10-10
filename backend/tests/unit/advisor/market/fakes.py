@@ -34,6 +34,7 @@ from advisor.market.domain import (
     PostingEmbedding,
     PostingEmbeddingFilter,
     PostingEmbeddingRepository,
+    PostingHead,
     PostingScope,
     PostingStatus,
     SearchResult,
@@ -149,6 +150,22 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
                 any(in_market(p.location, market) for market in scope.markets)
                 or (scope.includes_baseline and p.crawl_source_id in baseline)
             )
+        ]
+
+    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
+        return [
+            PostingHead(
+                id=p.id,
+                company_id=p.company_id,
+                title=p.title,
+                location=p.location,
+                url=p.url,
+                source_kind=p.source_kind,
+                posted_on=p.posted_on,
+                salary=p.salary,
+                first_seen_at=p.first_seen_at,
+            )
+            for p in await self.get_open_in_scope(scope)
         ]
 
     def _is_held(self, posting: JobPosting) -> bool:

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from sqlalchemy import Row
+
 from advisor.market.domain import (
     Company,
     CrawlSource,
     JobPosting,
     MarketPreference,
     PostingEmbedding,
+    PostingHead,
     PostingStatus,
     SalaryRange,
     SearchResult,
@@ -83,7 +88,7 @@ def apply_crawl_source(row: models.CrawlSource, entity: CrawlSource) -> None:
 # --- job posting -----------------------------------------------------------
 
 
-def salary(row: models.JobPosting) -> SalaryRange | None:
+def salary(row: models.JobPosting | Row[Any]) -> SalaryRange | None:
     if row.salary_min is None:
         return None
     return SalaryRange(
@@ -112,6 +117,21 @@ def job_posting(row: models.JobPosting) -> JobPosting:
         thinned_at=row.thinned_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def posting_head(row: Row[Any]) -> PostingHead:
+    """A posting read without its description (``get_open_heads_in_scope``)."""
+    return PostingHead(
+        id=row.id,
+        company_id=row.company_id,
+        title=row.title,
+        location=row.location,
+        url=row.url,
+        source_kind=row.source_kind,
+        posted_on=row.posted_on,
+        salary=salary(row),
+        first_seen_at=row.first_seen_at,
     )
 
 
