@@ -231,6 +231,7 @@ class FakeMarket:
         self.searched = searched or {}
         self.asked: list[dict[str, Any]] = []
         self.described: list[uuid.UUID] = []
+        self.heads_read: list[list[uuid.UUID] | None] = []
 
     async def request_sources(self, **asked: Any) -> SourcesRequestView:
         self.asked.append(asked)
@@ -254,8 +255,19 @@ class FakeMarket:
     async def postings_in_scope(self, owner_id: uuid.UUID) -> list[PostingView]:
         return self.postings
 
-    async def posting_heads_in_scope(self, owner_id: uuid.UUID) -> list[PostingHeadView]:
-        return [head_of(p) for p in self.postings]
+    async def posting_heads_in_scope(
+        self, owner_id: uuid.UUID, posting_ids: Any = None
+    ) -> list[PostingHeadView]:
+        """Records each read, as ``heads_read``: ``None`` for the whole scope,
+        else the ids asked for."""
+        ids = None if posting_ids is None else list(posting_ids)
+        self.heads_read.append(ids)
+        return [head_of(p) for p in self.postings if ids is None or p.id in ids]
+
+    async def vectors_by_id(
+        self, posting_ids: Any, model_name: str
+    ) -> dict[uuid.UUID, list[float]]:
+        return {i: self.vectors[i] for i in posting_ids if i in self.vectors}
 
     async def postings_by_id(self, posting_ids: Any) -> list[PostingView]:
         """Records which ids had their descriptions read, as ``described``."""

@@ -152,7 +152,9 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
             )
         ]
 
-    async def get_open_heads_in_scope(self, scope: PostingScope) -> list[PostingHead]:
+    async def get_open_heads_in_scope(
+        self, scope: PostingScope, posting_ids: tuple[uuid.UUID, ...] | None = None
+    ) -> list[PostingHead]:
         return [
             PostingHead(
                 id=p.id,
@@ -166,6 +168,7 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
                 first_seen_at=p.first_seen_at,
             )
             for p in await self.get_open_in_scope(scope)
+            if posting_ids is None or p.id in posting_ids
         ]
 
     def _is_held(self, posting: JobPosting) -> bool:

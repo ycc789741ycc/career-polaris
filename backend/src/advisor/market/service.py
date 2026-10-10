@@ -383,16 +383,21 @@ class MarketService:
 
         return [_shared_posting_view(p, names.get(p.company_id, "")) for p in postings]
 
-    async def posting_heads_in_scope(self, owner_id: uuid.UUID) -> list[PostingHeadView]:
-        """``postings_in_scope`` without descriptions, in the same order.
+    async def posting_heads_in_scope(
+        self, owner_id: uuid.UUID, posting_ids: Sequence[uuid.UUID] | None = None
+    ) -> list[PostingHeadView]:
+        """``postings_in_scope`` without descriptions, in the same order;
+        only ``posting_ids`` among them when given.
 
         What a build matches and a role map counts: a scope can be thousands
         of postings, and only the few a prompt reads need their text
-        (``postings_by_id``).
+        (``postings_by_id``). A role's openings are its members still in
+        scope, so asking for those ids reads a few dozen, not the market.
         """
         scope = await self._posting_scope(owner_id)
+        ids = tuple(posting_ids) if posting_ids is not None else None
         async with self._uow.shared() as market:
-            heads = await market.postings.get_open_heads_in_scope(scope)
+            heads = await market.postings.get_open_heads_in_scope(scope, ids)
             names = await _company_names(market, {h.company_id for h in heads})
         return [_posting_head_view(h, names.get(h.company_id, "")) for h in heads]
 
@@ -418,16 +423,20 @@ class MarketService:
         embedding the crawler made for it, or ``None`` where it has not yet.
         Heads only: no description crosses."""
         heads = await self.posting_heads_in_scope(owner_id)
-        vectors: dict[uuid.UUID, list[float]] = {}
-        if heads:
-            async with self._uow.shared() as market:
-                embedded = await market.embeddings.get_list(
-                    PostingEmbeddingFilter(
-                        posting_ids=tuple(h.id for h in heads), model_name=model_name
-                    )
-                )
-            vectors = {e.posting_id: e.vector for e in embedded}
+        vectors = await self.vectors_by_id([h.id for h in heads], model_name)
         return [(str(h.id), h, vectors.get(h.id)) for h in heads]
+
+    async def vectors_by_id(
+        self, posting_ids: Sequence[uuid.UUID], model_name: str
+    ) -> dict[uuid.UUID, list[float]]:
+        """The crawler's embedding of each of these postings that has one."""
+        if not posting_ids:
+            return {}
+        async with self._uow.shared() as market:
+            embedded = await market.embeddings.get_list(
+                PostingEmbeddingFilter(posting_ids=tuple(posting_ids), model_name=model_name)
+            )
+        return {e.posting_id: e.vector for e in embedded}
 
     async def _posting_scope(self, owner_id: uuid.UUID) -> PostingScope:
         return PostingScope(markets=tuple(await self.target_locations(owner_id)))
