@@ -1,6 +1,6 @@
 # 0049. The role map lists a role's openings newest first, without a fit
 
-**Status:** Accepted — 2026-10-04.
+**Status:** Superseded by 0070 — 2026-10-04.
 
 ## Context
 

@@ -54,7 +54,7 @@ new record that supersedes the old one.
 | [0046](0046-drop-an-unbacked-gap-claim-instead-of-rejecting-the-resume.md) | An unbacked gap claim is dropped, not the résumé | Accepted |
 | [0047](0047-let-a-resume-set-its-own-fonts-over-its-template.md) | A résumé may set its own fonts over its template's | Accepted |
 | [0048](0048-draw-contact-details-as-typed-items-with-icons.md) | Contact details are typed items, drawn with icons | Accepted |
-| [0049](0049-list-a-roles-openings-newest-first-without-a-fit.md) | The role map lists a role's openings newest first, without a fit | Accepted |
+| [0049](0049-list-a-roles-openings-newest-first-without-a-fit.md) | The role map lists a role's openings newest first, without a fit | Superseded by 0070 |
 | [0050](0050-keep-the-advisors-target-in-the-browser.md) | The Advisor's target is kept in the browser | Accepted |
 | [0051](0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md) | The edge runs on a droplet, the heavy work on the operator's machine | Accepted |
 | [0052](0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md) | Work waits for the processing machine instead of being reported lost | Accepted |
@@ -75,6 +75,7 @@ new record that supersedes the old one.
 | [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
 | [0068](0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md) | A scope with no location chosen keeps only the newest baseline postings | Accepted |
 | [0069](0069-run-a-builds-per-role-ai-calls-side-by-side.md) | A build runs its per-role AI calls side by side, up to a setting | Accepted |
+| [0070](0070-let-an-opening-on-the-role-map-be-picked-as-the-target.md) | An opening on the role map can be picked as the Advisor's target | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -4153,3 +4153,14 @@ all seven flows: Analyze, rebuilding the map, Target this role, the gap plan,
 the résumé (writing, regenerating, filling a section), Fill the gap and Set
 as target. On the user's own key it is unchanged.
 
+## Target an opening from the role map
+**Done** (ADR 0070, supersedes 0049), on
+`feature/no-ticket/target-an-opening`.
+
+* Each row of "Openings for this role" has Pick. Picking puts the opening in
+  the hash beside its role; the row is highlighted, and the Advisor target
+  bar reads "<role> · <company>" with "Target this opening". Pressing it again,
+  or picking another role, goes back to the role.
+* Still no fit per row: the Advisor shows the opening's own fit once aimed at
+  it. No backend change; the Advisor already resolved an opening Target.
+

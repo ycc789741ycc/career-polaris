@@ -157,16 +157,45 @@ export function Roles() {
   );
   const openingsTotal = openings.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(openingsTotal / OPENINGS_PAGE_SIZE));
+  // The opening picked in the list (ADR 0070), while its role is selected:
+  // from the page shown, or as it was picked, so paging away keeps its name.
+  const [picked, setPicked] = useState<MatchedPosting | null>(null);
+  const pickedOpening =
+    pickedId && focus?.opening
+      ? ((openings.data?.items ?? []).find(
+          (m) => m.posting_id === focus.opening && m.role_id === pickedId,
+        ) ??
+        (picked?.posting_id === focus.opening && picked.role_id === pickedId
+          ? picked
+          : undefined))
+      : undefined;
+
+  /** Picks an opening to aim at, or, picked already, goes back to its role. */
+  function pickOpening(match: MatchedPosting) {
+    if (pickedOpening?.posting_id === match.posting_id) {
+      setPicked(null);
+      setFocus({ role: match.role_id });
+    } else {
+      setPicked(match);
+      setFocus({ role: match.role_id, opening: match.posting_id });
+    }
+  }
 
   // The one thing the Advisor will be aimed at (ADR 0022): the role shown as
-  // selected, the best fit until the user picks one. An opening is aimed at
-  // only from a target set before (ADR 0049): the map lists them, unranked.
+  // selected — the best fit until the user picks one — and the opening in it,
+  // if one is picked (ADR 0070).
   const aim: { focus: Focus; label: string; what: string } | null = activeRole
-    ? {
-        focus: { role: activeRole.id },
-        label: activeRole.name,
-        what: "role",
-      }
+    ? pickedOpening
+      ? {
+          focus: { role: activeRole.id, opening: pickedOpening.posting_id },
+          label: `${activeRole.name} · ${pickedOpening.company_name}`,
+          what: "opening",
+        }
+      : {
+          focus: { role: activeRole.id },
+          label: activeRole.name,
+          what: "role",
+        }
     : null;
 
   const analysing = activity?.analysis?.status === "running";
@@ -523,7 +552,12 @@ export function Roles() {
           </p>
           <ul className="openings-list" aria-label="Openings for this role">
             {(openings.data?.items ?? []).map((match) => (
-              <OpeningRow key={match.posting_id} match={match} />
+              <OpeningRow
+                key={match.posting_id}
+                match={match}
+                isPicked={pickedOpening?.posting_id === match.posting_id}
+                onPick={() => pickOpening(match)}
+              />
             ))}
           </ul>
           {isPaged ? (
@@ -589,10 +623,19 @@ export function Roles() {
 }
 
 /** One opening: its company, then the posting, where and what it pays, and
- * how long ago it was posted. No fit: it is the role's (ADR 0049). */
-function OpeningRow({ match }: { match: MatchedPosting }) {
+ * how long ago it was posted, with Pick to aim the Advisor at it (ADR 0070).
+ * No fit: the map shows the role's (ADR 0049). */
+function OpeningRow({
+  match,
+  isPicked,
+  onPick,
+}: {
+  match: MatchedPosting;
+  isPicked: boolean;
+  onPick: () => void;
+}) {
   return (
-    <li className="opening-row">
+    <li className={isPicked ? "opening-row is-picked" : "opening-row"}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>
           {match.company_name}
@@ -626,6 +669,15 @@ function OpeningRow({ match }: { match: MatchedPosting }) {
           {postedLabel(match.posted_on)}
         </span>
       )}
+      <button
+        type="button"
+        className={isPicked ? "pick-button is-picked" : "pick-button"}
+        aria-pressed={isPicked}
+        aria-label={`Pick ${match.title} at ${match.company_name}`}
+        onClick={onPick}
+      >
+        {isPicked ? "Picked ✓" : "Pick"}
+      </button>
     </li>
   );
 }
@@ -643,7 +695,7 @@ export function openingsLine(
     total === 1 ? "posting" : "postings"
   } for ${roleName}`;
   const where = places.length > 0 ? ` in ${listed(places)}` : "";
-  return `${count}${where}, newest first. Your fit is scored on the role, so it is the same for every opening.`;
+  return `${count}${where}, newest first. Pick one to aim the Advisor at that opening instead of the whole role.`;
 }
 
 /** "Berlin", "Berlin and Remote EU", "A, B and C". Pure. */
