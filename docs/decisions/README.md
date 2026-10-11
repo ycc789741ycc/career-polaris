@@ -41,7 +41,7 @@ new record that supersedes the old one.
 | [0033](0033-keep-a-posting-of-your-own-in-target.md) | Keep a posting of your own in Target, and score it with the role map's fit kit | Accepted |
 | [0034](0034-add-a-role-of-your-own-without-evaluating-it.md) | Add a role of your own without spending anything, and evaluate it when it is set as the target | Accepted |
 | [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted |
-| [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted |
+| [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted, amended by 0074 |
 | [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
 | [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
 | [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
@@ -79,6 +79,7 @@ new record that supersedes the old one.
 | [0071](0071-analysis-and-the-role-map-build-are-separate.md) | An analysis and the role-map build are separate; the user starts every build | Accepted |
 | [0072](0072-cancel-an-analysis-or-a-role-map-build.md) | The user can cancel an analysis or a role-map build | Accepted |
 | [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md) | Score an opening Target with AI when its gap analysis runs, started only from the Advisor | Accepted |
+| [0074](0074-drop-a-requirements-stray-citations-instead-of-rejecting-the-plan.md) | A requirement's stray citations are dropped, not the gap plan | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

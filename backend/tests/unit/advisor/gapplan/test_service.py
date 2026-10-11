@@ -459,19 +459,24 @@ async def test_each_answered_gap_lists_its_answers_and_a_requirement_cites_its_o
     assert [(e.id, e.reference) for e in org.evidence] == [(ANSWER, "Your answer")]
 
 
-@pytest.mark.parametrize("cited", [["E1"], ["E3"]])
-async def test_a_requirement_citing_anything_but_its_own_answers_is_rejected(
-    cited: list[str],
+@pytest.mark.parametrize(
+    ("cited", "kept"),
+    [(["E1"], []), (["E3"], []), (["E1", "E2", "E3"], [(ANSWER, "Your answer")])],
+)
+async def test_a_requirement_citing_anything_but_its_own_answers_loses_only_those_citations(
+    cited: list[str], kept: list[tuple[str, str]]
 ) -> None:
+    """The plan is kept, not rejected; the stray citations go (ADR 0074)."""
     uow = FakeGapPlanUnitOfWork()
     plans = _cited_service(uow, PlanGateway(org=cited))
     plan = await plans.request(OWNER, _ref())
 
     await plans.draft(OWNER, plan.id)
 
-    failed = await plans.get(OWNER, plan.id)
-    assert failed.summary.status is PlanStatus.FAILED
-    assert failed.summary.error_code == "plan_invalid"
+    view = await plans.get(OWNER, plan.id)
+    assert view.summary.status is PlanStatus.READY, view.summary.error_message
+    org = next(g for g in view.gaps if g.key == ORG)
+    assert [(e.id, e.reference) for e in org.evidence] == kept
 
 
 # -- a job in the background (ADR 0042) -------------------------------------------

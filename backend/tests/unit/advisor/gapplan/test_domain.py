@@ -15,6 +15,7 @@ from advisor.gapplan.domain import (
     RoleOption,
     assert_draft_valid,
     carried_done,
+    get_readings_settled,
     progress,
     stepping_stones,
     tasks_match,
@@ -212,37 +213,60 @@ def test_a_skill_gap_must_cite_evidence() -> None:
         check(readings=readings(**{"dim:leadership": GapReading("dim:leadership", "Why.", ())}))
 
 
-def test_a_missing_requirement_may_cite_its_own_answers() -> None:
+def settle(
+    cited: dict[str, tuple[str, ...]], answers: dict[str, frozenset[str]]
+) -> dict[str, tuple[str, ...]]:
+    settled = get_readings_settled(
+        [GapReading(key, "Why.", ids) for key, ids in cited.items()],
+        dimension_keys=["dim:leadership"],
+        answers_by_gap=answers,
+    )
+    return {reading.key: reading.evidence_ids for reading in settled}
+
+
+def test_a_missing_requirement_keeps_its_own_answers() -> None:
     """What the user answered about a requirement is the one thing it can rest
     on (ADR 0036)."""
-    check(
-        readings=readings(**{"req:k8s": GapReading("req:k8s", "You said you ran it.", ("a1",))}),
-        answers_by_gap={"req:k8s": frozenset({"a1", "a2"})},
-    )
+    assert settle({"req:k8s": ("a1",)}, {"req:k8s": frozenset({"a1", "a2"})}) == {
+        "req:k8s": ("a1",)
+    }
 
 
 @pytest.mark.parametrize(
-    ("cited", "answers"),
+    ("cited", "answers", "kept"),
     [
-        (("e1",), {"req:k8s": frozenset({"a1"})}),
-        (("a9",), {"req:k8s": frozenset({"a1"}), "dim:leadership": frozenset({"a9"})}),
-        (("a1",), {}),
+        (("e1",), {"req:k8s": frozenset({"a1"})}, ()),
+        (("e1", "a1", "e2"), {"req:k8s": frozenset({"a1"})}, ("a1",)),
+        (("a9",), {"req:k8s": frozenset({"a1"}), "dim:leadership": frozenset({"a9"})}, ()),
+        (("a1",), {}, ()),
     ],
 )
-def test_a_missing_requirement_cites_nothing_but_its_own_answers(
-    cited: tuple[str, ...], answers: dict[str, frozenset[str]]
+def test_a_missing_requirement_loses_every_citation_but_its_own_answers(
+    cited: tuple[str, ...], answers: dict[str, frozenset[str]], kept: tuple[str, ...]
 ) -> None:
-    with pytest.raises(PlanError, match="its own answers"):
-        check(
-            readings=readings(**{"req:k8s": GapReading("req:k8s", "Why.", cited)}),
-            answers_by_gap=answers,
-        )
+    """Dropped, not rejected: one stray citation no longer costs the whole
+    plan (ADR 0074)."""
+    assert settle({"req:k8s": cited}, answers) == {"req:k8s": kept}
 
 
-def test_a_skill_gap_may_cite_an_answer_like_any_evidence() -> None:
+def test_settling_keeps_the_explanation() -> None:
+    [reading] = get_readings_settled(
+        [GapReading("req:k8s", "You have not run it.", ("e1",))],
+        dimension_keys=[],
+        answers_by_gap={},
+    )
+    assert reading == GapReading("req:k8s", "You have not run it.", ())
+
+
+def test_a_skill_gap_keeps_everything_it_cites() -> None:
+    assert settle({"dim:leadership": ("e1", "a1")}, {}) == {"dim:leadership": ("e1", "a1")}
+
+
+def test_a_plan_whose_requirement_cites_other_evidence_is_settled_then_passes() -> None:
+    """The draft that used to be rejected: a requirement citing ordinary facts."""
+    stray = readings(**{"req:k8s": GapReading("req:k8s", "Why.", ("e1", "e2"))})
     check(
-        readings=readings(**{"dim:leadership": GapReading("dim:leadership", "Why.", ("a1",))}),
-        answers_by_gap={"dim:leadership": frozenset({"a1"})},
+        readings=get_readings_settled(stray, dimension_keys=["dim:leadership"], answers_by_gap={})
     )
 
 

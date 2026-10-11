@@ -630,8 +630,9 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
 - **A plan cites what you answered** (ADR 0036). `gapfill.get_answers` lists
   each answered question's evidence under its gap; `gap_plan` v2 shows them
   beside their gaps ("answered in [E2]"), and an uncovered requirement may
-  cite its own answers and nothing else, which `assert_draft_valid` checks
-  (`answers_by_gap`). `gapplan`'s factory takes the `GapFillService`.
+  cite its own answers and nothing else; since ADR 0074
+  `get_readings_settled` drops any other citation it makes, rather than
+  rejecting the plan. `gapplan`'s factory takes the `GapFillService`.
 - **Each fact with its date** (ADR 0037). `profile.get_evidence_line` is the
   one way a prompt shows a fact: `[E3] (github, 2026-08-14) …`, with
   `latest …` for a tally, `from a résumé uploaded …` for a résumé line (its

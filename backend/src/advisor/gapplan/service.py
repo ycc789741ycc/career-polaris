@@ -52,6 +52,7 @@ from advisor.gapplan.domain import (
     assert_draft_valid,
     carried_done,
     get_lift_scale,
+    get_readings_settled,
     progress,
     stepping_stones,
 )
@@ -525,16 +526,22 @@ class GapPlanService:
         ]
         projects = [DraftProject(p.name, p.note, tuple(p.closes)) for p in draft.projects]
         shown_keys = [gap.key for gap in shown]
+        dimension_keys = [g.key for g in shown if isinstance(g, DimensionGap)]
+        readings = _settled(
+            plan_id,
+            readings,
+            dimension_keys=dimension_keys,
+            answers_by_gap={
+                key: frozenset(ids) for key, ids in _answer_handles(answers, handles).items()
+            },
+        )
         try:
             assert_draft_valid(
                 readings=readings,
                 milestones=milestones,
                 projects=projects,
                 shown_keys=shown_keys,
-                dimension_keys=[g.key for g in shown if isinstance(g, DimensionGap)],
-                answers_by_gap={
-                    key: frozenset(ids) for key, ids in _answer_handles(answers, handles).items()
-                },
+                dimension_keys=dimension_keys,
             )
         except PlanError as exc:
             raise PlanInvalidError(f"the drafted plan was rejected: {exc}") from exc
@@ -862,3 +869,21 @@ def _gap_view(data: dict[str, Any]) -> GapView:
         why=data["why"],
         evidence=tuple(EvidenceCite(**e) for e in data.get("evidence", [])),
     )
+
+
+def _settled(
+    plan_id: uuid.UUID,
+    readings: list[GapReading],
+    *,
+    dimension_keys: list[str],
+    answers_by_gap: dict[str, frozenset[str]],
+) -> list[GapReading]:
+    """The readings with what an uncovered requirement may not cite dropped,
+    logged when anything was (ADR 0074)."""
+    settled = get_readings_settled(
+        readings, dimension_keys=dimension_keys, answers_by_gap=answers_by_gap
+    )
+    dropped = sum(len(r.evidence_ids) for r in readings) - sum(len(r.evidence_ids) for r in settled)
+    if dropped:
+        log.info("gapplan.citations_dropped", plan_id=str(plan_id), count=dropped)
+    return settled

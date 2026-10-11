@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -93,6 +93,35 @@ class DraftProject:
     closes: tuple[str, ...]
 
 
+def get_readings_settled(
+    readings: Sequence[GapReading],
+    *,
+    dimension_keys: Iterable[str],
+    answers_by_gap: Mapping[str, frozenset[str]],
+) -> list[GapReading]:
+    """The readings with every citation an uncovered requirement may not make
+    dropped, its explanation kept. Pure.
+
+    An uncovered requirement has no evidence behind it, except what the user
+    answered about it in Fill the gap (``answers_by_gap``, the evidence ids
+    answered for each gap): it keeps those citations and loses the rest (ADR
+    0036, ADR 0074). A dimension gap is a claim about the user's work and
+    keeps everything it cites.
+    """
+    dimensional = set(dimension_keys)
+    return [
+        reading
+        if reading.key in dimensional
+        else replace(
+            reading,
+            evidence_ids=tuple(
+                i for i in reading.evidence_ids if i in answers_by_gap.get(reading.key, ())
+            ),
+        )
+        for reading in readings
+    ]
+
+
 def assert_draft_valid(
     *,
     readings: Sequence[GapReading],
@@ -100,17 +129,13 @@ def assert_draft_valid(
     projects: Sequence[DraftProject],
     shown_keys: Sequence[str],
     dimension_keys: Iterable[str],
-    answers_by_gap: Mapping[str, frozenset[str]] | None = None,
 ) -> None:
     """Every shown gap is explained, and every task closes one of them.
 
     A dimension gap must cite evidence — it is a claim about the user's work.
-    An uncovered requirement has no evidence behind it, except what the user
-    answered about it in Fill the gap: it may cite those answers
-    (``answers_by_gap``, the evidence ids answered for each gap) and nothing
-    else (ADR 0036).
+    What an uncovered requirement cites is settled before this check, by
+    ``get_readings_settled`` (ADR 0074).
     """
-    answered = answers_by_gap or {}
     shown = set(shown_keys)
     dimensional = set(dimension_keys)
 
@@ -126,13 +151,6 @@ def assert_draft_valid(
             raise PlanError(f"gap {reading.key} has no explanation")
         if reading.key in dimensional and not reading.evidence_ids:
             raise PlanError(f"gap {reading.key} cites no evidence")
-        if reading.key not in dimensional and (
-            other := set(reading.evidence_ids) - answered.get(reading.key, frozenset())
-        ):
-            raise PlanError(
-                f"gap {reading.key} has no evidence but its own answers to cite, "
-                f"and cites {sorted(other)}"
-            )
 
     if not MIN_MILESTONES <= len(milestones) <= MAX_MILESTONES:
         raise PlanError(
