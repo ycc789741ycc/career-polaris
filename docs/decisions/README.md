@@ -25,7 +25,7 @@ new record that supersedes the old one.
 | [0017](0017-group-jira-work-by-epic-not-project.md) | Group Jira work by epic, not by project | Accepted |
 | [0018](0018-gate-journey-stages-on-recorded-run-status.md) | Gate the journey's stages on the status each stage records while it runs | Accepted, amended by 0027 and 0028 |
 | [0019](0019-remove-role-subscriptions.md) | Remove role subscriptions, and drive board discovery from named companies | Accepted, amended by 0030 |
-| [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted, amended by 0024, 0027 and 0029 |
+| [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) | Analyse ten roles, fixed by the system, and build the role map after every analysis | Accepted, amended by 0024, 0027 and 0029; superseded in part by 0070 |
 | [0021](0021-let-users-add-custom-roles-beside-the-ten.md) | Let users add roles of their own beside the ten, and make a pasted JD belong to one | Superseded by 0030 |
 | [0022](0022-make-a-target-a-role-and-an-optional-opening.md) | Make a Target a role, plus an optional opening in it | Accepted, amended by 0030 and 0032 |
 | [0023](0023-ask-questions-per-gap-of-the-target-in-fill-the-gap.md) | Ask questions per gap of the Target, in Fill the gap, and submit the answers together | Accepted |
@@ -75,6 +75,7 @@ new record that supersedes the old one.
 | [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
 | [0068](0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md) | A scope with no location chosen keeps only the newest baseline postings | Accepted |
 | [0069](0069-run-a-builds-per-role-ai-calls-side-by-side.md) | A build runs its per-role AI calls side by side, up to a setting | Accepted |
+| [0070](0070-analysis-and-the-role-map-build-are-separate.md) | An analysis and the role-map build are separate; the user starts every build | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

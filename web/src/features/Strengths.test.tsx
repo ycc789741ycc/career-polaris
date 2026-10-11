@@ -56,20 +56,24 @@ function dimension(
   };
 }
 
-function serve(latest: Assessment) {
+const BUILT_MAP = {
+  market_data_at: "2026-09-28T09:00:00Z",
+  built_for_locations: ["Taiwan"],
+  locations_changed: false,
+  strengths_changed: false,
+};
+
+function serve(latest: Assessment, mapState: unknown = BUILT_MAP) {
   const routes: Record<string, unknown> = {
     "/assessments/latest": latest,
     "/evidence": page([]),
     "/assessments/cost-estimate": {
-      cost_usd: "0.60",
+      cost_usd: "0.10",
       model_id: "claude-opus-5",
       input_tokens: 1200,
       rate_is_published: true,
-      analysis_cost_usd: "0.10",
-      role_map_cost_usd: "0.40",
-      fits_cost_usd: "0.10",
-      max_roles: 10,
     },
+    "/role-map": mapState,
   };
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input).replace("http://api.test/api/v1", "");
@@ -269,17 +273,50 @@ describe("Strengths", () => {
     expect(screen.getByRole("button", { name: "Re-analyse" })).toBeEnabled();
   });
 
-  it("prices the analysis with the role map and fits after it, in one confirmation", async () => {
+  it("prices the analysis alone: no role map is built after it (ADR 0070)", async () => {
     serve(assessment({}));
     renderStrengths();
 
     fireEvent.click(await screen.findByRole("button", { name: "Re-analyse" }));
 
-    const dialog = await screen.findByText(/for the analysis/);
+    const dialog = await screen.findByText(/This analysis will cost/);
+    expect(dialog).toHaveTextContent("$0.10");
     expect(dialog).toHaveTextContent(
-      "$0.10 for the analysis, at most $0.40 for the role map built after it, up to 10 roles, and at most $0.10 for scoring your fit against them.",
+      "your role map is built only when you ask for it on Roles",
     );
-    expect(dialog).toHaveTextContent("$0.60");
+  });
+
+  it("points to Roles while there is no map yet", async () => {
+    serve(assessment({}), {
+      market_data_at: null,
+      built_for_locations: null,
+      locations_changed: false,
+      strengths_changed: false,
+    });
+    renderStrengths();
+
+    const next = await screen.findByRole("note", { name: "Next step" });
+    expect(next).toHaveTextContent("build your role map");
+    fireEvent.click(
+      within(next).getByRole("button", { name: "Go to Roles →" }),
+    );
+  });
+
+  it("points to Roles when the map was built from an earlier analysis", async () => {
+    serve(assessment({}), { ...BUILT_MAP, strengths_changed: true });
+    renderStrengths();
+
+    expect(
+      await screen.findByRole("note", { name: "Next step" }),
+    ).toHaveTextContent("built from an earlier analysis");
+  });
+
+  it("says nothing more while the map matches these strengths", async () => {
+    serve(assessment({}));
+    renderStrengths();
+
+    await screen.findByText(/^Analysed 27 Sep 2026/);
+    expect(screen.queryByRole("note", { name: "Next step" })).toBeNull();
   });
 
   it("on CareerPolaris AI starts the analysis with no confirmation (ADR 0067)", async () => {
@@ -306,14 +343,18 @@ describe("Strengths", () => {
       expect(
         fetch.mock.calls.some((call: unknown[]) => {
           const [input, init] = call as [RequestInfo | URL, RequestInit?];
-          return String(input).endsWith("/assessments") && init?.method === "POST";
+          return (
+            String(input).endsWith("/assessments") && init?.method === "POST"
+          );
         }),
       ).toBe(true),
     );
     expect(
       screen.queryByText("Before we spend anything"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/for the analysis/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/This analysis will cost/),
+    ).not.toBeInTheDocument();
   });
 
   it("puts Re-analyse first, then when and on what it ran", async () => {
@@ -361,7 +402,7 @@ describe("Strengths", () => {
       within(progress)
         .getAllByRole("listitem")
         .map((step) => step.lastChild?.textContent),
-    ).toEqual(["Done", "Running", "Waiting"]);
+    ).toEqual(["Done", "Running"]);
     // The waiting screen is the page: no report, no old running state.
     expect(
       screen.queryByRole("button", { name: /Re-analyse|Analysing/ }),

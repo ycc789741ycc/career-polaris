@@ -34,6 +34,7 @@ from wiring import queue
 class FakeRoleMap:
     def __init__(self) -> None:
         self.finished: BuildRunView | None = None
+        self.behind_strengths = False
         # How many recommended roles each fits estimate was asked to price.
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
@@ -80,6 +81,9 @@ class FakeRoleMap:
 
     async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         return self.finished
+
+    async def is_behind_strengths(self, owner_id: uuid.UUID) -> bool:
+        return self.behind_strengths
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
@@ -324,8 +328,18 @@ def test_the_map_says_how_old_its_market_is_and_whether_the_locations_moved(
         "market_data_at": "2026-09-30T12:00:00+00:00",
         "built_for_locations": ["Taiwan", "Remote"],
         "locations_changed": False,
+        "strengths_changed": False,
     }
     assert moved["locations_changed"] is True
+
+
+def test_the_map_says_when_a_newer_analysis_finished_after_it(
+    client: TestClient, rolemap: FakeRoleMap
+) -> None:
+    rolemap.finished = _finished(("Taiwan",), (uuid.uuid4(),))
+    rolemap.behind_strengths = True
+
+    assert client.get("/role-map").json()["strengths_changed"] is True
 
 
 @pytest.mark.parametrize("finished", [None, "before ADR 0027"])
@@ -338,6 +352,7 @@ def test_with_no_map_or_one_from_before_there_is_nothing_to_say(
         "market_data_at": None,
         "built_for_locations": None,
         "locations_changed": False,
+        "strengths_changed": False,
     }
 
 

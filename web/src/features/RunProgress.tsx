@@ -226,9 +226,9 @@ export function EmptyMap() {
 }
 
 /**
- * The analysis's steps. It is one call on the user's key, so between the
- * facts it has read and the build that follows there is one step running.
- * Pure.
+ * The analysis's steps. It is one call on the user's key, so after the facts
+ * it has read there is one step running. No build follows it: the user starts
+ * one on the role map (ADR 0070). Pure.
  */
 export function getAnalysisSteps(
   facts: Evidence[] | null,
@@ -246,11 +246,6 @@ export function getAnalysisSteps(
         "Each dimension, how sure each score is, and the evidence it cites",
       state: "running",
     },
-    {
-      label: "Building your role map",
-      detail: "Starts by itself when the analysis finishes",
-      state: "waiting",
-    },
   ];
 }
 
@@ -267,8 +262,6 @@ export function factsLine(facts: Evidence[]): string {
 /**
  * The build's steps, from where `/activity` says it stands: waiting for the
  * analysis it reads, waiting for the market sources it searches, or running.
- * An analysis still running counts as the first step even before the build
- * is recorded, since a finished analysis always builds the map (ADR 0020).
  * Pure.
  */
 export function getBuildSteps({
@@ -284,8 +277,7 @@ export function getBuildSteps({
 }): RunStep[] {
   const build = activity?.role_map;
   const readingAnalysis =
-    activity?.analysis?.status === "running" ||
-    (build?.status === "waiting" && build.waiting_for === "analysis");
+    build?.status === "waiting" && build.waiting_for === "analysis";
   const searching =
     !readingAnalysis &&
     build?.status === "waiting" &&
@@ -321,8 +313,8 @@ export function getBuildSteps({
   ];
 }
 
-/** Whether the role map has a build on its way: running, waiting, or about to
- * follow the analysis that is running now. Pure. */
+/** Whether the role map has a build on its way: running, or waiting for an
+ * analysis or the market. An analysis alone builds nothing (ADR 0070). Pure. */
 export function isMapComing(activity: Activity | null): boolean {
-  return isBusy(activity?.role_map) || activity?.analysis?.status === "running";
+  return isBusy(activity?.role_map);
 }

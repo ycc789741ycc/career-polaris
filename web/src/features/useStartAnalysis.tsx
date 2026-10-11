@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import type { AnalysisEstimate } from "../api/types";
+import type { CostEstimate } from "../api/types";
 import { useActivity } from "../shell/activity";
 import { getShownModel, useShell } from "../shell/ShellContext";
 import { CostConfirm } from "./CostConfirm";
@@ -16,7 +16,7 @@ export function useStartAnalysis({
 }: { onStarted?: () => void } = {}) {
   const { refresh: refreshActivity } = useActivity();
   const { status } = useShell();
-  const [estimate, setEstimate] = useState<AnalysisEstimate | null>(null);
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,9 +24,7 @@ export function useStartAnalysis({
     setBusy(true);
     setError(null);
     try {
-      setEstimate(
-        await api.get<AnalysisEstimate>("/assessments/cost-estimate"),
-      );
+      setEstimate(await api.get<CostEstimate>("/assessments/cost-estimate"));
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -58,14 +56,10 @@ export function useStartAnalysis({
       onConfirm={() => void confirm()}
       onCancel={() => setEstimate(null)}
     >
-      This will cost about <strong>${estimate.cost_usd}</strong> on{" "}
-      {getShownModel(status, estimate.model_id)}, charged to your own provider:
-      ${estimate.analysis_cost_usd} for the analysis, at most $
-      {estimate.role_map_cost_usd} for the role map built after it
-      {estimate.max_roles > 0
-        ? `, up to ${estimate.max_roles} roles`
-        : ", which has no roles to name yet"}
-      , and at most ${estimate.fits_cost_usd} for scoring your fit against them.
+      This analysis will cost about <strong>${estimate.cost_usd}</strong> on{" "}
+      {getShownModel(status, estimate.model_id)}, charged to your own provider.
+      It scores your strengths and recommends roles; your role map is built only
+      when you ask for it on Roles.
       {estimate.rate_is_published === false && (
         <>
           {" "}

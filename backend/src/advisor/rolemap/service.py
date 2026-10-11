@@ -400,6 +400,8 @@ class BuildRunView:
     locations: tuple[str, ...] = ()
     needed_source_ids: tuple[uuid.UUID, ...] = ()
     market_data_at: datetime | None = None
+    # The analysis whose candidates it placed (ADR 0070).
+    skill_assessment_id: uuid.UUID | None = None
 
     @property
     def is_open(self) -> bool:
@@ -663,6 +665,13 @@ class RoleMapService:
                     return BuildRequestView(_build_view(current), should_queue=False)
                 build_id = current.id
             else:
+                # With no candidates there is nothing to place: a build would
+                # spend nothing and show nothing. One waiting for an analysis
+                # reads the candidates that analysis writes.
+                if not wait and not await mine.candidates.get_count(RoleCandidateFilter()):
+                    raise ValidationError(
+                        "analyse your strengths before building the role map", candidates=0
+                    )
                 created = await mine.builds.create(
                     BuildRun.requested(owner_id=owner_id, at=utcnow(), wait=True)
                 )
@@ -673,8 +682,9 @@ class RoleMapService:
         return await self._ask_market(owner_id, build_id)
 
     async def release_waiting(self, owner_id: uuid.UUID) -> BuildRequestView | None:
-        """The analysis a build waited for ended without a result: the build
-        goes on, asking the market for what it reads first."""
+        """The analysis a build waited for ended, with a result or without:
+        the build goes on, asking the market for what it reads first. None
+        when no build waited for one."""
         async with self._uow.for_owner(owner_id) as mine:
             waiting = await mine.builds.get_list(
                 BuildRunFilter(statuses=(BuildRunStatus.WAITING,)), page_size=1
@@ -758,6 +768,18 @@ class RoleMapService:
             )
         return _build_view(ready[0]) if ready else None
 
+    async def is_behind_strengths(self, owner_id: uuid.UUID) -> bool:
+        """Whether an analysis newer than the one the map on screen was built
+        from has handed over its candidates (ADR 0070). False with no map, no
+        candidates, or a map whose analysis was never recorded."""
+        built = await self.last_finished_build(owner_id)
+        if built is None or built.skill_assessment_id is None:
+            return False
+        candidates = await self._candidates(owner_id)
+        if not candidates:
+            return False
+        return candidates[0].assessment_id != built.skill_assessment_id
+
     async def latest_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         async with self._uow.for_owner(owner_id) as mine:
             newest = await mine.builds.get_list(BuildRunFilter(), page_size=1)
@@ -776,6 +798,10 @@ class RoleMapService:
             raise NotFoundError("role map build not found", build_id=str(build_id))
         if not requested.is_running:
             return []
+        # Which analysis it builds from, so the map can say when the strengths
+        # changed after it (ADR 0070).
+        read = await self._candidates(owner_id)
+        skill_assessment_id = read[0].assessment_id if read else None
 
         try:
             roles = await self.recluster(owner_id, build_id)
@@ -796,7 +822,11 @@ class RoleMapService:
         async with self._uow.for_owner(owner_id) as mine:
             done = await mine.builds.get(build_id)
             if done is not None and done.is_running:
-                done.ready(utcnow(), market_data_at=market_data_at)
+                done.ready(
+                    utcnow(),
+                    market_data_at=market_data_at,
+                    skill_assessment_id=skill_assessment_id,
+                )
                 await mine.builds.update(done)
                 # Its fits are scored once, now, whatever it changed (ADR 0024).
                 mine.record(
@@ -1972,6 +2002,7 @@ def _build_view(build: BuildRun) -> BuildRunView:
         locations=build.locations,
         needed_source_ids=build.needed_source_ids,
         market_data_at=build.market_data_at,
+        skill_assessment_id=build.skill_assessment_id,
     )
 
 

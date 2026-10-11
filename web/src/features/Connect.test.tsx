@@ -408,10 +408,6 @@ describe("Connect", () => {
           model_id: "claude-opus-5",
           input_tokens: 1200,
           rate_is_published: true,
-          analysis_cost_usd: "0.10",
-          role_map_cost_usd: "0.40",
-          fits_cost_usd: "0.10",
-          max_roles: 10,
         };
       if (call.method === "POST" && call.url === "/assessments") return {};
       return undefined;

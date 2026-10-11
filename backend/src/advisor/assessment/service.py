@@ -13,7 +13,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field, create_model
@@ -221,8 +220,8 @@ class AssessmentService:
     # -- cost ---------------------------------------------------------------
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        """Priced before anything is spent: the analysis, the role-map build
-        that follows it, and the fits scored once that build ends."""
+        """Priced before anything is spent: the analysis alone. No build
+        follows it (ADR 0070); the user prices one on 03 Roles."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError(
@@ -240,25 +239,11 @@ class AssessmentService:
             ),
             untrusted=frozenset({"evidence"}),
         )
-        # The role map is built after every analysis, so its cost is part of
-        # the one confirmation (domain decision 24, ADR 0020), and so are the
-        # fits that build is scored with (ADR 0024).
-        role_map = await self._rolemap.estimate_cost(owner_id)
-        role_map_cost = Decimal(role_map["cost_usd"])
-        fits = await self._rolemap.estimate_fits(owner_id, recommended=role_map["max_roles"])
-        fits_cost = Decimal(fits["cost_usd"])
-        total = estimate.cost_usd + role_map_cost + fits_cost
         return {
-            "cost_usd": str(total),
+            "cost_usd": str(estimate.cost_usd),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
-            "rate_is_published": estimate.rate_is_published
-            and role_map.get("rate_is_published") is not False
-            and fits["rate_is_published"],
-            "analysis_cost_usd": str(estimate.cost_usd),
-            "role_map_cost_usd": role_map["cost_usd"],
-            "fits_cost_usd": fits["cost_usd"],
-            "max_roles": role_map["max_roles"],
+            "rate_is_published": estimate.rate_is_published,
         }
 
     # -- the strength report ------------------------------------------------

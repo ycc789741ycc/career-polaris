@@ -147,20 +147,6 @@ class CostEstimate(ApiModel):
     rate_is_published: bool
 
 
-class AnalysisEstimate(CostEstimate):
-    """The price of Analyze: the analysis, the role-map build that follows it,
-    and the fits that build is scored with, confirmed once (domain decision 24,
-    ADR 0024). ``cost_usd`` is their sum."""
-
-    analysis_cost_usd: str
-    # A ceiling: the top k recommended roles at most (ROLE_MAP_TOP_K, ADR 0029),
-    # fewer on a thin market.
-    role_map_cost_usd: str
-    # A ceiling: one projection per role the map can hold.
-    fits_cost_usd: str
-    max_roles: int
-
-
 class TargetEstimate(CostEstimate):
     """The price of drafting for a Target: a gap plan or a tailored résumé."""
 

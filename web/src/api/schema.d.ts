@@ -144,8 +144,8 @@ export interface paths {
         };
         /**
          * Cost Estimate
-         * @description An analysis is priced and confirmed before it runs, with the role-map
-         *     build that follows it.
+         * @description An analysis is priced and confirmed before it runs. It is the analysis
+         *     alone: no role-map build follows it (ADR 0070).
          */
         get: operations["cost_estimate_api_v1_assessments_cost_estimate_get"];
         put?: never;
@@ -1092,7 +1092,7 @@ export interface paths {
         /**
          * Role Map State
          * @description How current the map is: the market it was built from, and whether the
-         *     target locations changed since (ADR 0027).
+         *     target locations (ADR 0027) or the strengths (ADR 0070) changed since.
          */
         get: operations["role_map_state_api_v1_role_map_get"];
         put?: never;
@@ -1554,30 +1554,6 @@ export interface components {
              */
             source: "own" | "platform";
         };
-        /**
-         * AnalysisEstimate
-         * @description The price of Analyze: the analysis, the role-map build that follows it,
-         *     and the fits that build is scored with, confirmed once (domain decision 24,
-         *     ADR 0024). ``cost_usd`` is their sum.
-         */
-        AnalysisEstimate: {
-            /** Analysis Cost Usd */
-            analysis_cost_usd: string;
-            /** Cost Usd */
-            cost_usd: string;
-            /** Fits Cost Usd */
-            fits_cost_usd: string;
-            /** Input Tokens */
-            input_tokens: number;
-            /** Max Roles */
-            max_roles: number;
-            /** Model Id */
-            model_id: string | null;
-            /** Rate Is Published */
-            rate_is_published: boolean;
-            /** Role Map Cost Usd */
-            role_map_cost_usd: string;
-        };
         /** AnswerBody */
         AnswerBody: {
             /** Choice */
@@ -1713,6 +1689,20 @@ export interface components {
             kind: string;
             /** Status */
             status: string;
+        };
+        /**
+         * CostEstimate
+         * @description What an AI run will cost on the user's key, shown before it runs.
+         */
+        CostEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published: boolean;
         };
         /** Coverage */
         Coverage: {
@@ -2885,7 +2875,8 @@ export interface components {
          * RoleMapState
          * @description How current the map on screen is (ADR 0027). It is built only when the
          *     user asks, so it says how old its market is, and whether the target
-         *     locations changed since. Both are null before the first map.
+         *     locations or the strengths changed since (ADR 0070). The first two are
+         *     null before the first map.
          */
         RoleMapState: {
             /** Built For Locations */
@@ -2894,6 +2885,8 @@ export interface components {
             locations_changed: boolean;
             /** Market Data At */
             market_data_at: string | null;
+            /** Strengths Changed */
+            strengths_changed: boolean;
         };
         /** RolePage */
         RolePage: {
@@ -3902,7 +3895,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnalysisEstimate"];
+                    "application/json": components["schemas"]["CostEstimate"];
                 };
             };
             /** @description The request could not be read. */

@@ -15,10 +15,10 @@ from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.profile.domain import ResumeFile, ResumeStatus, SourceConnection
 from advisor.profile.infra.unit_of_work import SqlAlchemyProfileUnitOfWork
-from advisor.rolemap import RoleMapService, create_rolemap_service
+from advisor.rolemap import CandidateInput, RoleMapService, create_rolemap_service
 from kernel.clock import utcnow
 from kernel.db import Database
-from kernel.errors import SourcesProcessingError
+from kernel.errors import SourcesProcessingError, ValidationError
 from kernel.presence import PresenceView, UnitPresence
 from tests.unit.advisor.rolemap.fakes import FakeMarket
 
@@ -138,7 +138,7 @@ async def test_a_role_map_waits_for_the_analysis_and_starts_when_it_finishes(
     assert (await services.activity.status(other_account)).role_map is None
 
     await services.assessment.fail_run(account, run.id, code="ai_budget_exceeded", message="spent")
-    released = await services.activity.build_after_analysis(account, succeeded=False)
+    released = await services.activity.release_build_after_analysis(account)
 
     assert released is not None and released.build.id == requested.build.id
     status = await services.activity.status(account)
@@ -181,3 +181,36 @@ async def test_an_analysis_queued_while_the_worker_is_away_is_not_lost(
     services.presence.worker_since = utcnow() - timedelta(hours=1)
     back = await services.activity.status(account)
     assert back.analysis is not None and back.analysis.error_code == "stale"
+
+
+async def test_a_role_map_before_any_analysis_is_refused(
+    services: _Services, account: uuid.UUID
+) -> None:
+    """With no candidates a build would place nothing (ADR 0070)."""
+    with pytest.raises(ValidationError):
+        await services.activity.request_role_map(account)
+
+    assert (await services.activity.status(account)).role_map is None
+
+
+async def test_a_finished_map_says_when_a_newer_analysis_changed_the_strengths(
+    services: _Services, account: uuid.UUID
+) -> None:
+    first = uuid.uuid4()
+    await services.rolemap.replace_candidates(account, first, [_candidate("Backend Engineer")])
+    requested = await services.activity.request_role_map(account)
+    await services.rolemap.build(account, requested.build.id)
+
+    built = await services.rolemap.last_finished_build(account)
+    assert built is not None and built.skill_assessment_id == first
+    assert not await services.rolemap.is_behind_strengths(account)
+
+    await services.rolemap.replace_candidates(account, uuid.uuid4(), [_candidate("Data Engineer")])
+
+    assert await services.rolemap.is_behind_strengths(account)
+    # And the analysis built nothing on its own.
+    assert (await services.rolemap.latest_build(account)).id == requested.build.id  # type: ignore[union-attr]
+
+
+def _candidate(title: str) -> CandidateInput:
+    return CandidateInput(title=title, description="The work.", dimension_keys=("backend",))

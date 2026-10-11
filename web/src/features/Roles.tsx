@@ -36,6 +36,7 @@ import {
   useShell,
 } from "../shell/ShellContext";
 import { recordTargetUse } from "./advisorTarget";
+import { TargetLocations } from "./TargetLocations";
 import { CostConfirm } from "./CostConfirm";
 import { targetQuery } from "./target";
 import {
@@ -49,6 +50,11 @@ import { messageOf, useAsync } from "./useAsync";
 
 /**
  * The role map: which roles exist in this user's market, and how they fit.
+ *
+ * Where the user wants to work is chosen here, above the map, because it is
+ * what a build reads. The user starts every build (ADR 0070): an analysis
+ * builds nothing, so the page says when the map is behind the strengths or
+ * the places.
  *
  * What is selected here — a role, or a JD the user pasted — is what the
  * Advisor aims at. The selection lives in the hash, so it survives a reload
@@ -172,6 +178,22 @@ export function Roles() {
   const analysing = activity?.analysis?.status === "running";
   // While a build runs or is about to, its waiting screen is the page.
   const waiting = isMapComing(activity);
+
+  // Above the map in every state; read-only while a build reads it.
+  const locations = (
+    <div style={{ marginBottom: 18 }}>
+      <TargetLocations
+        note={scope.data ? scopeLine(scope.data) : undefined}
+        isReadOnly={waiting}
+        onSaved={() => {
+          void scope.reload();
+          void state.reload();
+          void rebuildCost.reload();
+        }}
+      />
+    </div>
+  );
+  const behind = getBehindLine(state.data);
   useHeading(waiting ? "Building your role map" : null);
 
   /** Price the questions for what the bar aims at; a Target with nothing to
@@ -248,71 +270,84 @@ export function Roles() {
 
   if (waiting) {
     return (
-      <RunProgress
-        label="Role map progress"
-        heading="Finding the roles that fit you best"
-        subline={
-          analysing
-            ? "Starts automatically when your strength analysis finishes. Usually takes 2–4 minutes."
-            : "Usually takes 2–4 minutes."
-        }
-        startedAt={
-          activity?.role_map?.started_at ??
-          activity?.analysis?.started_at ??
-          null
-        }
-        steps={getBuildSteps({
-          activity,
-          assessment: assessment.data,
-          scope: scope.data ? scopeLine(scope.data).replace(/\.$/, "") : null,
-          maxRoles: rebuildCost.data?.max_roles ?? null,
-        })}
-        previewTitle="Your map will appear here"
-        preview={<EmptyMap />}
-        previewNote="It is drawn once the roles are picked and scored."
-        leaveCopy="The search keeps running if you leave this page. The running bar says when your map is ready."
-        back={{
-          label: "Back to Strengths",
-          onClick: () => navigate("strengths"),
-        }}
-        costCopy={`Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
-          scope.data && scope.data.target_locations.length > 0
-            ? scope.data.target_locations.join(" and ")
-            : "your locations"
-        } keeps this down.`}
-      />
+      <>
+        {locations}
+        <RunProgress
+          label="Role map progress"
+          heading="Finding the roles that fit you best"
+          subline={
+            analysing
+              ? "Starts when your strength analysis finishes. Usually takes 2–4 minutes."
+              : "Usually takes 2–4 minutes."
+          }
+          startedAt={
+            activity?.role_map?.started_at ??
+            activity?.analysis?.started_at ??
+            null
+          }
+          steps={getBuildSteps({
+            activity,
+            assessment: assessment.data,
+            scope: scope.data ? scopeLine(scope.data).replace(/\.$/, "") : null,
+            maxRoles: rebuildCost.data?.max_roles ?? null,
+          })}
+          previewTitle="Your map will appear here"
+          preview={<EmptyMap />}
+          previewNote="It is drawn once the roles are picked and scored."
+          leaveCopy="The search keeps running if you leave this page. The running bar says when your map is ready."
+          back={{
+            label: "Back to Strengths",
+            onClick: () => navigate("strengths"),
+          }}
+          costCopy={`Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
+            scope.data && scope.data.target_locations.length > 0
+              ? scope.data.target_locations.join(" and ")
+              : "your locations"
+          } keeps this down.`}
+        />
+      </>
     );
   }
 
+  const hasMap = bubbles.length > 0;
+
   return (
     <section>
-      <div
-        className="row report-toolbar"
-        style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
-      >
-        <Button variant="secondary" busy={busy} onClick={askForEstimate}>
-          Rebuild role map
-        </Button>
-        <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
-          {builtLine({
-            builtAt:
-              activity?.role_map?.status === "ready"
-                ? activity.role_map.finished_at
-                : (state.data?.market_data_at ?? null),
-            model: modelName(status),
-            scope: scope.data ?? null,
-            rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
-          })}
-        </span>
-      </div>
-      {state.data?.locations_changed && (
+      {locations}
+      {hasMap && (
+        <div
+          className="row report-toolbar"
+          style={{ gap: 14, flexWrap: "wrap", marginBottom: 18 }}
+        >
+          <Button variant="secondary" busy={busy} onClick={askForEstimate}>
+            Rebuild role map
+          </Button>
+          <span style={{ fontSize: 13, color: "var(--color-neutral-800)" }}>
+            {builtLine({
+              builtAt:
+                activity?.role_map?.status === "ready"
+                  ? activity.role_map.finished_at
+                  : (state.data?.market_data_at ?? null),
+              model: modelName(status),
+              // The places' count is under their chips, above.
+              scope: null,
+              rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
+            })}
+          </span>
+        </div>
+      )}
+      {hasMap && behind && (
         <p
           role="status"
-          className="note-warning"
-          style={{ margin: "0 0 14px" }}
+          className="note-warning row"
+          style={{ margin: "0 0 14px", gap: 10, flexWrap: "wrap" }}
         >
-          <span aria-hidden="true">⚠</span> Your locations changed since this
-          map was built. Rebuild to search the new places.
+          <span>
+            <span aria-hidden="true">⚠</span> {behind}
+          </span>
+          <Button variant="ghost" busy={busy} onClick={askForEstimate}>
+            Rebuild map
+          </Button>
         </p>
       )}
       <ErrorNote error={error} />
@@ -346,14 +381,40 @@ export function Roles() {
         </CostConfirm>
       )}
 
-      {roles.loading ? (
+      {roles.loading || assessment.loading ? (
         <Loading what="your roles" />
-      ) : bubbles.length === 0 ? (
+      ) : !hasMap && !assessment.data ? (
         <EmptyState title="No roles yet">
-          Choose where you want to work on Sources, then analyse your strengths:
-          each analysis recommends the roles they point to, and the role map
-          shows the ones with openings where you want to work.
+          Analyse your strengths on Strengths first: each analysis recommends
+          the roles they point to, and your role map shows the ones with
+          openings where you want to work.
+          <div style={{ marginTop: 12 }}>
+            <Button disabled>Build role map</Button>
+          </div>
         </EmptyState>
+      ) : !hasMap ? (
+        <div
+          className="panel row-between"
+          role="region"
+          aria-label="Build your role map"
+          style={{ gap: 14, flexWrap: "wrap" }}
+        >
+          <div>
+            <h3 style={{ margin: 0 }}>
+              {state.data?.built_for_locations
+                ? "No roles with openings here yet"
+                : "Your strengths are ready"}
+            </h3>
+            <p className="subcopy" style={{ margin: "4px 0 0" }}>
+              {state.data?.built_for_locations
+                ? "Your last build found no recommended role with openings in these places. Try other places above, then build again."
+                : "Choose up to 3 places above, then build your map from the roles your analysis recommended."}
+            </p>
+          </div>
+          <Button busy={busy} onClick={askForEstimate}>
+            Build role map
+          </Button>
+        </div>
       ) : (
         <AutoGrid col={400} gap={20}>
           <div className="panel">
@@ -657,6 +718,19 @@ function listed(places: readonly string[]): string {
  * "1,284 open postings in Berlin and Remote EU". With no location, the
  * baseline is bounded to its newest postings (ADR 0068), and says so. Pure.
  */
+/** What the map on screen is behind, as one line, or null when it is current
+ * (ADR 0027, ADR 0070). Pure. */
+export function getBehindLine(state: RoleMapState | null): string | null {
+  if (!state) return null;
+  if (state.strengths_changed && state.locations_changed)
+    return "Your strengths and locations changed since this map was built.";
+  if (state.strengths_changed)
+    return "Your strengths changed since this map was built.";
+  if (state.locations_changed)
+    return "Your locations changed since this map was built. Rebuild to search the new places.";
+  return null;
+}
+
 export function scopeLine(scope: MarketScope): string {
   const count = `${scope.open_posting_count.toLocaleString("en")} open ${
     scope.open_posting_count === 1 ? "posting" : "postings"

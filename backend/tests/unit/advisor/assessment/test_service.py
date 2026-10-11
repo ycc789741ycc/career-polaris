@@ -352,69 +352,44 @@ class _PricedGateway:
 
 
 class _PricedRoleMap:
-    """Prices each fit projection at $0.10, as the role map would: one per
-    recommended role the build may make, plus the user's own."""
+    """Counts every price asked of the role map: Analyze asks none."""
 
-    def __init__(self, cost: dict[str, Any], custom_roles: int = 0) -> None:
-        self.cost = cost
-        self.custom_roles = custom_roles
-        self.fits_asked: list[int | None] = []
+    def __init__(self) -> None:
+        self.asked = 0
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        return self.cost
+        self.asked += 1
+        return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
 
     async def estimate_fits(
         self, owner_id: uuid.UUID, *, recommended: int | None = None
     ) -> dict[str, Any]:
-        self.fits_asked.append(recommended)
-        roles = (recommended or 0) + self.custom_roles
-        return {
-            "cost_usd": str(Decimal("0.10") * roles) if roles else "0",
-            "roles": roles,
-            "rate_is_published": True,
-        }
+        self.asked += 1
+        return {"cost_usd": "1.00", "roles": 10, "rate_is_published": True}
 
 
-def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentService:
-    return AssessmentService(
+async def test_analyze_is_priced_as_the_analysis_alone() -> None:
+    """No build follows an analysis (ADR 0070), so neither a build nor its
+    fits are priced with it."""
+    rolemap = _PricedRoleMap()
+    service = AssessmentService(
         FakeAssessmentUnitOfWork(),
         profile=FakeProfile(),  # type: ignore[arg-type]
-        rolemap=_PricedRoleMap(role_map_cost, custom_roles),  # type: ignore[arg-type]
+        rolemap=rolemap,  # type: ignore[arg-type]
         gateway=_PricedGateway(),  # type: ignore[arg-type]
         confidence_threshold=0.5,
         candidate_count=10,
     )
 
-
-async def test_analyze_is_priced_with_the_role_map_build_and_fits_that_follow_it() -> None:
-    """Each call is priced at $0.10 here: one analysis, and one fit projection
-    for each of the ten roles and the user's two own."""
-    service = _priced(
-        {
-            "max_roles": 10,
-            "cost_usd": "0.40",
-            "model_id": "claude-opus-5",
-            "rate_is_published": True,
-        },
-        custom_roles=2,
-    )
-
     estimate = await service.estimate_cost(OWNER)
 
-    assert (estimate["analysis_cost_usd"], estimate["role_map_cost_usd"]) == ("0.10", "0.40")
-    assert estimate["fits_cost_usd"] == "1.20"
-    assert estimate["cost_usd"] == "1.70"
-    assert estimate["max_roles"] == 10
-    assert estimate["rate_is_published"] is True
-
-
-async def test_analyze_on_a_market_too_thin_for_a_role_costs_the_analysis_alone() -> None:
-    service = _priced({"max_roles": 0, "cost_usd": "0", "model_id": None})
-
-    estimate = await service.estimate_cost(OWNER)
-
-    assert estimate["cost_usd"] == "0.10"
-    assert (estimate["max_roles"], estimate["fits_cost_usd"]) == (0, "0")
+    assert estimate == {
+        "cost_usd": "0.10",
+        "model_id": "claude-opus-5",
+        "input_tokens": 1200,
+        "rate_is_published": True,
+    }
+    assert rolemap.asked == 0
 
 
 # --- candidate roles for the role map (ADR 0024) ----------------------------
