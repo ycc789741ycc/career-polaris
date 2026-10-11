@@ -61,7 +61,7 @@ import { useAsync } from "./useAsync";
  * résumé, for one Target (ADR 0023).
  *
  * The Target is carried in the hash: a role from the role map — and an
- * opening in it, for a Target set before ADR 0049 — or a role the user
+ * opening in it, if one was picked there (ADR 0070) — or a role the user
  * brought themselves (Phase 8). That one comes from "Use your own role" (the
  * `own` tab): it is added there, never on the role map, and set as the target
  * there, which reads and scores it (ADR 0034).

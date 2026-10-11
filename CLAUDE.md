@@ -341,13 +341,13 @@ queue with WeasyPrint (ADR 0007). Its routes are `/tailored-resumes` —
 `/resumes` is the profile's upload endpoint.
 
 Both live on one **Advisor** screen (`#/advisor/plan`, `#/advisor/resume`),
-aimed at the Target the user set: a role from the map (and, for a Target set
-before ADR 0049, one of its openings), or a role of their own. It is carried in
+aimed at the Target the user set: a role from the map (and, optionally, one of
+its openings, picked in the list; ADR 0070), or a role of their own. It is carried in
 the hash (`?role=`, plus `&opening=`, or `?posting=`) and remembered in the
 browser (ADR 0050), so neither tab picks a Target of its own; the Advisor's
 "Your target role" banner only links back, or switches to a previous target. The role map has exactly one control that aims the
-Advisor — the sticky "Advisor target" bar, at the selected role (ADR 0049);
-picking a bubble only selects.
+Advisor — the sticky "Advisor target" bar, at the selected role or the opening
+picked in it (ADR 0070); picking a bubble or an opening only selects.
 
 Not yet: suggesting a successor Target when a Role splits (rolemap does not
 emit `RoleSplitOrMerged` yet), and the interview-report prompt after a résumé
@@ -756,8 +756,10 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 - **Openings for this role** (ADR 0049). The role map lists the selected
   role's openings newest first (`GET /matched-postings?order=newest`,
   `posted_on`), ten at a time with "See all n openings", and no fit per
-  opening. No row selects an opening: "Target this role" aims at the role.
-  Opening fits (ADR 0032) are still computed for Targets that name one.
+  opening. Since ADR 0070 each row has Pick (`aria-pressed`): it puts
+  `opening` in the hash beside the role, and the bar reads "<role> ·
+  <company>" and "Target this opening"; pressing it again goes back to the
+  role. The Advisor then measures against that opening's fit (ADR 0032).
 - **No target until one is chosen** (ADR 0050). The current Target and its
   history live in `localStorage` per account (`features/advisorTarget.ts`),
   written by "Target this role", "Set as target", "Use again" and every
