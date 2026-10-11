@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from advisor.activity import CancelView
 from advisor.rolemap import (
     BuildRequestView,
     BuildRunView,
@@ -28,6 +29,7 @@ from advisor.rolemap import (
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import rolemap as rolemap_api
+from kernel.errors import NotFoundError
 from wiring import queue
 
 
@@ -114,6 +116,7 @@ class FakeRoleMap:
 
 
 ROLE_ID = uuid.uuid4()
+BUILD_ID = uuid.uuid4()
 
 
 def _role(*, opening_count: int) -> RoleView:
@@ -147,6 +150,13 @@ class FakeActivity:
         self.should_queue = True
         self.should_await_market = False
         self.requests = 0
+        self.cancelled: list[uuid.UUID] = []
+
+    async def cancel_role_map(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> CancelView:
+        if build_id != BUILD_ID:
+            raise NotFoundError("role map build not found")
+        self.cancelled.append(build_id)
+        return CancelView(is_cancelled=len(self.cancelled) == 1)
 
     async def request_role_map(self, owner_id: uuid.UUID) -> BuildRequestView:
         self.requests += 1
@@ -429,3 +439,20 @@ def test_the_roles_are_drawn_with_the_openings_they_have_now(client: TestClient)
     assert response.status_code == 200
     [role] = response.json()["items"]
     assert (role["id"], role["opening_count"]) == (str(ROLE_ID), 2)
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+def test_cancelling_a_build_answers_no_content_every_time(
+    client: TestClient, activity: FakeActivity
+) -> None:
+    first = client.post(f"/roles/builds/{BUILD_ID}/cancel")
+    again = client.post(f"/roles/builds/{BUILD_ID}/cancel")
+
+    assert (first.status_code, again.status_code) == (204, 204)
+    assert activity.cancelled == [BUILD_ID, BUILD_ID]
+
+
+def test_cancelling_a_build_that_is_not_yours_is_not_found(client: TestClient) -> None:
+    assert client.post(f"/roles/builds/{uuid.uuid4()}/cancel").status_code == 404

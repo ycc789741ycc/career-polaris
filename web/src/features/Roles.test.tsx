@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Fit, Role } from "../api/types";
@@ -971,5 +971,44 @@ describe("what the map is behind", () => {
         locations_changed: true,
       }),
     ).toBe("Your strengths and locations changed since this map was built.");
+  });
+});
+
+describe("cancelling a build (ADR 0072)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers Cancel on the building screen, whatever the build waits for", async () => {
+    for (const waiting_for of ["analysis", "market"] as const) {
+      renderRoles(null, {
+        syncing: [],
+        advisor_jobs: [],
+        processing: ONLINE,
+        parsing: [],
+        analysis: null,
+        role_map: {
+          id: "build-1",
+          status: "waiting",
+          waiting_for,
+          started_at: "2026-09-28T09:00:00Z",
+          finished_at: null,
+          error: null,
+        },
+      });
+
+      const progress = await screen.findByRole("region", {
+        name: "Role map progress",
+      });
+      expect(
+        within(progress).getByRole("button", { name: "Cancel" }),
+      ).toBeInTheDocument();
+      cleanup();
+    }
   });
 });

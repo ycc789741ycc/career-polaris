@@ -201,3 +201,26 @@ async def test_scores_and_requirements_changing_do_not_score_fits_on_their_own(
     await dispatcher._handle(_container(), OutboxEvent(name=str(name), owner_id=OWNER, payload={}))
 
     assert queued == []
+
+
+# --- cancelled runs (ADR 0072) ----------------------------------------------
+
+
+async def test_a_cancelled_analysis_releases_nothing(queued: list[dict[str, Any]]) -> None:
+    activity = FakeActivity(released=SimpleNamespace(build=None, should_queue=True))
+
+    await dispatcher._handle(_container(activity=activity), _analysis_finished("cancelled"))
+
+    assert activity.releases == [] and queued == []
+
+
+async def test_a_cancelled_build_scores_no_fits(queued: list[dict[str, Any]]) -> None:
+    event = OutboxEvent(
+        name=str(EventName.ROLE_MAP_BUILD_FINISHED),
+        owner_id=OWNER,
+        payload={"build_id": str(uuid.uuid4()), "status": "cancelled"},
+    )
+
+    await dispatcher._handle(_container(), event)
+
+    assert queued == []

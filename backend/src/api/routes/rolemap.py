@@ -89,6 +89,14 @@ async def recluster(user: CurrentUser, deps: Deps) -> RunStatus:
     return RunStatus.from_build(await _request_build(user, deps))
 
 
+@router.post("/roles/builds/{build_id}/cancel", status_code=204)
+async def cancel_build(build_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stop a role-map build, waiting or running (ADR 0072). The market
+    sources it marked due stay due. Cancelling a closed build does nothing;
+    another owner's build is not found."""
+    await deps.activity.cancel_role_map(user, build_id)
+
+
 def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]:
     """A build's price with the fits it is scored with added in (ADR 0024)."""
     return {

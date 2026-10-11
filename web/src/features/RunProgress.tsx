@@ -40,6 +40,7 @@ export function RunProgress({
   leaveCopy,
   back,
   costCopy,
+  action,
 }: {
   /** The section's accessible name, e.g. "Strength analysis progress". */
   label: string;
@@ -53,6 +54,8 @@ export function RunProgress({
   leaveCopy: string;
   back: { label: string; onClick: () => void };
   costCopy: string;
+  /** Beside the elapsed time: the run's Cancel (ADR 0072). */
+  action?: ReactNode;
 }) {
   const done = steps.filter((step) => step.state === "done").length;
   return (
@@ -79,6 +82,14 @@ export function RunProgress({
             <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
               {startedAt ? `started ${ago(startedAt)}` : "steps done"}
             </div>
+            {action && (
+              <div
+                className="row"
+                style={{ justifyContent: "flex-end", gap: 8, marginTop: 10 }}
+              >
+                {action}
+              </div>
+            )}
           </div>
         </div>
         <div style={{ margin: "18px 0 20px" }}>

@@ -67,6 +67,10 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # Target's gaps, in Fill the gap (ADR 0023).
         return
 
+    if name == EventName.ROLE_MAP_BUILD_FINISHED and event.payload.get("status") == "cancelled":
+        # The user stopped it (ADR 0072): nothing changed, so nothing to score.
+        return
+
     if name == EventName.ROLE_MAP_BUILD_FINISHED and owner_id:
         # Fits are scored once per build, when it closes, whatever it changed
         # (ADR 0024). An analysis builds nothing (ADR 0071), so its new scores
@@ -74,6 +78,11 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # AssessmentCompleted, DimensionsChanged and RoleRequirementsChanged
         # queue nothing.
         await enqueue("rolemap.compute_fits", owner_id=str(owner_id))
+        return
+
+    if name == EventName.ANALYSIS_FINISHED and event.payload.get("status") == "cancelled":
+        # The user stopped it (ADR 0072), and the build waiting for it with it:
+        # there is nothing to release.
         return
 
     if name == EventName.ANALYSIS_FINISHED and owner_id:

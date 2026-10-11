@@ -19,7 +19,8 @@ class AssessmentCompleted:
 
 @dataclass(frozen=True, slots=True)
 class AnalysisFinished:
-    """An analysis run stopped running, with a result or without one.
+    """An analysis run stopped running, with a result or without one, or
+    because the user cancelled it (``cancelled``, ADR 0072).
 
     Recorded in the same transaction that closes the run, so a role map waiting
     on it is released only once the run no longer counts as running (ADR 0018).

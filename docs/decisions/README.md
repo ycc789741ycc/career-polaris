@@ -77,6 +77,7 @@ new record that supersedes the old one.
 | [0069](0069-run-a-builds-per-role-ai-calls-side-by-side.md) | A build runs its per-role AI calls side by side, up to a setting | Accepted |
 | [0070](0070-let-an-opening-on-the-role-map-be-picked-as-the-target.md) | An opening on the role map can be picked as the Advisor's target | Accepted |
 | [0071](0071-analysis-and-the-role-map-build-are-separate.md) | An analysis and the role-map build are separate; the user starts every build | Accepted |
+| [0072](0072-cancel-an-analysis-or-a-role-map-build.md) | The user can cancel an analysis or a role-map build | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

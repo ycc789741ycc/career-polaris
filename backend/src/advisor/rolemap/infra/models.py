@@ -125,7 +125,9 @@ class BuildRun(Base, OwnedMixin):
 
     __tablename__ = "build_run"
     __table_args__ = (
-        CheckConstraint("status IN ('waiting', 'running', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "status IN ('waiting', 'running', 'ready', 'failed', 'cancelled')", name="status"
+        ),
         Index("ix_build_run_owner_requested", "owner_id", "requested_at"),
         {"schema": "rolemap"},
     )

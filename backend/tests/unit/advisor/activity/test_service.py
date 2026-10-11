@@ -352,3 +352,66 @@ async def test_a_build_waiting_for_the_market_is_not_lost_while_the_crawler_is_a
 
     assert status.role_map is not None
     assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+async def test_cancelling_an_analysis_cancels_the_build_waiting_for_it(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    waiting = await world.activity.request_role_map(OWNER)
+
+    cancelled = await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert cancelled.is_cancelled and cancelled.cancelled_build_id == waiting.build.id
+    status = await world.activity.status(OWNER)
+    assert status.analysis is not None and status.analysis.status == "cancelled"
+    assert status.role_map is not None and status.role_map.status == "cancelled"
+    assert status.analysis.id == run.id and status.role_map.id == waiting.build.id
+    # Nothing is left waiting to be released.
+    assert await world.activity.release_build_after_analysis(OWNER) is None
+
+
+async def test_cancelling_an_analysis_leaves_a_build_waiting_for_the_market(
+    world: World,
+) -> None:
+    world.market.due = (uuid.uuid4(),)
+    searching = await world.activity.request_role_map(OWNER)
+    run = await world.activity.request_analysis(OWNER)
+
+    cancelled = await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert cancelled.is_cancelled and cancelled.cancelled_build_id is None
+    status = await world.activity.status(OWNER)
+    assert status.role_map is not None and status.role_map.id == searching.build.id
+    assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")
+
+
+async def test_a_cancelled_analysis_frees_analyze_at_once(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+
+    await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert (await world.activity.request_analysis(OWNER)).is_running
+
+
+async def test_cancelling_a_build_closes_only_the_build(world: World) -> None:
+    world.market.due = (uuid.uuid4(),)
+    searching = await world.activity.request_role_map(OWNER)
+
+    first = await world.activity.cancel_role_map(OWNER, searching.build.id)
+    again = await world.activity.cancel_role_map(OWNER, searching.build.id)
+
+    assert first.is_cancelled and not again.is_cancelled
+    status = await world.activity.status(OWNER)
+    assert status.role_map is not None and status.role_map.status == "cancelled"
+    # The next request is a new build.
+    fresh = await world.activity.request_role_map(OWNER)
+    assert fresh.build.id != searching.build.id
+
+
+async def test_cancelling_a_closed_analysis_does_nothing(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+
+    assert not (await world.activity.cancel_analysis(OWNER, run.id)).is_cancelled
