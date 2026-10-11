@@ -1237,44 +1237,87 @@ function ResumePage({
   const lines = (bullets: ResumeBullet[]) =>
     trim ? bullets.slice(0, look.trimmed_bullets) : bullets;
 
+  // The line to put the caret in once the page has drawn the edit: one just
+  // added, or the one before a line just removed.
+  const focusNext = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusNext.current;
+    if (id === null) return;
+    focusNext.current = null;
+    const node = document.querySelector<HTMLElement>(`[data-line="${id}"]`);
+    if (!node) return;
+    node.focus();
+    window.getSelection()?.selectAllChildren(node);
+  });
+
+  /** Lines under one entry, or a custom section's; `list` names them for
+   * focus. Enter adds a line below, Backspace in an empty line removes it,
+   * and a line cleared to nothing goes when it loses focus. */
   const bulletList = (
+    list: string,
     bullets: ResumeBullet[],
     onLines: (next: ResumeBullet[]) => void,
   ) => (
-    <ul className="resume-bullets">
-      {lines(bullets).map((bullet, b) => (
-        <li key={b}>
-          <span
-            className="resume-bullet-text"
-            data-rewritten={showSources && bullet.answers !== null}
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(event) =>
-              onLines(
-                bullets.map((line, i) =>
-                  i === b
-                    ? { ...line, text: event.currentTarget.textContent ?? "" }
-                    : line,
-                ),
-              )
-            }
-          >
-            {bullet.text}
-          </span>
-          <div className="resume-cite" hidden={!showSources}>
-            {citeLine(bullet, evidence)}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="resume-bullets">
+        {lines(bullets).map((bullet, b) => (
+          // Keyed by its text too, so a line whose text changed is drawn
+          // afresh rather than over what the browser typed into it.
+          <li key={`${b}:${bullet.text}`}>
+            <span
+              className="resume-bullet-text"
+              data-line={`${list}:${b}`}
+              data-rewritten={showSources && bullet.answers !== null}
+              aria-label="Line"
+              contentEditable
+              suppressContentEditableWarning
+              onKeyDown={(event) => {
+                const text = event.currentTarget.textContent ?? "";
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (bullets.length >= MAX_LINES) return;
+                  focusNext.current = `${list}:${b + 1}`;
+                  onLines(getLineAdded(bullets, b, text, newLine));
+                } else if (event.key === "Backspace" && text === "") {
+                  event.preventDefault();
+                  if (b > 0) focusNext.current = `${list}:${b - 1}`;
+                  onLines(bullets.filter((_, i) => i !== b));
+                }
+              }}
+              onBlur={(event) => {
+                const text = (event.currentTarget.textContent ?? "").trim();
+                if (text === bullet.text) return;
+                onLines(
+                  text
+                    ? bullets.map((line, i) =>
+                        i === b ? { ...line, text } : line,
+                      )
+                    : bullets.filter((_, i) => i !== b),
+                );
+              }}
+            >
+              {bullet.text}
+            </span>
+            <div className="resume-cite" hidden={!showSources}>
+              {citeLine(bullet, evidence)}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {bullets.length < MAX_LINES && (
+        <button
+          type="button"
+          className="resume-add-line"
+          onClick={() => {
+            focusNext.current = `${list}:${bullets.length}`;
+            onLines([...bullets, newLine]);
+          }}
+        >
+          + Add line
+        </button>
+      )}
+    </>
   );
-
-  const newLine: ResumeBullet = {
-    text: "New line",
-    evidence_ids: [],
-    origin: "yours",
-    answers: null,
-  };
 
   const spec = look.spec;
   const hasSidebar =
@@ -1471,7 +1514,7 @@ function ResumePage({
               placeholder="Link"
               onChange={(link) => editEntry(at, section, e, { link })}
             />
-            {bulletList(entry.bullets, (next) =>
+            {bulletList(`${at}:${e}`, entry.bullets, (next) =>
               editSection(at, {
                 ...section,
                 entries: section.entries.map((it, i) =>
@@ -1524,7 +1567,7 @@ function ResumePage({
           </div>
         )}
         {section.bullets.length > 0 &&
-          bulletList(section.bullets, (next) =>
+          bulletList(`${at}`, section.bullets, (next) =>
             editSection(at, { ...section, bullets: next }),
           )}
       </section>
@@ -1587,6 +1630,35 @@ function ResumePage({
       </p>
     </div>
   );
+}
+
+/** A line typed by the user, with nothing cited. */
+const newLine: ResumeBullet = {
+  text: "New line",
+  evidence_ids: [],
+  origin: "yours",
+  answers: null,
+};
+
+/** The most lines an entry or a custom section holds; the server refuses
+ * more (MAX_BULLETS_PER_ROLE). */
+export const MAX_LINES = 8;
+
+/** The lines with line `at` set to `text` and `line` added just below it, as
+ * Enter at the end of a line does. Pure. */
+export function getLineAdded(
+  bullets: ResumeBullet[],
+  at: number,
+  text: string,
+  line: ResumeBullet,
+): ResumeBullet[] {
+  const next = bullets.map((it, i) =>
+    i === at && text.trim() && text.trim() !== it.text
+      ? { ...it, text: text.trim() }
+      : it,
+  );
+  next.splice(at + 1, 0, line);
+  return next;
 }
 
 /** An empty section with a first line, entry or item to edit. Pure. */
