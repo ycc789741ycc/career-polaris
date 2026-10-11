@@ -14,6 +14,9 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.target.domain import (
+    AnswerReading,
+    AnswerReadingFilter,
+    AnswerReadingRepository,
     OpeningFit,
     OpeningFitFilter,
     OpeningFitRepository,
@@ -281,3 +284,43 @@ class SqlAlchemyOpeningFitRepository(
         if filter.job_posting_ids is None:
             return []
         return [models.OpeningFit.job_posting_id.in_(filter.job_posting_ids)]
+
+
+class SqlAlchemyAnswerReadingRepository(
+    SqlAlchemyRepository[AnswerReading, models.AnswerReading, AnswerReadingFilter],
+    AnswerReadingRepository,
+):
+    model = models.AnswerReading
+    id_column = models.AnswerReading.id
+    created_column = models.AnswerReading.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.AnswerReading.owner_id
+    noun = "answer reading"
+
+    def to_entity(self, row: models.AnswerReading) -> AnswerReading:
+        return mappers.answer_reading(row)
+
+    def to_row(self, entity: AnswerReading) -> models.AnswerReading:
+        return mappers.answer_reading_row(entity)
+
+    def apply(self, row: models.AnswerReading, entity: AnswerReading) -> None:
+        mappers.apply_answer_reading(row, entity)
+
+    def id_of(self, entity: AnswerReading) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: AnswerReadingFilter) -> list[ColumnElement[bool]]:
+        """A Target exactly: a role alone excludes its openings' readings."""
+        row = models.AnswerReading
+        found: list[ColumnElement[bool]] = []
+        if filter.private_job_posting_id is not None:
+            found.append(row.private_job_posting_id == filter.private_job_posting_id)
+        if filter.role_id is not None:
+            found.append(row.role_id == filter.role_id)
+            found.append(
+                row.job_posting_id == filter.job_posting_id
+                if filter.job_posting_id is not None
+                else row.job_posting_id.is_(None)
+            )
+        if filter.assessment_id is not None:
+            found.append(row.assessment_id == filter.assessment_id)
+        return found

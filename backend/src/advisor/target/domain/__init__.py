@@ -1,3 +1,9 @@
+from advisor.target.domain.answer_reading import (
+    AnswerReading,
+    Coverage,
+    get_answered_snapshot,
+    get_newest_readings,
+)
 from advisor.target.domain.constants import (
     EVALUATION_STAGE_SHARES,
     MAX_COMPANY_NAME,
@@ -34,6 +40,8 @@ from advisor.target.domain.posting_fit import (
     PostingRequirementFit,
 )
 from advisor.target.domain.repositories import (
+    AnswerReadingFilter,
+    AnswerReadingRepository,
     OpeningFitFilter,
     OpeningFitRepository,
     OpeningRequirementFilter,
@@ -74,6 +82,10 @@ __all__ = [
     "MAX_REQUIREMENT_LINE",
     "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
+    "AnswerReading",
+    "AnswerReadingFilter",
+    "AnswerReadingRepository",
+    "Coverage",
     "DimensionGap",
     "DraftBasis",
     "EvaluationStage",
@@ -116,6 +128,8 @@ __all__ = [
     "UncoveredGap",
     "gap_key_for_dimension",
     "gap_key_for_uncovered",
+    "get_answered_snapshot",
+    "get_newest_readings",
     "get_placeholder_title",
     "get_target_digest",
     "parse_requirement_lines",

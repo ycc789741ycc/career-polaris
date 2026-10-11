@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.target.domain import OwnerTarget, TargetUnitOfWork
 from advisor.target.infra.repositories import (
+    SqlAlchemyAnswerReadingRepository,
     SqlAlchemyOpeningFitRepository,
     SqlAlchemyOpeningRequirementFitRepository,
     SqlAlchemyOpeningRequirementRepository,
@@ -43,6 +44,7 @@ class SqlAlchemyOwnerTarget(OwnerTarget):
             session, owner_id=owner_id
         )
         self.opening_fits = SqlAlchemyOpeningFitRepository(session, owner_id=owner_id)
+        self.answer_readings = SqlAlchemyAnswerReadingRepository(session, owner_id=owner_id)
 
 
 class SqlAlchemyTargetUnitOfWork(TargetUnitOfWork):

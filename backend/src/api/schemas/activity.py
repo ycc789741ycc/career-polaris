@@ -76,7 +76,9 @@ class RunStatus(ApiModel):
         )
 
 
-AdvisorJobKind = Literal["questions", "gap_plan", "resume", "section", "own_posting_evaluation"]
+AdvisorJobKind = Literal[
+    "questions", "fit_update", "gap_plan", "resume", "section", "own_posting_evaluation"
+]
 
 
 class AdvisorJob(ApiModel):

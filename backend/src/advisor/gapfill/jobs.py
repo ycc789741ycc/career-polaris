@@ -14,3 +14,9 @@ async def write(deps: Any, *, owner_id: str, set_id: str) -> None:
     # A failure the set can explain is recorded on it, not raised.
     await deps.gapfill.write(uuid.UUID(owner_id), uuid.UUID(set_id))
     log.info("gapfill.write_finished", set_id=set_id)
+
+
+async def read_answers(deps: Any, *, owner_id: str, set_id: str) -> None:
+    # A failure the set can explain is recorded on it, not raised (ADR 0077).
+    await deps.gapfill.read_answers(uuid.UUID(owner_id), uuid.UUID(set_id))
+    log.info("gapfill.read_answers_finished", set_id=set_id)

@@ -60,6 +60,8 @@ class SqlAlchemyQuestionSetRepository(
             found.append(sets.private_job_posting_id == filter.private_job_posting_id)
         if filter.statuses is not None:
             found.append(sets.status.in_([str(s) for s in filter.statuses]))
+        if filter.is_reading_answers:
+            found.append(sets.fit_reading == "reading")
         return found
 
 

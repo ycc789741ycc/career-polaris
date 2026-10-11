@@ -22,8 +22,11 @@ from advisor.target.domain import (
 )
 from advisor.target.factory import create_target_service
 from advisor.target.service import (
+    AnsweredFitView,
+    AnswerReadingInput,
     DimensionGap,
     DraftBasis,
+    GapReadingView,
     OpeningFitView,
     OutdatedReason,
     OwnPostingView,
@@ -43,8 +46,11 @@ __all__ = [
     "MAX_REQUIREMENT_LINE",
     "MAX_REQUIREMENT_LINES",
     "MAX_TITLE",
+    "AnswerReadingInput",
+    "AnsweredFitView",
     "DimensionGap",
     "DraftBasis",
+    "GapReadingView",
     "OpeningFitView",
     "OutdatedReason",
     "OwnPostingView",

@@ -92,9 +92,10 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         return
 
     if name == EventName.GAP_ANSWERS_SUBMITTED:
-        # Rewrites nothing: answering spends nothing (ADR 0035). The Target's
-        # plan and résumé say they are outdated by the new evidence, and the
-        # user regenerates either at a price they confirm.
+        # Rewrites nothing. The submit queued reading the answers into the
+        # Target's fit itself, at the price the user confirmed (ADR 0077);
+        # the plan and résumé say they are outdated by the new evidence, and
+        # the user regenerates either at a price they confirm (ADR 0035).
         return
 
     if name == EventName.TARGET_LOCATIONS_CHANGED:

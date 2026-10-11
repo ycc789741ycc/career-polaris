@@ -18,7 +18,7 @@ in one place (ADR 0028). Resolving a Target spends nothing.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -39,6 +39,9 @@ from advisor.rolemap import (
 from advisor.target.domain import (
     EVALUATION_STAGE_SHARES,
     MAX_JOB_DESCRIPTION,
+    AnswerReading,
+    AnswerReadingFilter,
+    Coverage,
     DimensionGap,
     DraftBasis,
     EvaluationStage,
@@ -69,6 +72,8 @@ from advisor.target.domain import (
     TargetSnapshot,
     TargetUnitOfWork,
     UncoveredGap,
+    get_answered_snapshot,
+    get_newest_readings,
     get_target_digest,
 )
 from kernel.clock import utcnow
@@ -85,8 +90,11 @@ from kernel.progress import JobCancelledError, RunningJobView, get_stage_progres
 from kernel.storage import ObjectStore, object_key
 
 __all__ = [
+    "AnswerReadingInput",
+    "AnsweredFitView",
     "DimensionGap",
     "DraftBasis",
+    "GapReadingView",
     "OpeningFitView",
     "OutdatedReason",
     "OwnPostingView",
@@ -101,6 +109,44 @@ __all__ = [
 ]
 
 log = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerReadingInput:
+    """One gap as the submitted answers read (ADR 0077), checked by
+    ``gapfill`` before it is handed here: a dimension gap's ``score``, or an
+    uncovered requirement's ``coverage`` (``covered``, ``partly``, ``not``)."""
+
+    gap_key: str
+    score: int | None
+    coverage: str | None
+    reasoning: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GapReadingView:
+    """One gap the answers moved, as the Advisor shows it."""
+
+    gap_key: str
+    label: str
+    # A dimension's score before and after; None for a requirement.
+    score_before: int | None
+    score_after: int | None
+    # A requirement's coverage; None for a dimension.
+    coverage: str | None
+    reasoning: str
+    evidence_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AnsweredFitView:
+    """A Target's fit as the latest analysis scored it, and with the answers
+    read into it (ADR 0077); ``answered_score`` is None while nothing was."""
+
+    fit_score: int | None
+    answered_score: int | None
+    readings: tuple[GapReadingView, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +215,103 @@ class TargetService:
         self._upload_max_bytes = upload_max_bytes
         self._upload_max_pages = upload_max_pages
 
-    async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+    async def snapshot(
+        self, owner_id: uuid.UUID, ref: TargetRef, *, with_answers: bool = True
+    ) -> TargetSnapshot:
+        """Freeze the Target, with what the answers given in Fill the gap say
+        read into its fit (ADR 0077) unless ``with_answers`` is false: then as
+        the latest analysis scored it."""
+        scored = await self._scored_snapshot(owner_id, ref)
+        if not with_answers:
+            return scored
+        return get_answered_snapshot(scored, await self._current_readings(owner_id, ref))
+
+    async def get_answered_fit(self, owner_id: uuid.UUID, ref: TargetRef) -> AnsweredFitView:
+        """The fit before and after the answers, and the gaps they moved."""
+        scored = await self._scored_snapshot(owner_id, ref)
+        readings = get_newest_readings(await self._current_readings(owner_id, ref))
+        answered = get_answered_snapshot(scored, readings.values())
+        dimensions = {d.key: d for d in scored.dimensions}
+        uncovered = {u.key: u for u in scored.uncovered}
+        moved = []
+        for key, reading in readings.items():
+            dimension = dimensions.get(key)
+            requirement = uncovered.get(key)
+            if dimension is None and requirement is None:
+                continue
+            moved.append(
+                GapReadingView(
+                    gap_key=key,
+                    label=dimension.name if dimension else requirement.statement,  # type: ignore[union-attr]
+                    score_before=dimension.user_score if dimension else None,
+                    score_after=reading.score if dimension else None,
+                    coverage=None if dimension else str(reading.coverage),
+                    reasoning=reading.reasoning,
+                    evidence_ids=reading.evidence_ids,
+                )
+            )
+        return AnsweredFitView(
+            fit_score=scored.fit_score,
+            answered_score=answered.fit_score if answered.answered_from is not None else None,
+            readings=tuple(moved),
+        )
+
+    async def record_answer_readings(
+        self,
+        owner_id: uuid.UUID,
+        ref: TargetRef,
+        *,
+        question_set_id: uuid.UUID,
+        readings: Sequence[AnswerReadingInput],
+        model_id: str,
+        template_version: str,
+    ) -> int:
+        """Keep what the answers say about the Target's gaps, against the
+        latest analysis (ADR 0077). Returns how many were kept."""
+        assessment = await self._assessment.latest(owner_id)
+        if assessment is None:
+            raise TargetUnusableError("analyse your sources before your answers are read")
+        now = utcnow()
+        async with self._uow.for_owner(owner_id) as mine:
+            for reading in readings:
+                await mine.answer_readings.create(
+                    AnswerReading(
+                        id=uuid.uuid4(),
+                        owner_id=owner_id,
+                        role_id=ref.role_uuid,
+                        job_posting_id=ref.opening_uuid,
+                        private_job_posting_id=ref.own_posting_uuid,
+                        question_set_id=question_set_id,
+                        assessment_id=assessment.id,
+                        gap_key=reading.gap_key,
+                        score=reading.score,
+                        coverage=Coverage(reading.coverage) if reading.coverage else None,
+                        reasoning=reading.reasoning,
+                        evidence_ids=reading.evidence_ids,
+                        model_id=model_id,
+                        template_version=template_version,
+                        created_at=now,
+                    )
+                )
+        return len(readings)
+
+    async def _current_readings(self, owner_id: uuid.UUID, ref: TargetRef) -> list[AnswerReading]:
+        """The Target's readings under the latest analysis: a newer analysis
+        has read the answers as evidence itself."""
+        assessment = await self._assessment.latest(owner_id)
+        if assessment is None:
+            return []
+        async with self._uow.for_owner(owner_id) as mine:
+            return await mine.answer_readings.get_list(
+                AnswerReadingFilter(
+                    role_id=ref.role_uuid,
+                    job_posting_id=ref.opening_uuid,
+                    private_job_posting_id=ref.own_posting_uuid,
+                    assessment_id=assessment.id,
+                )
+            )
+
+    async def _scored_snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
         """Freeze the Target: what it requires and the user's fit to it.
 
         A posting of the user's own is measured against its JD's requirements

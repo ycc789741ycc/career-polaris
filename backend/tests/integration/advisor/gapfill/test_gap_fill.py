@@ -271,3 +271,118 @@ async def test_another_user_cannot_read_the_questions(
     with pytest.raises(NotFoundError):
         await world.gapfill.get(other_account, requested.id)
     assert await world.gapfill.current(other_account, ref) is None
+
+
+async def test_submitted_answers_are_read_into_the_targets_fit_and_nowhere_else(
+    world: World, database: Database, account: uuid.UUID
+) -> None:
+    """ADR 0077, migration 0058: one call per submit, kept by target, and the
+    fit every Advisor step reads moves; the analysis's own scores do not."""
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(_questions())
+    requested = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, requested.id)
+    written = await world.gapfill.get(account, requested.id)
+    _org, lead = written.questions
+    before = await world.target.snapshot(account, ref)
+
+    await world.gapfill.submit(
+        account, written.id, [Answer(question_id=lead.id, choice="More than 10")]
+    )
+    started = await world.gapfill.start_fit_reading(account, written.id)
+    assert started.fit_reading == "reading"
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "readings": [
+                    {
+                        "gap_key": "dim:leadership",
+                        "score": 90,
+                        "coverage": None,
+                        "reasoning": "A design that touched more than ten engineers.",
+                        "evidence_ids": ["E1"],
+                    }
+                ]
+            }
+        )
+    )
+    await world.gapfill.read_answers(account, written.id)
+
+    assert (await world.gapfill.get(account, written.id)).fit_reading == "ready"
+    after = await world.target.snapshot(account, ref)
+    leadership = next(d for d in after.dimensions if d.dimension_key == "leadership")
+    assert leadership.user_score == 90
+    assert before.fit_score is not None and after.fit_score is not None
+    assert after.fit_score > before.fit_score
+    assert after.answered_from == before.fit_score
+    # As the analysis scored it, on request; and the reading, for the page.
+    assert (await world.target.snapshot(account, ref, with_answers=False)).fit_score == (
+        before.fit_score
+    )
+    answered = await world.target.get_answered_fit(account, ref)
+    assert (answered.fit_score, answered.answered_score) == (before.fit_score, after.fit_score)
+    [reading] = answered.readings
+    assert (reading.gap_key, reading.score_before, reading.score_after) == (
+        "dim:leadership",
+        70,
+        90,
+    )
+
+    # Under row-level security: its owner sees it, a session as nobody does not.
+    count = text("SELECT count(*) FROM target.answer_reading WHERE owner_id = :owner")
+    async with database.for_user(account) as session:
+        assert (await session.execute(count, {"owner": account})).scalar_one() == 1
+    async with database.shared() as session:
+        assert (await session.execute(count, {"owner": account})).scalar_one() == 0
+
+
+async def test_a_new_analysis_retires_the_readings_it_has_read_for_itself(
+    world: World, account: uuid.UUID
+) -> None:
+    ref = await _own_posting(world, account)
+    world.stub.replies.append(_questions())
+    requested = await world.gapfill.request(account, ref)
+    await world.gapfill.write(account, requested.id)
+    _org, lead = (await world.gapfill.get(account, requested.id)).questions
+    await world.gapfill.submit(
+        account, requested.id, [Answer(question_id=lead.id, choice="More than 10")]
+    )
+    await world.gapfill.start_fit_reading(account, requested.id)
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "readings": [
+                    {
+                        "gap_key": "dim:leadership",
+                        "score": 90,
+                        "reasoning": "More than ten engineers.",
+                        "evidence_ids": ["E1"],
+                    }
+                ]
+            }
+        )
+    )
+    await world.gapfill.read_answers(account, requested.id)
+    assert (await world.target.get_answered_fit(account, ref)).answered_score is not None
+
+    world.stub.replies.append(
+        json.dumps(
+            {
+                "dimensions": [
+                    {
+                        "id": key,
+                        "name": key.title(),
+                        "short_name": key.title(),
+                        "score": 70,
+                        "confidence": 0.9,
+                        "read": "Read again.",
+                        "evidence_ids": ["E1"],
+                    }
+                    for key in ("leadership", "reliability", "craft", "delivery", "mentoring")
+                ]
+            }
+        )
+    )
+    await world.assessment.run(account)
+
+    assert (await world.target.get_answered_fit(account, ref)).answered_score is None

@@ -14,6 +14,7 @@ export type AdvisorJob = Activity["advisor_jobs"][number];
 export function jobTab(kind: AdvisorJob["kind"]): Exclude<AdvisorTab, "own"> {
   switch (kind) {
     case "questions":
+    case "fit_update":
     case "own_posting_evaluation":
       return "gaps";
     case "gap_plan":
@@ -38,6 +39,7 @@ export function jobWord(kind: AdvisorJob["kind"]): string {
 
 const TITLES: Record<AdvisorJob["kind"], string> = {
   questions: "Writing your follow-up questions…",
+  fit_update: "Updating your fit from your answers…",
   own_posting_evaluation: "Reading and scoring your role…",
   gap_plan: "Drafting your gap plan…",
   resume: "Writing your résumé…",
@@ -55,6 +57,7 @@ const STAGES: Record<string, string> = {
   scoring: "Scoring your fit to it.",
   scoring_target: "Reading this opening and scoring your fit to it.",
   working_out_fit: "Working out your fit.",
+  reading_answers: "Reading your answers against each gap.",
 };
 
 /** The card's status line, from the stage the job has reached. Pure. */
@@ -81,6 +84,7 @@ export function jobsFor(
 export function cancelPath(job: AdvisorJob): string {
   switch (job.kind) {
     case "questions":
+    case "fit_update":
       return `/gap-question-sets/${job.id}/cancel`;
     case "gap_plan":
       return `/gap-plans/${job.id}/cancel`;

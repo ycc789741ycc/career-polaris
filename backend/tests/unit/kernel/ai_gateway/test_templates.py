@@ -24,6 +24,8 @@ TEMPLATES = [
     # there each reads each fact with its date (ADR 0037).
     ("gap_plan", "v3"),
     ("gap_questions", "v2"),
+    # Submitted answers read into the fit (ADR 0077).
+    ("answer_reading", "v1"),
     # v3 writes to the résumé's sections (ADR 0039); v4 writes every section,
     # shown or hidden (ADR 0043); v5 may claim a gap from its answers (ADR 0044);
     # v6 states only numbers its cited facts state (ADR 0076).

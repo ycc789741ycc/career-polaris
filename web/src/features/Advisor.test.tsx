@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AnsweredFit,
   Activity,
   Fit,
   MatchedPosting,
@@ -16,7 +17,13 @@ import type { AdvisorTab, Focus } from "../shell/navigation";
 import { ActivityContext } from "../shell/activity";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { Advisor, focusOf, ownTargetFor, targetFor } from "./Advisor";
+import {
+  Advisor,
+  fitTodayLine,
+  focusOf,
+  ownTargetFor,
+  targetFor,
+} from "./Advisor";
 import { getStoredTargets } from "./advisorTarget";
 import { page } from "../test/page";
 import { cancelPath, jobTab, jobWord } from "./AdvisorJobs";
@@ -133,6 +140,8 @@ let openingFit: OpeningFit | null = {
 // says otherwise, so the plan and résumé tabs open without a warning.
 function questionSet(overrides: Partial<QuestionSet> = {}): QuestionSet {
   return {
+    fit_reading: null,
+    fit_reading_error: null,
     id: "s1",
     target: {
       role_id: "r1",
@@ -162,6 +171,10 @@ function questionSet(overrides: Partial<QuestionSet> = {}): QuestionSet {
 }
 let gapSet: QuestionSet | null = questionSet();
 
+// The fit with the submitted answers read into it (ADR 0077); none unless a
+// test says so.
+let answeredFit: AnsweredFit | null = null;
+
 function serve() {
   vi.stubGlobal(
     "fetch",
@@ -172,27 +185,29 @@ function serve() {
           ? page([backend, principal])
           : url === "/fits"
             ? page([fit("r1", 81), fit("r3", 64)])
-            : url.startsWith("/gap-question-sets/current")
-              ? gapSet
-              : url.startsWith("/opening-fit?job_posting_id=p1")
-                ? openingFit
-                : url.startsWith("/matched-postings?role_id=r1")
-                  ? page([northwind])
-                  : url.startsWith("/matched-postings")
-                    ? page([])
-                    : url === "/gap-plans"
-                      ? page([
-                          plan("r3", null, "plan-1"),
-                          plan(null, null, "plan-2", "j1"),
-                        ])
-                      : url === "/tailored-resumes"
-                        ? page([])
-                        : url === "/own-postings"
-                          ? page([
-                              own("j1"),
-                              own("j2", { status: "running", fit: null }),
-                            ])
-                          : null;
+            : url.startsWith("/answered-fit")
+              ? answeredFit
+              : url.startsWith("/gap-question-sets/current")
+                ? gapSet
+                : url.startsWith("/opening-fit?job_posting_id=p1")
+                  ? openingFit
+                  : url.startsWith("/matched-postings?role_id=r1")
+                    ? page([northwind])
+                    : url.startsWith("/matched-postings")
+                      ? page([])
+                      : url === "/gap-plans"
+                        ? page([
+                            plan("r3", null, "plan-1"),
+                            plan(null, null, "plan-2", "j1"),
+                          ])
+                        : url === "/tailored-resumes"
+                          ? page([])
+                          : url === "/own-postings"
+                            ? page([
+                                own("j1"),
+                                own("j2", { status: "running", fit: null }),
+                              ])
+                            : null;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -454,6 +469,18 @@ describe("the Advisor's one target role", () => {
     );
   });
 
+  it("shows the fit today with the submitted answers read into it", async () => {
+    answeredFit = { fit: 86, answered_fit: 91, readings: [] };
+    renderAdvisor({ role: "r1", opening: "p1" });
+
+    const banner = await screen.findByRole("region", {
+      name: "Your target role",
+    });
+    expect(await within(banner).findByText("86% → 91%")).toBeInTheDocument();
+    expect(banner).toHaveTextContent("Fit today, with your answers");
+    answeredFit = null;
+  });
+
   it("aims at the role alone when no opening was picked", async () => {
     renderAdvisor({ role: "r1" });
 
@@ -587,6 +614,18 @@ describe("the Advisor's one target role", () => {
     expect(shell.navigate).toHaveBeenCalledWith("advisor", {
       focus: { role: "r3" },
     });
+  });
+});
+
+describe("Fit today (ADR 0077)", () => {
+  it("shows the move the answers made, and only when they made one", () => {
+    expect(fitTodayLine(86, 91)).toEqual({
+      value: "86% → 91%",
+      isAnswered: true,
+    });
+    expect(fitTodayLine(86, 86)).toEqual({ value: "86%", isAnswered: false });
+    expect(fitTodayLine(86, null)).toEqual({ value: "86%", isAnswered: false });
+    expect(fitTodayLine(null, 91)).toEqual({ value: "—", isAnswered: false });
   });
 });
 

@@ -160,6 +160,9 @@ class TargetSnapshot:
     # Requirement statement -> the user's dimension it maps to, or None.
     requirement_map: dict[str, str | None]
     taken_at: datetime
+    # The fit before the answers given in Fill the gap were read into it
+    # (ADR 0077); None when nothing was.
+    answered_from: int | None = None
 
     def __post_init__(self) -> None:
         if not self.requirements:
@@ -213,6 +216,7 @@ class TargetSnapshot:
             ],
             "requirement_map": dict(self.requirement_map),
             "taken_at": self.taken_at.isoformat(),
+            "answered_from": self.answered_from,
         }
 
     @classmethod
@@ -230,6 +234,7 @@ class TargetSnapshot:
             uncovered=tuple(UncoveredGap(**u) for u in data["uncovered"]),
             requirement_map=dict(data.get("requirement_map", {})),
             taken_at=datetime.fromisoformat(data["taken_at"]),
+            answered_from=data.get("answered_from"),
         )
 
 

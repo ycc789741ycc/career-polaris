@@ -40,7 +40,7 @@ new record that supersedes the old one.
 | [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md) | Work out every opening's fit locally from its role's, and rank a role's openings by it | Superseded by 0073 |
 | [0033](0033-keep-a-posting-of-your-own-in-target.md) | Keep a posting of your own in Target, and score it with the role map's fit kit | Accepted |
 | [0034](0034-add-a-role-of-your-own-without-evaluating-it.md) | Add a role of your own without spending anything, and evaluate it when it is set as the target | Accepted |
-| [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted |
+| [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted, amended by 0077 |
 | [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted, amended by 0074 |
 | [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
 | [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
@@ -82,6 +82,7 @@ new record that supersedes the old one.
 | [0074](0074-drop-a-requirements-stray-citations-instead-of-rejecting-the-plan.md) | A requirement's stray citations are dropped, not the gap plan | Accepted |
 | [0075](0075-let-a-resume-set-its-headings-font-bold-titles-and-text-size.md) | A résumé may set its headings' font, bold titles and headings, and its text size | Accepted |
 | [0076](0076-quantify-resume-lines-only-from-numbers-their-facts-state.md) | Quantify a résumé's lines only from numbers their facts state, and flag the rest | Accepted |
+| [0077](0077-read-submitted-answers-into-the-targets-fit.md) | Read submitted answers into the Target's fit, in the Advisor only | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -41,6 +41,8 @@ class FakeSets(FakeRepository[QuestionSet, QuestionSetFilter], QuestionSetReposi
             return False
         if filter.role_only and filter.job_posting_id is None and entity.job_posting_id:
             return False
+        if filter.is_reading_answers and not entity.is_reading_answers:
+            return False
         return filter.statuses is None or entity.status in filter.statuses
 
 

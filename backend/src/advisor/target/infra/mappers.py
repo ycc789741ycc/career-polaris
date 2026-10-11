@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from advisor.target.domain import (
+    AnswerReading,
+    Coverage,
     EvaluationStage,
     OpeningFit,
     OpeningRequirement,
@@ -275,3 +277,45 @@ def apply_opening_fit(row: models.OpeningFit, entity: OpeningFit) -> None:
     row.target_profile = dict(entity.target_profile)
     row.gaps = list(entity.gaps)
     row.uncovered = list(entity.uncovered)
+
+
+def answer_reading(row: models.AnswerReading) -> AnswerReading:
+    return AnswerReading(
+        id=row.id,
+        owner_id=row.owner_id,
+        role_id=row.role_id,
+        job_posting_id=row.job_posting_id,
+        private_job_posting_id=row.private_job_posting_id,
+        question_set_id=row.question_set_id,
+        assessment_id=row.assessment_id,
+        gap_key=row.gap_key,
+        score=row.score,
+        coverage=Coverage(row.coverage) if row.coverage else None,
+        reasoning=row.reasoning,
+        evidence_ids=tuple(row.evidence_ids),
+        model_id=row.model_id,
+        template_version=row.template_version,
+        created_at=row.created_at,
+    )
+
+
+def answer_reading_row(entity: AnswerReading) -> models.AnswerReading:
+    row = models.AnswerReading(id=entity.id, owner_id=entity.owner_id)
+    apply_answer_reading(row, entity)
+    return row
+
+
+def apply_answer_reading(row: models.AnswerReading, entity: AnswerReading) -> None:
+    row.role_id = entity.role_id
+    row.job_posting_id = entity.job_posting_id
+    row.private_job_posting_id = entity.private_job_posting_id
+    row.question_set_id = entity.question_set_id
+    row.assessment_id = entity.assessment_id
+    row.gap_key = entity.gap_key
+    row.score = entity.score
+    row.coverage = str(entity.coverage) if entity.coverage else None
+    row.reasoning = entity.reasoning
+    row.evidence_ids = list(entity.evidence_ids)
+    row.model_id = entity.model_id
+    row.template_version = entity.template_version
+    row.created_at = entity.created_at

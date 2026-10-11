@@ -2114,3 +2114,5 @@ select.input { appearance: auto; }
   color: var(--color-accent-800, #8a4a20);
   margin: 2px 0 4px;
 }
+/* The gaps the submitted answers moved (ADR 0077). */
+.fit-readings { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
