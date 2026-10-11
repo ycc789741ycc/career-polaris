@@ -73,9 +73,19 @@ class Repository[Entity, Filter](Protocol):
 class CompanyFilter:
     ids: tuple[uuid.UUID, ...] | None = None
     normalized_name: str | None = None
+    normalized_names: tuple[str, ...] | None = None
 
 
-class CompanyRepository(Repository[Company, CompanyFilter], Protocol): ...
+class CompanyRepository(Repository[Company, CompanyFilter], Protocol):
+    async def create_absent(self, companies: list[Company]) -> None:
+        """Store each of ``companies`` unless one with its normalized name
+        exists, in one statement.
+
+        Extra method: a board names its companies all at once, and one insert
+        per company is one round trip each over the tunnel (ADR 0051); an
+        insert that may already exist must not fail its transaction either.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +119,7 @@ class CrawlSourceRepository(Repository[CrawlSource, CrawlSourceFilter], Protocol
 class JobPostingFilter:
     ids: tuple[uuid.UUID, ...] | None = None
     canonical_key: str | None = None
+    canonical_keys: tuple[str, ...] | None = None
     status: PostingStatus | None = None
     # True: only postings that published pay.
     has_salary: bool | None = None
@@ -117,6 +128,23 @@ class JobPostingFilter:
 
 
 class JobPostingRepository(Repository[JobPosting, JobPostingFilter], Protocol):
+    async def create_many(self, postings: list[JobPosting]) -> None:
+        """Store every one of ``postings``, new, in one statement.
+
+        Extra method: a board lists hundreds of postings, and ``create`` is
+        one round trip each over the tunnel (ADR 0051).
+        """
+        ...
+
+    async def update_many(self, postings: list[JobPosting]) -> None:
+        """Save every one of ``postings``, each already stored, in one
+        statement.
+
+        Extra method: a bulk update of postings seen again, which ``update``
+        would make one load and one write per posting.
+        """
+        ...
+
     async def expire_unseen(self, source_id: uuid.UUID, seen_keys: set[str]) -> int:
         """Mark this source's open postings that were not seen as expired, never
         deleted. Returns how many.
@@ -183,6 +211,14 @@ class PostingEmbeddingFilter:
 
 class PostingEmbeddingRepository(Repository[PostingEmbedding, PostingEmbeddingFilter], Protocol):
     """Keyed by posting id: a posting has at most one embedding."""
+
+    async def create_many(self, embeddings: list[PostingEmbedding]) -> None:
+        """Store every one of ``embeddings`` in one statement.
+
+        Extra method: the crawler embeds a batch at a time, and ``create`` is
+        one round trip each over the tunnel (ADR 0051).
+        """
+        ...
 
 
 class SharedMarket(Protocol):

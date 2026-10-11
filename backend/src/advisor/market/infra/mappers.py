@@ -45,6 +45,11 @@ def apply_company(row: models.Company, entity: Company) -> None:
     row.normalized_name = entity.normalized_name
 
 
+def company_values(entity: Company) -> dict[str, Any]:
+    """A company as one row of a bulk insert."""
+    return {"id": entity.id, "name": entity.name, "normalized_name": entity.normalized_name}
+
+
 # --- crawl source ----------------------------------------------------------
 
 
@@ -160,6 +165,31 @@ def apply_job_posting(row: models.JobPosting, entity: JobPosting) -> None:
         row.salary_currency = entity.salary.currency
 
 
+def job_posting_values(entity: JobPosting) -> dict[str, Any]:
+    """A posting as one row of a bulk insert or update. Every posting gives
+    the same keys, so a batch is one statement."""
+    salary = entity.salary
+    return {
+        "id": entity.id,
+        "canonical_key": entity.canonical_key,
+        "company_id": entity.company_id,
+        "crawl_source_id": entity.crawl_source_id,
+        "title": entity.title,
+        "location": entity.location,
+        "description": entity.description,
+        "url": entity.url,
+        "source_kind": entity.source_kind,
+        "posted_on": entity.posted_on,
+        "salary_min": salary.min_amount if salary is not None else None,
+        "salary_max": salary.max_amount if salary is not None else None,
+        "salary_currency": salary.currency if salary is not None else None,
+        "status": str(entity.status),
+        "first_seen_at": entity.first_seen_at,
+        "last_seen_at": entity.last_seen_at,
+        "thinned_at": entity.thinned_at,
+    }
+
+
 def search_result(row: models.SearchResult) -> SearchResult:
     return SearchResult(
         id=row.id,
@@ -217,6 +247,15 @@ def posting_embedding_row(entity: PostingEmbedding) -> models.PostingEmbedding:
     return models.PostingEmbedding(
         job_posting_id=entity.posting_id, model_name=entity.model_name, vector=entity.vector
     )
+
+
+def posting_embedding_values(entity: PostingEmbedding) -> dict[str, Any]:
+    """An embedding as one row of a bulk insert."""
+    return {
+        "job_posting_id": entity.posting_id,
+        "model_name": entity.model_name,
+        "vector": entity.vector,
+    }
 
 
 def apply_posting_embedding(row: models.PostingEmbedding, entity: PostingEmbedding) -> None:

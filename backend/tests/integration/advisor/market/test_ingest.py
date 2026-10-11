@@ -11,7 +11,7 @@ from datetime import date
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from advisor.market import (
     NormalizedPosting,
@@ -31,13 +31,19 @@ pytestmark = pytest.mark.integration
 COMPANY = f"Testco {uuid.uuid4().hex[:8]}"
 
 
-def posting(title: str, *, company: str = COMPANY, location: str | None = "Berlin"):
+def posting(
+    title: str,
+    *,
+    company: str = COMPANY,
+    location: str | None = "Berlin",
+    description: str | None = None,
+):
     return NormalizedPosting(
         external_id=title.lower().replace(" ", "-"),
         company_name=company,
         title=title,
         location=location,
-        description=f"You will work on {title}.",
+        description=description or f"You will work on {title}.",
         url=f"https://boards.test/{title}",
         source_kind=SourceKind.ATS_BOARD,
         posted_on=date(2026, 9, 1),
@@ -119,6 +125,81 @@ async def test_a_posting_missing_from_a_crawl_is_expired_not_deleted(
             "Gone Role": "expired",
             "Senior Backend Engineer": "open",
         }
+
+
+async def _statements_to_record(crawler_database: Database, source, postings) -> int:
+    """How many statements storing one fetch sends to Postgres. An
+    executemany is one: asyncpg pipelines it as one round trip."""
+    sent: list[str] = []
+
+    def count(_conn, _cursor, statement, _params, _context, _executemany) -> None:
+        sent.append(statement)
+
+    engine = crawler_database.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        await create_crawl_ingest(crawler_database).record_crawl(source, postings)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    return len(sent)
+
+
+async def test_storing_a_board_takes_the_same_queries_however_many_it_lists(
+    crawler_database: Database, source
+) -> None:
+    """The crawler reaches Postgres over the tunnel (ADR 0051): a query per
+    posting made a board of 700 take three minutes (issue #64)."""
+    run = uuid.uuid4().hex[:8]
+
+    def board(size: int, *, description: str | None = None) -> list[NormalizedPosting]:
+        return [
+            posting(
+                f"Engineer {run} {size} {n}",
+                company=f"{COMPANY} {n % 7}",
+                description=description,
+            )
+            for n in range(size)
+        ]
+
+    few_new = await _statements_to_record(crawler_database, source, board(3))
+    many_new = await _statements_to_record(crawler_database, source, board(120))
+    many_again = await _statements_to_record(
+        crawler_database, source, board(120, description="Rewritten.")
+    )
+    few_again = await _statements_to_record(
+        crawler_database, source, board(3, description="Rewritten.")
+    )
+
+    assert few_new == many_new
+    assert few_again == many_again
+    assert many_new <= 10
+
+    async with crawler_database.shared() as session:
+        stored = await session.execute(
+            text(
+                "SELECT count(*), count(*) FILTER (WHERE description = 'Rewritten.') "
+                "FROM market.job_posting WHERE crawl_source_id = :id AND title LIKE :run"
+            ),
+            {"id": source, "run": f"Engineer {run} 120 %"},
+        )
+        assert tuple(stored.one()) == (120, 120)
+
+
+async def test_a_job_listed_twice_in_one_fetch_is_stored_once(
+    crawler_database: Database, source
+) -> None:
+    ingest = create_crawl_ingest(crawler_database)
+    upserted, _ = await ingest.record_crawl(
+        source, [posting("Data Engineer"), posting("Data Engineer (m/f/d)")]
+    )
+
+    assert upserted == 1
+    async with crawler_database.shared() as session:
+        count = await session.execute(
+            text("SELECT count(*) FROM market.job_posting WHERE crawl_source_id = :id"),
+            {"id": source},
+        )
+        assert count.scalar_one() == 1
 
 
 # -- the baseline boards -----------------------------------------------------

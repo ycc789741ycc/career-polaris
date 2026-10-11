@@ -459,8 +459,11 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
     every `CRAWL_DUE_POLL_SECONDS` and starts it when its sources are fetched,
     or after `MARKET_WAIT_SECONDS`. `wiring.queue.queue_build` turns any build
     request into the right job.
-  - **The crawler.** It fetches only due sources, embeds, then clears
-    `due_at`. It pauses a host after a 429 or 403 (honouring `Retry-After`),
+  - **The crawler.** It fetches only due sources, searches before boards,
+    and stores, embeds and clears `due_at` one source at a time, so a build
+    never waits on a board it doesn't read. A fetch is stored in a fixed
+    number of queries however many postings it lists, because each query
+    crosses the tunnel (issue #64). It pauses a host after a 429 or 403 (honouring `Retry-After`),
     caps requests per host per day, and caches robots.txt for a day. Once a
     day it retires searches no build needed in `MARKET_SOURCE_IDLE_DAYS`, and
     thins postings nothing holds after `POSTING_THIN_AFTER_DAYS`:

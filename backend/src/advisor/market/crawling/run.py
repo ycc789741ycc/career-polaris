@@ -1,7 +1,9 @@
 """One crawl run: the sources builds are waiting for.
 
 Fetch each due source, normalise, dedup, store, embed, and only then mark it
-fetched, so a build that starts on it finds the vectors (ADR 0027). The
+fetched, so a build that starts on it finds the vectors (ADR 0027). Each
+source is marked as soon as it is embedded, and searches go first, so a build
+waiting on its own searches never waits for an unrelated board. The
 crawler never works out which users are affected, and announces nothing: a
 build that needs a source waits for it and reads it itself.
 """
@@ -113,7 +115,8 @@ async def crawl_due(
     timeout_seconds: float,
     embedding_model: str,
 ) -> list[CrawlOutcome]:
-    """Fetch every source a build is waiting for (ADR 0027).
+    """Fetch every source a build is waiting for (ADR 0027): the searches
+    first, which are what a user's build waits on, then the boards.
 
     A source on a host that is paused or past its daily ceiling is skipped and
     stays due. Any other failure is recorded on the source and counts as
@@ -122,8 +125,9 @@ async def crawl_due(
     sources = await ingest.due_sources()
     if not sources:
         return []
+    # A search is filed under its place; a board has none.
+    sources = sorted(sources, key=lambda source: source.market is None)
     outcomes: list[CrawlOutcome] = []
-    fetched: list[uuid.UUID] = []
     async with GuardedClient(timeout_seconds=timeout_seconds, user_agent=user_agent) as client:
         for source in sources:
             try:
@@ -151,12 +155,14 @@ async def crawl_due(
                 log.warning("crawl.source_failed", source_id=str(source.id), reason=exc.message)
                 await ingest.record_crawl(source.id, [], error=exc.message)
                 outcomes.append(CrawlOutcome(source.id, 0, 0, exc.message))
-                fetched.append(source.id)
+                await ingest.mark_fetched([source.id])
                 continue
 
             outcome = await _store(ingest, source, postings)
             outcomes.append(outcome)
-            fetched.append(source.id)
+            await embed_new_postings(ingest, embedding_model)
+            # Only now: a build that starts on this source finds its vectors.
+            await ingest.mark_fetched([source.id])
             if outcome.error is None:
                 log.info(
                     "crawl.source_done",
@@ -164,10 +170,6 @@ async def crawl_due(
                     upserted=outcome.upserted,
                     expired=outcome.expired,
                 )
-
-    await embed_new_postings(ingest, embedding_model)
-    # Only now: a build that starts on these sources finds their vectors.
-    await ingest.mark_fetched(fetched)
     return outcomes
 
 

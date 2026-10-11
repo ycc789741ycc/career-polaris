@@ -47,6 +47,7 @@ from advisor.market.domain import (
     target_location_option,
 )
 from advisor.market.infra import mappers, models
+from kernel.clock import utcnow
 from kernel.db.repository import SqlAlchemyRepository
 
 # --- shared zone -----------------------------------------------------------
@@ -79,7 +80,18 @@ class SqlAlchemyCompanyRepository(
             found.append(models.Company.id.in_(filter.ids))
         if filter.normalized_name is not None:
             found.append(models.Company.normalized_name == filter.normalized_name)
+        if filter.normalized_names is not None:
+            found.append(models.Company.normalized_name.in_(filter.normalized_names))
         return found
+
+    async def create_absent(self, companies: list[Company]) -> None:
+        if not companies:
+            return
+        await self._session.execute(
+            pg_insert(models.Company)
+            .values([mappers.company_values(company) for company in companies])
+            .on_conflict_do_nothing(index_elements=[models.Company.normalized_name])
+        )
 
 
 class SqlAlchemyCrawlSourceRepository(
@@ -172,6 +184,8 @@ class SqlAlchemyJobPostingRepository(
             found.append(posting.id.in_(filter.ids))
         if filter.canonical_key is not None:
             found.append(posting.canonical_key == filter.canonical_key)
+        if filter.canonical_keys is not None:
+            found.append(posting.canonical_key.in_(filter.canonical_keys))
         if filter.status is not None:
             found.append(posting.status == str(filter.status))
         if filter.has_salary is True:
@@ -187,6 +201,21 @@ class SqlAlchemyJobPostingRepository(
                 )
             )
         return found
+
+    async def create_many(self, postings: list[JobPosting]) -> None:
+        if postings:
+            await self._session.execute(
+                insert(models.JobPosting), [mappers.job_posting_values(p) for p in postings]
+            )
+
+    async def update_many(self, postings: list[JobPosting]) -> None:
+        # By primary key, every row with the same columns: one executemany.
+        if postings:
+            now = utcnow()
+            await self._session.execute(
+                update(models.JobPosting),
+                [{**mappers.job_posting_values(p), "updated_at": now} for p in postings],
+            )
 
     async def expire_unseen(self, source_id: uuid.UUID, seen_keys: set[str]) -> int:
         posting = models.JobPosting
@@ -357,6 +386,13 @@ class SqlAlchemyPostingEmbeddingRepository(
         if filter.model_name is not None:
             found.append(embedding.model_name == filter.model_name)
         return found
+
+    async def create_many(self, embeddings: list[PostingEmbedding]) -> None:
+        if embeddings:
+            await self._session.execute(
+                insert(models.PostingEmbedding),
+                [mappers.posting_embedding_values(e) for e in embeddings],
+            )
 
 
 class SqlAlchemySearchResultRepository(

@@ -244,17 +244,13 @@ class CrawlIngest:
             if error is not None:
                 return (0, 0)
 
-            seen: dict[str, uuid.UUID] = {}
-            for posting in postings:
-                company = await _ensure_company(market, posting.company_name)
-                stored = await _upsert_posting(market, source_id, company.id, posting)
-                seen.setdefault(posting.canonical_key, stored)
+            stored = await _store_postings(market, source_id, postings, at=now)
 
             if source.is_search:
-                await market.search_results.replace(source_id, list(seen.values()), at=now)
-                return (len(seen), 0)
-            expired = await market.postings.expire_unseen(source_id, set(seen))
-            return (len(seen), expired)
+                await market.search_results.replace(source_id, list(stored.values()), at=now)
+                return (len(stored), 0)
+            expired = await market.postings.expire_unseen(source_id, set(stored))
+            return (len(stored), expired)
 
     async def mark_fetched(self, source_ids: Iterable[uuid.UUID]) -> None:
         """These sources' fetches are stored and embedded: the builds waiting
@@ -307,10 +303,12 @@ class CrawlIngest:
         self, model_name: str, vectors: dict[uuid.UUID, list[float]]
     ) -> None:
         async with self._uow.shared() as market:
-            for posting_id, vector in vectors.items():
-                await market.embeddings.create(
+            await market.embeddings.create_many(
+                [
                     PostingEmbedding(posting_id=posting_id, model_name=model_name, vector=vector)
-                )
+                    for posting_id, vector in vectors.items()
+                ]
+            )
 
 
 class MarketService:
@@ -627,27 +625,56 @@ async def _ensure_company(market: SharedMarket, name: str) -> Company:
     return await market.companies.create(Company.named(name))
 
 
-async def _upsert_posting(
+async def _store_postings(
     market: SharedMarket,
     source_id: uuid.UUID,
-    company_id: uuid.UUID,
-    posting: NormalizedPosting,
-) -> uuid.UUID:
-    """Store one posting, new or seen again. Returns its id."""
-    now = utcnow()
-    existing = _first(
-        await market.postings.get_list(
-            JobPostingFilter(canonical_key=posting.canonical_key), page_size=1
-        )
-    )
-    if existing is None:
-        created = await market.postings.create(
-            JobPosting.first_seen(posting, company_id=company_id, source_id=source_id, at=now)
-        )
-        return created.id
-    existing.seen_again(posting, source_id=source_id, at=now)
-    await market.postings.update(existing)
-    return existing.id
+    postings: list[NormalizedPosting],
+    *,
+    at: datetime,
+) -> dict[str, uuid.UUID]:
+    """Store one fetch's postings, new or seen again, in a fixed number of
+    queries however many there are: the crawler reaches Postgres over the
+    tunnel (ADR 0051), where a query per posting made a large board take
+    minutes. Returns each canonical key's posting id, in the order the fetch
+    first listed them.
+
+    A key listed twice is stored once, as the later listing has it.
+    """
+    if not postings:
+        return {}
+    companies = await _companies_named(market, [p.company_name for p in postings])
+    keys = tuple(dict.fromkeys(p.canonical_key for p in postings))
+    found = {
+        p.canonical_key: p
+        for p in await market.postings.get_list(JobPostingFilter(canonical_keys=keys))
+    }
+    created: dict[str, JobPosting] = {}
+    for posting in postings:
+        existing = found.get(posting.canonical_key)
+        if existing is None:
+            new = JobPosting.first_seen(
+                posting,
+                company_id=companies[normalize(posting.company_name)],
+                source_id=source_id,
+                at=at,
+            )
+            found[posting.canonical_key] = created[posting.canonical_key] = new
+        else:
+            existing.seen_again(posting, source_id=source_id, at=at)
+    await market.postings.create_many(list(created.values()))
+    await market.postings.update_many([p for k, p in found.items() if k not in created])
+    return {key: found[key].id for key in keys}
+
+
+async def _companies_named(market: SharedMarket, names: list[str]) -> dict[str, uuid.UUID]:
+    """The company of each of these names, made where none exists yet, keyed
+    by normalized name. Two queries however many names."""
+    wanted: dict[str, str] = {}
+    for name in names:
+        wanted.setdefault(normalize(name), name)
+    await market.companies.create_absent([Company.named(name) for name in wanted.values()])
+    stored = await market.companies.get_list(CompanyFilter(normalized_names=tuple(wanted)))
+    return {company.normalized_name: company.id for company in stored}
 
 
 class _SearchAdapter(Protocol):
