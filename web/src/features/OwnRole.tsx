@@ -6,7 +6,7 @@ import type {
   OwnPostingPage,
 } from "../api/types";
 import { Button, ErrorNote, Eyebrow, FitBadge } from "../components/ui";
-import { getShownModel, useShell } from "../shell/ShellContext";
+import { getShownModel, isOnPlatform, useShell } from "../shell/ShellContext";
 import { useActivity } from "../shell/activity";
 import { useToast } from "../shell/toast";
 import { recordTargetUse } from "./advisorTarget";
@@ -413,8 +413,9 @@ export function MyRoles({
         </span>
       </div>
       <p className="subcopy" style={{ margin: "4px 0 12px" }}>
-        Setting a role as target compares it with your strengths, at a cost
-        shown first on your key.
+        {isOnPlatform(status)
+          ? "Setting a role as target compares it with your strengths using CareerPolaris AI."
+          : "Setting a role as target compares it with your strengths, at a cost shown first on your key."}
         {currentTarget ? ` It replaces ${currentTarget} as your target.` : ""}
       </p>
       {pricing && (

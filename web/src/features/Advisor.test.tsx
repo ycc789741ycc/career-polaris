@@ -169,9 +169,11 @@ function renderAdvisor(
   focus: Focus | null,
   tab: AdvisorTab = "plan",
   activity: Activity | null = null,
+  aiSource: Shell["status"]["aiSource"] = null,
 ) {
   const shell: Shell = {
     status: {
+      aiSource,
       me: null,
       credential: null,
     },
@@ -619,6 +621,28 @@ describe("Advisor jobs in the background (ADR 0042)", () => {
       .closest("div")!;
     await user.click(within(notice).getByRole("button", { name: "View" }));
     expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "resume" });
+  });
+
+  it("hides the job price and charging copy on CareerPolaris AI", async () => {
+    renderAdvisor({ role: "r1" }, "resume", writing, {
+      source: "platform",
+      has_credential: true,
+      is_platform_on: true,
+      is_eligible: true,
+      platform_quota: {
+        allowed_usd: "2",
+        spent_usd: "0.75",
+        remaining_usd: "1.25",
+      },
+    });
+    const card = await screen.findByRole("status", {
+      name: "Writing your résumé…",
+    });
+    expect(card).toHaveTextContent("CareerPolaris AI");
+    expect(card).not.toHaveTextContent(/\$|on your key|charged/);
+    expect(
+      within(card).getByRole("button", { name: "Cancel" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the job's card on its own tab, and Cancel posts", async () => {

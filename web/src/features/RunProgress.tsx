@@ -40,6 +40,7 @@ export function RunProgress({
   leaveCopy,
   back,
   costCopy,
+  costHeading = "What this run costs",
   action,
 }: {
   /** The section's accessible name, e.g. "Strength analysis progress". */
@@ -54,6 +55,7 @@ export function RunProgress({
   leaveCopy: string;
   back: { label: string; onClick: () => void };
   costCopy: string;
+  costHeading?: string;
   /** Beside the elapsed time: the run's Cancel (ADR 0072). */
   action?: ReactNode;
 }) {
@@ -133,7 +135,7 @@ export function RunProgress({
           </Button>
         </div>
         <div className="panel">
-          <h3 className="run-card-heading">What this run costs</h3>
+          <h3 className="run-card-heading">{costHeading}</h3>
           <p className="run-card-copy">{costCopy}</p>
         </div>
       </div>
