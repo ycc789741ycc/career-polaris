@@ -18,6 +18,7 @@ from advisor.target import (
     MAX_REQUIREMENT_LINE,
     MAX_REQUIREMENT_LINES,
     MAX_TITLE,
+    OpeningFitView,
     OwnPostingView,
     TargetRef,
 )
@@ -128,3 +129,24 @@ class OwnPosting(ApiModel):
 
 class OwnPostingPage(Page[OwnPosting]):
     pass
+
+
+class OpeningFit(ApiModel):
+    """The user's fit to one opening, scored by AI from its own description
+    when its gap analysis ran (ADR 0073)."""
+
+    job_posting_id: uuid.UUID
+    fit: int
+    # Scored against an analysis older than the latest: the next gap analysis
+    # scores it again.
+    is_stale: bool
+    scored_at: Timestamp
+
+    @classmethod
+    def from_view(cls, found: OpeningFitView) -> OpeningFit:
+        return cls(
+            job_posting_id=found.job_posting_id,
+            fit=found.fit,
+            is_stale=found.is_stale,
+            scored_at=found.scored_at,
+        )

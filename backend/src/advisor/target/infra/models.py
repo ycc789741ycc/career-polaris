@@ -2,8 +2,10 @@
 
 A posting of the user's own and what was made of it: the JD they brought, the
 runs that read and scored it, its requirements, the AI's evaluation of them
-and the fit worked out from it. The crawler has no grant on this schema, so a
-JD stored here cannot reach anyone else, however a query is written.
+and the fit worked out from it. And the same three for an opening the user
+aimed at (ADR 0073), read from the shared posting's description. The crawler
+has no grant on this schema, so a JD stored here cannot reach anyone else,
+however a query is written.
 """
 
 from __future__ import annotations
@@ -176,6 +178,86 @@ class OwnPostingFit(Base, OwnedMixin):
     # The posting_requirement_fit it was worked out from.
     source_fit_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("target.posting_requirement_fit.id", ondelete="CASCADE"), nullable=False
+    )
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    uncovered: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class OpeningRequirement(Base, OwnedMixin):
+    """Free text read out of an opening's description, once (ADR 0073). It
+    has no dimension. ``job_posting_id`` names a shared posting in
+    ``market``, across schemas, so it has no foreign key: the requirements
+    outlive the posting."""
+
+    __tablename__ = "opening_requirement"
+    __table_args__ = (
+        Index("ix_opening_requirement_owner_posting", "owner_id", "job_posting_id"),
+        {"schema": "target"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_level: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class OpeningRequirementFit(Base, OwnedMixin):
+    """The AI's evaluation of an opening: its requirements mapped onto the
+    user's dimensions, with targets. Every one taken is kept; the newest per
+    opening is the current one."""
+
+    __tablename__ = "opening_requirement_fit"
+    __table_args__ = (
+        Index(
+            "ix_opening_requirement_fit_owner_posting",
+            "owner_id",
+            "job_posting_id",
+            "created_at",
+        ),
+        {"schema": "target"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    # [{statement, weight, expected_level}], as scored.
+    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    requirements_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class OpeningFit(Base, OwnedMixin):
+    """The user's fit to an opening, worked out locally from an
+    opening_requirement_fit; never an AI call. Every one is kept, the newest
+    current."""
+
+    __tablename__ = "opening_fit"
+    __table_args__ = (
+        Index("ix_opening_fit_owner_posting", "owner_id", "job_posting_id", "created_at"),
+        {"schema": "target"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    job_posting_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    # The opening_requirement_fit it was worked out from.
+    source_fit_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("target.opening_requirement_fit.id", ondelete="CASCADE"), nullable=False
     )
     assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -14,6 +14,7 @@ import type {
   FitPage,
   MatchedPosting,
   MatchedPostingPage,
+  OpeningFit,
   OwnPosting,
   PlanSummary,
   PlanSummaryPage,
@@ -53,7 +54,7 @@ import { OwnRole, statusLine, useOwnPostings } from "./OwnRole";
 import { PreviousTargets } from "./PreviousTargets";
 import { Resume } from "./Resume";
 import { Credit, pickBand } from "./Roles";
-import type { AdvisorTarget } from "./target";
+import { type AdvisorTarget, sameTarget } from "./target";
 import { useAsync } from "./useAsync";
 
 /**
@@ -73,6 +74,7 @@ import { useAsync } from "./useAsync";
 export function Advisor({ tab }: { tab: AdvisorTab }) {
   const { focus, navigate, account } = useShell();
   const flash = useToast();
+  const { settled } = useActivity();
   const picked = roleFocus(focus);
   const roles = useAsync<Role[]>(() => api.items<RolePage>("/roles"), []);
   const fits = useAsync<Fit[]>(() => api.items<FitPage>("/fits"), []);
@@ -84,6 +86,17 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
           )
         : Promise.resolve([]),
     [picked?.role],
+  );
+  // An opening's own fit, scored by its gap analysis (ADR 0073): read again
+  // when an Advisor job ends, since that may be the one that scored it.
+  const openingFit = useAsync<OpeningFit | null>(
+    () =>
+      picked?.opening
+        ? api.get<OpeningFit | null>(
+            `/opening-fit?${new URLSearchParams({ job_posting_id: picked.opening })}`,
+          )
+        : Promise.resolve(null),
+    [picked?.opening, settled.advisor],
   );
   const own = useOwnPostings();
   const plans = useAsync<PlanSummary[]>(
@@ -99,6 +112,7 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     roles.error ??
     fits.error ??
     openings.error ??
+    openingFit.error ??
     plans.error ??
     resumes.error ??
     own.error;
@@ -118,7 +132,13 @@ export function Advisor({ tab }: { tab: AdvisorTab }) {
     ? null
     : "posting" in focus
       ? ownTargetFor(focus.posting, own.data)
-      : targetFor(focus, roles.data, fits.data, openings.data);
+      : targetFor(
+          focus,
+          roles.data,
+          fits.data,
+          openings.data,
+          openingFit.data ?? null,
+        );
   const previous = getPreviousTargets({
     history: getStoredTargets(account).history,
     plans: plans.data,
@@ -282,6 +302,13 @@ function Aimed({
     jobs.find((j) => jobTab(j.kind) === which);
   const running = tab === "own" ? undefined : jobOn(tab);
   const elsewhere = jobs.filter((j) => jobTab(j.kind) !== tab);
+  // An opening is planned and written for against its own fit, scored by its
+  // gap analysis; before that the plan and résumé have nothing to stand on,
+  // unless one was drafted for it already (ADR 0073).
+  const isUnscoredOpening =
+    target.ref.job_posting_id != null && target.fit === null;
+  const hasDrafted = (entries: { target: TargetRef }[]) =>
+    entries.some((entry) => sameTarget(entry.target, target.ref));
 
   // A job that ended changed a plan or a résumé: the lists read it again.
   useEffect(() => {
@@ -385,6 +412,17 @@ function Aimed({
             onResumesChanged();
           }}
         />
+      ) : isUnscoredOpening && !hasDrafted(tab === "plan" ? plans : resumes) ? (
+        <EmptyState title="Run the gap analysis first">
+          {tab === "plan" ? "A gap plan" : "A résumé"} for this opening is
+          measured against your fit to it, which its gap analysis scores from
+          what the posting asks for.
+          <span style={{ display: "block", marginTop: 14 }}>
+            <Button onClick={() => navigate("advisor", { tab: "gaps" })}>
+              Go to Fill the gap
+            </Button>
+          </span>
+        </EmptyState>
       ) : tab === "plan" ? (
         <GapPlan
           target={target}
@@ -452,7 +490,7 @@ function TargetBanner({
           )}
           <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
             {target.postingTitle
-              ? "Everything on this page is measured against this opening: the role's requirements, as it weighs them."
+              ? "Everything on this page is measured against this opening: what its own posting asks for, read when you analyse its gaps."
               : "Everything on this page is measured against this one role."}
             {target.requirementsEstimated &&
               " What it asks for is estimated from its title, not read from a posting."}
@@ -481,13 +519,15 @@ function TargetBanner({
 
 /**
  * The Target a focus names, from the role map's own data; null when the role,
- * or the opening in it, has left the map. Pure.
+ * or the opening in it, has left the map. An opening's fit is its own, scored
+ * by its gap analysis, and none before: never its role's (ADR 0073). Pure.
  */
 export function targetFor(
   focus: RoleFocus,
   roles: Role[],
   fits: Fit[],
   openings: MatchedPosting[],
+  openingFit: OpeningFit | null = null,
 ): AdvisorTarget | null {
   const role = roles.find((r) => r.id === focus.role);
   if (!role) return null;
@@ -514,7 +554,11 @@ export function targetFor(
     postingTitle: opening?.title ?? null,
     url: opening?.url ?? null,
     creditedTo: opening?.credited_to ?? null,
-    fit: opening?.fit ?? roleFit,
+    fit: opening
+      ? openingFit && openingFit.job_posting_id === opening.posting_id
+        ? openingFit.fit
+        : null
+      : roleFit,
     band: opening?.salary
       ? money(opening.salary.currency, opening.salary.min, opening.salary.max)
       : roleBand

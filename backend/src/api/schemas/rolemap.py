@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping
 from datetime import date
-from typing import Any, Literal
+from typing import Any
 
 from advisor.rolemap import (
     FitView,
@@ -194,10 +194,9 @@ class MatchedPosting(ApiModel):
     location: str | None
     url: str | None
     salary: Salary | None
-    # The opening's own fit (`posting`), or its role's before a build has
-    # worked the opening's out (`role`).
+    # Its role's fit (ADR 0073): an opening's own is the Advisor's
+    # (`GET /opening-fit`), once its gap analysis runs.
     fit: int | None
-    fit_basis: Literal["role", "posting"] = "role"
     # atsBoard, jsonLd or publicApi; never a site that forbids crawling.
     source_kind: str | None
     # The job site whose API found this opening, to be named beside its link
@@ -219,7 +218,6 @@ class MatchedPosting(ApiModel):
             url=m.url,
             salary=Salary.of(m.salary),
             fit=m.fit,
-            fit_basis=m.fit_basis,
             source_kind=m.source_kind,
             credited_to=m.credited_to,
             posted_on=m.posted_on,

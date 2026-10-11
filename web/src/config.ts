@@ -23,7 +23,9 @@ declare global {
 
 export function loadConfig(): AppConfig {
   const raw = window.__APP_CONFIG__;
-  const missing = (["apiBaseUrl", "privacyContactEmail"] as const).filter((key) => !raw?.[key]);
+  const missing = (["apiBaseUrl", "privacyContactEmail"] as const).filter(
+    (key) => !raw?.[key],
+  );
   if (missing.length > 0) {
     throw new Error(
       `config.js is missing ${missing.join(", ")}. It is generated from the ` +

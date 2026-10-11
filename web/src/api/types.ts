@@ -51,6 +51,7 @@ export type Role = Schemas["Role"];
 export type RoleCandidate = Schemas["RoleCandidate"];
 /** A posting the user brings themselves, to aim the Advisor at (Phase 8). */
 export type OwnPosting = Schemas["OwnPosting"];
+export type OpeningFit = Schemas["OpeningFit"];
 /** What reading and scoring a posting of the user's own costs, first. */
 export type OwnPostingEstimate = Schemas["OwnPostingEstimate"];
 /** The most a role-map rebuild can cost, fits included: a ceiling at the

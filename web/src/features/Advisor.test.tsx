@@ -6,6 +6,7 @@ import type {
   Activity,
   Fit,
   MatchedPosting,
+  OpeningFit,
   OwnPosting,
   PlanSummary,
   Role,
@@ -88,8 +89,7 @@ const northwind: MatchedPosting = {
   location: "Berlin",
   url: null,
   salary: { min: 165000, max: 190000, currency: "EUR" },
-  fit: 86,
-  fit_basis: "role",
+  fit: 81,
   source_kind: "atsBoard",
   credited_to: null,
 };
@@ -120,6 +120,14 @@ function plan(
   };
 }
 
+// The opening's own fit, scored by its gap analysis (ADR 0073); null before.
+let openingFit: OpeningFit | null = {
+  job_posting_id: "p1",
+  fit: 86,
+  is_stale: false,
+  scored_at: "2026-10-10T09:00:00Z",
+};
+
 function serve() {
   vi.stubGlobal(
     "fetch",
@@ -130,23 +138,25 @@ function serve() {
           ? page([backend, principal])
           : url === "/fits"
             ? page([fit("r1", 81), fit("r3", 64)])
-            : url.startsWith("/matched-postings?role_id=r1")
-              ? page([northwind])
-              : url.startsWith("/matched-postings")
-                ? page([])
-                : url === "/gap-plans"
-                  ? page([
-                      plan("r3", null, "plan-1"),
-                      plan(null, null, "plan-2", "j1"),
-                    ])
-                  : url === "/tailored-resumes"
-                    ? page([])
-                    : url === "/own-postings"
-                      ? page([
-                          own("j1"),
-                          own("j2", { status: "running", fit: null }),
-                        ])
-                      : null;
+            : url.startsWith("/opening-fit?job_posting_id=p1")
+              ? openingFit
+              : url.startsWith("/matched-postings?role_id=r1")
+                ? page([northwind])
+                : url.startsWith("/matched-postings")
+                  ? page([])
+                  : url === "/gap-plans"
+                    ? page([
+                        plan("r3", null, "plan-1"),
+                        plan(null, null, "plan-2", "j1"),
+                      ])
+                    : url === "/tailored-resumes"
+                      ? page([])
+                      : url === "/own-postings"
+                        ? page([
+                            own("j1"),
+                            own("j2", { status: "running", fit: null }),
+                          ])
+                        : null;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -199,9 +209,31 @@ describe("the Advisor's one target role", () => {
       privacyContactEmail: "privacy@example.test",
     };
     window.localStorage.clear();
+    openingFit = {
+      job_posting_id: "p1",
+      fit: 86,
+      is_stale: false,
+      scored_at: "2026-10-10T09:00:00Z",
+    };
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("shows no fit for an opening before its gap analysis, and asks for it first", async () => {
+    openingFit = null;
+    renderAdvisor({ role: "r1", opening: "p1" }, "plan");
+
+    const banner = await screen.findByRole("region", {
+      name: "Your target role",
+    });
+    expect(banner).not.toHaveTextContent("81%");
+    expect(
+      await screen.findByText("Run the gap analysis first"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Go to Fill the gap" }),
+    ).toBeInTheDocument();
+  });
 
   it("is No target yet until a target is set: its steps locked, three ways to set one", async () => {
     const user = userEvent.setup();
@@ -265,10 +297,13 @@ describe("the Advisor's one target role", () => {
     renderAdvisor({ role: "r1" });
 
     await screen.findByRole("region", { name: "Your target role" });
-    expect(getStoredTargets("maya@example.com").current).toEqual({
-      role_id: "r1",
-      job_posting_id: null,
-      private_job_posting_id: null,
+    // The banner can appear before the effect saves the target for the sidebar.
+    await waitFor(() => {
+      expect(getStoredTargets("maya@example.com").current).toEqual({
+        role_id: "r1",
+        job_posting_id: null,
+        private_job_posting_id: null,
+      });
     });
   });
 
@@ -446,6 +481,12 @@ describe("what a focus aims at", () => {
       [backend],
       [fit("r1", 81)],
       [northwind],
+      {
+        job_posting_id: "p1",
+        fit: 86,
+        is_stale: false,
+        scored_at: "2026-10-10T09:00:00Z",
+      },
     );
     expect(target?.ref).toEqual({
       role_id: "r1",
@@ -455,6 +496,17 @@ describe("what a focus aims at", () => {
     expect(target?.band).toBe("EUR 165k–190k");
     expect(target?.fit).toBe(86);
     expect(target?.creditedTo).toBeNull();
+  });
+
+  it("has no fit for an opening before its gap analysis, never its role's", () => {
+    const target = targetFor(
+      { role: "r1", opening: "p1" },
+      [backend],
+      [fit("r1", 81)],
+      [northwind],
+      null,
+    );
+    expect(target?.fit).toBeNull();
   });
 
   it("carries the job site an opening was found through, to credit it", () => {

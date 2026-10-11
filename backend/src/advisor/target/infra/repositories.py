@@ -14,6 +14,15 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
 from advisor.target.domain import (
+    OpeningFit,
+    OpeningFitFilter,
+    OpeningFitRepository,
+    OpeningRequirement,
+    OpeningRequirementFilter,
+    OpeningRequirementFit,
+    OpeningRequirementFitFilter,
+    OpeningRequirementFitRepository,
+    OpeningRequirementRepository,
     OwnPostingFit,
     OwnPostingFitFilter,
     OwnPostingFitRepository,
@@ -182,3 +191,93 @@ class SqlAlchemyOwnPostingFitRepository(
         if filter.private_job_posting_ids is None:
             return []
         return [models.OwnPostingFit.private_job_posting_id.in_(filter.private_job_posting_ids)]
+
+
+class SqlAlchemyOpeningRequirementRepository(
+    SqlAlchemyRepository[OpeningRequirement, models.OpeningRequirement, OpeningRequirementFilter],
+    OpeningRequirementRepository,
+):
+    model = models.OpeningRequirement
+    id_column = models.OpeningRequirement.id
+    created_column = models.OpeningRequirement.id
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
+        models.OpeningRequirement.owner_id
+    )
+    noun = "opening requirement"
+
+    def to_entity(self, row: models.OpeningRequirement) -> OpeningRequirement:
+        return mappers.opening_requirement(row)
+
+    def to_row(self, entity: OpeningRequirement) -> models.OpeningRequirement:
+        return mappers.opening_requirement_row(entity)
+
+    def apply(self, row: models.OpeningRequirement, entity: OpeningRequirement) -> None:
+        mappers.apply_opening_requirement(row, entity)
+
+    def id_of(self, entity: OpeningRequirement) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: OpeningRequirementFilter) -> list[ColumnElement[bool]]:
+        if filter.job_posting_id is None:
+            return []
+        return [models.OpeningRequirement.job_posting_id == filter.job_posting_id]
+
+
+class SqlAlchemyOpeningRequirementFitRepository(
+    SqlAlchemyRepository[
+        OpeningRequirementFit, models.OpeningRequirementFit, OpeningRequirementFitFilter
+    ],
+    OpeningRequirementFitRepository,
+):
+    model = models.OpeningRequirementFit
+    id_column = models.OpeningRequirementFit.id
+    created_column = models.OpeningRequirementFit.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = (
+        models.OpeningRequirementFit.owner_id
+    )
+    noun = "opening requirement fit"
+
+    def to_entity(self, row: models.OpeningRequirementFit) -> OpeningRequirementFit:
+        return mappers.opening_requirement_fit(row)
+
+    def to_row(self, entity: OpeningRequirementFit) -> models.OpeningRequirementFit:
+        return mappers.opening_requirement_fit_row(entity)
+
+    def apply(self, row: models.OpeningRequirementFit, entity: OpeningRequirementFit) -> None:
+        mappers.apply_opening_requirement_fit(row, entity)
+
+    def id_of(self, entity: OpeningRequirementFit) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: OpeningRequirementFitFilter) -> list[ColumnElement[bool]]:
+        if filter.job_posting_id is None:
+            return []
+        return [models.OpeningRequirementFit.job_posting_id == filter.job_posting_id]
+
+
+class SqlAlchemyOpeningFitRepository(
+    SqlAlchemyRepository[OpeningFit, models.OpeningFit, OpeningFitFilter],
+    OpeningFitRepository,
+):
+    model = models.OpeningFit
+    id_column = models.OpeningFit.id
+    created_column = models.OpeningFit.created_at
+    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.OpeningFit.owner_id
+    noun = "opening fit"
+
+    def to_entity(self, row: models.OpeningFit) -> OpeningFit:
+        return mappers.opening_fit(row)
+
+    def to_row(self, entity: OpeningFit) -> models.OpeningFit:
+        return mappers.opening_fit_row(entity)
+
+    def apply(self, row: models.OpeningFit, entity: OpeningFit) -> None:
+        mappers.apply_opening_fit(row, entity)
+
+    def id_of(self, entity: OpeningFit) -> uuid.UUID:
+        return entity.id
+
+    def conditions(self, filter: OpeningFitFilter) -> list[ColumnElement[bool]]:
+        if filter.job_posting_ids is None:
+            return []
+        return [models.OpeningFit.job_posting_id.in_(filter.job_posting_ids)]

@@ -36,6 +36,11 @@ type Draft = { choice: string | null; text: string };
  * the gaps between the user's evidence and the target role, answered here and
  * submitted together.
  *
+ * The gap analysis starts here and only here (ADR 0073): aiming the Advisor
+ * from the role map runs nothing. For an opening it first reads what the
+ * posting asks for and scores the user's fit to it, then writes the
+ * questions, in one job at one confirmed price.
+ *
  * Nothing is saved per question. One submit records every answer as evidence
  * ("Your answers" on Sources) and spends nothing: the gap plan and résumé then
  * say they are outdated, and the user regenerates them (ADR 0035). A question
@@ -54,6 +59,7 @@ export function FillTheGap({
   // A job just started: the shell polls it, and the tab shows its card.
   const { refresh: refreshActivity } = useActivity();
   const model = modelName(status);
+  const isOpening = target.ref.job_posting_id != null;
   const [set, setSet] = useState<QuestionSet | null | undefined>(undefined);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [writeCost, setWriteCost] = useState<PlanEstimate | null>(null);
@@ -171,8 +177,11 @@ export function FillTheGap({
       onConfirm={() => void write()}
       onCancel={() => setWriteCost(null)}
     >
-      Writing questions for the gaps of <strong>{target.label}</strong> costs
-      about <strong>${writeCost.cost_usd}</strong> on{" "}
+      {isOpening
+        ? "Reading what this opening asks for, scoring your fit to it and writing questions for the gaps of "
+        : "Writing questions for the gaps of "}
+      <strong>{target.label}</strong> costs {isOpening ? "at most" : "about"}{" "}
+      <strong>${writeCost.cost_usd}</strong> on{" "}
       {getShownModel(status, writeCost.model_id)}, charged to your own provider.
     </CostConfirm>
   );
@@ -181,13 +190,14 @@ export function FillTheGap({
     return (
       <section>
         {writeConfirm}
-        <EmptyState title="No questions yet">
-          {model} compares your sources with what {target.roleName} asks for and
-          writes a few questions for each gap. Your answers become evidence, and
-          the gap plan and résumé use them.
+        <EmptyState title="No gap analysis yet">
+          {isOpening
+            ? `${model} reads what this opening asks for, scores your fit to it, and writes a few questions for each gap.`
+            : `${model} compares your sources with what ${target.roleName} asks for and writes a few questions for each gap.`}{" "}
+          Your answers become evidence, and the gap plan and résumé use them.
           <span style={{ display: "block", marginTop: 14 }}>
             <Button busy={busy} onClick={() => void price()}>
-              Write questions
+              Analyse the gaps
             </Button>
           </span>
         </EmptyState>
@@ -201,8 +211,9 @@ export function FillTheGap({
       <div className="panel" role="status">
         <Eyebrow>Fill the gap</Eyebrow>
         <p className="subcopy">
-          Writing questions on {set.model_id ?? model} for the gaps of{" "}
-          {set.label}…
+          {set.gaps.length === 0
+            ? `Reading ${set.label} and scoring your fit to it…`
+            : `Writing questions on ${set.model_id ?? model} for the gaps of ${set.label}…`}
         </p>
       </div>
     );
@@ -236,9 +247,10 @@ export function FillTheGap({
       <div className="panel" style={{ marginBottom: 20 }}>
         <Eyebrow>Between your evidence and {set.label}</Eyebrow>
         <p className="subcopy" style={{ margin: "6px 0 0" }}>
-          {set.model_id ?? model} compared your sources with what this role asks
-          for and wrote a few questions for each gap. Answer what you can, then
-          submit. Anything you skip stays a gap.
+          {set.model_id ?? model} compared your sources with what this{" "}
+          {isOpening ? "opening" : "role"} asks for and wrote a few questions
+          for each gap. Answer what you can, then submit. Anything you skip
+          stays a gap.
         </p>
       </div>
 

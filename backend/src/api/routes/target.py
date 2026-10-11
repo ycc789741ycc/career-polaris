@@ -1,7 +1,8 @@
 """Target HTTP surface: the postings the user brings themselves to aim the
 Advisor at (Phase 8, ADR 0033), uploaded as a file or filled in by hand, which
 are never on the role map. Adding one spends nothing; setting it as the target
-reads and scores it (ADR 0034)."""
+reads and scores it (ADR 0034). And an opening's fit, scored when its gap
+analysis runs (ADR 0073)."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from fastapi import APIRouter, File, Form, Query, UploadFile
 from advisor.target import MAX_COMPANY_NAME, MAX_TITLE, TargetRef
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.target import (
+    OpeningFit,
     OwnPosting,
     OwnPostingEstimate,
     OwnPostingPage,
@@ -140,6 +142,16 @@ async def remove_own_posting(
     """Delete it, its JD and everything made of it. Plans and résumés aimed at
     it keep their snapshots."""
     await deps.target.remove_own_posting(user, private_job_posting_id)
+
+
+@router.get("/opening-fit")
+async def opening_fit(
+    job_posting_id: Annotated[uuid.UUID, Query()], user: CurrentUser, deps: Deps
+) -> OpeningFit | None:
+    """The user's fit to one opening, scored when its gap analysis ran in
+    Fill the gap (ADR 0073); ``null`` before. Spends nothing."""
+    found = await deps.target.get_opening_fit(user, job_posting_id)
+    return OpeningFit.from_view(found) if found is not None else None
 
 
 __all__ = ["router"]

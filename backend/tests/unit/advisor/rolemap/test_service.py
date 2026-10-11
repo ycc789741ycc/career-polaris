@@ -1468,18 +1468,16 @@ async def _role_with_openings(
 
 
 @pytest.mark.usefixtures("embedded")
-async def test_every_opening_gets_its_own_fit_from_its_roles() -> None:
+async def test_a_build_scores_each_role_and_no_opening() -> None:
+    """An opening is scored only when its gap analysis runs in the Advisor
+    (ADR 0073): a build makes one AI call per role, and nothing per opening."""
     gateway = TwoDimensionGateway()
-    rolemap, uow, role_id, backend, data = await _role_with_openings(gateway)
+    rolemap, _uow, role_id, _backend, _data = await _role_with_openings(gateway)
 
     [role_fit] = await rolemap.compute_fits(OWNER)
 
-    # One AI call, for the role; the openings' fits are worked out from it.
     assert gateway.calls == 1
-    fits = {f.posting_key: f for f in uow.store.posting_fits.values()}
-    assert set(fits) == {str(backend.id), str(data.id)}
-    assert all(f.role_id == role_id for f in fits.values())
-    assert fits[str(data.id)].score > role_fit.score > fits[str(backend.id)].score
+    assert role_fit.role_id == role_id
 
 
 @pytest.mark.usefixtures("embedded")
@@ -1502,52 +1500,20 @@ async def test_scoring_fits_reads_the_roles_openings_not_the_market() -> None:
 
 
 @pytest.mark.usefixtures("embedded")
-async def test_working_out_the_openings_fits_is_never_an_ai_call() -> None:
-    class NoCalls:
-        async def run(self, *args: Any, **kwargs: Any) -> Any:
-            raise AssertionError("an opening's fit made an AI call")
-
-    rolemap, uow, _role_id, _backend, _data = await _role_with_openings(TwoDimensionGateway())
-    await rolemap.compute_fits(OWNER)
-    rolemap._gateway = NoCalls()  # type: ignore[assignment]
-
-    await rolemap._derive_opening_fits(OWNER, await rolemap._strengths(OWNER))
-
-    # Worked out again, and replaced as a set rather than added to.
-    assert len(uow.store.posting_fits) == 2
-
-
-@pytest.mark.usefixtures("embedded")
-async def test_a_reused_role_fit_still_has_its_openings_worked_out() -> None:
-    gateway = TwoDimensionGateway()
-    rolemap, uow, _role_id, _backend, _data = await _role_with_openings(gateway)
-    await rolemap.compute_fits(OWNER)
-    uow.store.posting_fits.clear()
-
-    await rolemap.compute_fits(OWNER)
-
-    assert gateway.calls == 1 and len(uow.store.posting_fits) == 2
-
-
-@pytest.mark.usefixtures("embedded")
-async def test_a_roles_openings_rank_by_their_own_fit() -> None:
+async def test_a_roles_openings_carry_the_roles_fit() -> None:
+    """No opening has a fit of its own on the map (ADR 0073)."""
     rolemap, _uow, role_id, backend, data = await _role_with_openings(TwoDimensionGateway())
-    before = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
-    await rolemap.compute_fits(OWNER)
+    [role_fit] = await rolemap.compute_fits(OWNER)
 
-    after = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
+    found = await rolemap.matched_postings(OWNER, limit=None, role_id=role_id)
 
-    # Before a build works them out, the role's fit, for both.
-    assert {m.fit_basis for m in before} == {"role"}
-    assert [m.posting_id for m in after] == [data.id, backend.id]
-    assert {m.fit_basis for m in after} == {"posting"}
-    assert after[0].fit is not None and after[1].fit is not None
-    assert after[0].fit > after[1].fit
+    assert {m.posting_id for m in found} == {backend.id, data.id}
+    assert {m.fit for m in found} == {role_fit.score}
 
 
 @pytest.mark.usefixtures("embedded")
 async def test_top_matched_keeps_one_opening_per_company_in_a_role_when_asked() -> None:
-    rolemap, _uow, role_id, _backend, data = await _role_with_openings(
+    rolemap, _uow, role_id, _backend, _data = await _role_with_openings(
         TwoDimensionGateway(), same_company=True
     )
     await rolemap.compute_fits(OWNER)
@@ -1556,22 +1522,7 @@ async def test_top_matched_keeps_one_opening_per_company_in_a_role_when_asked() 
     top = await rolemap.matched_postings(OWNER, limit=10, role_id=role_id, one_per_company=True)
 
     assert len(every) == 2
-    assert [m.posting_id for m in top] == [data.id]
-
-
-@pytest.mark.usefixtures("embedded")
-async def test_an_openings_fit_is_read_for_its_role_alone() -> None:
-    rolemap, _uow, role_id, backend, _data = await _role_with_openings(TwoDimensionGateway())
-    assert await rolemap.opening_fit(OWNER, role_id, backend.id) is None
-    await rolemap.compute_fits(OWNER)
-
-    fit = await rolemap.opening_fit(OWNER, role_id, backend.id)
-
-    assert fit is not None and fit.posting_key == str(backend.id)
-    # The backend opening does not ask for data pipelines: they drop out of it.
-    assert [r.statement for r in fit.requirements] == ["backend services"]
-    assert await rolemap.opening_fit(OWNER, uuid.uuid4(), backend.id) is None
-    assert fit.lifts().by_dimension["backend"] > 0
+    assert len(top) == 1
 
 
 async def test_no_roles_cost_no_fits() -> None:

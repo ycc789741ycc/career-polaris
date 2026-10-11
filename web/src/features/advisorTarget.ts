@@ -173,7 +173,10 @@ export function getPreviousTargets({
       source: "role_map",
       detail: null,
       lastUsedAt: entry.at,
-      fit: fits.find((f) => f.role_id === entry.ref.role_id)?.score ?? null,
+      // An opening's fit is its own (ADR 0073), read only in the Advisor.
+      fit: entry.ref.job_posting_id
+        ? null
+        : (fits.find((f) => f.role_id === entry.ref.role_id)?.score ?? null),
     });
   }
   return previous.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));

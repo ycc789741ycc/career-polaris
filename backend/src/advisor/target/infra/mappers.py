@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from advisor.target.domain import (
     EvaluationStage,
+    OpeningFit,
+    OpeningRequirement,
+    OpeningRequirementFit,
     OwnPostingFit,
     PostingEvaluation,
     PostingEvaluationStatus,
@@ -168,6 +171,102 @@ def fit_row(entity: OwnPostingFit) -> models.OwnPostingFit:
 
 def apply_fit(row: models.OwnPostingFit, entity: OwnPostingFit) -> None:
     row.private_job_posting_id = entity.private_job_posting_id
+    row.source_fit_id = entity.source_fit_id
+    row.assessment_id = entity.assessment_id
+    row.score = entity.score
+    row.requirements = list(entity.requirements)
+    row.requirement_map = dict(entity.requirement_map)
+    row.target_profile = dict(entity.target_profile)
+    row.gaps = list(entity.gaps)
+    row.uncovered = list(entity.uncovered)
+
+
+def opening_requirement(row: models.OpeningRequirement) -> OpeningRequirement:
+    return OpeningRequirement(
+        id=row.id,
+        owner_id=row.owner_id,
+        job_posting_id=row.job_posting_id,
+        statement=row.statement,
+        weight=row.weight,
+        expected_level=row.expected_level,
+    )
+
+
+def opening_requirement_row(entity: OpeningRequirement) -> models.OpeningRequirement:
+    row = models.OpeningRequirement(id=entity.id, owner_id=entity.owner_id)
+    apply_opening_requirement(row, entity)
+    return row
+
+
+def apply_opening_requirement(row: models.OpeningRequirement, entity: OpeningRequirement) -> None:
+    row.job_posting_id = entity.job_posting_id
+    row.statement = entity.statement
+    row.weight = entity.weight
+    row.expected_level = entity.expected_level
+
+
+def opening_requirement_fit(row: models.OpeningRequirementFit) -> OpeningRequirementFit:
+    return OpeningRequirementFit(
+        id=row.id,
+        owner_id=row.owner_id,
+        job_posting_id=row.job_posting_id,
+        assessment_id=row.assessment_id,
+        requirements=tuple(row.requirements),
+        requirement_map=dict(row.requirement_map),
+        target_profile=dict(row.target_profile),
+        reasoning=row.reasoning,
+        model_id=row.model_id,
+        template_version=row.template_version,
+        requirements_digest=row.requirements_digest,
+        created_at=row.created_at,
+    )
+
+
+def opening_requirement_fit_row(entity: OpeningRequirementFit) -> models.OpeningRequirementFit:
+    row = models.OpeningRequirementFit(id=entity.id, owner_id=entity.owner_id)
+    apply_opening_requirement_fit(row, entity)
+    return row
+
+
+def apply_opening_requirement_fit(
+    row: models.OpeningRequirementFit, entity: OpeningRequirementFit
+) -> None:
+    row.job_posting_id = entity.job_posting_id
+    row.assessment_id = entity.assessment_id
+    row.requirements = list(entity.requirements)
+    row.requirement_map = dict(entity.requirement_map)
+    row.target_profile = dict(entity.target_profile)
+    row.reasoning = entity.reasoning
+    row.model_id = entity.model_id
+    row.template_version = entity.template_version
+    row.requirements_digest = entity.requirements_digest
+
+
+def opening_fit(row: models.OpeningFit) -> OpeningFit:
+    return OpeningFit(
+        id=row.id,
+        owner_id=row.owner_id,
+        job_posting_id=row.job_posting_id,
+        source_fit_id=row.source_fit_id,
+        assessment_id=row.assessment_id,
+        score=row.score,
+        requirements=tuple(row.requirements),
+        requirement_map=dict(row.requirement_map),
+        target_profile=dict(row.target_profile),
+        gaps=tuple(row.gaps),
+        uncovered=tuple(row.uncovered),
+        created_at=row.created_at,
+    )
+
+
+def opening_fit_row(entity: OpeningFit) -> models.OpeningFit:
+    row = models.OpeningFit(id=entity.id, owner_id=entity.owner_id)
+    apply_opening_fit(row, entity)
+    return row
+
+
+def apply_opening_fit(row: models.OpeningFit, entity: OpeningFit) -> None:
+    row.job_posting_id = entity.job_posting_id
     row.source_fit_id = entity.source_fit_id
     row.assessment_id = entity.assessment_id
     row.score = entity.score

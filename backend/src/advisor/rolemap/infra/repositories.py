@@ -26,9 +26,6 @@ from advisor.rolemap.domain import (
     LineageEntry,
     LineageEntryFilter,
     LineageEntryRepository,
-    PostingFit,
-    PostingFitFilter,
-    PostingFitRepository,
     Role,
     RoleCandidate,
     RoleCandidateFilter,
@@ -274,38 +271,6 @@ class SqlAlchemyRoleFitRepository(
             found.append(fit.role_id == filter.role_id)
         if filter.assessment_id is not None:
             found.append(fit.assessment_id == filter.assessment_id)
-        return found
-
-
-class SqlAlchemyPostingFitRepository(
-    SqlAlchemyRepository[PostingFit, models.PostingFit, PostingFitFilter],
-    PostingFitRepository,
-):
-    model = models.PostingFit
-    id_column = models.PostingFit.id
-    created_column = models.PostingFit.created_at
-    owner_column: ClassVar[InstrumentedAttribute[uuid.UUID] | None] = models.PostingFit.owner_id
-    noun = "posting fit"
-
-    def to_entity(self, row: models.PostingFit) -> PostingFit:
-        return mappers.posting_fit(row)
-
-    def to_row(self, entity: PostingFit) -> models.PostingFit:
-        return mappers.posting_fit_row(entity)
-
-    def apply(self, row: models.PostingFit, entity: PostingFit) -> None:
-        mappers.apply_posting_fit(row, entity)
-
-    def id_of(self, entity: PostingFit) -> uuid.UUID:
-        return entity.id
-
-    def conditions(self, filter: PostingFitFilter) -> list[ColumnElement[bool]]:
-        fit = models.PostingFit
-        found: list[ColumnElement[bool]] = []
-        if filter.posting_keys is not None:
-            found.append(fit.posting_key.in_(filter.posting_keys))
-        if filter.role_ids is not None:
-            found.append(fit.role_id.in_(filter.role_ids))
         return found
 
 

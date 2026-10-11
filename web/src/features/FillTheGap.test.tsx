@@ -98,7 +98,7 @@ function serve(route: (call: Call) => unknown) {
   return calls;
 }
 
-function renderGaps(onSubmitted = vi.fn()) {
+function renderGaps(onSubmitted = vi.fn(), aimed: AdvisorTarget = target) {
   const shell = {
     status: {
       me: null,
@@ -110,7 +110,7 @@ function renderGaps(onSubmitted = vi.fn()) {
   render(
     <ShellContext.Provider value={shell}>
       <ToastProvider>
-        <FillTheGap target={target} onSubmitted={onSubmitted} />
+        <FillTheGap target={aimed} onSubmitted={onSubmitted} />
       </ToastProvider>
     </ShellContext.Provider>,
   );
@@ -126,6 +126,42 @@ describe("Fill the gap", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("for an opening, prices reading and scoring it with the questions", async () => {
+    const calls = serve((call) => {
+      if (call.url.startsWith("/gap-question-sets/cost-estimate"))
+        return { cost_usd: "0.08", model_id: "claude-sonnet-5" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderGaps(vi.fn(), {
+      ...target,
+      ref: {
+        role_id: "r1",
+        job_posting_id: "p1",
+        private_job_posting_id: null,
+      },
+      label: "Staff Backend Engineer · Northwind Pay",
+      company: "Northwind Pay",
+    });
+
+    expect(
+      await screen.findByText(/reads what this opening asks for/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Analyse the gaps" }));
+    const confirm = await screen.findByRole("region", {
+      name: "Cost estimate",
+    });
+    expect(confirm).toHaveTextContent(
+      "Reading what this opening asks for, scoring your fit to it",
+    );
+    expect(confirm).toHaveTextContent("at most $0.08");
+    expect(calls).toContainEqual({
+      method: "GET",
+      url: "/gap-question-sets/cost-estimate?role_id=r1&job_posting_id=p1",
+      body: null,
+    });
+  });
+
   it("prices the questions before any are written", async () => {
     const calls = serve((call) => {
       if (call.url.startsWith("/gap-question-sets/cost-estimate"))
@@ -136,8 +172,9 @@ describe("Fill the gap", () => {
     const user = userEvent.setup();
     renderGaps();
 
+    expect(await screen.findByText("No gap analysis yet")).toBeInTheDocument();
     await user.click(
-      await screen.findByRole("button", { name: "Write questions" }),
+      await screen.findByRole("button", { name: "Analyse the gaps" }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",

@@ -4164,3 +4164,23 @@ as target. On the user's own key it is unchanged.
 * Still no fit per row: the Advisor shows the opening's own fit once aimed at
   it. No backend change; the Advisor already resolved an opening Target.
 
+## Start the gap analysis from the Advisor
+**Done** (ADR 0073, supersedes 0032, amends 0042 and 0070), on
+`feature/no-ticket/gap-analysis-in-advisor` in
+`epic/no-ticket/user-started-runs`. Migration 0056.
+
+* "Target this role" / "Target this opening" on 03 Roles only aims the
+  Advisor: it records the Target and opens Fill the gap. Nothing is priced,
+  confirmed or spent there.
+* Fill the gap's empty state is "No gap analysis yet" with "Analyse the
+  gaps". For a role it writes the questions. For an opening it first reads
+  what the posting asks for and scores the user's fit to it with AI, then
+  writes the questions. It is one gapfill job (stage `scoring_target`), at
+  one estimate, confirmed once on the user's own key and started at once on
+  CareerPolaris AI.
+* An opening's fit lives in `target` (`opening_requirement`,
+  `opening_requirement_fit`, `opening_fit`). It is read once and rescored
+  after a new analysis. A fit from embedding similarity is never shown or
+  used: builds compute none, and `rolemap.posting_fit` is dropped. Before
+  its analysis an opening shows "Fit today —", and the gap plan and résumé
+  ask for the analysis first.

@@ -21,7 +21,7 @@ from typing import Protocol
 from advisor.rolemap.domain.build_run import BuildRun, BuildRunStatus, CandidatePlacement
 from advisor.rolemap.domain.candidate import CandidateStrength, RoleCandidate
 from advisor.rolemap.domain.events import RoleMapEvent
-from advisor.rolemap.domain.fit import PostingFit, RoleFit
+from advisor.rolemap.domain.fit import RoleFit
 from advisor.rolemap.domain.lineage import LineageEntry
 from advisor.rolemap.domain.role import Role, RoleMember, RoleRequirement
 
@@ -122,15 +122,6 @@ class RoleFitFilter:
 class RoleFitRepository(Repository[RoleFit, RoleFitFilter], Protocol): ...
 
 
-@dataclass(frozen=True, slots=True)
-class PostingFitFilter:
-    posting_keys: tuple[str, ...] | None = None
-    role_ids: tuple[uuid.UUID, ...] | None = None
-
-
-class PostingFitRepository(Repository[PostingFit, PostingFitFilter], Protocol): ...
-
-
 class OwnerRoleMap(Protocol):
     roles: RoleRepository
     members: RoleMemberRepository
@@ -141,7 +132,6 @@ class OwnerRoleMap(Protocol):
     candidates: RoleCandidateRepository
     strengths: CandidateStrengthRepository
     fits: RoleFitRepository
-    posting_fits: PostingFitRepository
 
     def record(self, event: RoleMapEvent) -> None: ...
 

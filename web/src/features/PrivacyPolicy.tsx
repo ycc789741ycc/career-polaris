@@ -56,17 +56,17 @@ export function PrivacyPolicy() {
             identifier for your account.
           </li>
           <li>
-            <strong>GitHub, if you connect it:</strong> your public profile,
-            the commits you authored and the pull requests you reviewed —
-            repository names, commit messages, counts and dates. Access is
-            read-only (<code>read:user</code>, <code>repo:status</code>,{" "}
+            <strong>GitHub, if you connect it:</strong> your public profile, the
+            commits you authored and the pull requests you reviewed — repository
+            names, commit messages, counts and dates. Access is read-only (
+            <code>read:user</code>, <code>repo:status</code>,{" "}
             <code>public_repo</code>).
           </li>
           <li>
             <strong>Jira, if you connect it:</strong> your Atlassian display
             name and, when your Atlassian privacy settings show it, your email;
-            the name of each site you grant; and the finished issues assigned
-            to you — their keys, summaries, statuses, dates and the epics they
+            the name of each site you grant; and the finished issues assigned to
+            you — their keys, summaries, statuses, dates and the epics they
             belong to. Access is read-only (<code>read:jira-work</code>,{" "}
             <code>read:jira-user</code>), plus <code>offline_access</code> so a
             sync can run without you signing in to Atlassian again.
@@ -74,8 +74,8 @@ export function PrivacyPolicy() {
           <li>
             <strong>What you give us:</strong> résumés and job postings you
             upload and the text read from them, answers to the questions the
-            Advisor asks, the places you want to work, and the plans and
-            résumés generated for you.
+            Advisor asks, the places you want to work, and the plans and résumés
+            generated for you.
           </li>
           <li>
             <strong>Your AI provider key:</strong> stored encrypted and never
@@ -104,8 +104,8 @@ export function PrivacyPolicy() {
           <li>
             Your data is stored in a database and in object storage hosted by
             DigitalOcean. Background processing — syncing your accounts and
-            reading uploaded files — runs on a separate machine that reaches
-            the database over an encrypted private network.
+            reading uploaded files — runs on a separate machine that reaches the
+            database over an encrypted private network.
           </li>
           <li>
             Every connection to CareerPolaris is encrypted with TLS. The access
@@ -150,8 +150,8 @@ export function PrivacyPolicy() {
         <p>
           We set one cookie to keep you signed in (httpOnly, sent only to us),
           and a short-lived one while a Google sign-in is in progress. Your
-          browser’s local storage remembers which role you are targeting in
-          the Advisor. Nothing else is stored in your browser.
+          browser’s local storage remembers which role you are targeting in the
+          Advisor. Nothing else is stored in your browser.
         </p>
       </Section>
 

@@ -553,7 +553,9 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
   reuses its projection the same way, so a rebuild on an unchanged market and
   unchanged strengths spends nothing on fits. Estimates stay ceilings.
   Migration 0027 added the column; fits taken before it are scored once more.
-- **A fit for every opening** (ADR 0032). The AI scores each role once; every
+- **A fit for every opening** (ADR 0032, superseded by ADR 0073: builds no
+  longer compute opening fits, and `rolemap.posting_fit` is gone). The AI
+  scores each role once; every
   opening's fit is worked out from it locally, never an AI call.
   `get_requirement_relevance` centres each requirement's embedding similarity
   to an opening on its mean over the role's openings, and `get_opening_fit`
@@ -688,9 +690,9 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
   version is never shown. One job of a kind per Target at a time. `GET
   /activity` gathers every component's `running_jobs` as `advisor_jobs`; the
   SPA shows `AdvisorJobCard` on the job's tab, a spinner on the step tabs and
-  `AdvisorJobNotice` in the corner. "Target this role" prices and starts the
-  questions; "Set as target" queues them after scoring
-  (`wiring.queue.queue_questions`).
+  `AdvisorJobNotice` in the corner. "Target this role" priced and started the
+  questions until ADR 0073 (it now only aims); "Set as target" queues them
+  after scoring (`wiring.queue.queue_questions`).
 - **The Advisor as prototyped** (no ADR). Evidence is collapsed everywhere
   (`EvidenceDisclosure`: "Show evidence (n)", "Evidence ▾"). Each gap of a
   plan has a bar of its fit points out of `lift_scale` (10, or the plan's
@@ -759,7 +761,8 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   opening. Since ADR 0070 each row has Pick (`aria-pressed`): it puts
   `opening` in the hash beside the role, and the bar reads "<role> ·
   <company>" and "Target this opening"; pressing it again goes back to the
-  role. The Advisor then measures against that opening's fit (ADR 0032).
+  role. The Advisor then measures against that opening's own fit, scored
+  by its gap analysis (ADR 0073).
 - **No target until one is chosen** (ADR 0050). The current Target and its
   history live in `localStorage` per account (`features/advisorTarget.ts`),
   written by "Target this role", "Set as target", "Use again" and every
@@ -1076,4 +1079,35 @@ On `epic/no-ticket/user-started-runs`, one branch per step:
   (`getActivityLines`), never for syncs or parses; no confirmation, and
   "Cancelling…" until `/activity` says closed. `getOutcomeToast` words the
   toast, never as a failure.
+- **The gap analysis starts in the Advisor** (ADR 0073, superseding ADR
+  0032, migration 0056).
+  - **The map only aims.** "Target this role" / "Target this opening" on 03
+    Roles records the Target (`recordTargetUse`) and opens `#/advisor/gaps`.
+    Nothing is priced, queued or spent there.
+  - **"Analyse the gaps".** Fill the gap's empty state is "No gap analysis
+    yet". For a role it writes the questions. For an opening not scored
+    since the latest analysis (`TargetService.is_scored`),
+    `GapFillService.request` records the set with no gaps, and
+    `gapfill.write` scores the opening first (stage `scoring_target`,
+    `_score_target`). It then snapshots the opening, records its gaps
+    (`QuestionSet.update_gaps`) and writes, or fails `target_unusable` when
+    there is nothing to ask. `estimate_cost` adds
+    `target.estimate_opening_fit` to `estimate_ceiling`.
+  - **An opening's fit is AI's, from its own posting.**
+    `TargetService.create_opening_fit` reads the opening's description
+    (`rolemap.opening_description`) into `target.opening_requirement`, once,
+    and projects it into `opening_requirement_fit`, unless the newest is
+    current. It then works out `opening_fit` with `get_posting_fit_result`,
+    calling `checkpoint` (the set's `_advance`) before each AI call.
+    `GET /opening-fit?job_posting_id=` serves `OpeningFitView`.
+  - **No derived fit, anywhere.** `snapshot` refuses an unscored opening
+    ("run its gap analysis in Fill the gap first") and never falls back to
+    its role's fit. Builds compute no opening fits:
+    `_derive_opening_fits`, `get_requirement_relevance`, `get_opening_fit`,
+    `OPENING_*`, `PostingFit` and `fit_basis` are gone. A matched posting
+    carries its role's fit.
+  - **What the Advisor shows.** "Fit today" for an opening is "—" until it
+    is scored (`targetFor`'s `openingFit`), and Previous targets shows no
+    fit for one. The gap plan and résumé tabs of an unscored opening with
+    nothing drafted say "Run the gap analysis first".
 
