@@ -24,7 +24,9 @@ import {
   pageStyle,
   Resume,
   savedLine,
+  sourceWord,
   trimmedNote,
+  versionLine,
 } from "./Resume";
 
 vi.mock("./download", () => ({ startDownload: vi.fn() }));
@@ -470,6 +472,117 @@ describe("résumé screen", () => {
     ).toBeInTheDocument();
     await user.selectOptions(versions, "res-2");
     expect(onRevisit).toHaveBeenCalledWith(elsewhere);
+  });
+
+  it("opens an older version as the draft, and saves it as the next one", async () => {
+    const v2 = { ...version, id: "v2", number: 2, source: "manual" as const };
+    const withTwo = { ...resume, version: v2, versions: [v2, version] };
+    const older = experience(resume.content!);
+    const oldContent: ResumeContent = {
+      ...resume.content!,
+      sections: resume.content!.sections.map((s) =>
+        s.kind === "experience"
+          ? {
+              ...older,
+              entries: [
+                {
+                  ...older.entries[0]!,
+                  bullets: [
+                    {
+                      ...older.entries[0]!.bullets[0]!,
+                      text: "Built the first ledger",
+                    },
+                  ],
+                },
+              ],
+            }
+          : s,
+      ),
+    };
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return withTwo;
+      if (call.url === "/tailored-resumes/res-1?version=1")
+        return { ...withTwo, version, content: oldContent };
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v3", number: 3, source: "manual" };
+      if (call.url === "/tailored-resumes/res-1/exports")
+        return {
+          id: "x1",
+          version_id: "v1",
+          template: "organic",
+          status: "failed",
+          error: { code: "x", message: "stop here" },
+          download_url: null,
+        };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const picker = screen.getByRole("combobox", { name: "Saved version" });
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([
+      "v2 · edited by you · 20 Sep 2026 · latest",
+      "v1 · written · 20 Sep 2026",
+    ]);
+    await user.selectOptions(picker, "1");
+
+    // The old version's lines, editable, with the way back named.
+    expect(
+      await screen.findByRole("status", { name: "Opened version" }),
+    ).toHaveTextContent("Opened v1 of 2");
+    const page1 = screen.getByRole("article", { name: "Résumé" });
+    expect(
+      within(page1).getByText("Built the first ledger"),
+    ).toBeInTheDocument();
+    expect(page).not.toBe(page1);
+    // Unedited, it exports as v1; saving it makes v3.
+    await user.click(screen.getByRole("button", { name: "Export as PDF" }));
+    expect(
+      calls.find((c) => c.url === "/tailored-resumes/res-1/exports")?.body,
+    ).toEqual({ version: 1 });
+    const save = screen.getByRole("button", { name: "Save as v3" });
+    expect(save).toBeEnabled();
+    await user.click(save);
+
+    expect(
+      calls.find((c) => c.url === "/tailored-resumes/res-1/versions")?.body,
+    ).toEqual({ content: oldContent, based_on: 1 });
+  });
+
+  it("goes back to the latest version from an older one", async () => {
+    const v2 = { ...version, id: "v2", number: 2, source: "manual" as const };
+    const withTwo = { ...resume, version: v2, versions: [v2, version] };
+    serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return withTwo;
+      if (call.url === "/tailored-resumes/res-1?version=1")
+        return {
+          ...withTwo,
+          version,
+          content: { ...resume.content!, name: "Old Name" },
+        };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    await screen.findByRole("article", { name: "Résumé" });
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Saved version" }),
+      "1",
+    );
+    expect(await screen.findByText("Old Name")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to latest" }));
+
+    expect(screen.queryByRole("status", { name: "Opened version" })).toBeNull();
+    expect(screen.getByText("Maya Lin Chen")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeDisabled();
   });
 
   it("exports from beside the page, once the edits are saved", async () => {
@@ -1606,6 +1719,21 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+describe("the Version list", () => {
+  it("words where each version came from", () => {
+    expect(sourceWord("generated")).toBe("written");
+    expect(sourceWord("manual")).toBe("edited by you");
+    expect(sourceWord("chat")).toBe("from the chat");
+  });
+
+  it("names the latest", () => {
+    expect(versionLine(version, true)).toBe(
+      "v1 · written · 20 Sep 2026 · latest",
+    );
+    expect(versionLine(version, false)).toBe("v1 · written · 20 Sep 2026");
   });
 });
 

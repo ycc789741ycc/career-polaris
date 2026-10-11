@@ -404,6 +404,47 @@ async def test_an_edit_is_the_users_own_but_cannot_cite_someone_elses_evidence(
         await world.resume.save_version(account, resume_id, content=edited)
 
 
+async def test_an_older_version_saved_again_is_the_next_and_keeps_its_citations(
+    world: World, account: uuid.UUID
+) -> None:
+    resume_id = await _written(world, account)
+    first = await world.resume.get(account, resume_id)
+    assert first.content is not None
+    lead = _lines(first.content.to_dict())[0]
+    assert lead["origin"] == "written" and lead["evidence_ids"]
+
+    # v2 rewrites the lead line: it becomes the user's.
+    edited = first.content.to_dict()
+    _lines(edited)[0]["text"] = "Led checkout's migration, end to end"
+    await world.resume.save_version(account, resume_id, content=edited)
+
+    # v1, opened and saved again with one more line, is v3; its untouched
+    # lead line is still the written, cited one, judged against v1.
+    old = await world.resume.get(account, resume_id, number=1)
+    assert old.content is not None
+    restored = old.content.to_dict()
+    _lines(restored).append(
+        {"text": "Ran the on-call rotation", "evidence_ids": [], "origin": "yours"}
+    )
+    saved = await world.resume.save_version(account, resume_id, content=restored, based_on=1)
+    assert saved.number == 3
+
+    latest = await world.resume.get(account, resume_id)
+    assert latest.content is not None
+    lines = _lines(latest.content.to_dict())
+    assert lines[0]["text"] == lead["text"]
+    assert (lines[0]["origin"], lines[0]["evidence_ids"]) == ("written", lead["evidence_ids"])
+    assert (lines[-1]["text"], lines[-1]["origin"]) == ("Ran the on-call rotation", "yours")
+    # Every version is still there to open.
+    assert [v.number for v in latest.versions] == [3, 2, 1]
+    again = await world.resume.get(account, resume_id, number=2)
+    assert again.content is not None
+    assert _lines(again.content.to_dict())[0]["text"] == "Led checkout's migration, end to end"
+
+    with pytest.raises(NotFoundError):
+        await world.resume.save_version(account, resume_id, content=restored, based_on=9)
+
+
 async def test_a_chat_proposal_streams_and_becomes_a_version_only_when_applied(
     world: World, account: uuid.UUID
 ) -> None:

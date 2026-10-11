@@ -157,6 +157,9 @@ export function Resume({
   } | null>(null);
   const [preview, setPreview] = useState<ResumeTemplateSpec | null>(null);
   const [showSources, setShowSources] = useState(false);
+  // An older version opened as the draft; null while on the latest. Saving
+  // it makes the next version, never a new copy of the old one.
+  const [opened, setOpened] = useState<OpenedVersion | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasDrafting = useRef(false);
@@ -324,6 +327,7 @@ export function Resume({
     setResume(next);
     setDraft(next.content);
     setUndoStack([]);
+    setOpened(null);
     setTemplate(next.template);
     setOptions(next.options);
     setFonts({ heading_font: next.heading_font, body_font: next.body_font });
@@ -459,7 +463,9 @@ export function Resume({
     try {
       const version = await api.post<ResumeVersion>(
         `/tailored-resumes/${resume.id}/versions`,
-        { content },
+        // Judged against the version it was opened from, so an old version's
+        // untouched lines keep what they cite.
+        opened ? { content, based_on: opened.number } : { content },
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
       onChanged();
@@ -491,13 +497,52 @@ export function Resume({
     }
   }
 
-  async function exportPdf() {
+  /** Open version `number` of this résumé as the draft, or the latest. */
+  async function openVersion(number: number) {
     if (!resume?.version) return;
+    setError(null);
+    if (number === resume.version.number) {
+      setDraft(resume.content);
+      setUndoStack([]);
+      setOpened(null);
+      return;
+    }
+    try {
+      const old = await api.get<TailoredResume>(
+        `/tailored-resumes/${resume.id}?version=${number}`,
+      );
+      if (!old.version || !old.content) return;
+      setDraft(old.content);
+      setUndoStack([]);
+      setOpened({
+        number,
+        source: old.version.source,
+        created_at: old.version.created_at,
+        content: old.content,
+      });
+      flash(`Opened v${number}. Saving it makes v${nextVersion}.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
+  // What Export prints: the saved version on the page, the latest or an older
+  // one opened unedited; null while there are edits to save first.
+  const exportable = opened
+    ? draft && isSameContent(draft, opened.content)
+      ? opened.number
+      : null
+    : !dirty
+      ? (resume?.version?.number ?? null)
+      : null;
+
+  async function exportPdf() {
+    if (!resume || exportable === null) return;
     setError(null);
     try {
       let job = await api.post<ResumeExport>(
         `/tailored-resumes/${resume.id}/exports`,
-        { version: resume.version.number },
+        { version: exportable },
       );
       setExporting(job);
       while (job.status === "rendering") {
@@ -629,6 +674,23 @@ export function Resume({
                 </option>
               ))}
             </select>
+            {resume?.status === "ready" && resume.versions.length > 1 && (
+              <select
+                className="input"
+                aria-label="Saved version"
+                value={opened?.number ?? resume.version?.number ?? ""}
+                disabled={busy}
+                onChange={(event) =>
+                  void openVersion(Number(event.target.value))
+                }
+              >
+                {resume.versions.map((v, at) => (
+                  <option key={v.id} value={v.number}>
+                    {versionLine(v, at === 0)}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         )}
         {resume?.status === "ready" && (
@@ -1010,8 +1072,29 @@ export function Resume({
                   Skills are ordered for this role.
                 </p>
               )}
+              {opened && (
+                <div
+                  className="resume-opened"
+                  role="status"
+                  aria-label="Opened version"
+                >
+                  <span>
+                    Opened v{opened.number} of {resume.version?.number} (
+                    {sourceWord(opened.source)} {dayLabel(opened.created_at)}).
+                    Saving it makes v{nextVersion}.
+                  </span>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      resume.version && void openVersion(resume.version.number)
+                    }
+                  >
+                    Back to latest
+                  </Button>
+                </div>
+              )}
               <ResumePage
-                key={resume.version?.id}
+                key={`${resume.version?.id}:${opened?.number ?? "latest"}`}
                 content={draft}
                 evidence={resume.evidence}
                 look={look}
@@ -1044,7 +1127,7 @@ export function Resume({
                 <Button
                   variant="secondary"
                   busy={exporting?.status === "rendering"}
-                  disabled={!resume.version || dirty}
+                  disabled={exportable === null}
                   onClick={() => void exportPdf()}
                 >
                   {exporting?.status === "rendering"
@@ -1052,7 +1135,7 @@ export function Resume({
                     : "Export as PDF"}
                 </Button>
                 <span className="resume-annotation resume-page-note">
-                  {dirty
+                  {exportable === null
                     ? "You have unsaved edits. Save this version first — the export is of a saved version."
                     : "Click any line to edit it in place."}
                 </span>
@@ -1095,6 +1178,41 @@ export function savedLine(entry: ResumeSummary): string {
   if (entry.status === "drafting") return `${entry.label} · writing…`;
   if (entry.status === "failed") return `${entry.label} · writing failed`;
   return `${entry.label} · v${entry.latest_version ?? 1} · edited ${dayLabel(entry.updated_at)}`;
+}
+
+/** An older version of the open résumé, opened as the draft. */
+interface OpenedVersion {
+  number: number;
+  source: ResumeVersion["source"];
+  created_at: string;
+  content: ResumeContent;
+}
+
+/** How a version came to be, as the Version list words it. Pure. */
+export function sourceWord(source: ResumeVersion["source"]): string {
+  switch (source) {
+    case "manual":
+      return "edited by you";
+    case "chat":
+      return "from the chat";
+    case "answers":
+      return "rewritten from answers";
+    default:
+      return "written";
+  }
+}
+
+/** "v3 · edited by you · 12 Oct 2026 · latest", one version of the open
+ * résumé. Pure. */
+export function versionLine(version: ResumeVersion, isLatest: boolean): string {
+  return [
+    `v${version.number}`,
+    sourceWord(version.source),
+    dayLabel(version.created_at),
+    isLatest ? "latest" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** "Organic · 4 sections": the Layout card's summary. Pure. */

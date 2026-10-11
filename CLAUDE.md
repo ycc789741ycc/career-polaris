@@ -782,8 +782,8 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
   on the right, with "Save as vN" and Export as PDF beneath it; stacked page
   first below 1240px. Saved résumés became the Version list on the Write-for
   card, one entry per saved résumé; another target's goes through
-  `onRevisit`. Older versions of one résumé are not listed: a version carries
-  no content to read back.
+  `onRevisit`. Since the résumé-editing epic, a second list beside it opens
+  any saved version of the open résumé (see "Résumé editing").
 - **More fonts.** `TEMPLATE_FONTS` is ten families: the four before, plus
   Inter, Lato, Source Serif 4, Merriweather, EB Garamond and IBM Plex Mono,
   each a Latin 400/700 subset hosted by the SPA and installed in the worker
