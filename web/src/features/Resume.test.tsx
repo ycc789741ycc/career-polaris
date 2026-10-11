@@ -314,11 +314,15 @@ function defaults(call: Call): unknown {
   return null;
 }
 
-function renderResume(saved: ResumeSummary[] = [summary]) {
+function renderResume(
+  saved: ResumeSummary[] = [summary],
+  aiSource: Shell["status"]["aiSource"] = null,
+) {
   const onChanged = vi.fn();
   const onRevisit = vi.fn();
   const shell: Shell = {
     status: {
+      aiSource,
       me: null,
       credential: {
         provider: "anthropic",
@@ -361,6 +365,34 @@ describe("résumé screen", () => {
     };
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("hides the regeneration price on CareerPolaris AI with a stored key", async () => {
+    serve((call) =>
+      call.url.startsWith("/tailored-resumes/cost-estimate")
+        ? {
+            cost_usd: "0.04",
+            model_id: "claude-opus-5",
+            rate_is_published: true,
+          }
+        : defaults(call),
+    );
+    renderResume([summary], {
+      source: "platform",
+      has_credential: true,
+      is_platform_on: true,
+      is_eligible: true,
+      platform_quota: {
+        allowed_usd: "2",
+        spent_usd: "0.75",
+        remaining_usd: "1.25",
+      },
+    });
+    await screen.findByRole("article", { name: "Résumé" });
+    expect(
+      await screen.findByText(/saved as a new version/),
+    ).not.toHaveTextContent(/\$/);
+    expect(screen.queryByText(/on your key/)).not.toBeInTheDocument();
+  });
 
   it("is laid out as the prototype: the tools beside the page, coverage collapsed", async () => {
     serve((call) =>

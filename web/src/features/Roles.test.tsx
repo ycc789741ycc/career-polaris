@@ -170,9 +170,13 @@ function serve(overrides: Record<string, unknown> = {}) {
   );
 }
 
-function renderRoles(focus: Focus | null, activity: Activity | null = null) {
+function renderRoles(
+  focus: Focus | null,
+  activity: Activity | null = null,
+  aiSource: Shell["status"]["aiSource"] = null,
+) {
   const shell: Shell = {
-    status: { me: null, credential: null },
+    status: { me: null, credential: null, aiSource },
     navigate: vi.fn(),
     setHeading: vi.fn(),
     focus,
@@ -789,6 +793,27 @@ describe("the role map toolbar", () => {
     serve();
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("hides the rebuild price on CareerPolaris AI even with a stored key", async () => {
+    renderRoles(null, null, {
+      source: "platform",
+      has_credential: true,
+      is_platform_on: true,
+      is_eligible: true,
+      platform_quota: {
+        allowed_usd: "2",
+        spent_usd: "0.75",
+        remaining_usd: "1.25",
+      },
+    });
+    expect(
+      await screen.findByText("Built 30 Sep 2026 on CareerPolaris AI"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/on your key to rebuild/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+  });
 
   it("puts Rebuild first, with what the last build was and what a rebuild costs", async () => {
     renderRoles(null);

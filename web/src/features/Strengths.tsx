@@ -20,6 +20,7 @@ import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
 import { CancelRunButton } from "../shell/CancelRunButton";
 import {
   chargedTo,
+  isOnPlatform,
   modelName,
   useHeading,
   useShell,
@@ -111,9 +112,12 @@ export function Strengths() {
         leaveCopy="The analysis keeps running if you leave this page. When it finishes, build your role map from it on Roles."
         back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
         action={<CancelRunButton run="analysis" />}
-        costCopy={`Charged to ${chargedTo(
-          status,
-        )}, at the estimate you confirmed before it started.`}
+        costHeading={isOnPlatform(status) ? "AI source" : "What this run costs"}
+        costCopy={
+          isOnPlatform(status)
+            ? "Runs on CareerPolaris AI."
+            : `Charged to ${chargedTo(status)}, at the estimate you confirmed before it started.`
+        }
       />
     );
   }

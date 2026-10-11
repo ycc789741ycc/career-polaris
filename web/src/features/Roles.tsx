@@ -32,6 +32,7 @@ import { type Focus, roleFocus } from "../shell/navigation";
 import {
   chargedTo,
   getShownModel,
+  isOnPlatform,
   modelName,
   useHeading,
   useShell,
@@ -328,11 +329,18 @@ export function Roles() {
             label: "Back to Strengths",
             onClick: () => navigate("strengths"),
           }}
-          costCopy={`Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
-            scope.data && scope.data.target_locations.length > 0
-              ? scope.data.target_locations.join(" and ")
-              : "your locations"
-          } keeps this down.`}
+          costHeading={
+            isOnPlatform(status) ? "AI source" : "What this run costs"
+          }
+          costCopy={
+            isOnPlatform(status)
+              ? "Runs on CareerPolaris AI."
+              : `Charged to ${chargedTo(status)}, at the estimate you confirmed before it started. Searching only ${
+                  scope.data && scope.data.target_locations.length > 0
+                    ? scope.data.target_locations.join(" and ")
+                    : "your locations"
+                } keeps this down.`
+          }
         />
       </>
     );
@@ -360,7 +368,9 @@ export function Roles() {
               model: modelName(status),
               // The places' count is under their chips, above.
               scope: null,
-              rebuildCostUsd: rebuildCost.data?.cost_usd ?? null,
+              rebuildCostUsd: isOnPlatform(status)
+                ? null
+                : (rebuildCost.data?.cost_usd ?? null),
             })}
           </span>
         </div>

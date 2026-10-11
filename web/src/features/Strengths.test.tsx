@@ -413,6 +413,47 @@ describe("Strengths", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the AI source without cost or confirmation copy during a platform analysis", async () => {
+    serve(assessment({}));
+    renderStrengths(
+      {
+        syncing: [],
+        advisor_jobs: [],
+        processing: ONLINE,
+        parsing: [],
+        analysis: {
+          status: "running",
+          started_at: "2026-09-28T09:00:00Z",
+          finished_at: null,
+          error: null,
+        },
+        role_map: null,
+      },
+      {
+        me: null,
+        credential: null,
+        aiSource: {
+          source: "platform",
+          has_credential: false,
+          is_platform_on: true,
+          is_eligible: true,
+          platform_quota: null,
+        },
+      },
+    );
+
+    await screen.findByRole("region", { name: "Strength analysis progress" });
+    expect(
+      screen.getByRole("heading", { name: "AI source" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Runs on CareerPolaris AI.")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /Charged to|estimate you confirmed|What this run costs/,
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers Cancel on the analysing screen (ADR 0072)", async () => {
     serve(assessment({}));
     renderStrengths({

@@ -168,9 +168,8 @@ export function AdvisorNoTarget({
       </div>
 
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-        Picking a new target writes follow-up questions for it, on your key,
-        with the cost shown before it runs. Reusing a previous target costs
-        nothing.
+        Picking a new target writes follow-up questions for it using your chosen
+        AI. Reusing a previous target needs no new AI work.
       </p>
     </section>
   );

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api/client";
 import type { Activity, TargetRef } from "../api/types";
 import { Button, ErrorNote } from "../components/ui";
+import { isOnPlatform, PLATFORM_AI, useShell } from "../shell/ShellContext";
 import type { AdvisorTab } from "../shell/navigation";
 import { sameTarget } from "./target";
 import { messageOf } from "./useAsync";
@@ -115,6 +116,8 @@ export function AdvisorJobCard({
   onSwitch: (tab: Exclude<AdvisorTab, "own">) => void;
   onCancelled: () => void;
 }) {
+  const { status } = useShell();
+  const onPlatform = isOnPlatform(status);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const here = jobTab(job.kind);
@@ -182,17 +185,20 @@ export function AdvisorJobCard({
         style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}
       >
         <span className="muted" style={{ fontSize: 13 }}>
-          {job.estimated_cost_usd !== null
-            ? `About $${Number(job.estimated_cost_usd).toFixed(2)} on your key`
-            : "On your key"}
+          {onPlatform
+            ? PLATFORM_AI
+            : job.estimated_cost_usd !== null
+              ? `About $${Number(job.estimated_cost_usd).toFixed(2)} on your key`
+              : "On your key"}
         </span>
         <Button variant="ghost" busy={cancelling} onClick={() => void cancel()}>
           Cancel
         </Button>
       </div>
       <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
-        Cancel stops it before the next call; a call already sent is still
-        charged.
+        {onPlatform
+          ? "Cancel stops it before the next call."
+          : "Cancel stops it before the next call; a call already sent is still charged."}
       </p>
       {error && <ErrorNote error={error} />}
     </div>

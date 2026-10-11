@@ -33,6 +33,7 @@ import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
 import {
   getShownModel,
   hasAi,
+  isOnPlatform,
   modelName,
   useShell,
 } from "../shell/ShellContext";
@@ -639,7 +640,10 @@ export function Resume({
               Regenerate résumé
             </Button>
             <span className="subcopy" style={{ fontSize: 12.5 }}>
-              {lastGeneratedLine(resume, regenerateCost)}
+              {lastGeneratedLine(
+                resume,
+                isOnPlatform(status) ? null : regenerateCost,
+              )}
             </span>
           </div>
         )}
