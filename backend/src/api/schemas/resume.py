@@ -78,6 +78,9 @@ class SettingsRequest(RequestModel):
     bold_titles: bool | None = None
     bold_headings: bool | None = None
     body_pt: float | None = None
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
 
     def to_look(self) -> OwnLook:
         return OwnLook(
@@ -87,6 +90,9 @@ class SettingsRequest(RequestModel):
             bold_titles=self.bold_titles,
             bold_headings=self.bold_headings,
             body_pt=self.body_pt,
+            name_pt=self.name_pt,
+            title_pt=self.title_pt,
+            heading_pt=self.heading_pt,
         )
 
 
@@ -313,6 +319,9 @@ class TailoredResume(ResumeSummary):
     bold_titles: bool | None
     bold_headings: bool | None
     body_pt: float | None
+    name_pt: float | None
+    title_pt: float | None
+    heading_pt: float | None
     # The model's lines that state a number none of their cited facts states
     # (ADR 0076), by their text: the page flags them.
     unbacked_lines: list[str]
@@ -385,6 +394,9 @@ class TailoredResume(ResumeSummary):
             bold_titles=look.bold_titles,
             bold_headings=look.bold_headings,
             body_pt=look.body_pt,
+            name_pt=look.name_pt,
+            title_pt=look.title_pt,
+            heading_pt=look.heading_pt,
             unbacked_lines=list(resume.unbacked_lines),
         )
 
@@ -473,6 +485,8 @@ class TemplateDesign(RequestModel):
     section_font: FontName | None = None
     bold_titles: bool = False
     bold_headings: bool = True
+    # Null takes the text size plus a point (ADR 0078).
+    title_pt: float | None = None
 
 
 class TemplateRequest(RequestModel):
@@ -498,6 +512,7 @@ class TemplateSpecBody(ApiModel):
     section_font: FontName | None
     bold_titles: bool
     bold_headings: bool
+    title_pt: float | None
 
 
 class ResumeTemplate(ApiModel):
@@ -561,6 +576,7 @@ class ResumeTemplateLimits(ApiModel):
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
+    title_pt_range: tuple[float, float]
     # The name and the text against the white page.
     min_contrast: float
     max_name: int
@@ -582,6 +598,7 @@ class ResumeTemplateLimits(ApiModel):
                 "name_pt_range": limits.name_pt_range,
                 "heading_pt_range": limits.heading_pt_range,
                 "body_pt_range": limits.body_pt_range,
+                "title_pt_range": limits.title_pt_range,
                 "min_contrast": limits.min_contrast,
                 "max_name": limits.max_name,
                 "max_templates": limits.max_templates,

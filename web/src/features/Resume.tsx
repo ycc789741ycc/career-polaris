@@ -862,7 +862,7 @@ export function Resume({
                   className="stack own-look"
                   style={{ gap: 8, marginTop: 12 }}
                 >
-                  {FONT_PICKERS.map(({ key, label, bold }) => {
+                  {FONT_PICKERS.map(({ key, label, bold, sizes }) => {
                     const font =
                       fonts[key] ?? getTemplateFont(chosen.spec, key);
                     const hasBold = !(
@@ -917,33 +917,40 @@ export function Resume({
                             </RoundCheck>
                           </span>
                         )}
-                        {key === "body_font" && (
-                          <label className="font-picker size-picker">
-                            <span className="field-label">Text size</span>
+                        {sizes.map((size) => (
+                          <div key={size} className="font-picker size-picker">
+                            <span className="field-label" aria-hidden="true">
+                              {SIZE_PICKERS[size].label}
+                            </span>
                             <select
                               className="input"
-                              value={fonts.body_pt ?? ""}
+                              aria-label={SIZE_PICKERS[size].name}
+                              value={fonts[size] ?? ""}
                               disabled={resume?.status !== "ready"}
                               onChange={(event) =>
                                 void changeSettings(template, options, {
                                   ...fonts,
-                                  body_pt: event.target.value
+                                  [size]: event.target.value
                                     ? Number(event.target.value)
                                     : null,
                                 })
                               }
                             >
                               <option value="">
-                                Template&apos;s ({chosen.spec.body_pt}pt)
+                                Template&apos;s (
+                                {getTemplateSize(chosen.spec, size)}pt)
                               </option>
-                              {getTextSizes(limits.body_pt_range).map((pt) => (
+                              {getTextSizes(
+                                limits[SIZE_PICKERS[size].range],
+                                SIZE_PICKERS[size].step,
+                              ).map((pt) => (
                                 <option key={pt} value={pt}>
                                   {pt}pt
                                 </option>
                               ))}
                             </select>
-                          </label>
-                        )}
+                          </div>
+                        ))}
                       </div>
                     );
                   })}
@@ -2338,6 +2345,9 @@ type ResumeLook = Pick<
   | "bold_titles"
   | "bold_headings"
   | "body_pt"
+  | "name_pt"
+  | "title_pt"
+  | "heading_pt"
 >;
 
 const NO_LOOK: ResumeLook = {
@@ -2347,20 +2357,84 @@ const NO_LOOK: ResumeLook = {
   bold_titles: null,
   bold_headings: null,
   body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
 };
+
+type SizeKey = "name_pt" | "title_pt" | "heading_pt" | "body_pt";
+
+/** Each size a résumé can set over its template's (ADR 0078): its label, its
+ * accessible name, its range in the limits, and its step. */
+const SIZE_PICKERS: Record<
+  SizeKey,
+  {
+    label: string;
+    name: string;
+    range:
+      "name_pt_range" | "title_pt_range" | "heading_pt_range" | "body_pt_range";
+    step: number;
+  }
+> = {
+  name_pt: {
+    label: "Name",
+    name: "Name size",
+    range: "name_pt_range",
+    step: 1,
+  },
+  title_pt: {
+    label: "Title",
+    name: "Title size",
+    range: "title_pt_range",
+    step: 0.5,
+  },
+  heading_pt: {
+    label: "Size",
+    name: "Heading size",
+    range: "heading_pt_range",
+    step: 0.5,
+  },
+  body_pt: {
+    label: "Size",
+    name: "Text size",
+    range: "body_pt_range",
+    step: 0.5,
+  },
+};
+
+/** A template's size for one picker; an entry title takes the text size
+ * plus a point unless the template sets its own. Pure. */
+export function getTemplateSize(
+  spec: ResumeTemplateSpec,
+  size: SizeKey,
+): number {
+  return size === "title_pt" ? (spec.title_pt ?? spec.body_pt + 1) : spec[size];
+}
 
 type FontKey = "heading_font" | "section_font" | "body_font";
 
 /** The three fonts a résumé can set over its template's, each with the
- * Bold switch it has, if any. */
+ * Bold switch and the sizes it has. "Text in" is everything but titles and
+ * headings, and reaches neither (ADR 0078). */
 const FONT_PICKERS: {
   key: FontKey;
   label: string;
   bold: "bold_titles" | "bold_headings" | null;
+  sizes: SizeKey[];
 }[] = [
-  { key: "heading_font", label: "Titles in", bold: "bold_titles" },
-  { key: "section_font", label: "Headings in", bold: "bold_headings" },
-  { key: "body_font", label: "Text in", bold: null },
+  {
+    key: "heading_font",
+    label: "Titles in",
+    bold: "bold_titles",
+    sizes: ["name_pt", "title_pt"],
+  },
+  {
+    key: "section_font",
+    label: "Headings in",
+    bold: "bold_headings",
+    sizes: ["heading_pt"],
+  },
+  { key: "body_font", label: "Text in", bold: null, sizes: ["body_pt"] },
 ];
 
 /** The résumé's own look, as the server keeps it. Pure. */
@@ -2372,6 +2446,9 @@ export function getOwnLook(resume: TailoredResume): ResumeLook {
     bold_titles: resume.bold_titles,
     bold_headings: resume.bold_headings,
     body_pt: resume.body_pt,
+    name_pt: resume.name_pt,
+    title_pt: resume.title_pt,
+    heading_pt: resume.heading_pt,
   };
 }
 
@@ -2387,7 +2464,9 @@ export function getTemplateFont(
 }
 
 /** The template's spec with the résumé's own look over it, as the renderer
- * lays it (get_spec_with_look). Pure. */
+ * lays it (get_spec_with_look). The text's font and size never reach the
+ * headings or the entry titles: left unset, those keep the template's own,
+ * worked out before the text's are laid on (ADR 0078). Pure. */
 export function getSpecWithLook(
   spec: ResumeTemplateSpec,
   look: ResumeLook,
@@ -2395,18 +2474,32 @@ export function getSpecWithLook(
   return {
     ...spec,
     heading_font: look.heading_font ?? spec.heading_font,
-    section_font: look.section_font ?? spec.section_font,
+    section_font:
+      look.section_font ??
+      (look.body_font
+        ? (spec.section_font ?? spec.body_font)
+        : spec.section_font),
     body_font: look.body_font ?? spec.body_font,
     bold_titles: look.bold_titles ?? spec.bold_titles,
     bold_headings: look.bold_headings ?? spec.bold_headings,
     body_pt: look.body_pt ?? spec.body_pt,
+    name_pt: look.name_pt ?? spec.name_pt,
+    title_pt:
+      look.title_pt ??
+      (look.body_pt !== null
+        ? getTemplateSize(spec, "title_pt")
+        : spec.title_pt),
+    heading_pt: look.heading_pt ?? spec.heading_pt,
   };
 }
 
-/** Every text size a résumé can take, half a point apart. Pure. */
-export function getTextSizes([low, high]: [number, number]): number[] {
+/** Every size in a range, `step` points apart. Pure. */
+export function getTextSizes(
+  [low, high]: [number, number],
+  step = 0.5,
+): number[] {
   const sizes: number[] = [];
-  for (let pt = low; pt <= high + 1e-9; pt += 0.5) sizes.push(pt);
+  for (let pt = low; pt <= high + 1e-9; pt += step) sizes.push(pt);
   return sizes;
 }
 

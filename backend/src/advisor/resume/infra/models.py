@@ -30,7 +30,13 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from advisor.resume.domain.constants import BODY_PT_RANGE, TEMPLATE_FONTS
+from advisor.resume.domain.constants import (
+    BODY_PT_RANGE,
+    HEADING_PT_RANGE,
+    NAME_PT_RANGE,
+    TEMPLATE_FONTS,
+    TITLE_PT_RANGE,
+)
 from kernel.db.base import Base, OwnedMixin, new_id
 
 _FONTS = ", ".join(f"'{font}'" for font in TEMPLATE_FONTS)
@@ -51,9 +57,16 @@ class Resume(Base, OwnedMixin):
             for column in ("heading_font", "body_font", "section_font")
         ),
         # Its own text size, in the range a template's may take (ADR 0075).
-        CheckConstraint(
-            f"body_pt IS NULL OR body_pt BETWEEN {BODY_PT_RANGE[0]} AND {BODY_PT_RANGE[1]}",
-            name="body_pt",
+        # And its own sizes, each in the range a template's may take (ADR 0075,
+        # ADR 0078).
+        *(
+            CheckConstraint(f"{column} IS NULL OR {column} BETWEEN {low} AND {high}", name=column)
+            for column, (low, high) in (
+                ("body_pt", BODY_PT_RANGE),
+                ("name_pt", NAME_PT_RANGE),
+                ("title_pt", TITLE_PT_RANGE),
+                ("heading_pt", HEADING_PT_RANGE),
+            )
         ),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
@@ -124,6 +137,9 @@ class Resume(Base, OwnedMixin):
     bold_titles: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     bold_headings: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     body_pt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    name_pt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    title_pt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    heading_pt: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class ResumeVersion(Base, OwnedMixin):

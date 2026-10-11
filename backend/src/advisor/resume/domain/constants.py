@@ -110,6 +110,10 @@ HEADING_PT_RANGE = (7.0, 11.0)
 
 BODY_PT_RANGE = (8.5, 11.5)
 
+# An entry's title, set on its own (ADR 0078); a template that sets none
+# takes its text size plus a point.
+TITLE_PT_RANGE = (9.0, 14.0)
+
 # The name and the text against the white page, WCAG AA for normal text.
 MIN_CONTRAST = 4.5
 

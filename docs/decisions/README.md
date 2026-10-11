@@ -80,9 +80,10 @@ new record that supersedes the old one.
 | [0072](0072-cancel-an-analysis-or-a-role-map-build.md) | The user can cancel an analysis or a role-map build | Accepted |
 | [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md) | Score an opening Target with AI when its gap analysis runs, started only from the Advisor | Accepted |
 | [0074](0074-drop-a-requirements-stray-citations-instead-of-rejecting-the-plan.md) | A requirement's stray citations are dropped, not the gap plan | Accepted |
-| [0075](0075-let-a-resume-set-its-headings-font-bold-titles-and-text-size.md) | A résumé may set its headings' font, bold titles and headings, and its text size | Accepted |
+| [0075](0075-let-a-resume-set-its-headings-font-bold-titles-and-text-size.md) | A résumé may set its headings' font, bold titles and headings, and its text size | Accepted, amended by 0078 |
 | [0076](0076-quantify-resume-lines-only-from-numbers-their-facts-state.md) | Quantify a résumé's lines only from numbers their facts state, and flag the rest | Accepted |
 | [0077](0077-read-submitted-answers-into-the-targets-fit.md) | Read submitted answers into the Target's fit, in the Advisor only | Accepted |
+| [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -24,6 +24,7 @@ import {
   getLineMoved,
   getLineStep,
   getSpecWithLook,
+  getTemplateSize,
   getStackWith,
   getTextSizes,
   getWeight,
@@ -186,6 +187,9 @@ const resume: TailoredResume = {
   bold_titles: null,
   bold_headings: null,
   body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
   section_plan: [
     { kind: "summary", title: null, is_shown: true },
     { kind: "experience", title: null, is_shown: true },
@@ -251,6 +255,7 @@ const organic: ResumeTemplateLook = {
     section_font: null,
     bold_titles: false,
     bold_headings: true,
+    title_pt: null,
   },
   rule: "3px solid #c67139",
   band_color: "#f8ede6",
@@ -284,6 +289,7 @@ const templates = {
 const limits: ResumeTemplateLimits = {
   fonts: ["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"],
   fonts_without_bold: ["Caprasimo"],
+  title_pt_range: [9, 14],
   name_pt_range: [16, 30],
   heading_pt_range: [7, 11],
   body_pt_range: [8.5, 11.5],
@@ -714,7 +720,8 @@ describe("résumé screen", () => {
     expect(style).toContain("--title-weight: 700");
     expect(style).toContain("--heading-weight: 400");
     expect(style).toContain("--body-pt: 11");
-    expect(style).toContain("--title-pt: 12");
+    // The text size reaches the text alone (ADR 0078).
+    expect(style).toContain("--title-pt: 11;");
   });
 
   it("flags a written line whose number its facts do not state, and only that one", async () => {
@@ -764,6 +771,52 @@ describe("résumé screen", () => {
     expect(
       screen.getByText(/Options apply when the résumé is next written/),
     ).toBeInTheDocument();
+  });
+
+  it("sizes the name, titles and headings, and the text reaches only the text", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    const page = await screen.findByRole("article", { name: "Résumé" });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text in" }),
+      "DejaVu Serif",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text size" }),
+      "11.5",
+    );
+    // The headings and the entry titles keep the template's.
+    expect(page.getAttribute("style")).toContain('--section-font: "Figtree"');
+    expect(page.getAttribute("style")).toContain("--title-pt: 11;");
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Name size" }),
+      "26",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Title size" }),
+      "12.5",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Heading size" }),
+      "10",
+    );
+    const puts = calls.filter(
+      (c) => c.url === "/tailored-resumes/res-1/settings",
+    );
+    expect(puts.at(-1)?.body).toMatchObject({
+      body_font: "DejaVu Serif",
+      body_pt: 11.5,
+      name_pt: 26,
+      title_pt: 12.5,
+      heading_pt: 10,
+    });
+    const style = page.getAttribute("style")!;
+    expect(style).toContain("--name-pt: 26");
+    expect(style).toContain("--title-pt: 12.5");
+    expect(style).toContain("--heading-pt: 10");
   });
 
   it("writes a failed résumé again once priced", async () => {
@@ -1934,6 +1987,18 @@ describe("the tool cards' summaries", () => {
   });
 });
 
+const NO_LOOK_FOR_TESTS = {
+  heading_font: null,
+  section_font: null,
+  body_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
+};
+
 describe("the résumé's own look (ADR 0075)", () => {
   it("lays the résumé's choices over its template's, null keeping the template's", () => {
     const spec = getSpecWithLook(organic.spec, {
@@ -1943,6 +2008,9 @@ describe("the résumé's own look (ADR 0075)", () => {
       bold_titles: true,
       bold_headings: null,
       body_pt: 9,
+      name_pt: null,
+      title_pt: null,
+      heading_pt: null,
     });
     expect(spec).toMatchObject({
       heading_font: "Caprasimo",
@@ -1951,7 +2019,44 @@ describe("the résumé's own look (ADR 0075)", () => {
       bold_titles: true,
       bold_headings: true,
       body_pt: 9,
+      // The text size reaches the text alone: the titles keep the
+      // template's (ADR 0078).
+      title_pt: 11,
     });
+  });
+
+  it("keeps headings and titles out of the text's font and size", () => {
+    const text = getSpecWithLook(organic.spec, {
+      ...NO_LOOK_FOR_TESTS,
+      body_font: "Inter",
+      body_pt: 11.5,
+    });
+    expect(text).toMatchObject({
+      body_font: "Inter",
+      body_pt: 11.5,
+      section_font: "Figtree",
+      title_pt: 11,
+    });
+    // Nothing set changes nothing.
+    expect(getSpecWithLook(organic.spec, NO_LOOK_FOR_TESTS)).toEqual(
+      organic.spec,
+    );
+  });
+
+  it("lays the name's, titles' and headings' own sizes over the template's", () => {
+    expect(
+      getSpecWithLook(organic.spec, {
+        ...NO_LOOK_FOR_TESTS,
+        name_pt: 26,
+        title_pt: 12.5,
+        heading_pt: 10,
+      }),
+    ).toMatchObject({ name_pt: 26, title_pt: 12.5, heading_pt: 10 });
+    expect(getTemplateSize(organic.spec, "title_pt")).toBe(11);
+  });
+
+  it("steps the name a point at a time", () => {
+    expect(getTextSizes([16, 19], 1)).toEqual([16, 17, 18, 19]);
   });
 
   it("offers every half point in the range", () => {
