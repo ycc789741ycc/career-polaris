@@ -78,6 +78,9 @@ class SettingsRequest(RequestModel):
 class VersionRequest(RequestModel):
     content: dict[str, Any]
     label: str | None = Field(default=None, max_length=200)
+    # The older version the draft was opened from, if it was: what the save
+    # keeps citations against. It is still saved as the next version.
+    based_on: int | None = Field(default=None, ge=1)
 
 
 class RevisionRequest(RequestModel):

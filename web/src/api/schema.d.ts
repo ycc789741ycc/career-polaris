@@ -3410,6 +3410,8 @@ export interface components {
         };
         /** VersionRequest */
         VersionRequest: {
+            /** Based On */
+            based_on?: number | null;
             /** Content */
             content: {
                 [key: string]: unknown;

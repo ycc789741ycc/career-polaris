@@ -769,11 +769,15 @@ class ResumeService:
         *,
         content: dict[str, Any],
         label: str | None = None,
+        based_on: int | None = None,
     ) -> VersionView:
-        """Save the user's edits as a new version.
+        """Save the user's edits as a new version, always the next number.
 
         A line they changed is theirs and may stand uncited; a line they left
         alone keeps what it cited. Anything cited must still be their evidence.
+        What they left alone is judged against the version they opened —
+        ``based_on``, an older one brought back, or else the latest — so an old
+        version saved again keeps its citations.
         """
         try:
             edited = ResumeContent.from_dict(content)
@@ -781,8 +785,16 @@ class ResumeService:
             raise ValidationError(f"that résumé could not be read: {exc}") from exc
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
-            latest = await _latest_version(mine, resume_id)
-            previous = ResumeContent.from_dict(latest.content) if latest else None
+            if based_on is None:
+                opened = await _latest_version(mine, resume_id)
+            else:
+                found = await mine.versions.get_list(
+                    ResumeVersionFilter(resume_id=resume_id, number=based_on)
+                )
+                if not found:
+                    raise NotFoundError("version not found", number=based_on)
+                opened = found[0]
+            previous = ResumeContent.from_dict(opened.content) if opened else None
         settled = mark_edits(previous, edited)
         try:
             assert_well_formed(settled)
