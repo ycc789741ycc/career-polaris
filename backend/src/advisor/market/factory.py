@@ -14,9 +14,15 @@ from kernel.clock import utcnow
 from kernel.db import Database
 
 
-def create_market_service(database: Database, *, windows: FreshWindows) -> MarketService:
-    """``windows``: how long a fetch is reused before a build asks again."""
-    return MarketService(SqlAlchemyMarketUnitOfWork(database), windows=windows)
+def create_market_service(
+    database: Database, *, windows: FreshWindows, baseline_limit: int | None = None
+) -> MarketService:
+    """``windows``: how long a fetch is reused before a build asks again.
+    ``baseline_limit``: how many of the newest baseline postings a user with
+    no location gets (ADR 0068); None: every one."""
+    return MarketService(
+        SqlAlchemyMarketUnitOfWork(database), windows=windows, baseline_limit=baseline_limit
+    )
 
 
 def create_crawl_ingest(database: Database) -> CrawlIngest:

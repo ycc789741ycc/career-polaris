@@ -21,6 +21,7 @@ def create_rolemap_service(
     embedding_model: str,
     top_k: int,
     candidate_count: int,
+    ai_concurrency: int,
 ) -> RoleMapService:
     return RoleMapService(
         SqlAlchemyRoleMapUnitOfWork(database),
@@ -29,4 +30,5 @@ def create_rolemap_service(
         embedding_model=embedding_model,
         top_k=top_k,
         candidate_count=candidate_count,
+        ai_concurrency=ai_concurrency,
     )

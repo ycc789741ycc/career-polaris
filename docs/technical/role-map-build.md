@@ -175,12 +175,15 @@ Skipped when there are no candidates, meaning no analysis has succeeded yet;
 then nothing is placed. Every step below is local and free until
 step 6:
 
-1. **Scope.** The open postings in the user's places, with their vectors.
-   Postings the crawler hasn't embedded yet are embedded here.
+1. **Scope.** The open postings in the user's places, with their vectors,
+   read as heads: no description crosses from the droplet. Postings the
+   crawler hasn't embedded yet have their descriptions read by id and are
+   embedded here.
    - Board postings count while they are open.
    - A searched posting counts only while it is on a current search result
      list.
-   - A user with no location gets the baseline postings.
+   - A user with no location gets the newest `BASELINE_SCOPE_MAX_POSTINGS`
+     baseline postings (ADR 0068).
    - With fewer than 3 postings in scope, the build stops here and keeps the
      map as it is.
 2. **Assign** (`assign_postings`). Each posting becomes an opening for at most
@@ -217,6 +220,11 @@ step 6:
 
      `_store_role` replaces the role's members and requirements, stores one
      salary band per selected market, and records `RoleRequirementsChanged`.
+
+     The analysed roles run side by side, at most `ROLE_MAP_AI_CONCURRENCY`
+     at a time (default 4; ADR 0069). The first failure cancels the rest and
+     fails the build with its own error; steps 7 and 8 run only once every
+     role is done.
 7. **Lineage.** Split, merged and retired roles are recorded. Every role
    that no longer comes from a kept candidate is retired, including one merged
    into another, whose postings now belong to the role it merged into. A role an earlier build already retired gets no new
@@ -287,7 +295,12 @@ for it still gets its new scores shown against the roles that are there.
 Every opening's fit is then worked out from its role's, locally (ADR 0032):
 the role's requirements are reweighted by how much each opening asks for each,
 by embedding similarity, and evaluated again. That is never an AI call, and
-it replaces the role's openings' fits as a set.
+it replaces the role's openings' fits as a set. It reads only the roles'
+members, by id, with their vectors, never the whole scope.
+
+Every cosine in the build (assigning, estimating, an opening's relevance) is
+one matrix product in `rolemap/domain/similarity.py`, not a loop. Only an
+analysed role's prompt reads descriptions: its first 12 openings', by id.
 
 The dispatcher routes `RoleMapBuildFinished` to `rolemap.compute_fits`
 (`ai` queue). The fit is the role map's (ADR 0028), scored against the
@@ -295,7 +308,9 @@ dimension scores the analysis handed over with the candidates
 (`rolemap.candidate_strength`):
 - **Fits:** one `fit_projection` per role with requirements. It maps each
   requirement to a dimension, sets target scores, and stores the fit in
-  `rolemap.role_fit` with its gaps and uncovered requirements.
+  `rolemap.role_fit` with its gaps and uncovered requirements. Roles are
+  scored side by side, at most `ROLE_MAP_AI_CONCURRENCY` at a time, as their
+  analyses are.
 - **The estimate's agreement:** logged as `rolemap.estimate_agreement`, the
   Spearman rank correlation between the local estimate and the fits. Numbers
   only, no user data.

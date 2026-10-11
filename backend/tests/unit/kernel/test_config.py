@@ -210,6 +210,23 @@ def test_role_counts_out_of_range_fail_startup(candidates: str, top_k: str) -> N
         Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]
 
 
+def test_a_build_makes_four_ai_calls_at_a_time_by_default(clean_env: None) -> None:
+    assert get_settings().role_map_ai_concurrency == 4
+
+
+@pytest.mark.parametrize(
+    ("top_k", "concurrency"),
+    [
+        ("10", "0"),  # at least one call at a time
+        ("3", "4"),  # never more than a build has roles
+    ],
+)
+def test_ai_concurrency_out_of_range_fails_startup(top_k: str, concurrency: str) -> None:
+    env = dict(MINIMAL_ENV, ROLE_MAP_TOP_K=top_k, ROLE_MAP_AI_CONCURRENCY=concurrency)
+    with pytest.raises(PydanticValidationError):
+        Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]
+
+
 def test_a_smaller_top_k_than_candidates_is_allowed() -> None:
     env = dict(MINIMAL_ENV, ROLE_CANDIDATE_COUNT="20", ROLE_MAP_TOP_K="5")
     settings = Settings(**{k.lower(): v for k, v in env.items()})  # type: ignore[arg-type]

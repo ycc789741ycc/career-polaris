@@ -210,6 +210,66 @@ async def test_shared_postings_round_trip_through_the_crawler_role(
                 )
 
 
+async def test_a_scope_with_no_location_keeps_the_newest_baseline_postings(
+    crawler_database: Database,
+) -> None:
+    """ADR 0068. Posted in 2099, so these are the newest baseline postings
+    whatever real ones the database holds."""
+    uow = SqlAlchemyMarketUnitOfWork(crawler_database)
+    seen_at = datetime(2026, 9, 27, 12, tzinfo=UTC)
+    async with uow.shared() as market:
+        company = await market.companies.create(Company.named(f"Repo Co {uuid.uuid4().hex[:8]}"))
+        source = await market.sources.create(
+            CrawlSource.board(
+                kind="greenhouse",
+                endpoint=f"https://boards.test/{uuid.uuid4()}",
+                company_id=company.id,
+                origin=SourceOrigin.BASELINE,
+            )
+        )
+    try:
+        posted: dict[int, uuid.UUID] = {}
+        async with uow.shared() as market:
+            for day in (1, 3, 2):
+                posting = await market.postings.create(
+                    JobPosting.first_seen(
+                        NormalizedPosting(
+                            external_id=str(day),
+                            company_name=company.name,
+                            title=f"Posted on day {day}",
+                            location="Somewhere",
+                            description="Build things.",
+                            url=f"https://boards.test/{source.id}/{day}",
+                            source_kind=SourceKind.ATS_BOARD,
+                            posted_on=date(2099, 1, day),
+                            salary=None,
+                        ),
+                        company_id=company.id,
+                        source_id=source.id,
+                        at=seen_at,
+                    )
+                )
+                posted[day] = posting.id
+
+        bounded = PostingScope(markets=(), baseline_limit=2)
+        async with uow.shared() as market:
+            full = await market.postings.get_open_in_scope(bounded)
+            heads = await market.postings.get_open_heads_in_scope(bounded)
+            unbounded = await market.postings.get_open_in_scope(PostingScope(markets=()))
+        assert {p.id for p in full} == {posted[2], posted[3]}
+        assert [h.id for h in heads] == [p.id for p in full]
+        assert set(posted.values()) <= {p.id for p in unbounded}
+    finally:
+        async with crawler_database.shared() as session:
+            for table, column in (
+                ("market.job_posting", "crawl_source_id"),
+                ("market.crawl_source", "id"),
+            ):
+                await session.execute(
+                    text(f"DELETE FROM {table} WHERE {column} = :id"), {"id": source.id}
+                )
+
+
 async def test_a_market_scope_matches_locations_by_their_words(
     crawler_database: Database,
 ) -> None:
@@ -460,6 +520,13 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
         async def in_scope(*markets: str) -> set[str]:
             async with uow.shared() as market:
                 found = await market.postings.get_open_in_scope(PostingScope(markets=markets))
+                heads = await market.postings.get_open_heads_in_scope(PostingScope(markets=markets))
+            # The heads are the same postings, in the same order, read without
+            # their descriptions.
+            assert [h.id for h in heads] == [p.id for p in found]
+            assert [(h.title, h.location, h.salary) for h in heads] == [
+                (p.title, p.location, p.salary) for p in found
+            ]
             mine = {p.id: title for title, p in postings.items()}
             return {mine[p.id] for p in found if p.id in mine}
 
@@ -469,6 +536,20 @@ async def test_remote_work_open_to_anyone_is_in_scope_wherever_a_search_covers(
         assert await in_scope("Singapore") == {"anyone"}
         # A city is no place a search covers, so worldwide work is not in it.
         assert await in_scope("Taipei") == set()
+
+        # Asked for by id, only those of them in scope come back.
+        async with uow.shared() as market:
+            remote = PostingScope(markets=("Remote",))
+            some = await market.postings.get_open_heads_in_scope(
+                remote, (postings["taiwan"].id, postings["elsewhere"].id)
+            )
+            taiwan_only = await market.postings.get_open_heads_in_scope(
+                PostingScope(markets=("Taiwan",)), (postings["elsewhere"].id,)
+            )
+            nothing = await market.postings.get_open_heads_in_scope(remote, ())
+        assert {h.id for h in some} == {postings["taiwan"].id, postings["elsewhere"].id}
+        assert taiwan_only == []
+        assert nothing == []
 
         # Off the search's current list, a posting leaves every scope, still
         # open (ADR 0027).

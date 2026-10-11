@@ -1956,6 +1956,8 @@ export interface components {
          *     With none chosen, the count is the platform's baseline.
          */
         MarketScope: {
+            /** Is Capped */
+            is_capped: boolean;
             /** Open Posting Count */
             open_posting_count: number;
             /** Target Locations */

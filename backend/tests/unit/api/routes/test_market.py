@@ -103,4 +103,5 @@ def test_the_market_scope_says_how_many_postings_the_locations_take_in(
     assert response.json() == {
         "target_locations": ["Germany", "Remote"],
         "open_posting_count": 1284,
+        "is_capped": False,
     }

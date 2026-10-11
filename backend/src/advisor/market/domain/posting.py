@@ -172,6 +172,23 @@ class JobPosting:
             self.salary = posting.salary
 
 
+@dataclass(frozen=True, slots=True)
+class PostingHead:
+    """A posting without its description: what matching, counting and
+    listing read. A description is several KB and only a prompt reads it, so
+    a scope is read as heads and descriptions are fetched by id."""
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    title: str
+    location: str | None
+    url: str
+    source_kind: str
+    posted_on: date | None
+    salary: SalaryRange | None
+    first_seen_at: datetime
+
+
 @dataclass(slots=True)
 class PostingEmbedding:
     """A posting's local embedding, one per posting. Platform-paid computation."""
@@ -194,10 +211,26 @@ class PostingScope:
     A posting a search found counts only while it is on that search's current
     result list (ADR 0027): a search sees one page, so a job missing from the
     next fetch was usually pushed off it, not closed.
+
+    The baseline alone is every opening of every baseline board, worldwide,
+    so it is bounded to the newest ``baseline_limit`` (ADR 0068): by the day
+    each was posted, else first seen.
     """
 
     markets: tuple[str, ...]
+    # With no location chosen, only this many baseline postings, the newest
+    # (ADR 0068); None: every one. A location's scope is never bounded.
+    baseline_limit: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.baseline_limit is not None and self.baseline_limit < 1:
+            raise ValueError("a baseline limit keeps at least one posting")
 
     @property
     def includes_baseline(self) -> bool:
         return not self.markets
+
+    @property
+    def is_bounded(self) -> bool:
+        """Whether this scope keeps only the newest ``baseline_limit``."""
+        return self.includes_baseline and self.baseline_limit is not None

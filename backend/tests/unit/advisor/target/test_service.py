@@ -127,6 +127,7 @@ def _services(
         embedding_model="test-model",
         top_k=10,
         candidate_count=20,
+        ai_concurrency=4,
     )
     uow = FakeTargetUnitOfWork()
     return _target(uow, rolemap, store), rolemap, uow, rolemap_uow
@@ -276,6 +277,7 @@ async def test_a_posting_fit_is_never_an_ai_call() -> None:
         embedding_model="test-model",
         top_k=10,
         candidate_count=20,
+        ai_concurrency=4,
     )
     local = _target(uow, local_rolemap)
     strengths = await local_rolemap.strengths(OWNER)

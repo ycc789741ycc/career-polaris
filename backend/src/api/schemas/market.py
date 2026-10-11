@@ -47,9 +47,14 @@ class MarketScope(ApiModel):
 
     target_locations: list[str]
     open_posting_count: int
+    # With no location chosen, only the newest baseline postings are read
+    # (ADR 0068); True when the count is at that bound.
+    is_capped: bool
 
     @classmethod
     def from_view(cls, view: MarketScopeView) -> MarketScope:
         return cls(
-            target_locations=view.target_locations, open_posting_count=view.open_posting_count
+            target_locations=view.target_locations,
+            open_posting_count=view.open_posting_count,
+            is_capped=view.is_capped,
         )

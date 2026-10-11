@@ -202,6 +202,7 @@ def build(settings: Settings | None = None) -> Container:
             search=timedelta(hours=settings.market_search_fresh_hours),
             board=timedelta(hours=settings.market_board_fresh_hours),
         ),
+        baseline_limit=settings.baseline_scope_max_postings,
     )
     rolemap = create_rolemap_service(
         database,
@@ -210,6 +211,7 @@ def build(settings: Settings | None = None) -> Container:
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
     assessment = create_assessment_service(
         database,

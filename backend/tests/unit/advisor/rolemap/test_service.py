@@ -3,6 +3,7 @@ with no database, no model and no embedding model."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -34,10 +35,15 @@ from advisor.rolemap.domain import (
     RolesReclustered,
     reconcile,
 )
-from advisor.rolemap.service import _RoleExtraction
+from advisor.rolemap.service import MAX_POSTINGS_IN_A_PROMPT, _RoleExtraction
 from kernel.clock import utcnow
 from kernel.errors import ValidationError
-from tests.unit.advisor.rolemap.fakes import MARKET_AS_OF, FakeMarket, FakeRoleMapUnitOfWork
+from tests.unit.advisor.rolemap.fakes import (
+    MARKET_AS_OF,
+    FakeMarket,
+    FakeRoleMapUnitOfWork,
+    head_of,
+)
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 # A crawler up long before any build in these tests asked the market.
@@ -54,6 +60,7 @@ def _service(
     *,
     top_k: int = 10,
     candidate_count: int = 20,
+    ai_concurrency: int = 4,
 ) -> RoleMapService:
     return RoleMapService(
         uow,
@@ -62,6 +69,7 @@ def _service(
         embedding_model="test-model",
         top_k=top_k,
         candidate_count=candidate_count,
+        ai_concurrency=ai_concurrency,
     )
 
 
@@ -100,7 +108,7 @@ async def _store(
         OWNER,
         role_id=role_id,
         keys={str(p.id) for p in postings},
-        postings=postings,
+        postings=[head_of(p) for p in postings],
         extraction=_extraction(name),
         bar=_BAR,
         bar_reasoning="because",
@@ -150,8 +158,9 @@ async def test_keeping_a_role_refreshes_only_what_needs_no_model() -> None:
     role_id = uuid.uuid4()
     await _store(rolemap, role_id, postings[:1], "Backend Engineer")
 
-    assert await rolemap._keep_role(OWNER, role_id=role_id, postings=postings)
-    assert not await rolemap._keep_role(OWNER, role_id=uuid.uuid4(), postings=postings)
+    heads = [head_of(p) for p in postings]
+    assert await rolemap._keep_role(OWNER, role_id=role_id, postings=heads)
+    assert not await rolemap._keep_role(OWNER, role_id=uuid.uuid4(), postings=heads)
 
     [role] = await rolemap.roles(OWNER)
     assert role.opening_count == 2 and role.name == "Backend Engineer"
@@ -785,6 +794,11 @@ async def test_an_analysis_recommends_no_more_roles_than_configured() -> None:
         await rolemap.replace_candidates(OWNER, uuid.uuid4(), too_many)
 
 
+def test_a_build_makes_at_least_one_ai_call_at_a_time() -> None:
+    with pytest.raises(ValueError, match="at least one AI call"):
+        _service(FakeRoleMapUnitOfWork(), ai_concurrency=0)
+
+
 @pytest.mark.parametrize(("top_k", "candidate_count"), [(0, 10), (11, 10)])
 def test_a_build_keeps_between_one_and_every_candidate(top_k: int, candidate_count: int) -> None:
     with pytest.raises(ValueError, match="between 1 and candidate_count"):
@@ -820,6 +834,34 @@ async def test_only_the_top_k_are_named_and_analysed() -> None:
     backend, designer, data = await rolemap.candidates(OWNER)
     assert backend.role_id is not None and designer.role_id is not None
     assert (data.role_id, data.opening_count) == (None, 3)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_build_reads_descriptions_only_for_what_a_prompt_shows() -> None:
+    """Matching reads heads; descriptions are read for the postings an
+    analysed role's prompt shows, at most MAX_POSTINGS_IN_A_PROMPT, and for
+    nothing the crawler has already embedded or a role kept unchanged."""
+    postings = [_posting(f"Backend Engineer {i}") for i in range(15)] + [
+        _posting(f"Designer {i}") for i in range(3)
+    ]
+    texts = [f"{p.title}\n{p.title}\n{p.location}" for p in postings]
+    market = FakeMarket(
+        postings,
+        vectors={p.id: v for p, v in zip(postings, _fake_embed(texts, model_name=""), strict=True)},
+    )
+    rolemap = _service(FakeRoleMapUnitOfWork(), market, ScriptedGateway(), top_k=1)
+    await rolemap.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+
+    await rolemap.recluster(OWNER, BUILD)
+
+    assert market.described == [p.id for p in postings[:MAX_POSTINGS_IN_A_PROMPT]]
+
+    # The same openings again: the role is kept, and nothing is read.
+    market.described.clear()
+    await rolemap.recluster(OWNER, BUILD)
+    assert market.described == []
 
 
 async def test_a_build_is_priced_for_k_roles(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1220,7 +1262,7 @@ async def test_a_role_whose_requirements_changed_is_scored_again_alone() -> None
         OWNER,
         role_id=role_id,
         keys={"k"},
-        postings=[_posting("Backend")],
+        postings=[head_of(_posting("Backend"))],
         extraction=_extraction("Backend Engineer", weights=(0.4, 0.95)),
         bar=_BAR,
         bar_reasoning="because",
@@ -1323,7 +1365,7 @@ async def _role_with_openings(
         OWNER,
         role_id=role_id,
         keys={str(backend.id), str(data.id)},
-        postings=[backend, data],
+        postings=[head_of(backend), head_of(data)],
         extraction=_RoleExtraction.model_validate(
             {
                 "name": "Platform Engineer",
@@ -1363,6 +1405,25 @@ async def test_every_opening_gets_its_own_fit_from_its_roles() -> None:
     assert set(fits) == {str(backend.id), str(data.id)}
     assert all(f.role_id == role_id for f in fits.values())
     assert fits[str(data.id)].score > role_fit.score > fits[str(backend.id)].score
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_scoring_fits_reads_the_roles_openings_not_the_market() -> None:
+    """``compute_fits`` and the role map read each role's members by id: a
+    posting in scope that no role holds is never read, and no read is of the
+    whole scope."""
+    rolemap, _uow, _role_id, backend, data = await _role_with_openings(TwoDimensionGateway())
+    market = rolemap._market
+    assert isinstance(market, FakeMarket)
+    market.postings.append(_posting("Designer"))
+
+    await rolemap.compute_fits(OWNER)
+    [role] = await rolemap.map_roles(OWNER)
+
+    assert role.opening_count == 2
+    assert market.heads_read
+    members = {backend.id, data.id}
+    assert all(read is not None and set(read) == members for read in market.heads_read)
 
 
 @pytest.mark.usefixtures("embedded")
@@ -1446,3 +1507,143 @@ async def test_no_roles_cost_no_fits() -> None:
         "roles": 0,
         "rate_is_published": True,
     }
+
+
+# --- a build's AI calls, side by side -----------------------------------------
+
+
+class InFlight:
+    """Wraps a gateway, counting the calls running at once. Each call yields
+    to the loop before and after its reply, so calls the build lets overlap
+    do overlap. ``failing`` makes the call for that role's prompt fail."""
+
+    def __init__(self, inner: Any, *, failing: str | None = None) -> None:
+        self.inner = inner
+        self.failing = failing
+        self.running = 0
+        self.most = 0
+        self.calls = 0
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **kw: Any):
+        self.running += 1
+        self.most = max(self.most, self.running)
+        self.calls += 1
+        try:
+            await asyncio.sleep(0)
+            if self.failing is not None and self.failing in "".join(inputs.values()):
+                raise ValidationError("the provider refused it")
+            reply = await self.inner.run(owner_id, task=task, inputs=inputs, **kw)
+            await asyncio.sleep(0)
+            return reply
+        finally:
+            self.running -= 1
+
+    async def estimate(self, owner_id: uuid.UUID, **kw: Any) -> Any:
+        return await self.inner.estimate(owner_id, **kw)
+
+
+def _three_role_market() -> FakeMarket:
+    return FakeMarket(
+        [_posting(f"Backend Engineer {i}") for i in range(3)]
+        + [_posting(f"Designer {i}") for i in range(3)]
+        + [_posting(f"Data Platform {i}") for i in range(3)]
+    )
+
+
+async def _three_candidates(rolemap: RoleMapService) -> None:
+    await rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [
+            _candidate("Backend Engineer", "Backend services."),
+            _candidate("Designer", "Designer work."),
+            _candidate("Data Engineer", "Data pipelines."),
+        ],
+    )
+
+
+async def _built(ai_concurrency: int, gateway: InFlight) -> FakeRoleMapUnitOfWork:
+    uow = FakeRoleMapUnitOfWork()
+    rolemap = _service(
+        uow,
+        _three_role_market(),
+        gateway,
+        top_k=3,
+        candidate_count=3,
+        ai_concurrency=ai_concurrency,
+    )
+    await _three_candidates(rolemap)
+    await rolemap.recluster(OWNER, BUILD)
+    return uow
+
+
+def _placements(uow: FakeRoleMapUnitOfWork) -> list[tuple[str, str, int]]:
+    return sorted((p.title, str(p.outcome), p.opening_count) for p in uow.store.placements.values())
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_builds_roles_are_analysed_side_by_side_up_to_the_setting() -> None:
+    together = InFlight(ScriptedGateway())
+    alone = InFlight(ScriptedGateway())
+
+    side_by_side = await _built(2, together)
+    one_by_one = await _built(1, alone)
+
+    assert (together.most, alone.most) == (2, 1)
+    # The same calls and the same map, whichever way they ran.
+    assert together.calls == alone.calls == 3 * 2
+    assert _placements(side_by_side) == _placements(one_by_one)
+    assert sorted(r.opening_count for r in side_by_side.store.roles.values()) == [3, 3, 3]
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_role_that_fails_its_analysis_fails_the_build_with_its_own_error() -> None:
+    """Not a group of errors: the build reads its error code from it. The
+    lineage and the placements are not recorded, as when the calls ran one
+    after another."""
+    uow = FakeRoleMapUnitOfWork()
+    gateway = InFlight(ScriptedGateway(), failing="Designer")
+    rolemap = _service(uow, _three_role_market(), gateway, top_k=3, candidate_count=3)
+    await _three_candidates(rolemap)
+
+    with pytest.raises(ValidationError, match="refused"):
+        await rolemap.recluster(OWNER, BUILD)
+
+    assert uow.store.placements == {}
+    assert not any(isinstance(e, RolesReclustered) for e in uow.store.events)
+    assert not any(r.name.startswith("Designer") for r in uow.store.roles.values())
+
+
+async def _three_scored_roles(gateway: Any, *, ai_concurrency: int) -> RoleMapService:
+    uow = FakeRoleMapUnitOfWork()
+    postings = [_posting("Backend"), _posting("Platform"), _posting("Data")]
+    rolemap = _service(uow, FakeMarket(postings), gateway, ai_concurrency=ai_concurrency)
+    for posting in postings:
+        await _store(rolemap, uuid.uuid4(), [posting], f"{posting.title} Engineer")
+    await _with_strengths(rolemap)
+    return rolemap
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_builds_fits_are_scored_side_by_side_up_to_the_setting() -> None:
+    together = InFlight(ProjectingGateway(target=80))
+    alone = InFlight(ProjectingGateway(target=80))
+
+    side_by_side = await (await _three_scored_roles(together, ai_concurrency=2)).compute_fits(OWNER)
+    one_by_one = await (await _three_scored_roles(alone, ai_concurrency=1)).compute_fits(OWNER)
+
+    assert (together.most, alone.most) == (2, 1)
+    assert together.calls == alone.calls == 3
+    assert sorted(f.score for f in side_by_side) == sorted(f.score for f in one_by_one)
+    assert len(side_by_side) == 3
+
+
+async def test_a_fit_that_fails_fails_the_job_and_announces_nothing() -> None:
+    gateway = InFlight(ProjectingGateway(target=80), failing="Platform Engineer")
+    rolemap = await _three_scored_roles(gateway, ai_concurrency=3)
+
+    with pytest.raises(ValidationError, match="refused"):
+        await rolemap.compute_fits(OWNER)
+
+    uow = rolemap._uow
+    assert not any(isinstance(e, RoleFitsComputed) for e in uow.store.events)  # type: ignore[attr-defined]

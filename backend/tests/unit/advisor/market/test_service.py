@@ -21,6 +21,7 @@ from advisor.market import (
 from advisor.market.domain import (
     Company,
     CrawlSource,
+    PostingScope,
     PostingStatus,
     SourceOrigin,
     SourceStatus,
@@ -221,6 +222,49 @@ async def test_without_markets_the_scope_falls_back_to_baseline_postings() -> No
     # With a market chosen, only postings in it count, baseline or not.
     await market.set_target_locations(OWNER, ["Portugal"])
     assert await market.postings_in_scope(OWNER) == []
+
+
+async def test_without_markets_only_the_newest_baseline_postings_are_in_scope() -> None:
+    """ADR 0068: the baseline alone is bounded, newest posted first; a
+    location's scope never is."""
+    uow = FakeMarketUnitOfWork()
+    ingest = CrawlIngest(uow)
+    market = MarketService(uow, windows=WINDOWS, baseline_limit=2)
+    baseline = _source(uow, origin=SourceOrigin.BASELINE)
+    await ingest.record_crawl(
+        baseline.id,
+        [
+            replace(_posting("Oldest"), posted_on=date(2026, 7, 1)),
+            replace(_posting("Newest"), posted_on=date(2026, 9, 20)),
+            replace(_posting("Middle"), posted_on=date(2026, 8, 15)),
+        ],
+    )
+
+    in_scope = await market.postings_in_scope(OWNER)
+    assert sorted(p.title for p in in_scope) == ["Middle", "Newest"]
+    assert [h.id for h in await market.posting_heads_in_scope(OWNER)] == [p.id for p in in_scope]
+    scope = await market.scope(OWNER)
+    assert (scope.open_posting_count, scope.is_capped) == (2, True)
+
+    await market.set_target_locations(OWNER, ["Germany"])
+    assert len(await market.postings_in_scope(OWNER)) == 3
+    assert not (await market.scope(OWNER)).is_capped
+
+
+async def test_a_baseline_under_its_bound_is_not_capped() -> None:
+    uow = FakeMarketUnitOfWork()
+    ingest = CrawlIngest(uow)
+    market = MarketService(uow, windows=WINDOWS, baseline_limit=5)
+    baseline = _source(uow, origin=SourceOrigin.BASELINE)
+    await ingest.record_crawl(baseline.id, [_posting("Backend")])
+
+    scope = await market.scope(OWNER)
+    assert (scope.open_posting_count, scope.is_capped) == (1, False)
+
+
+def test_a_baseline_limit_keeps_at_least_one_posting() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        PostingScope(markets=(), baseline_limit=0)
 
 
 async def test_a_place_takes_in_postings_naming_it_or_one_of_its_cities() -> None:

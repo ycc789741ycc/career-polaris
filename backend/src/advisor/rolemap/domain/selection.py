@@ -32,6 +32,7 @@ from advisor.rolemap.domain.constants import (
     MIN_POSTINGS_FOR_A_ROLE,
     UNCITED_DIMENSION_WEIGHT,
 )
+from advisor.rolemap.domain.similarity import get_centroid, get_similarity_matrix
 
 Vector = Sequence[float]
 
@@ -78,30 +79,28 @@ def assign_postings(
         raise ValueError("searched_by needs one entry per posting")
     if not -1.0 <= threshold <= 1.0:
         raise ValueError("threshold is a cosine, between -1 and 1")
-    assigned: list[int | None] = []
-    for posting, hits, searchers in zip(postings, title_hits, found_by, strict=True):
+    for hits, searchers in zip(title_hits, found_by, strict=True):
         if any(c < 0 or c >= len(candidates) for c in (*hits, *searchers)):
             raise ValueError("a posting names a candidate that does not exist")
+    similarity = get_similarity_matrix(postings, candidates)
+    assigned: list[int | None] = []
+    for cosines, hits, searchers in zip(similarity, title_hits, found_by, strict=True):
         if searchers:
-            relevant = [
-                c
-                for c in sorted(searchers)
-                if c in hits or _cosine(candidates[c], posting) >= threshold
-            ]
-            assigned.append(_nearest(candidates, posting, relevant, floor=-1.0))
+            relevant = [c for c in sorted(searchers) if c in hits or cosines[c] >= threshold]
+            assigned.append(_nearest(cosines, relevant, floor=-1.0))
             continue
         pool = sorted(hits) if hits else list(range(len(candidates)))
-        assigned.append(_nearest(candidates, posting, pool, floor=-1.0 if hits else threshold))
+        assigned.append(_nearest(cosines, pool, floor=-1.0 if hits else threshold))
     return assigned
 
 
-def _nearest(
-    candidates: Sequence[Vector], posting: Vector, pool: Sequence[int], *, floor: float
-) -> int | None:
+def _nearest(cosines: Sequence[float], pool: Sequence[int], *, floor: float) -> int | None:
+    """The candidate in ``pool`` a posting is most like, by its ``cosines``
+    with every candidate; the first of equals."""
     best: int | None = None
     best_score = floor
     for candidate in pool:
-        score = _cosine(candidates[candidate], posting)
+        score = cosines[candidate]
         if score > best_score or (best is None and score >= floor):
             best, best_score = candidate, score
     return best
@@ -137,8 +136,11 @@ def fit_estimates(
         return []
     if not dimensions or not any(w > 0 for w in weights):
         return [0.0] * len(roles)
-    centroids = [_centroid(openings) for openings in roles]
-    raw = [[_cosine(dimension, centroid) for centroid in centroids] for dimension in dimensions]
+    for openings in roles:
+        if not openings:
+            raise ValueError("a role needs at least one opening for its centroid")
+    centroids = [get_centroid(openings) for openings in roles]
+    raw = get_similarity_matrix(dimensions, centroids)
     means = [sum(row) / len(row) for row in raw]
     estimates: list[float] = []
     for r in range(len(roles)):
@@ -162,13 +164,6 @@ def choose_by_estimate(
     return sorted(eligible, key=lambda index: (-estimates[index], index))[:limit]
 
 
-def _centroid(vectors: Sequence[Vector]) -> list[float]:
-    if not vectors:
-        raise ValueError("a role needs at least one opening for its centroid")
-    width = len(vectors[0])
-    return [sum(vector[i] for vector in vectors) / len(vectors) for i in range(width)]
-
-
 def keep_on_market(
     opening_counts: Sequence[int],
     *,
@@ -183,11 +178,3 @@ def keep_on_market(
     if minimum < 1:
         raise ValueError("a role needs at least one opening")
     return [index for index, count in enumerate(opening_counts) if count >= minimum][:limit]
-
-
-def _cosine(left: Vector, right: Vector) -> float:
-    if len(left) != len(right):
-        raise ValueError("vectors must have the same length")
-    dot = sum(a * b for a, b in zip(left, right, strict=True))
-    norms = sum(a * a for a in left) ** 0.5 * sum(b * b for b in right) ** 0.5
-    return dot / norms if norms else 0.0

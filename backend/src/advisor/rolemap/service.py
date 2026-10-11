@@ -16,8 +16,9 @@ stores nothing.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from advisor.market import (
     MarketService,
+    PostingHeadView,
     PostingView,
     SalaryRange,
     Visibility,
@@ -168,7 +170,7 @@ class _Group:
 
     candidate: RoleCandidate
     keys: set[str]
-    postings: list[PostingView]
+    postings: list[PostingHeadView]
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,9 +439,12 @@ class RoleMapService:
         embedding_model: str,
         top_k: int,
         candidate_count: int,
+        ai_concurrency: int,
     ) -> None:
         if not 1 <= top_k <= candidate_count:
             raise ValueError("a build keeps between 1 and candidate_count roles")
+        if ai_concurrency < 1:
+            raise ValueError("a build makes at least one AI call at a time")
         self._uow = uow
         self._market = market
         self._gateway = gateway
@@ -448,6 +453,8 @@ class RoleMapService:
         # scores, and how many candidates an analysis may hand over (ADR 0029).
         self._top_k = top_k
         self._candidate_count = candidate_count
+        # How many of a build's per-role AI calls run at once.
+        self._ai_concurrency = ai_concurrency
 
     async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The live roles, newest first, each with its requirements, weightiest
@@ -466,7 +473,9 @@ class RoleMapService:
             by_role.setdefault(requirement.role_id, []).append(requirement)
         return [_role_view(role, by_role.get(role.id, [])) for role in roles]
 
-    async def role_postings(self, owner_id: uuid.UUID) -> list[tuple[RoleView, list[PostingView]]]:
+    async def role_postings(
+        self, owner_id: uuid.UUID
+    ) -> list[tuple[RoleView, list[PostingHeadView]]]:
         """Each analysed role with the open postings grouped into it.
 
         Postings that have since expired, or left the user's scope, drop out:
@@ -483,7 +492,12 @@ class RoleMapService:
         for member in members:
             keys_by_role.setdefault(member.role_id, []).append(member.posting_key)
 
-        in_scope = {_posting_key(p): p for p in await self._market.postings_in_scope(owner_id)}
+        # Only the members are read: one role's few dozen, never the market.
+        member_ids = [i for m in members if (i := _posting_id(m.posting_key)) is not None]
+        in_scope = {
+            _posting_key(p): p
+            for p in await self._market.posting_heads_in_scope(owner_id, member_ids)
+        }
         return [
             (role, [in_scope[key] for key in keys_by_role.get(role.id, []) if key in in_scope])
             for role in roles
@@ -899,6 +913,7 @@ class RoleMapService:
         )
 
         placed: dict[uuid.UUID, uuid.UUID] = {}
+        analysed: list[Callable[[], Awaitable[None]]] = []
         for index, group in enumerate(groups):
             role_id = uuid.UUID(reconciliation.assignments[index])
             placed[group.candidate.id] = role_id
@@ -908,13 +923,9 @@ class RoleMapService:
                 owner_id, role_id=role_id, postings=group.postings
             ):
                 continue
-            await self._analyse(
-                owner_id,
-                role_id=role_id,
-                keys=group.keys,
-                postings=group.postings,
-                block=_postings_block(group.postings),
-            )
+            analysed.append(self._get_analysis(owner_id, role_id=role_id, group=group))
+        # Each role is its own calls and its own rows, so they run side by side.
+        await _execute_concurrently(analysed, limit=self._ai_concurrency)
 
         await self._record_lineage(owner_id, reconciliation)
         await self._place_candidates(
@@ -927,8 +938,29 @@ class RoleMapService:
             estimates={candidates[i].id: estimates[i] for i in eligible},
         )
 
+    def _get_analysis(
+        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, group: _Group
+    ) -> Callable[[], Awaitable[None]]:
+        """One role's analysis, to run when its turn comes: its prompt's
+        descriptions are read then, not before."""
+
+        async def analyse() -> None:
+            await self._analyse(
+                owner_id,
+                role_id=role_id,
+                keys=group.keys,
+                postings=group.postings,
+                block=_postings_block(
+                    await self._market.postings_by_id(
+                        [p.id for p in group.postings[:MAX_POSTINGS_IN_A_PROMPT]]
+                    )
+                ),
+            )
+
+        return analyse
+
     async def _searched_by(
-        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingView]
+        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingHeadView]
     ) -> list[frozenset[int]]:
         """For each posting in scope, the candidates whose own search found
         it: the market searched each candidate's title in the user's places."""
@@ -948,7 +980,7 @@ class RoleMapService:
         candidates: list[RoleCandidate],
         members: list[list[int]],
         eligible: list[int],
-        scope: list[tuple[str, PostingView, list[float]]],
+        scope: list[tuple[str, PostingHeadView, list[float]]],
     ) -> list[float]:
         """The local fit estimate of each eligible candidate; 0 for the rest.
         Only the user's dimension names and reads are embedded, here."""
@@ -1027,7 +1059,7 @@ class RoleMapService:
         *,
         role_id: uuid.UUID,
         keys: set[str],
-        postings: list[PostingView],
+        postings: list[PostingHeadView],
         block: str,
     ) -> None:
         """Name a role, read out what it requires and estimate its bar, on the
@@ -1118,6 +1150,7 @@ class RoleMapService:
         assessment_id = strengths[0].assessment_id
         latest = await self._latest_role_fits(owner_id)
         reused = 0
+        projections: list[Callable[[], Awaitable[None]]] = []
         for role in roles:
             if not role.requirements:
                 continue
@@ -1130,7 +1163,9 @@ class RoleMapService:
             ):
                 reused += 1
                 continue
-            await self._project(owner_id, strengths, role, digest=digest)
+            projections.append(self._get_projection(owner_id, strengths, role, digest=digest))
+        # Each role's fit is its own call and its own row, so they run side by side.
+        await _execute_concurrently(projections, limit=self._ai_concurrency)
         log.info("rolemap.fits_reused", roles=len(roles), reused=reused)
         await self._derive_opening_fits(owner_id, strengths)
 
@@ -1192,7 +1227,7 @@ class RoleMapService:
         fit_by_role = {f.role_id: f.score for f in await self.fits(owner_id)}
         opening_fits = await self._opening_fit_scores(owner_id, role_id)
 
-        by_row: dict[tuple[str, str], tuple[RoleView, PostingView]] = {}
+        by_row: dict[tuple[str, str], tuple[RoleView, PostingHeadView]] = {}
         candidates: list[MatchCandidate] = []
         for role, postings in await self.role_postings(owner_id):
             if role_id is not None and role.id != role_id:
@@ -1286,7 +1321,9 @@ class RoleMapService:
         ]
         if not pairs:
             return
-        vectors = await self._posting_vectors(owner_id)
+        vectors = await self._posting_vectors(
+            list({p.id: p for _role, postings, _fit in pairs for p in postings}.values())
+        )
         user_scores = {s.dimension_key: s.score for s in strengths}
         derived = 0
         for role, postings, fit in pairs:
@@ -1330,34 +1367,61 @@ class RoleMapService:
                     derived += 1
         log.info("rolemap.opening_fits_derived", roles=len(pairs), openings=derived)
 
-    async def _posting_vectors(self, owner_id: uuid.UUID) -> dict[str, list[float]]:
-        """Every posting in scope's vector, by its key; ones the crawler has not
-        embedded yet are embedded here. Local, no AI."""
-        scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
-        missing = [(key, posting) for key, posting, vector in scope if vector is None]
-        fresh: dict[str, list[float]] = {}
+    async def _posting_vectors(self, postings: list[PostingHeadView]) -> dict[str, list[float]]:
+        """These postings' vectors, by key; ones the crawler has not embedded
+        yet are embedded here. Local, no AI."""
+        stored = await self._market.vectors_by_id([p.id for p in postings], self._embedding_model)
+        scope = await self._embedded([(_posting_key(p), p, stored.get(p.id)) for p in postings])
+        return {key: vector for key, _posting, vector in scope}
+
+    async def _embedded(
+        self, scope: list[tuple[str, PostingHeadView, list[float] | None]]
+    ) -> list[tuple[str, PostingHeadView, list[float]]]:
+        """The scope with a vector for every posting: the crawler's, or one
+        embedded here for a posting it has not reached yet. Only those
+        postings' descriptions are read."""
+        missing = [posting.id for _key, posting, vector in scope if vector is None]
+        fresh: dict[uuid.UUID, list[float]] = {}
         if missing:
+            postings = await self._market.postings_by_id(missing)
             texts = [
                 "\n".join(
                     part for part in (p.title, p.title, p.location or "", p.description) if part
                 )
-                for _key, p in missing
+                for p in postings
             ]
             fresh = dict(
                 zip(
-                    (k for k, _ in missing),
+                    (p.id for p in postings),
                     embed(texts, model_name=self._embedding_model),
                     strict=True,
                 )
             )
-        return {
-            key: vector if vector is not None else fresh[key] for key, _posting, vector in scope
-        }
+        return [
+            (key, posting, vector)
+            for key, posting, stored in scope
+            if (vector := stored if stored is not None else fresh.get(posting.id)) is not None
+        ]
 
     async def _strengths(self, owner_id: uuid.UUID) -> list[CandidateStrength]:
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.strengths.get_list(CandidateStrengthFilter())
         return sorted(found, key=lambda s: s.dimension_key)
+
+    def _get_projection(
+        self,
+        owner_id: uuid.UUID,
+        strengths: list[CandidateStrength],
+        role: RoleView,
+        *,
+        digest: str,
+    ) -> Callable[[], Awaitable[None]]:
+        """One role's fit, to score when its turn comes."""
+
+        async def project() -> None:
+            await self._project(owner_id, strengths, role, digest=digest)
+
+        return project
 
     async def _project(
         self,
@@ -1596,7 +1660,7 @@ class RoleMapService:
 
     async def _scope_vectors(
         self, owner_id: uuid.UUID
-    ) -> list[tuple[str, PostingView, list[float]]]:
+    ) -> list[tuple[str, PostingHeadView, list[float]]]:
         """This user's postings, each with its embedding. No AI, no cost.
 
         Fewer than one role's worth of postings is no market to search, and
@@ -1605,23 +1669,7 @@ class RoleMapService:
         scope = await self._market.scope_with_vectors(owner_id, self._embedding_model)
         if len(scope) < MIN_POSTINGS_FOR_A_ROLE:
             return []
-
-        missing = [(key, posting) for key, posting, vector in scope if vector is None]
-        fresh: dict[str, list[float]] = {}
-        if missing:
-            # Postings the crawler has not embedded yet; embedding is local.
-            texts = [
-                "\n".join(
-                    part for part in (p.title, p.title, p.location or "", p.description) if part
-                )
-                for _key, p in missing
-            ]
-            vectors = embed(texts, model_name=self._embedding_model)
-            fresh = dict(zip((k for k, _ in missing), vectors, strict=True))
-        return [
-            (key, posting, vector if vector is not None else fresh[key])
-            for key, posting, vector in scope
-        ]
+        return await self._embedded(scope)
 
     async def _previous_members(self, owner_id: uuid.UUID) -> dict[str, set[str]]:
         """Every role's postings from the last run, retired ones included. One
@@ -1639,7 +1687,7 @@ class RoleMapService:
         return previous
 
     async def _keep_role(
-        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, postings: list[PostingView]
+        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, postings: list[PostingHeadView]
     ) -> bool:
         """Keep an already-analysed role on the map, refreshing only what needs
         no AI: its opening count and salary bands. ``False`` means there is no
@@ -1659,7 +1707,7 @@ class RoleMapService:
         *,
         role_id: uuid.UUID,
         keys: set[str],
-        postings: list[PostingView],
+        postings: list[PostingHeadView],
         extraction: _RoleExtraction,
         bar: HiringBar,
         bar_reasoning: str,
@@ -1721,7 +1769,7 @@ class RoleMapService:
             )
 
     async def _salary_bands(
-        self, owner_id: uuid.UUID, postings: list[PostingView]
+        self, owner_id: uuid.UUID, postings: list[PostingHeadView]
     ) -> dict[str, Any]:
         """One band per market the user selected, not one number per role."""
         selected = await self._market.target_locations(owner_id)
@@ -1781,9 +1829,45 @@ class RoleMapService:
             mine.record(RolesReclustered(owner_id=owner_id, roles=len(reconciliation.assignments)))
 
 
-def _posting_key(posting: PostingView) -> str:
+async def _execute_concurrently(
+    calls: Sequence[Callable[[], Awaitable[None]]], *, limit: int
+) -> None:
+    """Run ``calls``, at most ``limit`` at a time; ``limit=1`` runs them in
+    order, one after another.
+
+    The first to fail cancels the rest, before or during their AI call, and
+    its own error is raised, not a group of them: a build's error code is
+    read from it. A call cancelled mid-way stores nothing, because each one
+    writes only after its replies are in.
+    """
+    if not calls:
+        return
+    slots = asyncio.Semaphore(limit)
+
+    async def run(call: Callable[[], Awaitable[None]]) -> None:
+        async with slots:
+            await call()
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            for call in calls:
+                group.create_task(run(call))
+    except BaseExceptionGroup as failed:
+        raise failed.exceptions[0] from None
+
+
+def _posting_key(posting: PostingHeadView) -> str:
     """The key a posting is matched under (see ``MarketService.scope_with_vectors``)."""
     return str(posting.id)
+
+
+def _posting_id(posting_key: str) -> uuid.UUID | None:
+    """The shared posting a member key names; ``None`` for a key that names
+    none (``_posting_key`` makes every key a build stores)."""
+    try:
+        return uuid.UUID(posting_key)
+    except ValueError:
+        return None
 
 
 def _requirements_read(extraction: _RoleExtraction) -> RequirementsReadView:
