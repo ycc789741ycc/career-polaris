@@ -816,6 +816,9 @@ class RoleMapService:
 
         try:
             roles = await self.recluster(owner_id, build_id)
+            # The fits are part of the build: once it says ready, nothing on
+            # the map moves until the next one.
+            await self.compute_fits(owner_id, check=self._get_cancel_check(owner_id, build_id))
         except JobCancelledError:
             # The user cancelled it (ADR 0072): the build is already closed.
             log.info("rolemap.build_cancelled", build_id=str(build_id))
@@ -843,7 +846,6 @@ class RoleMapService:
                     skill_assessment_id=skill_assessment_id,
                 )
                 await mine.builds.update(done)
-                # Its fits are scored once, now, whatever it changed (ADR 0024).
                 mine.record(
                     RoleMapBuildFinished(
                         owner_id=owner_id, build_id=build_id, status=str(BuildRunStatus.READY)
@@ -892,9 +894,9 @@ class RoleMapService:
         self, owner_id: uuid.UUID, build_id: uuid.UUID, *, code: str, message: str
     ) -> None:
         """Close a build without a result. Also how ``advisor.activity`` gives
-        up on a build whose worker never came back. The fits are still scored:
-        an analysis that asked for this build has new scores to show against
-        the roles that are there."""
+        up on a build whose worker never came back. Nothing is scored after
+        it: the map stays as the last ready build left it, and says it is
+        behind the strengths until a build succeeds (ADR 0071)."""
         async with self._uow.for_owner(owner_id) as mine:
             failed = await mine.builds.get(build_id)
             if failed is None or not failed.is_open:
@@ -1236,17 +1238,22 @@ class RoleMapService:
             "rate_is_published": estimate.rate_is_published,
         }
 
-    async def compute_fits(self, owner_id: uuid.UUID) -> list[FitView]:
+    async def compute_fits(
+        self, owner_id: uuid.UUID, *, check: ProgressCallback | None = None
+    ) -> list[FitView]:
         """One projection per role with requirements, against the scores the
         latest analysis handed over, stored with its reasoning. Run once per
-        build, when it closes (ADR 0024)."""
-        strengths = await self._strengths(owner_id)
-        if not strengths:
-            raise ValidationError("run an analysis before scoring roles")
+        build, as its last step before it is ready (ADR 0024), so the map a
+        finished build shows already carries its fits.
 
+        ``check`` is the build's cancel check, passed to every call as its
+        progress callback and called once more before the event is recorded."""
         roles = await self.roles(owner_id)
         if not roles:
             return []
+        strengths = await self._strengths(owner_id)
+        if not strengths:
+            raise ValidationError("run an analysis before scoring roles")
 
         assessment_id = strengths[0].assessment_id
         latest = await self._latest_role_fits(owner_id)
@@ -1264,9 +1271,13 @@ class RoleMapService:
             ):
                 reused += 1
                 continue
-            projections.append(self._get_projection(owner_id, strengths, role, digest=digest))
+            projections.append(
+                self._get_projection(owner_id, strengths, role, digest=digest, check=check)
+            )
         # Each role's fit is its own call and its own row, so they run side by side.
         await _execute_concurrently(projections, limit=self._ai_concurrency)
+        if check is not None:
+            await check(_NO_PROGRESS)
         log.info("rolemap.fits_reused", roles=len(roles), reused=reused)
 
         async with self._uow.for_owner(owner_id) as mine:
@@ -1415,11 +1426,12 @@ class RoleMapService:
         role: RoleView,
         *,
         digest: str,
+        check: ProgressCallback | None = None,
     ) -> Callable[[], Awaitable[None]]:
         """One role's fit, to score when its turn comes."""
 
         async def project() -> None:
-            await self._project(owner_id, strengths, role, digest=digest)
+            await self._project(owner_id, strengths, role, digest=digest, check=check)
 
         return project
 
@@ -1430,6 +1442,7 @@ class RoleMapService:
         role: RoleView,
         *,
         digest: str,
+        check: ProgressCallback | None = None,
     ) -> None:
         """Map a role's requirements onto the user's dimensions, and store the
         fit."""
@@ -1450,6 +1463,7 @@ class RoleMapService:
             },
             output_schema=_Projection,
             untrusted=frozenset({"requirements"}),
+            on_progress=check,
         )
 
         targets = [

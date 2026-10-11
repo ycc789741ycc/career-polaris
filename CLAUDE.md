@@ -393,9 +393,9 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   and `rolemap.role_candidate` holds the latest set. A build matches them to
   the postings in scope locally (embeddings, plus title words) and keeps the
   first ten with openings; nothing clusters any more. With no candidates, a
-  build places nothing. Fits are scored once per build, when
-  `RoleMapBuildFinished` reaches the dispatcher, and every estimate that leads
-  to a build includes them (`fits_cost_usd`). `GET /role-candidates` lists the
+  build places nothing. Fits are scored once per build, as its last step
+  before it is ready, so a finished map does not move afterwards; every
+  estimate that leads to a build includes them (`fits_cost_usd`). `GET /role-candidates` lists the
   candidates; since Phase 8 the role map no longer shows them.
 - **Candidate roles are searched for** (ADR 0025). There is one ownerless
   `himalayas` crawl source per job title and place: a country, or "Remote"
@@ -487,8 +487,9 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
   `rolemap`; `assessment` keeps only the strength report. A fit is scored
   against the dimension scores `assessment` hands over with the candidates:
   `StrengthInput` and `rolemap.candidate_strength` carry `score` and
-  `confidence`, and `weight` is their product. `RoleMapBuildFinished` queues
-  `rolemap.compute_fits`. `/fits`, `/fits/compute` and `/matched-postings`
+  `confidence`, and `weight` is their product. The build runs
+  `compute_fits` itself before it says ready (it once queued it on
+  `RoleMapBuildFinished`, which queues nothing now). `/fits`, `/fits/compute` and `/matched-postings`
   keep their paths on the role map's router; a fit's body has no
   `private_posting_id`. Migration 0023 moved the fits and backfilled the
   scores.
@@ -1072,9 +1073,8 @@ On `epic/no-ticket/user-started-runs`, one branch per step:
   themselves, as the Advisor's do: `AssessmentService.run(run_id=)` and the
   build pass a check as the gateway's `on_progress` and call it before they
   save, raising `JobCancelledError`; the build checks before each role is
-  stored and before lineage. The dispatcher releases nothing for a cancelled
-  `AnalysisFinished` and scores no fits for a cancelled
-  `RoleMapBuildFinished`. `RunStatus` carries the `id` Cancel names. In the
+  stored, before lineage and through its fits. The dispatcher releases
+  nothing for a cancelled `AnalysisFinished`. `RunStatus` carries the `id` Cancel names. In the
   SPA, `shell/CancelRunButton` sits in `RunProgress`'s header on Strengths
   and Roles and, compact, in the running bar's pills
   (`getActivityLines`), never for syncs or parses; no confirmation, and

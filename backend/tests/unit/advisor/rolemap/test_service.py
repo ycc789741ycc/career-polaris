@@ -1193,7 +1193,7 @@ async def test_a_finished_build_announces_itself_for_its_fits(
     assert RoleMapBuildFinished(OWNER, requested.build.id, "ready") in uow.store.events
 
 
-async def test_a_failed_build_still_announces_itself_for_its_fits() -> None:
+async def test_a_failed_build_announces_itself_once() -> None:
     uow = FakeRoleMapUnitOfWork()
     service = _service(uow)
     await _analysed(service)
@@ -1673,6 +1673,87 @@ async def test_a_fit_that_fails_fails_the_job_and_announces_nothing() -> None:
 
     uow = rolemap._uow
     assert not any(isinstance(e, RoleFitsComputed) for e in uow.store.events)  # type: ignore[attr-defined]
+
+
+async def _build_over_three_roles(
+    gateway: Any, monkeypatch: pytest.MonkeyPatch
+) -> tuple[RoleMapService, uuid.UUID]:
+    """A build whose recluster leaves three roles with requirements behind,
+    asked for after an analysis that handed over strengths."""
+    rolemap = await _three_scored_roles(gateway, ai_concurrency=3)
+    await rolemap.replace_candidates(
+        OWNER,
+        ANALYSIS_ID,
+        [_candidate("Backend Engineer", "services")],
+        strengths=[StrengthInput("backend", "Backend", "Built services.", 60, 0.9)],
+    )
+    requested = await rolemap.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
+        return await rolemap.roles(owner_id)
+
+    monkeypatch.setattr(rolemap, "recluster", recluster)
+    return rolemap, requested.build.id
+
+
+async def test_a_build_is_ready_only_once_its_fits_are_scored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The map a finished build shows does not move afterwards: its fits are
+    stored before it says ready, not by a job queued after."""
+    rolemap, build_id = await _build_over_three_roles(ProjectingGateway(target=80), monkeypatch)
+
+    await rolemap.build(OWNER, build_id)
+
+    latest = await rolemap.latest_build(OWNER)
+    assert latest is not None and latest.status == "ready"
+    assert len(await rolemap.fits(OWNER)) == 3
+    events = rolemap._uow.store.events  # type: ignore[attr-defined]
+    scored = events.index(RoleFitsComputed(owner_id=OWNER, roles=3))
+    assert scored < events.index(RoleMapBuildFinished(OWNER, build_id, "ready"))
+
+
+async def test_a_fit_that_fails_fails_the_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    gateway = InFlight(ProjectingGateway(target=80), failing="Platform Engineer")
+    rolemap, build_id = await _build_over_three_roles(gateway, monkeypatch)
+
+    await rolemap.build(OWNER, build_id)
+
+    latest = await rolemap.latest_build(OWNER)
+    assert latest is not None and latest.status == "failed"
+    events = rolemap._uow.store.events  # type: ignore[attr-defined]
+    assert RoleMapBuildFinished(OWNER, build_id, "ready") not in events
+
+
+class _CancellingProjector(ProjectingGateway):
+    """The user cancels the build while its fits are being scored."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.service: RoleMapService | None = None
+        self.build_id: uuid.UUID | None = None
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **kw: Any):
+        assert self.service is not None and self.build_id is not None
+        await self.service.cancel_build(owner_id, self.build_id)
+        await kw["on_progress"](Progress(fraction=0.2, estimated_cost_usd=Decimal("0.01")))
+        return await super().run(owner_id, task=task, inputs=inputs, **kw)
+
+
+async def test_a_build_cancelled_while_scoring_fits_stops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = _CancellingProjector()
+    rolemap, build_id = await _build_over_three_roles(gateway, monkeypatch)
+    gateway.service, gateway.build_id = rolemap, build_id
+
+    await rolemap.build(OWNER, build_id)
+
+    latest = await rolemap.latest_build(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("cancelled", None)
+    events = rolemap._uow.store.events  # type: ignore[attr-defined]
+    assert not any(isinstance(e, RoleFitsComputed) for e in events)
+    assert await rolemap.fits(OWNER) == []
 
 
 # --- cancelling a build (ADR 0072) ------------------------------------------
