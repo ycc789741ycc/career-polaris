@@ -1,6 +1,7 @@
 import type { Activity } from "../api/types";
 import { ProgressBar } from "../components/ui";
-import { describe, useActivity } from "./activity";
+import { getActivityLines, useActivity } from "./activity";
+import { CancelRunButton } from "./CancelRunButton";
 import type { Screen } from "./navigation";
 import { modelName, useShell } from "./ShellContext";
 
@@ -10,12 +11,16 @@ import { modelName, useShell } from "./ShellContext";
  * still going (ADR 0018). Gone as soon as nothing is running.
  *
  * Strengths and the role map show their own run as a waiting screen instead,
- * so there the bar leaves out the analysis and the build.
+ * so there the bar leaves out the analysis and the build. Elsewhere their
+ * pills carry a Cancel (ADR 0072); syncs and parses have none.
  */
 export function ActivityBar({ screen }: { screen: Screen }) {
   const { activity } = useActivity();
   const { status } = useShell();
-  const lines = describe(withoutOwnRuns(activity, screen), modelName(status));
+  const lines = getActivityLines(
+    withoutOwnRuns(activity, screen),
+    modelName(status),
+  );
   if (lines.length === 0) return null;
 
   return (
@@ -23,8 +28,9 @@ export function ActivityBar({ screen }: { screen: Screen }) {
       <ProgressBar indeterminate label="Background work in progress" />
       <ul className="activity-list">
         {lines.map((line) => (
-          <li key={line} className="model-pill">
-            {line}…
+          <li key={line.text} className="model-pill">
+            {line.text}…
+            {line.cancels && <CancelRunButton run={line.cancels} isCompact />}
           </li>
         ))}
       </ul>

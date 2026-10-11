@@ -32,8 +32,9 @@ class RolesReclustered:
 
 @dataclass(frozen=True, slots=True)
 class RoleMapBuildFinished:
-    """A build closed, ``ready`` or ``failed``. The one trigger for scoring the
-    fits, so each build is scored once, whatever it changed (ADR 0024)."""
+    """A build closed, ``ready``, ``failed`` or ``cancelled`` (ADR 0072). The
+    one trigger for scoring the fits, so each build is scored once, whatever it
+    changed (ADR 0024); a cancelled one is not scored."""
 
     owner_id: uuid.UUID
     build_id: uuid.UUID

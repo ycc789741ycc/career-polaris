@@ -1,11 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, RunStatus } from "../api/types";
 import { ActivityBar, withoutOwnRuns } from "./ActivityBar";
 import {
   ActivityProvider,
   describe as describeWork,
+  getActivityLines,
+  getOutcomeToast,
   useActivity,
 } from "./activity";
 import { ToastProvider } from "./toast";
@@ -241,5 +244,102 @@ describe("the running bar on a screen with its own waiting screen", () => {
     expect(withoutOwnRuns(activity, "sources")).toBe(activity);
     expect(withoutOwnRuns(activity, "advisor")).toBe(activity);
     expect(withoutOwnRuns(null, "roles")).toBeNull();
+  });
+});
+
+describe("cancelling from the running bar (ADR 0072)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers Cancel for an analysis and a build, never for a sync", () => {
+    const lines = getActivityLines(
+      {
+        ...IDLE,
+        syncing: [{ label: "github", started_at: "2026-09-28T09:00:00Z" }],
+        analysis: run("running"),
+        role_map: { ...run("waiting"), waiting_for: "market" },
+      },
+      "m",
+    );
+    expect(lines.map((line) => line.cancels ?? null)).toEqual([
+      null,
+      "analysis",
+      "role_map",
+    ]);
+  });
+
+  it("cancels the analysis without asking, then says so, not that it failed", async () => {
+    const user = userEvent.setup();
+    let cancelled = false;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace("http://api.test/api/v1", "");
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (init?.method === "POST") {
+          cancelled = true;
+          return new Response(null, { status: 204 });
+        }
+        const analysis = cancelled
+          ? { ...run("cancelled"), id: "run-1" }
+          : { ...run("running"), id: "run-1" };
+        return new Response(JSON.stringify({ ...IDLE, analysis }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    renderShell();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Cancel the analysis" }),
+    );
+
+    expect(await screen.findByText("Analysis cancelled.")).toBeInTheDocument();
+    expect(calls).toContain("POST /assessments/runs/run-1/cancel");
+    expect(screen.queryByText(/failed/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "Running now" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("what a run that closed says", () => {
+  const both = { analysisDone: true, roleMapDone: true };
+
+  it("words a cancel as a cancel, and an analysis with its build as one", () => {
+    expect(getOutcomeToast(run("cancelled"), run("cancelled"), both)).toBe(
+      "Analysis cancelled, and the role map build that was waiting for it.",
+    );
+    expect(
+      getOutcomeToast(null, run("cancelled"), {
+        analysisDone: false,
+        roleMapDone: true,
+      }),
+    ).toBe("Role map build cancelled.");
+    expect(
+      getOutcomeToast(run("cancelled"), null, {
+        analysisDone: true,
+        roleMapDone: false,
+      }),
+    ).toBe("Analysis cancelled.");
+  });
+
+  it("still says when a run finished or failed", () => {
+    expect(
+      getOutcomeToast(run("ready"), null, {
+        analysisDone: true,
+        roleMapDone: false,
+      }),
+    ).toBe("Analysis finished.");
+    expect(
+      getOutcomeToast(null, null, { analysisDone: false, roleMapDone: false }),
+    ).toBeNull();
   });
 });

@@ -1056,3 +1056,21 @@ On `epic/no-ticket/user-started-runs`, one branch per step:
   roles yet" with Build disabled; once analysed with no map, "Your strengths
   are ready" with Build role map. Only a build makes the progress screen: an
   analysis running alone leaves the map in place (`isMapComing`).
+- **Cancel an analysis or a build** (ADR 0072, migration 0055). Both runs can
+  be `cancelled`: closed, never failed. `POST /assessments/runs/{id}/cancel`
+  and `POST /roles/builds/{id}/cancel` answer 204, idempotent, through
+  `ActivityService.cancel_analysis` (which also cancels a build waiting for
+  that analysis, through `RoleMapService.cancel_waiting_for_analysis`, but
+  not one waiting for the market) and `cancel_role_map`. The jobs stop
+  themselves, as the Advisor's do: `AssessmentService.run(run_id=)` and the
+  build pass a check as the gateway's `on_progress` and call it before they
+  save, raising `JobCancelledError`; the build checks before each role is
+  stored and before lineage. The dispatcher releases nothing for a cancelled
+  `AnalysisFinished` and scores no fits for a cancelled
+  `RoleMapBuildFinished`. `RunStatus` carries the `id` Cancel names. In the
+  SPA, `shell/CancelRunButton` sits in `RunProgress`'s header on Strengths
+  and Roles and, compact, in the running bar's pills
+  (`getActivityLines`), never for syncs or parses; no confirmation, and
+  "Cancelling…" until `/activity` says closed. `getOutcomeToast` words the
+  toast, never as a failure.
+

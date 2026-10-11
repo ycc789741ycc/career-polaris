@@ -17,6 +17,8 @@ class AnalysisRunStatus(StrEnum):
     RUNNING = "running"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user (ADR 0072): closed, never a failure.
+    CANCELLED = "cancelled"
 
 
 @dataclass(slots=True)
@@ -45,6 +47,13 @@ class AnalysisRun:
 
     def ready(self, at: datetime) -> None:
         self.status = AnalysisRunStatus.READY
+        self.finished_at = at
+
+    def cancel(self, at: datetime) -> None:
+        """The user stopped it (ADR 0072). Only a running run can be."""
+        if not self.is_running:
+            raise ValueError(f"a {self.status} analysis cannot be cancelled")
+        self.status = AnalysisRunStatus.CANCELLED
         self.finished_at = at
 
     def failed(self, *, code: str, message: str, at: datetime) -> None:

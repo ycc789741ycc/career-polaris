@@ -412,4 +412,50 @@ describe("Strengths", () => {
       screen.queryByRole("list", { name: "Dimensions, least certain first" }),
     ).not.toBeInTheDocument();
   });
+
+  it("offers Cancel on the analysing screen (ADR 0072)", async () => {
+    serve(assessment({}));
+    renderStrengths({
+      syncing: [],
+      advisor_jobs: [],
+      processing: ONLINE,
+      parsing: [],
+      analysis: {
+        id: "run-1",
+        status: "running",
+        started_at: "2026-09-28T09:00:00Z",
+        finished_at: null,
+        error: null,
+      },
+      role_map: null,
+    });
+
+    const progress = await screen.findByRole("region", {
+      name: "Strength analysis progress",
+    });
+    expect(
+      within(progress).getByRole("button", { name: "Cancel" }),
+    ).toBeInTheDocument();
+  });
+
+  it("never shows a cancelled analysis as one that did not finish", async () => {
+    serve(assessment({}));
+    renderStrengths({
+      syncing: [],
+      advisor_jobs: [],
+      processing: ONLINE,
+      parsing: [],
+      analysis: {
+        id: "run-1",
+        status: "cancelled",
+        started_at: "2026-09-29T09:00:00Z",
+        finished_at: "2026-09-29T09:01:00Z",
+        error: null,
+      },
+      role_map: null,
+    });
+
+    await screen.findByRole("button", { name: "Re-analyse" });
+    expect(screen.queryByText(/did not finish/)).not.toBeInTheDocument();
+  });
 });

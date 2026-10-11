@@ -93,33 +93,77 @@ const SOURCE_NAMES: Record<string, string> = { github: "GitHub", jira: "Jira" };
 
 /** One line per piece of work in progress, in journey order. */
 export function describe(activity: Activity | null, model: string): string[] {
+  return getActivityLines(activity, model).map((line) => line.text);
+}
+
+/** A line of the running bar, and the run its Cancel stops, if it has one:
+ * an analysis or a build can be cancelled, a sync or a parse cannot
+ * (ADR 0072). */
+export type ActivityLine = { text: string; cancels?: CancellableRun };
+export type CancellableRun = "analysis" | "role_map";
+
+/** The running bar's lines, in journey order. Pure. */
+export function getActivityLines(
+  activity: Activity | null,
+  model: string,
+): ActivityLine[] {
   if (activity === null) return [];
-  const lines = [
-    ...activity.syncing.map(
-      (work) => `Syncing ${SOURCE_NAMES[work.label] ?? work.label}`,
-    ),
-    ...activity.parsing.map((work) => `Reading ${work.label}`),
+  const lines: ActivityLine[] = [
+    ...activity.syncing.map((work) => ({
+      text: `Syncing ${SOURCE_NAMES[work.label] ?? work.label}`,
+    })),
+    ...activity.parsing.map((work) => ({ text: `Reading ${work.label}` })),
   ];
   const away = isProcessingAway(activity);
   if (away && lines.length + busyRuns(activity) > 0) {
-    lines.unshift("Waiting for the processing machine to come back");
+    lines.unshift({ text: "Waiting for the processing machine to come back" });
   }
   if (activity.analysis?.status === "running") {
-    lines.push(`Analysing your strengths on ${model}`);
+    lines.push({
+      text: `Analysing your strengths on ${model}`,
+      cancels: "analysis",
+    });
   }
   if (activity.role_map?.status === "running") {
-    lines.push(`Building your role map on ${model}`);
+    lines.push({
+      text: `Building your role map on ${model}`,
+      cancels: "role_map",
+    });
   } else if (activity.role_map?.status === "waiting") {
     const market = activity.role_map.waiting_for === "market";
-    lines.push(
-      market && !activity.processing.is_crawler_online
-        ? "Role map waiting for the market search to come back online"
-        : market
-          ? "Searching the market for your recommended roles"
-          : "Role map waiting for the analysis to finish",
-    );
+    lines.push({
+      text:
+        market && !activity.processing.is_crawler_online
+          ? "Role map waiting for the market search to come back online"
+          : market
+            ? "Searching the market for your recommended roles"
+            : "Role map waiting for the analysis to finish",
+      cancels: "role_map",
+    });
   }
   return lines;
+}
+
+/** The toast for runs that just closed: a cancel is never worded as a
+ * failure, and cancelling an analysis with the build that waited for it is
+ * one toast (ADR 0072). Null when neither closed. Pure. */
+export function getOutcomeToast(
+  analysis: RunStatus | null,
+  roleMap: RunStatus | null,
+  {
+    analysisDone,
+    roleMapDone,
+  }: { analysisDone: boolean; roleMapDone: boolean },
+): string | null {
+  const analysisCancelled = analysisDone && analysis?.status === "cancelled";
+  const roleMapCancelled = roleMapDone && roleMap?.status === "cancelled";
+  if (analysisCancelled && roleMapCancelled)
+    return "Analysis cancelled, and the role map build that was waiting for it.";
+  if (roleMapCancelled) return "Role map build cancelled.";
+  if (roleMapDone) return outcome("Role map", roleMap);
+  if (analysisCancelled) return "Analysis cancelled.";
+  if (analysisDone) return outcome("Analysis", analysis);
+  return null;
 }
 
 /** Analyses, builds and Advisor jobs still to finish. */
@@ -169,8 +213,11 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         }));
       }
       // One toast at a time: the latest stage to finish is the one to mention.
-      if (roleMapDone) flash(outcome("Role map", next.role_map));
-      else if (analysisDone) flash(outcome("Analysis", next.analysis));
+      const toast = getOutcomeToast(next.analysis, next.role_map, {
+        analysisDone,
+        roleMapDone,
+      });
+      if (toast) flash(toast);
       else if (sourcesDone) flash("Your sources are up to date.");
     },
     [flash],

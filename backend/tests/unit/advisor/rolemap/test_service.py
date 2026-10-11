@@ -37,7 +37,8 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.service import MAX_POSTINGS_IN_A_PROMPT, _RoleExtraction
 from kernel.clock import utcnow
-from kernel.errors import ValidationError
+from kernel.errors import NotFoundError, ValidationError
+from kernel.progress import Progress
 from tests.unit.advisor.rolemap.fakes import (
     MARKET_AS_OF,
     FakeMarket,
@@ -1721,3 +1722,84 @@ async def test_a_fit_that_fails_fails_the_job_and_announces_nothing() -> None:
 
     uow = rolemap._uow
     assert not any(isinstance(e, RoleFitsComputed) for e in uow.store.events)  # type: ignore[attr-defined]
+
+
+# --- cancelling a build (ADR 0072) ------------------------------------------
+
+
+class _CancellingGateway(ScriptedGateway):
+    """The user cancels the build while its first role is being named."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.service: RoleMapService | None = None
+        self.build_id: uuid.UUID | None = None
+        self.calls = 0
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **kw: Any):
+        self.calls += 1
+        assert self.service is not None and self.build_id is not None
+        await self.service.cancel_build(owner_id, self.build_id)
+        await kw["on_progress"](Progress(fraction=0.2, estimated_cost_usd=Decimal("0.01")))
+        return await super().run(owner_id, task=task, inputs=inputs, **kw)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_build_cancelled_mid_call_stops_and_is_not_failed() -> None:
+    postings = [_posting(f"Backend Engineer {i}") for i in range(4)]
+    texts = [f"{p.title}\n{p.title}\n{p.location}" for p in postings]
+    market = FakeMarket(
+        postings,
+        vectors={p.id: v for p, v in zip(postings, _fake_embed(texts, model_name=""), strict=True)},
+    )
+    uow = FakeRoleMapUnitOfWork()
+    gateway = _CancellingGateway()
+    service = _service(uow, market, gateway, top_k=1)
+    await service.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    requested = await service.request_build(OWNER, wait=False)
+    gateway.service, gateway.build_id = service, requested.build.id
+
+    assert await service.build(OWNER, requested.build.id) == []
+
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("cancelled", None)
+    # Stopped at its first call: no role, no placements, no fits to score.
+    assert gateway.calls == 1 and uow.store.roles == {} and uow.store.placements == {}
+    finished = [e for e in uow.store.events if isinstance(e, RoleMapBuildFinished)]
+    assert [e.status for e in finished] == ["cancelled"]
+
+
+async def test_cancelling_a_closed_build_does_nothing() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
+    requested = await service.request_build(OWNER, wait=False)
+
+    assert await service.cancel_build(OWNER, requested.build.id)
+    assert not await service.cancel_build(OWNER, requested.build.id)
+
+
+async def test_another_owners_build_is_not_found_to_cancel() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service, OTHER)
+    theirs = await service.request_build(OTHER, wait=False)
+
+    with pytest.raises(NotFoundError):
+        await service.cancel_build(OWNER, theirs.build.id)
+
+
+async def test_a_build_waiting_for_the_market_is_done_once_cancelled() -> None:
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
+    waiting = await service.request_build(OWNER, wait=False)
+
+    await service.cancel_build(OWNER, waiting.build.id)
+
+    assert (
+        await service.check_market(
+            OWNER, waiting.build.id, deadline=timedelta(0), crawler_online_since=utcnow()
+        )
+        == MarketWait.DONE
+    )

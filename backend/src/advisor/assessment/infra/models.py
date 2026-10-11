@@ -111,7 +111,7 @@ class AnalysisRun(Base, OwnedMixin):
 
     __tablename__ = "analysis_run"
     __table_args__ = (
-        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint("status IN ('running', 'ready', 'failed', 'cancelled')", name="status"),
         Index("ix_analysis_run_owner_started", "owner_id", "started_at"),
         {"schema": "assessment"},
     )

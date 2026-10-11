@@ -26,6 +26,7 @@ import {
   SkillFitBar,
   StatTile,
 } from "../components/ui";
+import { CancelRunButton } from "../shell/CancelRunButton";
 import { useActivity } from "../shell/activity";
 import { type Focus, roleFocus } from "../shell/navigation";
 import {
@@ -320,6 +321,7 @@ export function Roles() {
             scope: scope.data ? scopeLine(scope.data).replace(/\.$/, "") : null,
             maxRoles: rebuildCost.data?.max_roles ?? null,
           })}
+          action={<CancelRunButton run="role_map" />}
           previewTitle="Your map will appear here"
           preview={<EmptyMap />}
           previewNote="It is drawn once the roles are picked and scored."

@@ -173,6 +173,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assessments/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Stop an analysis, and a role-map build waiting for it (ADR 0072). A
+         *     call already sent is still charged. Cancelling a closed run does nothing;
+         *     another owner's run is not found.
+         */
+        post: operations["cancel_run_api_v1_assessments_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/methods": {
         parameters: {
             query?: never;
@@ -1117,6 +1139,28 @@ export interface paths {
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/builds/{build_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Build
+         * @description Stop a role-map build, waiting or running (ADR 0072). The market
+         *     sources it marked due stay due. Cancelling a closed build does nothing;
+         *     another owner's build is not found.
+         */
+        post: operations["cancel_build_api_v1_roles_builds__build_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2913,19 +2957,22 @@ export interface components {
          * @description The newest analysis or role-map build. A ``waiting`` build says what it
          *     waits for: an analysis that is running, or the market sources it reads,
          *     being fetched (ADR 0027). A run that stopped responding reads as
-         *     ``failed`` with the code ``stale``.
+         *     ``failed`` with the code ``stale``; one the user stopped, as ``cancelled``
+         *     (ADR 0072). ``id`` is what a cancel names.
          */
         RunStatus: {
             error: components["schemas"]["JobError"] | null;
             /** Finished At */
             finished_at: string | null;
+            /** Id */
+            id?: string | null;
             /** Started At */
             started_at: string;
             /**
              * Status
              * @enum {string}
              */
-            status: "waiting" | "running" | "ready" | "failed";
+            status: "waiting" | "running" | "ready" | "failed" | "cancelled";
             /** Waiting For */
             waiting_for?: ("analysis" | "market") | null;
         };
@@ -3944,6 +3991,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Assessment"] | null;
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_assessments_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {
@@ -6529,6 +6623,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RolePage"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_build_api_v1_roles_builds__build_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                build_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

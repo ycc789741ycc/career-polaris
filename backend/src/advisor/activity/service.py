@@ -37,7 +37,7 @@ from kernel.errors import AnalysisRunningError, SourcesProcessingError
 from kernel.logging import get_logger
 from kernel.presence.view import PresenceView
 
-__all__ = ["ActivityService", "ActivityView", "PendingView", "RunStatusView"]
+__all__ = ["ActivityService", "ActivityView", "CancelView", "PendingView", "RunStatusView"]
 
 log = get_logger(__name__)
 
@@ -58,6 +58,7 @@ class RunStatusView:
     """The newest analysis or role-map build, as the page shows it.
 
     ``waiting_for`` says why a waiting build waits: "analysis" or "market".
+    ``id`` is the run's or build's, so the page can cancel it (ADR 0072).
     """
 
     status: str
@@ -66,10 +67,20 @@ class RunStatusView:
     error_code: str | None
     error_message: str | None
     waiting_for: str | None = None
+    id: uuid.UUID | None = None
 
     @property
     def is_busy(self) -> bool:
         return self.status in ("waiting", "running")
+
+
+@dataclass(frozen=True, slots=True)
+class CancelView:
+    """What a cancel did: nothing when the run had already closed; and, for an
+    analysis, the build waiting for it that went with it (ADR 0072)."""
+
+    is_cancelled: bool
+    cancelled_build_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +182,28 @@ class ActivityService:
         """
         return await self._rolemap.release_waiting(owner_id)
 
+    async def cancel_analysis(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> CancelView:
+        """The user stops an analysis (ADR 0072), and with it a build that
+        waits for it: that build was asked for to read this analysis, and
+        released it would spend the key on a map from the one before. A build
+        waiting for the market is left alone. Cancelling a closed run does
+        nothing."""
+        if not await self._assessment.cancel_run(owner_id, run_id):
+            return CancelView(is_cancelled=False)
+        build_id = await self._rolemap.cancel_waiting_for_analysis(owner_id)
+        log.info(
+            "activity.analysis_cancelled",
+            run_id=str(run_id),
+            build_id=None if build_id is None else str(build_id),
+        )
+        return CancelView(is_cancelled=True, cancelled_build_id=build_id)
+
+    async def cancel_role_map(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> CancelView:
+        """The user stops a role-map build (ADR 0072), waiting or running.
+        Cancelling a closed one does nothing."""
+        is_cancelled = await self._rolemap.cancel_build(owner_id, build_id)
+        return CancelView(is_cancelled=is_cancelled)
+
     async def _analysis_running(
         self, owner_id: uuid.UUID, now: datetime, presence: PresenceView
     ) -> bool:
@@ -203,9 +236,14 @@ class ActivityService:
         self, run: AnalysisRunView, now: datetime, presence: PresenceView
     ) -> RunStatusView:
         if run.is_running and self._is_stale(run.started_at, now, presence):
-            return RunStatusView("failed", run.started_at, None, STALE, _LOST_ANALYSIS)
+            return RunStatusView("failed", run.started_at, None, STALE, _LOST_ANALYSIS, id=run.id)
         return RunStatusView(
-            run.status, run.started_at, run.finished_at, run.error_code, run.error_message
+            run.status,
+            run.started_at,
+            run.finished_at,
+            run.error_code,
+            run.error_message,
+            id=run.id,
         )
 
     def _build_status(
@@ -213,7 +251,7 @@ class ActivityService:
     ) -> RunStatusView:
         started = build.started_at or build.requested_at
         if build.is_open and self._build_is_lost(build, now, presence):
-            return RunStatusView("failed", started, None, STALE, _LOST_BUILD)
+            return RunStatusView("failed", started, None, STALE, _LOST_BUILD, id=build.id)
         waiting_for = None
         if build.status == "waiting":
             waiting_for = "market" if build.is_waiting_for_market else "analysis"
@@ -224,6 +262,7 @@ class ActivityService:
             build.error_code,
             build.error_message,
             waiting_for=waiting_for,
+            id=build.id,
         )
 
     def _build_is_lost(self, build: BuildRunView, now: datetime, presence: PresenceView) -> bool:

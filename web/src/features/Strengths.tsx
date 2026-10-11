@@ -17,6 +17,7 @@ import {
   ProgressBar,
 } from "../components/ui";
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
+import { CancelRunButton } from "../shell/CancelRunButton";
 import {
   chargedTo,
   modelName,
@@ -109,6 +110,7 @@ export function Strengths() {
         previewNote="It is drawn once every dimension is scored."
         leaveCopy="The analysis keeps running if you leave this page. When it finishes, build your role map from it on Roles."
         back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
+        action={<CancelRunButton run="analysis" />}
         costCopy={`Charged to ${chargedTo(
           status,
         )}, at the estimate you confirmed before it started.`}

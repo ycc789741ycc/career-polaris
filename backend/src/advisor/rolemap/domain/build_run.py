@@ -24,6 +24,8 @@ class BuildRunStatus(StrEnum):
     RUNNING = "running"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user (ADR 0072): closed, never a failure.
+    CANCELLED = "cancelled"
 
 
 @dataclass(slots=True)
@@ -127,6 +129,14 @@ class BuildRun:
         self.finished_at = at
         self.market_data_at = market_data_at
         self.skill_assessment_id = skill_assessment_id
+
+    def cancel(self, at: datetime) -> None:
+        """The user stopped it (ADR 0072). Only a waiting or running build
+        can be. The market sources it marked due stay due."""
+        if not self.is_open:
+            raise ValueError(f"a {self.status} build cannot be cancelled")
+        self.status = BuildRunStatus.CANCELLED
+        self.finished_at = at
 
     def failed(self, *, code: str, message: str, at: datetime) -> None:
         self.status = BuildRunStatus.FAILED
