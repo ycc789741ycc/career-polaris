@@ -297,10 +297,13 @@ describe("the Advisor's one target role", () => {
     renderAdvisor({ role: "r1" });
 
     await screen.findByRole("region", { name: "Your target role" });
-    expect(getStoredTargets("maya@example.com").current).toEqual({
-      role_id: "r1",
-      job_posting_id: null,
-      private_job_posting_id: null,
+    // The banner can appear before the effect saves the target for the sidebar.
+    await waitFor(() => {
+      expect(getStoredTargets("maya@example.com").current).toEqual({
+        role_id: "r1",
+        job_posting_id: null,
+        private_job_posting_id: null,
+      });
     });
   });
 
