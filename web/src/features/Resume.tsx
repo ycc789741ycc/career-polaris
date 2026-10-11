@@ -7,6 +7,7 @@ import {
 } from "react";
 import { api, streamEvents } from "../api/client";
 import type {
+  ConnectionPage,
   PlanEstimate,
   ResumeBullet,
   ResumeContact,
@@ -164,6 +165,11 @@ export function Resume({
   } | null>(null);
   const [preview, setPreview] = useState<ResumeTemplateSpec | null>(null);
   const [showSources, setShowSources] = useState(false);
+  // Which of GitHub and Jira are connected: what "Quantify" can draw on.
+  const [counted, setCounted] = useState<string[] | null>(null);
+  // An option changed in this visit: it applies when the résumé is next
+  // written, which the card says.
+  const [isOptionChanged, setIsOptionChanged] = useState(false);
   // An older version opened as the draft; null while on the latest. Saving
   // it makes the next version, never a new copy of the old one.
   const [opened, setOpened] = useState<OpenedVersion | null>(null);
@@ -244,6 +250,15 @@ export function Resume({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, reloads]);
+
+  // What the Quantify option can draw numbers from.
+  useEffect(() => {
+    api
+      .items<ConnectionPage>("/connections")
+      .then((rows) => setCounted(getCountedSources(rows)))
+      // Without it, the option just says nothing about its sources.
+      .catch(() => setCounted(null));
+  }, []);
 
   // Every template, as the renderer draws it: the picker and the page read it.
   useEffect(() => {
@@ -939,13 +954,34 @@ export function Resume({
                   <RoundCheck
                     key={key}
                     checked={options[key]}
-                    onChange={(on) =>
-                      void changeSettings(template, { ...options, [key]: on })
-                    }
+                    onChange={(on) => {
+                      setIsOptionChanged(true);
+                      void changeSettings(template, { ...options, [key]: on });
+                    }}
                   >
                     {label}
                   </RoundCheck>
                 ))}
+                {options.metrics && counted !== null && (
+                  <p className="resume-annotation" style={{ margin: 0 }}>
+                    {quantifyNote(counted)}
+                  </p>
+                )}
+                {isOptionChanged && resume?.status === "ready" && (
+                  <p className="resume-annotation" style={{ margin: 0 }}>
+                    Options apply when the résumé is next written.{" "}
+                    <button
+                      type="button"
+                      className="resume-add-line"
+                      disabled={busy}
+                      onClick={() =>
+                        void price(resume.target, resume.label, resume.id)
+                      }
+                    >
+                      Regenerate résumé
+                    </button>
+                  </p>
+                )}
               </div>
               {draft &&
                 resume &&
@@ -1165,6 +1201,7 @@ export function Resume({
                 trim={options.trim}
                 reorder={options.reorder}
                 showSources={showSources}
+                unbacked={resume.unbacked_lines}
                 onChange={editDraft}
               />
               <div className="resume-page-actions">
@@ -1276,6 +1313,23 @@ export function versionLine(version: ResumeVersion, isLatest: boolean): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Which of GitHub and Jira are connected, by kind. Pure. */
+export function getCountedSources(
+  rows: { kind: string; connected: boolean }[],
+): string[] {
+  return rows
+    .filter((r) => r.connected && (r.kind === "github" || r.kind === "jira"))
+    .map((r) => r.kind);
+}
+
+/** Where Quantify takes its numbers from, given what is connected. Pure. */
+export function quantifyNote(counted: string[]): string {
+  const names = counted.map((k) => (k === "github" ? "GitHub" : "Jira"));
+  if (names.length === 0)
+    return "Neither GitHub nor Jira is connected, so numbers come only from your résumé and answers. Connect them in 01 Sources.";
+  return `Numbers come from ${names.join(" and ")}'s counts, your résumé and your answers, only as the facts state them.`;
 }
 
 /** "Organic · 4 sections": the Layout card's summary. Pure. */
@@ -1399,6 +1453,7 @@ function ResumePage({
   trim,
   reorder,
   showSources,
+  unbacked,
   onChange,
 }: {
   content: ResumeContent;
@@ -1409,6 +1464,8 @@ function ResumePage({
   trim: boolean;
   reorder: boolean;
   showSources: boolean;
+  /** The model's lines that state a number their facts do not (ADR 0076). */
+  unbacked: string[];
   onChange: (next: ResumeContent) => void;
 }) {
   const edit = (patch: Partial<ResumeContent>) =>
@@ -1592,6 +1649,15 @@ function ResumePage({
               <div className="resume-cite" hidden={!showSources}>
                 {citeLine(bullet, evidence)}
               </div>
+              {/* Never printed: shown whether or not sources are, since the
+                line may claim more than its facts do. */}
+              {bullet.origin === "written" &&
+                unbacked.includes(bullet.text) && (
+                  <div className="resume-unbacked">
+                    A number here is not in the facts this line cites; check it
+                    or reword it.
+                  </div>
+                )}
             </li>
           ))}
         </ul>

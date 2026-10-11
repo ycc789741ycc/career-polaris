@@ -25,10 +25,11 @@ TEMPLATES = [
     ("gap_plan", "v3"),
     ("gap_questions", "v2"),
     # v3 writes to the résumé's sections (ADR 0039); v4 writes every section,
-    # shown or hidden (ADR 0043); v5 may claim a gap from its answers (ADR 0044).
-    ("resume_write", "v5"),
-    ("resume_revise", "v5"),
-    ("resume_section", "v1"),
+    # shown or hidden (ADR 0043); v5 may claim a gap from its answers (ADR 0044);
+    # v6 states only numbers its cited facts state (ADR 0076).
+    ("resume_write", "v6"),
+    ("resume_revise", "v6"),
+    ("resume_section", "v2"),
 ]
 
 
@@ -38,9 +39,9 @@ TEMPLATES = [
         ("skill_assessment", "v5"),
         ("gap_plan", "v3"),
         ("gap_questions", "v2"),
-        ("resume_write", "v5"),
-        ("resume_revise", "v5"),
-        ("resume_section", "v1"),
+        ("resume_write", "v6"),
+        ("resume_revise", "v6"),
+        ("resume_section", "v2"),
     ],
 )
 def test_every_prompt_that_reads_evidence_is_told_what_its_dates_mean(

@@ -2106,3 +2106,11 @@ select.input { appearance: auto; }
 .resume-move-line:focus-visible { opacity: 1; }
 .resume-move-line:focus-visible { outline: 2px solid var(--color-accent); border-radius: 4px; }
 @media (hover: none) { .resume-move-line { opacity: 1; } }
+/* A written line stating a number its facts do not (ADR 0076): the app's
+ * note, never printed. */
+.resume-unbacked {
+  font-family: var(--font);
+  font-size: 11.5px;
+  color: var(--color-accent-800, #8a4a20);
+  margin: 2px 0 4px;
+}

@@ -18,7 +18,12 @@ from datetime import date
 from typing import Any
 
 from advisor.profile.domain import EvidenceGranularity
-from advisor.profile.infra.connectors.base import Connector, EvidenceDraft
+from advisor.profile.infra.connectors.base import (
+    Connector,
+    EvidenceDraft,
+    get_count_label,
+    get_span_label,
+)
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
 from kernel.parsing import parse_date
@@ -139,11 +144,17 @@ class JiraConnector(Connector):
 
             verifying = sum(_status_name(i.get("fields") or {}) == _VERIFYING for i in issues)
             done = len(issues) - verifying
+            kinds = get_count_label(_type_name(i.get("fields") or {}) for i in issues)
             drafts.append(
                 EvidenceDraft(
                     external_ref=f"jira:{cloud_id}:throughput",
                     reference=f"Jira · {site_name}",
-                    fact=f"{len(issues)} finished issues: {done} done, {verifying} to be verified.",
+                    fact=(
+                        f"{len(issues)} finished issues"
+                        f"{get_span_label(_date_of(i) for i in issues)}:"
+                        f" {done} done, {verifying} to be verified"
+                        + (f"; by type: {kinds}." if kinds else ".")
+                    ),
                     observed_on=_latest(_date_of(i) for i in issues),
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=len(issues),
@@ -161,11 +172,14 @@ class JiraConnector(Connector):
             )[:10]
             for epic in recent:
                 count = by_epic[epic]
+                span = get_span_label(
+                    _date_of(i) for i in issues if epics.get(str(i.get("key"))) == epic
+                )
                 drafts.append(
                     EvidenceDraft(
                         external_ref=f"jira:{cloud_id}:epic:{epic.key}",
                         reference=f"Jira · {site_name} · {epic.key}",
-                        fact=f"{count} issues worked in the epic {epic.key}: {epic.summary}.",
+                        fact=f"{count} issues worked in the epic {epic.key}{span}: {epic.summary}.",
                         observed_on=worked[epic],
                         granularity=EvidenceGranularity.SUMMARY,
                         tally=count,
@@ -275,6 +289,12 @@ def _is_epic(fields: dict[str, Any]) -> bool:
 def _status_name(fields: dict[str, Any]) -> str:
     status = fields.get("status")
     return str(status.get("name") or "").strip().lower() if isinstance(status, dict) else ""
+
+
+def _type_name(fields: dict[str, Any]) -> str:
+    """The issue's type as its site names it: Story, Bug, Task."""
+    kind = fields.get("issuetype")
+    return str(kind.get("name") or "").strip() if isinstance(kind, dict) else ""
 
 
 def _is_finished(fields: dict[str, Any]) -> bool:

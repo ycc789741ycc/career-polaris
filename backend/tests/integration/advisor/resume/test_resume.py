@@ -356,6 +356,29 @@ async def test_a_resume_is_written_cited_with_coverage_decided_by_scores(
     assert [e.id for e in view.coverage[1].evidence] == [world.evidence_id]
 
 
+async def test_a_written_line_stating_a_number_its_facts_do_not_is_flagged_not_dropped(
+    world: World, account: uuid.UUID
+) -> None:
+    """ADR 0076: the line stays, and the page is told which it is."""
+    ref = await _own_posting(world, account)
+    reply = json.loads(_resume_reply(CITED))
+    lines = reply["sections"][1]["entries"][0]["bullets"]
+    lines.append({"text": "Cut checkout latency by 40%", "evidence_ids": [CITED]})
+    world.stub.replies.append(json.dumps(reply))
+    requested = await world.resume.request(
+        account, ref, template=Template.ORGANIC, options=Options()
+    )
+    await world.resume.generate(account, requested.id)
+
+    view = await world.resume.get(account, requested.id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert view.content is not None
+    assert "Cut checkout latency by 40%" in [
+        line["text"] for line in _lines(view.content.to_dict())
+    ]
+    assert view.unbacked_lines == ("Cut checkout latency by 40%",)
+
+
 async def test_a_resume_citing_evidence_the_user_lacks_is_recorded_as_failed(
     world: World, account: uuid.UUID
 ) -> None:

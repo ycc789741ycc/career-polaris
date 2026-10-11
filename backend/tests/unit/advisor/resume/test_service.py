@@ -29,6 +29,7 @@ from advisor.resume.domain import (
 )
 from advisor.target import OutdatedReason, TargetRef, TargetSnapshot
 from advisor.target.domain import Requirement, RequirementBasis
+from kernel.ai_gateway import load as load_template
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 from tests.unit.advisor.resume.builders import get_lines, make_content
 from tests.unit.advisor.resume.fakes import (
@@ -449,8 +450,26 @@ def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
     assert inputs["sections"] == "- experience\n- custom: Awards"
     assert inputs["evidence"] == "[E1] (jira, latest 2026-08-14) Jira · PAY: 40 issues done in PAY"
     assert inputs["accounts"] == "- github: mayalin"
-    assert resume_service._WRITE == ("resume_write", "v5")
-    assert resume_service._REVISE == ("resume_revise", "v5")
+    assert inputs["options"].startswith("- Quantify: ")
+    assert resume_service._WRITE == ("resume_write", "v6")
+    assert resume_service._REVISE == ("resume_revise", "v6")
+    assert resume_service._SECTION == ("resume_section", "v2")
+
+
+def test_every_resume_prompt_is_told_whether_to_quantify() -> None:
+    """ADR 0076: the write, the chat and a filled section all read it."""
+    on = resume_service._options_block(Options())
+    off = resume_service._options_block(Options(metrics=False, reorder=False))
+    assert "Quantify:" in on and "GitHub or Jira tally" in on
+    assert off == "- Do not quantify: keep a number only where a cited fact words it so itself."
+    for name, version in (
+        resume_service._WRITE,
+        resume_service._REVISE,
+        resume_service._SECTION,
+    ):
+        template = load_template(name, version)
+        assert "{{options}}" in template.user
+        assert "Every number in a line you write must appear in a fact" in template.system
 
 
 # --- sections you choose (ADR 0039) -------------------------------------------

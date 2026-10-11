@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
@@ -103,6 +103,7 @@ from advisor.resume.domain import (
     get_proposal_layout,
     get_spec_with_look,
     get_template_spec_from_runs,
+    get_unbacked_lines,
     mark_edits,
     settle_revision,
 )
@@ -182,9 +183,11 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v5")
-_REVISE = ("resume_revise", "v5")
-_SECTION = ("resume_section", "v1")
+# v6 of each states only numbers its cited facts state, and quantifies from
+# tallies when asked (ADR 0076).
+_WRITE = ("resume_write", "v6")
+_REVISE = ("resume_revise", "v6")
+_SECTION = ("resume_section", "v2")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
 _CONVERSATION_TURNS = 6
@@ -328,6 +331,9 @@ class ResumeView:
     # Its own look over its template's; each None keeps the template's (ADR
     # 0047, ADR 0075).
     own_look: OwnLook = field(default_factory=OwnLook)
+    # The text of each of the model's lines that states a number none of the
+    # facts it cites states (ADR 0076), for the page to flag.
+    unbacked_lines: tuple[str, ...] = ()
 
     @property
     def is_outdated(self) -> bool:
@@ -568,6 +574,8 @@ class ResumeService:
                 snapshot=snapshot,
                 content=content,
                 slot=slot,
+                # The options' few lines barely move the price.
+                options=Options(),
             ),
             untrusted=_SECTION_UNTRUSTED,
         )
@@ -739,6 +747,14 @@ class ResumeService:
             outdated_by=outdated_by,
             section_plan=get_full_plan(resume.section_plan),
             own_look=resume.own_look,
+            unbacked_lines=tuple(
+                b.text
+                for b in get_unbacked_lines(
+                    content, {i: f"{n.reference} {n.fact}" for i, n in notes.items()}
+                )
+            )
+            if content is not None
+            else (),
         )
 
     # -- editing ------------------------------------------------------------
@@ -854,6 +870,7 @@ class ResumeService:
                 or "(this is the first message)",
                 "request": request,
                 "evidence": _evidence_block(profile.evidence, handles),
+                "options": _options_block(resume.options),
             }
 
             reply_parts: list[str] = []
@@ -892,6 +909,9 @@ class ResumeService:
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
                 proposal = _claims_settled(proposal, coverage_rows, resume_id=resume_id)
+                _numbers_checked(
+                    proposal, profile.evidence, resume_id=resume_id, task="resume.revise"
+                )
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
@@ -1267,6 +1287,7 @@ class ResumeService:
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
         content = _claims_settled(content, coverage_rows, resume_id=resume_id)
+        _numbers_checked(content, profile.evidence, resume_id=resume_id, task="resume.write")
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1357,6 +1378,7 @@ class ResumeService:
                 snapshot=TargetSnapshot.from_dict(resume.snapshot),
                 content=current,
                 slot=slot,
+                options=resume.options,
             ),
             output_schema=_SectionReply,
             untrusted=_SECTION_UNTRUSTED,
@@ -1381,6 +1403,7 @@ class ResumeService:
         )
         rows = [_coverage_view(c) for c in resume.coverage]
         content = _claims_settled(content, rows, resume_id=resume_id)
+        _numbers_checked(content, profile.evidence, resume_id=resume_id, task="resume.fill_section")
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1631,22 +1654,51 @@ def _write_inputs(
         "target": label,
         "requirements": requirements,
         "coverage": _coverage_block(coverage_rows, handles) or "(worked out when writing)",
-        "options": "\n".join(
-            line
-            for line, wanted in (
-                ("- Quantify bullets with numbers the evidence gives.", options.metrics),
-                ("- Order skills by what this job screens for.", options.reorder),
-                ("- Keep it to one page: at most 3 bullets a role.", options.trim),
-            )
-            if wanted
-        )
-        or "- No special instructions.",
+        "options": _options_block(options),
         "timeline": timeline or "(no positions recorded)",
         "accounts": accounts or "(none connected)",
         "base_resume": base_resume,
         "sections": _plan_lines(plan),
         "evidence": _evidence_block(profile.evidence, handles),
     }
+
+
+def _options_block(options: Options) -> str:
+    """How to write it, as every résumé prompt is told (ADR 0076)."""
+    return (
+        "\n".join(
+            line
+            for line, wanted in (
+                (
+                    "- Quantify: give every line whose work a fact counts or measures"
+                    " the number that fact states, with its span, and cite that fact."
+                    " Prefer a GitHub or Jira tally for the work it counts.",
+                    options.metrics,
+                ),
+                (
+                    "- Do not quantify: keep a number only where a cited fact words it so itself.",
+                    not options.metrics,
+                ),
+                ("- Order skills by what this job screens for.", options.reorder),
+                ("- Keep it to one page: at most 3 bullets a role.", options.trim),
+            )
+            if wanted
+        )
+        or "- No special instructions."
+    )
+
+
+def _numbers_checked(
+    content: ResumeContent, evidence: Iterable[Any], *, resume_id: uuid.UUID, task: str
+) -> None:
+    """Log the model's lines that state a number their facts do not (ADR
+    0076). They stay: the page flags them for the user to fix."""
+    facts = {str(e.id): f"{e.reference} {e.fact}" for e in evidence}
+    unbacked = get_unbacked_lines(content, facts)
+    if unbacked:
+        log.warning(
+            "resume.unbacked_number", resume_id=str(resume_id), task=task, count=len(unbacked)
+        )
 
 
 def _section_inputs(
@@ -1656,12 +1708,14 @@ def _section_inputs(
     snapshot: TargetSnapshot,
     content: ResumeContent,
     slot: SectionSlot,
+    options: Options,
 ) -> dict[str, str]:
     shown = content.with_citations(lambda ids: tuple(handles.handle(i) for i in ids))
     return {
         "target": snapshot.label,
         "requirements": requirements_block(snapshot),
         "section": str(slot.kind) + (f": {slot.title}" if slot.title else ""),
+        "options": _options_block(options),
         "resume": json.dumps(shown.to_dict(), ensure_ascii=False),
         "evidence": _evidence_block(profile.evidence, handles),
     }

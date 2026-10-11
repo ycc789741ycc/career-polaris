@@ -19,6 +19,7 @@ import {
   citeLine,
   coverageStatus,
   FONTS_WITHOUT_BOLD,
+  getCountedSources,
   getLineAdded,
   getLineMoved,
   getLineStep,
@@ -28,6 +29,7 @@ import {
   getWeight,
   MAX_LINES,
   pageStyle,
+  quantifyNote,
   Resume,
   savedLine,
   sourceWord,
@@ -196,6 +198,7 @@ const resume: TailoredResume = {
   revisions: [],
   is_outdated: false,
   outdated_by: [],
+  unbacked_lines: [],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -712,6 +715,55 @@ describe("résumé screen", () => {
     expect(style).toContain("--heading-weight: 400");
     expect(style).toContain("--body-pt: 11");
     expect(style).toContain("--title-pt: 12");
+  });
+
+  it("flags a written line whose number its facts do not state, and only that one", async () => {
+    serve((call) =>
+      call.url === "/tailored-resumes/res-1"
+        ? {
+            ...resume,
+            unbacked_lines: ["Owned the retry layer for payments-svc"],
+          }
+        : null,
+    );
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    expect(
+      within(page).getAllByText(
+        /A number here is not in the facts this line cites/,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("says where Quantify takes its numbers from, and that options apply when next written", async () => {
+    serve((call) => {
+      if (call.url === "/connections")
+        return {
+          items: [
+            { kind: "github", connected: true },
+            { kind: "jira", connected: false },
+          ],
+          page: 1,
+          page_size: 2,
+          total: 2,
+        };
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    expect(
+      await screen.findByText(/Numbers come from GitHub's counts/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Options apply when/)).toBeNull();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Trim to one page" }),
+    );
+    expect(
+      screen.getByText(/Options apply when the résumé is next written/),
+    ).toBeInTheDocument();
   });
 
   it("writes a failed résumé again once priced", async () => {
@@ -1992,6 +2044,24 @@ describe("moving a line", () => {
     });
     expect(getLineStep(jobs, { entry: 1, line: 0 }, 1)).toBeNull();
     expect(getLineStep(jobs, { entry: 0, line: 0 }, -1)).toBeNull();
+  });
+});
+
+describe("quantifying (ADR 0076)", () => {
+  it("counts only GitHub and Jira, and only when connected", () => {
+    expect(
+      getCountedSources([
+        { kind: "github", connected: true },
+        { kind: "jira", connected: false },
+      ]),
+    ).toEqual(["github"]);
+  });
+
+  it("says plainly when nothing can give it numbers", () => {
+    expect(quantifyNote([])).toMatch(/Neither GitHub nor Jira is connected/);
+    expect(quantifyNote(["github", "jira"])).toMatch(
+      /^Numbers come from GitHub and Jira's counts/,
+    );
   });
 });
 

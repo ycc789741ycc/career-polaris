@@ -14,6 +14,7 @@ scores").
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -124,6 +125,35 @@ class ResumeContent:
             contacts=tuple(ContactItem.from_dict(c) for c in data.get("contacts", []) or []),
             sections=tuple(Section.from_dict(s) for s in data.get("sections", [])),
         )
+
+
+# A number as a line or a fact writes it: "142", "1,000", "2.5". A trailing
+# "%" or "+" is not part of it, so "20%" and "20+" both state 20.
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def get_numbers(text: str) -> set[str]:
+    """The numbers a text states, thousands separators dropped. Pure."""
+    return {n.replace(",", "") for n in _NUMBER.findall(text)}
+
+
+def get_unbacked_lines(content: ResumeContent, facts: Mapping[str, str]) -> tuple[Bullet, ...]:
+    """The model's lines that state a number none of the facts they cite
+    states (ADR 0076). ``facts`` is each cited fact's text by evidence id. A
+    line the user wrote is theirs to word, and is never one of them. Pure."""
+    found: list[Bullet] = []
+    for bullet in content.bullets():
+        if bullet.origin is not Origin.WRITTEN:
+            continue
+        stated = get_numbers(bullet.text)
+        if not stated:
+            continue
+        backed: set[str] = set()
+        for evidence_id in bullet.evidence_ids:
+            backed |= get_numbers(facts.get(evidence_id, ""))
+        if stated - backed:
+            found.append(bullet)
+    return tuple(found)
 
 
 def get_planned(content: ResumeContent, plan: Sequence[SectionSlot]) -> ResumeContent:

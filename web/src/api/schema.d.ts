@@ -3190,6 +3190,8 @@ export interface components {
             target: components["schemas"]["TargetRefBody"];
             /** Template */
             template: string;
+            /** Unbacked Lines */
+            unbacked_lines: string[];
             /** Updated At */
             updated_at: string;
             version: components["schemas"]["ResumeVersion"] | null;
