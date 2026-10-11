@@ -69,6 +69,9 @@ def resume(row: models.Resume) -> TailoredResume:
         bold_titles=row.bold_titles,
         bold_headings=row.bold_headings,
         body_pt=row.body_pt,
+        name_pt=row.name_pt,
+        title_pt=row.title_pt,
+        heading_pt=row.heading_pt,
     )
 
 
@@ -108,6 +111,9 @@ def apply_resume(row: models.Resume, entity: TailoredResume) -> None:
     row.bold_titles = entity.bold_titles
     row.bold_headings = entity.bold_headings
     row.body_pt = entity.body_pt
+    row.name_pt = entity.name_pt
+    row.title_pt = entity.title_pt
+    row.heading_pt = entity.heading_pt
 
 
 def version(row: models.ResumeVersion) -> ResumeVersion:

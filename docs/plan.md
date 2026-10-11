@@ -4186,8 +4186,8 @@ as target. On the user's own key it is unchanged.
   ask for the analysis first.
 
 ## Résumé editing, and a fit that moves with your answers
-**Done** (ADRs 0075, 0076, 0077; amends 0047 and 0035), one branch per step
-in `epic/no-ticket/resume-editing`. Migrations 0057 and 0058.
+**Done** (ADRs 0075–0078; amends 0047 and 0035), one branch per step
+in `epic/no-ticket/resume-editing`. Migrations 0057 to 0059.
 
 * **Add a line** (`feature/no-ticket/resume-add-lines`). "+ Add line" under
   every entry's lines and a custom section's, up to eight; Enter adds one
@@ -4198,7 +4198,9 @@ in `epic/no-ticket/resume-editing`. Migrations 0057 and 0058.
   opened (`based_on`) so its untouched lines keep their citations.
 * **The résumé's own look** (`feature/no-ticket/resume-own-look`, ADR 0075).
   "Headings in" with "Bold headings", "Bold titles" beside "Titles in", and
-  "Text size" beside "Text in"; a font with no bold cut stays regular.
+  "Text size" beside "Text in"; a font with no bold cut stays regular. Then (ADR 0078, `feature/no-ticket/resume-own-sizes`,
+  migration 0059) the text's font and size stop reaching the headings and
+  titles, and the name, titles and headings get sizes of their own.
 * **Move a line** (`feature/no-ticket/resume-move-lines`). A handle left of
   each line drags it, or moves it with the arrow keys, anywhere in its
   section.

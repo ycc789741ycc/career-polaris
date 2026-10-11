@@ -203,3 +203,16 @@ def test_settings_carry_the_resumes_own_look() -> None:
     )
     with pytest.raises(ValidationError):
         SettingsRequest.model_validate({**body, "section_font": "Comic Sans"})
+
+
+def test_settings_carry_the_resumes_own_sizes() -> None:
+    """ADR 0078: the name's, the titles' and the headings' sizes."""
+    body = {
+        "template": "organic",
+        "options": {"metrics": True, "reorder": True, "trim": False},
+        "name_pt": 26,
+        "title_pt": 12.5,
+        "heading_pt": 10,
+    }
+    look = SettingsRequest.model_validate(body).to_look()
+    assert (look.name_pt, look.title_pt, look.heading_pt, look.body_pt) == (26, 12.5, 10, None)

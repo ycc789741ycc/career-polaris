@@ -78,6 +78,9 @@ class TailoredResume:
     bold_titles: bool | None = None
     bold_headings: bool | None = None
     body_pt: float | None = None
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
 
     @property
     def own_look(self) -> OwnLook:
@@ -88,6 +91,9 @@ class TailoredResume:
             bold_titles=self.bold_titles,
             bold_headings=self.bold_headings,
             body_pt=self.body_pt,
+            name_pt=self.name_pt,
+            title_pt=self.title_pt,
+            heading_pt=self.heading_pt,
         )
 
     @classmethod
@@ -237,6 +243,9 @@ class TailoredResume:
         self.bold_titles = look.bold_titles
         self.bold_headings = look.bold_headings
         self.body_pt = look.body_pt
+        self.name_pt = look.name_pt
+        self.title_pt = look.title_pt
+        self.heading_pt = look.heading_pt
         self.updated_at = at
 
     def touched(self, at: datetime) -> None:

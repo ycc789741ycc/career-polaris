@@ -2891,6 +2891,11 @@ export interface components {
                 number,
                 number
             ];
+            /** Title Pt Range */
+            title_pt_range: [
+                number,
+                number
+            ];
             /** Upload Max Bytes */
             upload_max_bytes: number;
         };
@@ -3183,11 +3188,17 @@ export interface components {
             bold_titles?: boolean | null;
             /** Heading Font */
             heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Heading Pt */
+            heading_pt?: number | null;
+            /** Name Pt */
+            name_pt?: number | null;
             options: components["schemas"]["OptionsBody"];
             /** Section Font */
             section_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Template */
             template: string;
+            /** Title Pt */
+            title_pt?: number | null;
         };
         /** SignInMethods */
         SignInMethods: {
@@ -3264,6 +3275,8 @@ export interface components {
             };
             /** Heading Font */
             heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Heading Pt */
+            heading_pt: number | null;
             /**
              * Id
              * Format: uuid
@@ -3275,6 +3288,8 @@ export interface components {
             label: string;
             /** Latest Version */
             latest_version: number | null;
+            /** Name Pt */
+            name_pt: number | null;
             options: components["schemas"]["ResumeOptions"];
             /** Outdated By */
             outdated_by: ("evidence" | "target")[];
@@ -3293,6 +3308,8 @@ export interface components {
             target: components["schemas"]["TargetRefBody"];
             /** Template */
             template: string;
+            /** Title Pt */
+            title_pt: number | null;
             /** Unbacked Lines */
             unbacked_lines: string[];
             /** Updated At */
@@ -3454,6 +3471,8 @@ export interface components {
             sidebar_kinds?: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
             /** Text Color */
             text_color: string;
+            /** Title Pt */
+            title_pt?: number | null;
         };
         /**
          * TemplateReading
@@ -3541,6 +3560,8 @@ export interface components {
             sidebar_kinds: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
             /** Text Color */
             text_color: string;
+            /** Title Pt */
+            title_pt: number | null;
         };
         /** UncoveredRequirement */
         UncoveredRequirement: {

@@ -20,11 +20,13 @@ const spec: ResumeTemplateSpec = {
   section_font: null,
   bold_titles: false,
   bold_headings: true,
+  title_pt: null,
 };
 
 const limits: ResumeTemplateLimits = {
   fonts: ["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"],
   fonts_without_bold: ["Caprasimo"],
+  title_pt_range: [9, 14],
   name_pt_range: [16, 30],
   heading_pt_range: [7, 11],
   body_pt_range: [8.5, 11.5],

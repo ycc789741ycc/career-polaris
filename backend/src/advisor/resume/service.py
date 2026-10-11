@@ -128,6 +128,7 @@ from advisor.resume.domain.constants import (
     RESUME_STAGE_SHARES,
     TEMPLATE_FONTS,
     TEMPLATE_READING_KEEP_SECONDS,
+    TITLE_PT_RANGE,
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.resume.infra.style_reader import read_style_runs
@@ -397,6 +398,7 @@ class TemplateLimitsView:
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
+    title_pt_range: tuple[float, float]
     min_contrast: float
     max_name: int
     max_templates: int
@@ -993,6 +995,7 @@ class ResumeService:
             name_pt_range=NAME_PT_RANGE,
             heading_pt_range=HEADING_PT_RANGE,
             body_pt_range=BODY_PT_RANGE,
+            title_pt_range=TITLE_PT_RANGE,
             min_contrast=MIN_CONTRAST,
             max_name=MAX_TEMPLATE_NAME,
             max_templates=self._template_max,

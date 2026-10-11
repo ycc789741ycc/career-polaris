@@ -264,6 +264,34 @@ async def test_a_resume_sets_its_headings_font_weights_and_text_size_and_exports
     ) == ("Inter", True, False, 11.0)
 
 
+async def test_a_resumes_own_sizes_are_kept_and_exported() -> None:
+    """ADR 0078."""
+    uow = FakeResumeUnitOfWork()
+    store = FakeObjectStore()
+    service = _service(uow, store)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    look = OwnLook(name_pt=26.0, title_pt=12.5, heading_pt=10.0)
+
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    )
+
+    assert (await service.get(OWNER, resume_id)).own_look == look
+    export = await service.request_export(OWNER, resume_id, number=1)
+    stored = uow.store.exports[export.id].spec
+    assert stored is not None
+    assert (stored["name_pt"], stored["title_pt"], stored["heading_pt"]) == (26.0, 12.5, 10.0)
+    with pytest.raises(ValidationError, match="title size"):
+        await service.update_settings(
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(title_pt=30.0),
+        )
+
+
 async def test_a_text_size_outside_the_range_is_refused() -> None:
     uow = FakeResumeUnitOfWork()
     service = _service(uow)

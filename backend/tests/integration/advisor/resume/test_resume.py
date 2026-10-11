@@ -868,14 +868,29 @@ async def test_a_resume_keeps_its_own_look_and_the_database_refuses_what_it_cann
 ) -> None:
     """ADR 0075, migration 0057."""
     resume_id = await _written(world, account)
-    look = OwnLook(section_font="Lato", bold_titles=True, bold_headings=False, body_pt=9.5)
+    look = OwnLook(
+        section_font="Lato",
+        bold_titles=True,
+        bold_headings=False,
+        body_pt=9.5,
+        name_pt=26.0,
+        title_pt=12.5,
+        heading_pt=10.0,
+    )
 
     await world.resume.update_settings(
         account, resume_id, template=Template.PLAIN, options=Options(), look=look
     )
 
     assert (await world.resume.get(account, resume_id)).own_look == look
-    for column, value in (("section_font", "'Comic Sans'"), ("body_pt", "30")):
+    for column, value in (
+        ("section_font", "'Comic Sans'"),
+        ("body_pt", "30"),
+        # ADR 0078, migration 0059.
+        ("name_pt", "40"),
+        ("title_pt", "30"),
+        ("heading_pt", "30"),
+    ):
         with pytest.raises(IntegrityError, match=f"ck_resume_{column}"):
             async with database.for_user(account) as session:
                 await session.execute(
