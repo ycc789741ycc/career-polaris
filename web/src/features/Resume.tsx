@@ -1,4 +1,10 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api, streamEvents } from "../api/client";
 import type {
   PlanEstimate,
@@ -48,6 +54,7 @@ import {
   SectionsPanel,
 } from "./ResumeSections";
 import { EvidenceDisclosure } from "./EvidenceDisclosure";
+import { getKeyStep, getMoved } from "./reorder";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { TemplateEditor, withSpec } from "./ResumeTemplates";
 import { dayLabel } from "./time";
@@ -1429,6 +1436,7 @@ function ResumePage({
 
   // The line to put the caret in once the page has drawn the edit: one just
   // added, or the one before a line just removed.
+  // A line's move handle, after a move by keyboard: it keeps the focus.
   const focusNext = useRef<string | null>(null);
   useEffect(() => {
     const id = focusNext.current;
@@ -1437,77 +1445,171 @@ function ResumePage({
     const node = document.querySelector<HTMLElement>(`[data-line="${id}"]`);
     if (!node) return;
     node.focus();
-    window.getSelection()?.selectAllChildren(node);
+    if (node.isContentEditable) window.getSelection()?.selectAllChildren(node);
   });
 
-  /** Lines under one entry, or a custom section's; `list` names them for
-   * focus. Enter adds a line below, Backspace in an empty line removes it,
-   * and a line cleared to nothing goes when it loses focus. */
+  // The line being dragged, by its section and place in it.
+  const [dragging, setDragging] = useState<{
+    at: number;
+    from: LinePlace;
+  } | null>(null);
+
+  /** Move a line within section `at`; the handle to focus after, or null
+   * when nothing moved. */
+  const moveLine = (
+    at: number,
+    from: LinePlace,
+    to: LinePlace | null,
+  ): string | null => {
+    const section = content.sections[at];
+    if (!section || !to) return null;
+    const moved = getLineMoved(section, from, to);
+    if (moved === section) return null;
+    editSection(at, moved);
+    return `move:${at}:${to.entry ?? "-"}:${to.line}`;
+  };
+
+  /** Lines under one entry (`entry`), or a custom section's (null), in
+   * section `at`. Enter adds a line below, Backspace in an empty line
+   * removes it, and a line cleared to nothing goes when it loses focus. Each
+   * line's handle drags it, or moves it with the arrow keys, anywhere in its
+   * section. */
   const bulletList = (
-    list: string,
+    at: number,
+    entry: number | null,
     bullets: ResumeBullet[],
     onLines: (next: ResumeBullet[]) => void,
-  ) => (
-    <>
-      <ul className="resume-bullets">
-        {lines(bullets).map((bullet, b) => (
-          // Keyed by its text too, so a line whose text changed is drawn
-          // afresh rather than over what the browser typed into it.
-          <li key={`${b}:${bullet.text}`}>
-            <span
-              className="resume-bullet-text"
-              data-line={`${list}:${b}`}
-              data-rewritten={showSources && bullet.answers !== null}
-              aria-label="Line"
-              contentEditable
-              suppressContentEditableWarning
-              onKeyDown={(event) => {
-                const text = event.currentTarget.textContent ?? "";
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  if (bullets.length >= MAX_LINES) return;
-                  focusNext.current = `${list}:${b + 1}`;
-                  onLines(getLineAdded(bullets, b, text, newLine));
-                } else if (event.key === "Backspace" && text === "") {
-                  event.preventDefault();
-                  if (b > 0) focusNext.current = `${list}:${b - 1}`;
-                  onLines(bullets.filter((_, i) => i !== b));
-                }
-              }}
-              onBlur={(event) => {
-                const text = (event.currentTarget.textContent ?? "").trim();
-                if (text === bullet.text) return;
-                onLines(
-                  text
-                    ? bullets.map((line, i) =>
-                        i === b ? { ...line, text } : line,
-                      )
-                    : bullets.filter((_, i) => i !== b),
-                );
-              }}
-            >
-              {bullet.text}
-            </span>
-            <div className="resume-cite" hidden={!showSources}>
-              {citeLine(bullet, evidence)}
-            </div>
-          </li>
-        ))}
-      </ul>
-      {bullets.length < MAX_LINES && (
-        <button
-          type="button"
-          className="resume-add-line"
-          onClick={() => {
-            focusNext.current = `${list}:${bullets.length}`;
-            onLines([...bullets, newLine]);
-          }}
+  ) => {
+    const list = entry === null ? `${at}` : `${at}:${entry}`;
+    const isDropHere = dragging !== null && dragging.at === at;
+    const dropAt = (line: number) => (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dragging?.at === at) moveLine(at, dragging.from, { entry, line });
+      setDragging(null);
+    };
+    return (
+      <>
+        <ul
+          className="resume-bullets"
+          // Dropped below the last line, or into an entry with none: the end.
+          onDragOver={(event) => isDropHere && event.preventDefault()}
+          onDrop={dropAt(bullets.length)}
         >
-          + Add line
-        </button>
-      )}
-    </>
-  );
+          {lines(bullets).map((bullet, b) => (
+            // Keyed by its text too, so a line whose text changed is drawn
+            // afresh rather than over what the browser typed into it.
+            <li
+              key={`${b}:${bullet.text}`}
+              className="resume-line"
+              onDragOver={(event) => isDropHere && event.preventDefault()}
+              onDrop={dropAt(b)}
+            >
+              {/* Never printed: drags the line, or moves it with the arrow keys. */}
+              <button
+                type="button"
+                className="resume-move-line"
+                aria-label={`Move line: ${bullet.text}`}
+                title="Drag, or use the arrow keys"
+                data-line={`move:${at}:${entry ?? "-"}:${b}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer?.setData("text/plain", bullet.text);
+                  setDragging({ at, from: { entry, line: b } });
+                }}
+                onDragEnd={() => setDragging(null)}
+                onKeyDown={(event) => {
+                  const step = getKeyStep(event);
+                  if (step === null) return;
+                  event.preventDefault();
+                  const section = content.sections[at];
+                  if (!section) return;
+                  focusNext.current = moveLine(
+                    at,
+                    { entry, line: b },
+                    getLineStep(section, { entry, line: b }, step),
+                  );
+                }}
+              >
+                <svg
+                  width="10"
+                  height="14"
+                  viewBox="0 0 10 14"
+                  aria-hidden="true"
+                >
+                  {[2, 7, 12].flatMap((y) =>
+                    [2.5, 7.5].map((x) => (
+                      <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />
+                    )),
+                  )}
+                </svg>
+              </button>
+              <span
+                className="resume-bullet-text"
+                data-line={`${list}:${b}`}
+                data-rewritten={showSources && bullet.answers !== null}
+                aria-label="Line"
+                contentEditable
+                suppressContentEditableWarning
+                onKeyDown={(event) => {
+                  const text = event.currentTarget.textContent ?? "";
+                  const step = event.altKey ? getKeyStep(event) : null;
+                  if (step !== null) {
+                    // Alt+arrow moves the line from inside it, as its handle does.
+                    event.preventDefault();
+                    const section = content.sections[at];
+                    if (!section) return;
+                    focusNext.current = moveLine(
+                      at,
+                      { entry, line: b },
+                      getLineStep(section, { entry, line: b }, step),
+                    );
+                  } else if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (bullets.length >= MAX_LINES) return;
+                    focusNext.current = `${list}:${b + 1}`;
+                    onLines(getLineAdded(bullets, b, text, newLine));
+                  } else if (event.key === "Backspace" && text === "") {
+                    event.preventDefault();
+                    if (b > 0) focusNext.current = `${list}:${b - 1}`;
+                    onLines(bullets.filter((_, i) => i !== b));
+                  }
+                }}
+                onBlur={(event) => {
+                  const text = (event.currentTarget.textContent ?? "").trim();
+                  if (text === bullet.text) return;
+                  onLines(
+                    text
+                      ? bullets.map((line, i) =>
+                          i === b ? { ...line, text } : line,
+                        )
+                      : bullets.filter((_, i) => i !== b),
+                  );
+                }}
+              >
+                {bullet.text}
+              </span>
+              <div className="resume-cite" hidden={!showSources}>
+                {citeLine(bullet, evidence)}
+              </div>
+            </li>
+          ))}
+        </ul>
+        {bullets.length < MAX_LINES && (
+          <button
+            type="button"
+            className="resume-add-line"
+            onClick={() => {
+              focusNext.current = `${list}:${bullets.length}`;
+              onLines([...bullets, newLine]);
+            }}
+          >
+            + Add line
+          </button>
+        )}
+      </>
+    );
+  };
 
   const spec = look.spec;
   const hasSidebar =
@@ -1704,7 +1806,7 @@ function ResumePage({
               placeholder="Link"
               onChange={(link) => editEntry(at, section, e, { link })}
             />
-            {bulletList(`${at}:${e}`, entry.bullets, (next) =>
+            {bulletList(at, e, entry.bullets, (next) =>
               editSection(at, {
                 ...section,
                 entries: section.entries.map((it, i) =>
@@ -1757,7 +1859,7 @@ function ResumePage({
           </div>
         )}
         {section.bullets.length > 0 &&
-          bulletList(`${at}`, section.bullets, (next) =>
+          bulletList(at, null, section.bullets, (next) =>
             editSection(at, { ...section, bullets: next }),
           )}
       </section>
@@ -1833,6 +1935,87 @@ const newLine: ResumeBullet = {
 /** The most lines an entry or a custom section holds; the server refuses
  * more (MAX_BULLETS_PER_ROLE). */
 export const MAX_LINES = 8;
+
+/** Where a line sits in its section: under entry `entry`, or in a custom
+ * section's own lines (null), at `line`. */
+export interface LinePlace {
+  entry: number | null;
+  line: number;
+}
+
+/** The lines a place's list holds in `section`. Pure. */
+function linesAt(section: ResumeSection, entry: number | null): ResumeBullet[] {
+  return entry === null
+    ? section.bullets
+    : (section.entries[entry]?.bullets ?? []);
+}
+
+function withLines(
+  section: ResumeSection,
+  entry: number | null,
+  bullets: ResumeBullet[],
+): ResumeSection {
+  return entry === null
+    ? { ...section, bullets }
+    : {
+        ...section,
+        entries: section.entries.map((it, i) =>
+          i === entry ? { ...it, bullets } : it,
+        ),
+      };
+}
+
+/** The section with the line at `from` moved to `to`: within its list, it
+ * takes `to`'s place; into another entry's, it goes in before `to.line` (or
+ * last). A full entry takes no more, and the section comes back unchanged.
+ * Pure. */
+export function getLineMoved(
+  section: ResumeSection,
+  from: LinePlace,
+  to: LinePlace,
+): ResumeSection {
+  const source = linesAt(section, from.entry);
+  const moved = source[from.line];
+  if (!moved) return section;
+  if (from.entry === to.entry) {
+    const line = Math.min(to.line, source.length - 1);
+    if (line === from.line) return section;
+    return withLines(section, from.entry, getMoved(source, from.line, line));
+  }
+  const target = linesAt(section, to.entry);
+  if (target.length >= MAX_LINES) return section;
+  const into = [...target];
+  into.splice(Math.min(to.line, into.length), 0, moved);
+  return withLines(
+    withLines(
+      section,
+      from.entry,
+      source.filter((_, i) => i !== from.line),
+    ),
+    to.entry,
+    into,
+  );
+}
+
+/** Where an arrow key takes a line: one place up or down in its list, and
+ * past either end, to the end of the entry above or the start of the one
+ * below. Null where there is nowhere to go. Pure. */
+export function getLineStep(
+  section: ResumeSection,
+  from: LinePlace,
+  step: -1 | 1,
+): LinePlace | null {
+  const length = linesAt(section, from.entry).length;
+  const line = from.line + step;
+  if (line >= 0 && line < length) return { entry: from.entry, line };
+  if (from.entry === null) return null;
+  const entry = from.entry + step;
+  if (entry < 0 || entry >= section.entries.length) return null;
+  return {
+    entry,
+    line: step < 0 ? linesAt(section, entry).length : 0,
+  };
+}
 
 /** The lines with line `at` set to `text` and `line` added just below it, as
  * Enter at the end of a line does. Pure. */

@@ -6,6 +6,7 @@ import type {
   SectionKind,
 } from "../api/types";
 import { Button } from "../components/ui";
+import { getKeyStep, getMoved } from "./reorder";
 
 /**
  * A résumé's sections (ADR 0039, ADR 0043): every one it holds, in order,
@@ -66,10 +67,7 @@ export function moveSection(
 ): ResumeContent {
   const to = from + by;
   if (to < 0 || to >= content.sections.length) return content;
-  const sections = [...content.sections];
-  const [moved] = sections.splice(from, 1);
-  sections.splice(to, 0, moved!);
-  return { ...content, sections };
+  return { ...content, sections: getMoved(content.sections, from, to) };
 }
 
 /** The content without section `at`, which must be one of the user's own:
@@ -131,10 +129,10 @@ export function SectionsPanel({
   ).length;
 
   const onKey = (index: number) => (event: KeyboardEvent) => {
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      event.preventDefault();
-      onChange(moveSection(content, index, event.key === "ArrowUp" ? -1 : 1));
-    }
+    const step = getKeyStep(event);
+    if (step === null) return;
+    event.preventDefault();
+    onChange(moveSection(content, index, step));
   };
 
   const onDrop = (index: number) => (event: DragEvent) => {
