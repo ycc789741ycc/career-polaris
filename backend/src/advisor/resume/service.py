@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -66,6 +66,7 @@ from advisor.resume.domain import (
     Options,
     Origin,
     OwnerResumes,
+    OwnLook,
     ReadingStatus,
     ResumeContent,
     ResumeError,
@@ -100,7 +101,7 @@ from advisor.resume.domain import (
     get_headings_kept,
     get_planned,
     get_proposal_layout,
-    get_spec_with_fonts,
+    get_spec_with_look,
     get_template_spec_from_runs,
     mark_edits,
     settle_revision,
@@ -108,6 +109,7 @@ from advisor.resume.domain import (
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
     CONTACT_ICONS,
+    FONTS_WITHOUT_BOLD,
     HEADING_PT_RANGE,
     MAX_CONTACT,
     MAX_CONTACTS,
@@ -161,6 +163,7 @@ __all__ = [
     "CoverageView",
     "ExportView",
     "Options",
+    "OwnLook",
     "ResumeService",
     "ResumeSummaryView",
     "ResumeView",
@@ -322,9 +325,9 @@ class ResumeView:
     # The sections every new version is written to, in order (ADR 0039).
     # While one is being filled it is already here, and empty in the content.
     section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
-    # Its own fonts over its template's; None keeps the template's (ADR 0047).
-    heading_font: str | None = None
-    body_font: str | None = None
+    # Its own look over its template's; each None keeps the template's (ADR
+    # 0047, ADR 0075).
+    own_look: OwnLook = field(default_factory=OwnLook)
 
     @property
     def is_outdated(self) -> bool:
@@ -383,6 +386,8 @@ class TemplateLimitsView:
     """What a template of the user's own may set, for the editor."""
 
     fonts: tuple[str, ...]
+    # Fonts a title or heading cannot be bold in (ADR 0075).
+    fonts_without_bold: tuple[str, ...]
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
@@ -733,8 +738,7 @@ class ResumeService:
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
             section_plan=get_full_plan(resume.section_plan),
-            heading_font=resume.heading_font,
-            body_font=resume.body_font,
+            own_look=resume.own_look,
         )
 
     # -- editing ------------------------------------------------------------
@@ -746,18 +750,17 @@ class ResumeService:
         *,
         template: str,
         options: Options,
-        heading_font: str | None = None,
-        body_font: str | None = None,
+        look: OwnLook | None = None,
     ) -> None:
-        """Its template, options and own fonts, all at once: fonts left out
-        go back to the template's (ADR 0047)."""
+        """Its template, options and own look, all at once: anything left out
+        goes back to the template's (ADR 0047, ADR 0075)."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             built_in, own = await _resolve_template(mine, template)
             now = utcnow()
             resume.restyle(template=built_in, custom_template_id=own, options=options, at=now)
             try:
-                resume.update_fonts(heading_font=heading_font, body_font=body_font, at=now)
+                resume.update_look(look or OwnLook(), at=now)
             except TemplateSpecError as exc:
                 raise ValidationError(str(exc)) from exc
             await mine.resumes.update(resume)
@@ -966,6 +969,7 @@ class ResumeService:
     def template_limits(self) -> TemplateLimitsView:
         return TemplateLimitsView(
             fonts=TEMPLATE_FONTS,
+            fonts_without_bold=FONTS_WITHOUT_BOLD,
             name_pt_range=NAME_PT_RANGE,
             heading_pt_range=HEADING_PT_RANGE,
             body_pt_range=BODY_PT_RANGE,
@@ -1877,12 +1881,12 @@ async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomT
 
 
 async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
-    """The look the résumé is set in: its template's, in its own fonts."""
+    """The look the résumé is set in: its template's, with its own over it."""
     if resume.custom_template_id is not None:
         spec = (await _owned_template(mine, resume.custom_template_id)).spec
     else:
         spec = BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
-    return get_spec_with_fonts(spec, resume.heading_font, resume.body_font)
+    return get_spec_with_look(spec, resume.own_look)
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:

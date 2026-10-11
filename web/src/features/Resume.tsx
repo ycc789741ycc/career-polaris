@@ -143,9 +143,9 @@ export function Resume({
     reorder: true,
     trim: false,
   });
-  // This résumé's own fonts over its template's; null keeps the template's
-  // (ADR 0047).
-  const [fonts, setFonts] = useState<ResumeFonts>(NO_FONTS);
+  // This résumé's own look over its template's; null keeps the template's
+  // (ADR 0047, ADR 0075).
+  const [fonts, setFonts] = useState<ResumeLook>(NO_LOOK);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplateLook[]>([]);
@@ -167,17 +167,11 @@ export function Resume({
   const chosen =
     templates.find((t) => t.id === template) ?? templates[0] ?? null;
   // While a template is being edited, the page previews it; otherwise the
-  // chosen one, in the résumé's own fonts.
+  // chosen one, with the résumé's own look over it.
   const look =
     editor && preview
       ? withSpec(editor.from, preview)
-      : chosen && (fonts.heading_font || fonts.body_font)
-        ? withSpec(chosen, {
-            ...chosen.spec,
-            heading_font: fonts.heading_font ?? chosen.spec.heading_font,
-            body_font: fonts.body_font ?? chosen.spec.body_font,
-          })
-        : chosen;
+      : chosen && withSpec(chosen, getSpecWithLook(chosen.spec, fonts));
 
   // What writing it again costs, priced up front for the Write-for card.
   const [regenerateCost, setRegenerateCost] = useState<PlanEstimate | null>(
@@ -330,7 +324,7 @@ export function Resume({
     setOpened(null);
     setTemplate(next.template);
     setOptions(next.options);
-    setFonts({ heading_font: next.heading_font, body_font: next.body_font });
+    setFonts(getOwnLook(next));
     setExchanges(
       next.revisions.map((r) => ({
         request: r.request,
@@ -480,7 +474,7 @@ export function Resume({
   async function changeSettings(
     nextTemplate: ResumeTemplate,
     nextOptions: ResumeOptions,
-    nextFonts: ResumeFonts = fonts,
+    nextFonts: ResumeLook = fonts,
   ) {
     setTemplate(nextTemplate);
     setOptions(nextOptions);
@@ -842,33 +836,95 @@ export function Resume({
                 )
               )}
               {chosen && limits && !editor && (
-                <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                  {FONT_PICKERS.map(({ key, label }) => (
-                    <label key={key} className="font-picker">
-                      <span className="field-label">{label}</span>
-                      <select
-                        className="input"
-                        value={fonts[key] ?? ""}
-                        disabled={resume?.status !== "ready"}
-                        onChange={(event) =>
-                          void changeSettings(template, options, {
-                            ...fonts,
-                            [key]: (event.target.value ||
-                              null) as ResumeFonts["heading_font"],
-                          })
-                        }
-                      >
-                        <option value="">
-                          Template&apos;s ({chosen.spec[key]})
-                        </option>
-                        {limits.fonts.map((font) => (
-                          <option key={font} value={font}>
-                            {font}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
+                <div
+                  className="stack own-look"
+                  style={{ gap: 8, marginTop: 12 }}
+                >
+                  {FONT_PICKERS.map(({ key, label, bold }) => {
+                    const font =
+                      fonts[key] ?? getTemplateFont(chosen.spec, key);
+                    const hasBold = !(
+                      limits.fonts_without_bold as string[]
+                    ).includes(font);
+                    return (
+                      <div key={key} className="row own-look-row">
+                        <label className="font-picker">
+                          <span className="field-label">{label}</span>
+                          <select
+                            className="input"
+                            value={fonts[key] ?? ""}
+                            disabled={resume?.status !== "ready"}
+                            onChange={(event) =>
+                              void changeSettings(template, options, {
+                                ...fonts,
+                                [key]: (event.target.value ||
+                                  null) as ResumeLook["heading_font"],
+                              })
+                            }
+                          >
+                            <option value="">
+                              Template&apos;s (
+                              {getTemplateFont(chosen.spec, key)})
+                            </option>
+                            {limits.fonts.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {bold && (
+                          <span
+                            title={hasBold ? undefined : `${font} has no bold`}
+                          >
+                            <RoundCheck
+                              checked={
+                                hasBold && (fonts[bold] ?? chosen.spec[bold])
+                              }
+                              disabled={!hasBold || resume?.status !== "ready"}
+                              onChange={(on) =>
+                                void changeSettings(template, options, {
+                                  ...fonts,
+                                  [bold]: on,
+                                })
+                              }
+                            >
+                              {bold === "bold_titles"
+                                ? "Bold titles"
+                                : "Bold headings"}
+                            </RoundCheck>
+                          </span>
+                        )}
+                        {key === "body_font" && (
+                          <label className="font-picker size-picker">
+                            <span className="field-label">Text size</span>
+                            <select
+                              className="input"
+                              value={fonts.body_pt ?? ""}
+                              disabled={resume?.status !== "ready"}
+                              onChange={(event) =>
+                                void changeSettings(template, options, {
+                                  ...fonts,
+                                  body_pt: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                })
+                              }
+                            >
+                              <option value="">
+                                Template&apos;s ({chosen.spec.body_pt}pt)
+                              </option>
+                              {getTextSizes(limits.body_pt_range).map((pt) => (
+                                <option key={pt} value={pt}>
+                                  {pt}pt
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="stack" style={{ gap: 10, marginTop: 16 }}>
@@ -1275,8 +1331,24 @@ export function pageStyle(look: ResumeTemplateLook): Record<string, string> {
     "--bullet": BULLETS[spec.bullet],
     "--heading-font": `"${spec.heading_font}"`,
     "--body-font": `"${spec.body_font}"`,
+    "--section-font": `"${spec.section_font ?? spec.body_font}"`,
+    "--title-weight": String(
+      getWeight(spec.bold_titles, spec.heading_font, FONTS_WITHOUT_BOLD),
+    ),
+    "--heading-weight": String(
+      getWeight(
+        spec.bold_headings,
+        spec.section_font ?? spec.body_font,
+        FONTS_WITHOUT_BOLD,
+      ),
+    ),
   };
 }
+
+/** The fonts with no bold cut (FONTS_WITHOUT_BOLD); the page reads them
+ * before the limits arrive, so they are kept here too and the limits'
+ * list is checked against them in a test. */
+export const FONTS_WITHOUT_BOLD: readonly string[] = ["Caprasimo"];
 
 /** Each bullet style as a CSS list-style, as the renderer sets it. */
 const BULLETS: Record<ResumeTemplateSpec["bullet"], string> = {
@@ -2007,15 +2079,97 @@ function Editable({
   );
 }
 
-type ResumeFonts = Pick<TailoredResume, "heading_font" | "body_font">;
+/** What a résumé sets over its template's look; null keeps the template's
+ * (ADR 0047, ADR 0075). */
+type ResumeLook = Pick<
+  TailoredResume,
+  | "heading_font"
+  | "section_font"
+  | "body_font"
+  | "bold_titles"
+  | "bold_headings"
+  | "body_pt"
+>;
 
-const NO_FONTS: ResumeFonts = { heading_font: null, body_font: null };
+const NO_LOOK: ResumeLook = {
+  heading_font: null,
+  section_font: null,
+  body_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+};
 
-/** The two fonts a résumé can set over its template's (ADR 0047). */
-const FONT_PICKERS: { key: keyof ResumeFonts; label: string }[] = [
-  { key: "heading_font", label: "Titles in" },
-  { key: "body_font", label: "Text in" },
+type FontKey = "heading_font" | "section_font" | "body_font";
+
+/** The three fonts a résumé can set over its template's, each with the
+ * Bold switch it has, if any. */
+const FONT_PICKERS: {
+  key: FontKey;
+  label: string;
+  bold: "bold_titles" | "bold_headings" | null;
+}[] = [
+  { key: "heading_font", label: "Titles in", bold: "bold_titles" },
+  { key: "section_font", label: "Headings in", bold: "bold_headings" },
+  { key: "body_font", label: "Text in", bold: null },
 ];
+
+/** The résumé's own look, as the server keeps it. Pure. */
+export function getOwnLook(resume: TailoredResume): ResumeLook {
+  return {
+    heading_font: resume.heading_font,
+    section_font: resume.section_font,
+    body_font: resume.body_font,
+    bold_titles: resume.bold_titles,
+    bold_headings: resume.bold_headings,
+    body_pt: resume.body_pt,
+  };
+}
+
+/** A template's font for one picker: headings take the body font unless
+ * the template names one of their own. Pure. */
+export function getTemplateFont(
+  spec: ResumeTemplateSpec,
+  key: FontKey,
+): string {
+  return key === "section_font"
+    ? (spec.section_font ?? spec.body_font)
+    : spec[key];
+}
+
+/** The template's spec with the résumé's own look over it, as the renderer
+ * lays it (get_spec_with_look). Pure. */
+export function getSpecWithLook(
+  spec: ResumeTemplateSpec,
+  look: ResumeLook,
+): ResumeTemplateSpec {
+  return {
+    ...spec,
+    heading_font: look.heading_font ?? spec.heading_font,
+    section_font: look.section_font ?? spec.section_font,
+    body_font: look.body_font ?? spec.body_font,
+    bold_titles: look.bold_titles ?? spec.bold_titles,
+    bold_headings: look.bold_headings ?? spec.bold_headings,
+    body_pt: look.body_pt ?? spec.body_pt,
+  };
+}
+
+/** Every text size a résumé can take, half a point apart. Pure. */
+export function getTextSizes([low, high]: [number, number]): number[] {
+  const sizes: number[] = [];
+  for (let pt = low; pt <= high + 1e-9; pt += 0.5) sizes.push(pt);
+  return sizes;
+}
+
+/** The weight a title or heading is set in: bold only in a font with a bold
+ * cut, as the renderer sets it. Pure. */
+export function getWeight(
+  isBold: boolean,
+  font: string,
+  fontsWithoutBold: readonly string[],
+): number {
+  return isBold && !fontsWithoutBold.includes(font) ? 700 : 400;
+}
 
 const MAX_CONTACTS = 8;
 

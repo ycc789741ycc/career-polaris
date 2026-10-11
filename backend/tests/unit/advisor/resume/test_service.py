@@ -14,7 +14,7 @@ import pytest
 
 from advisor.profile import CitationHandles, EvidenceSource, EvidenceView
 from advisor.profile.domain import EvidenceGranularity
-from advisor.resume import Options, ResumeService, Template
+from advisor.resume import Options, OwnLook, ResumeService, Template
 from advisor.resume import service as resume_service
 from advisor.resume.domain import (
     Bullet,
@@ -203,11 +203,11 @@ async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
         resume_id,
         template=Template.ORGANIC,
         options=Options(),
-        heading_font="DejaVu Serif",
+        look=OwnLook(heading_font="DejaVu Serif"),
     )
 
     view = await service.get(OWNER, resume_id)
-    assert (view.heading_font, view.body_font) == ("DejaVu Serif", None)
+    assert (view.own_look.heading_font, view.own_look.body_font) == ("DejaVu Serif", None)
     after = await service.request_export(OWNER, resume_id, number=1)
     assert after.id != before.id
     stored = uow.store.exports[after.id].spec
@@ -215,7 +215,7 @@ async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
     assert (stored["heading_font"], stored["body_font"]) == ("DejaVu Serif", "Figtree")
     # Left out, they go back to the template's.
     await service.update_settings(OWNER, resume_id, template=Template.ORGANIC, options=Options())
-    assert (await service.get(OWNER, resume_id)).heading_font is None
+    assert (await service.get(OWNER, resume_id)).own_look == OwnLook()
 
 
 async def test_a_font_the_resume_cannot_set_is_refused() -> None:
@@ -225,9 +225,58 @@ async def test_a_font_the_resume_cannot_set_is_refused() -> None:
 
     with pytest.raises(ValidationError, match="Comic Sans"):
         await service.update_settings(
-            OWNER, resume_id, template=Template.ORGANIC, options=Options(), body_font="Comic Sans"
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(body_font="Comic Sans"),
         )
     assert uow.store.resumes[resume_id].body_font is None
+
+
+async def test_a_resume_sets_its_headings_font_weights_and_text_size_and_exports_them() -> None:
+    """ADR 0075: kept on the résumé, laid over its template's, and part of
+    the spec an export renders, so a change renders afresh."""
+    uow = FakeResumeUnitOfWork()
+    store = FakeObjectStore()
+    service = _service(uow, store)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    before = await service.request_export(OWNER, resume_id, number=1)
+    await service.export(OWNER, before.id)
+
+    look = OwnLook(section_font="Inter", bold_titles=True, bold_headings=False, body_pt=11.0)
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    )
+
+    assert (await service.get(OWNER, resume_id)).own_look == look
+    after = await service.request_export(OWNER, resume_id, number=1)
+    assert after.id != before.id
+    stored = uow.store.exports[after.id].spec
+    assert stored is not None
+    assert (
+        stored["section_font"],
+        stored["bold_titles"],
+        stored["bold_headings"],
+        stored["body_pt"],
+    ) == ("Inter", True, False, 11.0)
+
+
+async def test_a_text_size_outside_the_range_is_refused() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+
+    with pytest.raises(ValidationError, match="text size"):
+        await service.update_settings(
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(body_pt=20.0),
+        )
+    assert uow.store.resumes[resume_id].body_pt is None
 
 
 async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(

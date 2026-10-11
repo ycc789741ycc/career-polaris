@@ -55,6 +55,8 @@ def _contact_line(content: ResumeContent) -> str:
 def render_html(content: ResumeContent, *, spec: TemplateSpec, options: Options) -> str:
     heading = f'"{spec.heading_font}", "{FALLBACK_FONT}", serif'
     body = f'"{spec.body_font}", "{FALLBACK_FONT}", sans-serif'
+    section = f'"{spec.get_section_font()}", "{FALLBACK_FONT}", sans-serif'
+    title_weight, heading_weight = spec.get_title_weight(), spec.get_heading_weight()
     title_pt, contact_pt, small_pt = spec.get_derived_pt()
     contact = _contact_line(content)
     # A hidden section is kept in the résumé and never printed (ADR 0043).
@@ -96,7 +98,7 @@ body {{ font-family: {body}; font-size: {spec.body_pt}pt; color: {spec.text_colo
 header {{ border-bottom: {spec.get_rule_css()}; padding-bottom: 10pt; margin-bottom: 14pt; }}
 header.band {{ background: {spec.get_band_color()}; padding: 10pt 12pt; }}
 h1 {{ font-family: {heading}; font-size: {spec.name_pt}pt; line-height: 1.1;
-     color: {spec.name_color}; margin: 0; font-weight: 400; }}
+     color: {spec.name_color}; margin: 0; font-weight: {title_weight}; }}
 .contact {{ font-size: {contact_pt}pt; color: #5a5550; margin-top: 4pt; }}
 .contact .headline {{ margin: 0 0 2pt; }}
 .contact-item {{ white-space: nowrap; margin-right: 10pt; }}
@@ -104,15 +106,16 @@ h1 {{ font-family: {heading}; font-size: {spec.name_pt}pt; line-height: 1.1;
   margin-right: 3pt; fill: {spec.accent_color}; }}
 .side .contact .headline, .side .contact-item {{ display: block; white-space: normal;
   overflow-wrap: anywhere; margin: 0 0 2pt; }}
-h2 {{ font-size: {spec.heading_pt}pt; letter-spacing: 0.1em; text-transform: {transform};
-     font-weight: 800; color: {spec.name_color}; margin: 14pt 0 6pt; }}
+h2 {{ font-family: {section}; font-size: {spec.heading_pt}pt; letter-spacing: 0.1em;
+     text-transform: {transform}; font-weight: {heading_weight}; color: {spec.name_color};
+     margin: 14pt 0 6pt; }}
 .columns {{ display: flex; gap: 14pt; }}
 .side {{ width: 30%; flex: 0 0 auto; }}
 .main {{ flex: 1; min-width: 0; }}
 .summary {{ margin: 0; }}
 .job {{ margin-bottom: 10pt; page-break-inside: avoid; }}
 .job-head {{ display: flex; justify-content: space-between; gap: 12pt; }}
-.job-title {{ font-family: {heading}; font-size: {title_pt}pt; }}
+.job-title {{ font-family: {heading}; font-size: {title_pt}pt; font-weight: {title_weight}; }}
 .job-when {{ font-size: {small_pt}pt; color: #6b6560; white-space: nowrap; }}
 .job-link {{ font-size: {small_pt}pt; color: #6b6560; }}
 ul {{ margin: 4pt 0 0; padding-left: 12pt; list-style: {marker}; }}
