@@ -41,6 +41,44 @@ export function radarPolygon(
     .join(" ");
 }
 
+/**
+ * Splits an axis label into lines of at most `maxChars`, at spaces where it
+ * can, so a long dimension name stays inside the chart rather than running off
+ * its edge. A word longer than a line is cut, and anything past `maxLines` is
+ * shortened with an ellipsis.
+ */
+export function wrapLabel(
+  label: string,
+  maxChars: number,
+  maxLines: number,
+): string[] {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    let rest = word;
+    while (rest.length > 0) {
+      const joined = line ? `${line} ${rest}` : rest;
+      if (joined.length <= maxChars) {
+        line = joined;
+        rest = "";
+      } else if (line) {
+        lines.push(line);
+        line = "";
+      } else {
+        lines.push(rest.slice(0, maxChars));
+        rest = rest.slice(maxChars);
+      }
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  const last = kept[maxLines - 1] ?? "";
+  kept[maxLines - 1] = `${last.slice(0, maxChars - 1).trimEnd()}…`;
+  return kept;
+}
+
 export interface Scale {
   (value: number): number;
   domain: [number, number];
