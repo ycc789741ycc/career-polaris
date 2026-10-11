@@ -73,7 +73,10 @@ class StubProvider(Provider):
         )
 
     async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
-        yield TextDelta("")
+        # An analysis and a build stream, so a cancel stops them (ADR 0072):
+        # the queued reply, in one chunk.
+        self.calls.append(request)
+        yield TextDelta(self.replies.pop(0) if self.replies else "{}")
 
 
 @pytest.fixture
