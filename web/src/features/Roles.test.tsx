@@ -263,15 +263,16 @@ describe("the role map's one Advisor target", () => {
     expect(bar).toHaveTextContent("Platform Engineer");
   });
 
-  it("aims at the role, even when the hash still names an opening in it", async () => {
+  it("aims at the opening picked in the role, and the Advisor with it", async () => {
     const user = userEvent.setup();
     const shell = renderRoles({ role: "r1", opening: "p1" });
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
-    expect(bar).toHaveTextContent("Backend Engineer");
-    expect(bar).not.toHaveTextContent("Northwind Pay");
+    await vi.waitFor(() =>
+      expect(bar).toHaveTextContent("Backend Engineer · Northwind Pay"),
+    );
     await user.click(
-      within(bar).getByRole("button", { name: "Target this role" }),
+      within(bar).getByRole("button", { name: "Target this opening" }),
     );
     const confirm = await screen.findByRole("region", {
       name: "Cost estimate",
@@ -280,12 +281,33 @@ describe("the role map's one Advisor target", () => {
     await vi.waitFor(() =>
       expect(shell.navigate).toHaveBeenCalledWith("advisor", {
         tab: "gaps",
-        focus: { role: "r1" },
+        focus: { role: "r1", opening: "p1" },
       }),
     );
+    const posted = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url).endsWith("/gap-question-sets") && init?.method === "POST",
+      );
+    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
+      role_id: "r1",
+      job_posting_id: "p1",
+    });
   });
 
-  it("lists the selected role's openings newest first, with no fit and nothing to pick", async () => {
+  it("aims at the role when the opening the hash names is not in it", async () => {
+    renderRoles({ role: "r1", opening: "gone" });
+
+    const bar = await screen.findByRole("region", { name: "Advisor target" });
+    await screen.findByRole("list", { name: "Openings for this role" });
+    expect(bar).toHaveTextContent("Backend Engineer");
+    expect(
+      within(bar).getByRole("button", { name: "Target this role" }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists the selected role's openings newest first, with no fit", async () => {
     const shell = renderRoles({ role: "r1" });
 
     expect(
@@ -293,7 +315,7 @@ describe("the role map's one Advisor target", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "1 open posting for Backend Engineer in Berlin and Remote EU, newest first. Your fit is scored on the role, so it is the same for every opening.",
+        "1 open posting for Backend Engineer in Berlin and Remote EU, newest first. Pick one to aim the Advisor at that opening instead of the whole role.",
       ),
     ).toBeInTheDocument();
     const [row] = within(
@@ -303,12 +325,37 @@ describe("the role map's one Advisor target", () => {
     expect(row).toHaveTextContent("Staff Engineer, Ledger");
     expect(row).not.toHaveTextContent("%");
     expect(
-      screen.queryByRole("button", { name: /Staff Engineer, Ledger/ }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.queryByText(/Platform Engineer, Clusters/),
     ).not.toBeInTheDocument();
     expect(shell.setFocus).not.toHaveBeenCalled();
+  });
+
+  it("picks an opening to aim at, and picking it again goes back to its role", async () => {
+    const user = userEvent.setup();
+    const shell = renderRoles({ role: "r1" });
+
+    const pick = await screen.findByRole("button", {
+      name: "Pick Staff Engineer, Ledger at Northwind Pay",
+    });
+    expect(pick).toHaveAttribute("aria-pressed", "false");
+    await user.click(pick);
+    expect(shell.setFocus).toHaveBeenLastCalledWith({
+      role: "r1",
+      opening: "p1",
+    });
+  });
+
+  it("marks the picked opening, and unpicks it on a second press", async () => {
+    const user = userEvent.setup();
+    const shell = renderRoles({ role: "r1", opening: "p1" });
+
+    const pick = await screen.findByRole("button", {
+      name: "Pick Staff Engineer, Ledger at Northwind Pay",
+    });
+    expect(pick).toHaveAttribute("aria-pressed", "true");
+    expect(pick).toHaveTextContent("Picked");
+    await user.click(pick);
+    expect(shell.setFocus).toHaveBeenLastCalledWith({ role: "r1" });
   });
 
   it("pages through every opening once asked to see them all", async () => {
