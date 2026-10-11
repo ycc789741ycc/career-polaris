@@ -87,11 +87,11 @@ class FakeActivity:
     def __init__(self, *, released: Any = None, requested: Any = None) -> None:
         self.released = released
         self.requested = requested
-        self.releases: list[tuple[uuid.UUID, bool]] = []
+        self.releases: list[uuid.UUID] = []
         self.requests: list[uuid.UUID] = []
 
-    async def build_after_analysis(self, owner_id: uuid.UUID, *, succeeded: bool) -> Any:
-        self.releases.append((owner_id, succeeded))
+    async def release_build_after_analysis(self, owner_id: uuid.UUID) -> Any:
+        self.releases.append(owner_id)
         return self.released
 
     async def request_role_map(self, owner_id: uuid.UUID) -> Any:
@@ -111,28 +111,31 @@ def _analysis_finished(status: str) -> OutboxEvent:
     )
 
 
-@pytest.mark.parametrize(("status", "succeeded"), [("ready", True), ("failed", False)])
-async def test_a_finished_analysis_queues_the_build_activity_hands_back(
-    status: str, succeeded: bool, queued: list[dict[str, Any]]
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_finished_analysis_queues_the_build_that_waited_for_it(
+    status: str, queued: list[dict[str, Any]]
 ) -> None:
     requested = SimpleNamespace(build=SimpleNamespace(id=uuid.uuid4()), should_queue=True)
     activity = FakeActivity(released=requested)
 
     await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
-    assert activity.releases == [(OWNER, succeeded)]
+    assert activity.releases == [OWNER]
     # Queued, or set waiting for the market, by the one helper the routes use too.
     assert queued == [{"name": "queue_build", "owner_id": OWNER, "requested": requested}]
 
 
-async def test_a_finished_analysis_queues_nothing_when_there_is_no_build_to_start(
-    queued: list[dict[str, Any]],
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_finished_analysis_builds_nothing_when_no_build_waited(
+    status: str, queued: list[dict[str, Any]]
 ) -> None:
+    """The user starts every build (ADR 0070): a successful analysis alone
+    asks for none."""
     activity = FakeActivity(released=None)
 
-    await dispatcher._handle(_container(activity=activity), _analysis_finished("failed"))
+    await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
-    assert activity.releases == [(OWNER, False)] and queued == []
+    assert activity.releases == [OWNER] and activity.requests == [] and queued == []
 
 
 class FakeRoleMap:

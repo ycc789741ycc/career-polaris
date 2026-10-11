@@ -24,7 +24,6 @@ import {
 } from "../components/ui";
 import { sourcesBusy, useActivity } from "../shell/activity";
 import { useShell } from "../shell/ShellContext";
-import { TargetLocations } from "./TargetLocations";
 import { useStartAnalysis } from "./useStartAnalysis";
 import { messageOf, useAsync } from "./useAsync";
 
@@ -199,10 +198,6 @@ export function Connect({ callback }: { callback?: CallbackOutcome | null }) {
         <ErrorNote
           error={callback && !callback.connected ? callback.message : error}
         />
-
-        <div style={{ marginTop: 18 }}>
-          <TargetLocations />
-        </div>
 
         {connections.loading ? (
           <Loading what="your sources" />

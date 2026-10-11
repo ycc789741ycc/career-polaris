@@ -7,7 +7,7 @@ reads them together and holds the rules between the stages (ADR 0018):
 * An analysis does not start while a source is still syncing or parsing: it
   would silently miss the evidence they are about to write.
 * A role-map build asked for during an analysis waits, and starts when that
-  analysis finishes.
+  analysis finishes. No build follows an analysis otherwise (ADR 0070).
 * A build then waits for the market sources it reads to be fetched, and
   starts when they are or at its deadline (ADR 0027). That wait belongs to
   ``rolemap``, which asks ``market`` itself.
@@ -160,20 +160,16 @@ class ActivityService:
         )
         return requested
 
-    async def build_after_analysis(
-        self, owner_id: uuid.UUID, *, succeeded: bool
-    ) -> BuildRequestView | None:
-        """An analysis finished: what became of the build that follows it.
+    async def release_build_after_analysis(self, owner_id: uuid.UUID) -> BuildRequestView | None:
+        """An analysis ended, however: release the build that waited for it.
 
-        A successful analysis always builds the role map (domain decision 24):
-        it releases a build that waited for it, or records a new one, or joins
-        one already open. Either way the build first asks the market for what
-        it reads (ADR 0027). A failed analysis only releases a build that
-        waited for it (ADR 0018).
+        No build follows an analysis on its own (ADR 0070): the user starts
+        every build. One they asked for while the analysis ran waited for it
+        (ADR 0018), so that it reads the new candidates; it goes on now,
+        asking the market for what it reads first (ADR 0027). With nothing
+        waiting, nothing is built.
         """
-        if not succeeded:
-            return await self._rolemap.release_waiting(owner_id)
-        return await self.request_role_map(owner_id)
+        return await self._rolemap.release_waiting(owner_id)
 
     async def _analysis_running(
         self, owner_id: uuid.UUID, now: datetime, presence: PresenceView

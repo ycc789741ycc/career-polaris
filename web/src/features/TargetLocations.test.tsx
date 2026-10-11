@@ -63,15 +63,61 @@ describe("where you want to work", () => {
     render(<TargetLocations />);
 
     await screen.findByText("1 of 3 chosen");
+    // Folded while something is chosen: the list opens on request.
+    expect(screen.queryByLabelText("Find a place")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "+ Add a place" }),
+    );
+    expect(
+      screen.getByText("2 slots left. At 3, remove one to add another."),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Add Taiwan" }));
 
     expect(await screen.findByText("2 of 3 chosen")).toBeInTheDocument();
     expect(calls.find((c) => c.method === "PUT")?.body).toEqual({
       locations: ["Germany", "Taiwan"],
     });
+    // Folded again, with the new place among the chips.
+    expect(screen.queryByLabelText("Find a place")).toBeNull();
     expect(
-      screen.getByText("1 slot left. At 3, remove one to add another."),
+      screen.getByRole("button", { name: "Remove Taiwan" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the list while nothing is chosen, and folds it on Done", async () => {
+    serve(["Germany"]);
+    render(<TargetLocations />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "+ Add a place" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(screen.queryByLabelText("Find a place")).toBeNull();
+  });
+
+  it("tells its page what it saved", async () => {
+    serve([]);
+    const onSaved = vi.fn();
+    render(<TargetLocations onSaved={onSaved} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Add Taiwan" }),
+    );
+
+    await screen.findByText("1 of 3 chosen");
+    expect(onSaved).toHaveBeenCalledWith(["Taiwan"]);
+  });
+
+  it("keeps the set as it is while a build reads it", async () => {
+    serve(["Germany"]);
+    render(<TargetLocations isReadOnly note="12 open postings in Germany" />);
+
+    expect(
+      await screen.findByText("12 open postings in Germany"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove Germany" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "+ Add a place" })).toBeNull();
   });
 
   it("groups the places as Remote, regions and countries", async () => {
@@ -120,8 +166,11 @@ describe("where you want to work", () => {
     serve(["Taiwan"]);
     render(<TargetLocations />);
 
+    await userEvent.click(
+      await screen.findByRole("button", { name: "+ Add a place" }),
+    );
     expect(
-      await screen.findByRole("button", { name: "Taiwan, already chosen" }),
+      screen.getByRole("button", { name: "Taiwan, already chosen" }),
     ).toBeDisabled();
   });
 
@@ -144,13 +193,10 @@ describe("where you want to work", () => {
     render(<TargetLocations />);
 
     await screen.findByText("3 of 3 chosen");
-    expect(screen.getByLabelText("Find a place")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "+ Add a place" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Add Singapore" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("At 3, remove one to add another."),
-    ).toBeInTheDocument();
   });
 
   it("says a chosen region is not searched", async () => {
@@ -179,7 +225,7 @@ describe("where you want to work", () => {
 
     expect(
       await screen.findByText(
-        /None chosen yet: the role map uses the platform's baseline postings/,
+        /None chosen: your map uses the platform's newest baseline postings/,
       ),
     ).toBeInTheDocument();
   });

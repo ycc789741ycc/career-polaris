@@ -147,6 +147,9 @@ class BuildRun(Base, OwnedMixin):
     locations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     awaited_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     market_data_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The analysis whose candidates it placed (ADR 0070). No foreign key: the
+    # schemas belong to different components.
+    skill_assessment_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
 
 
 class RoleCandidate(Base, OwnedMixin):
