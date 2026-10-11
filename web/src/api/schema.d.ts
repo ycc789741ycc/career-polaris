@@ -3009,6 +3009,8 @@ export interface components {
             google: boolean;
             /** Password */
             password: boolean;
+            /** Platform Ai */
+            platform_ai: boolean;
         };
         /** SignInRequest */
         SignInRequest: {
