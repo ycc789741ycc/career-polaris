@@ -51,7 +51,7 @@ import { useAsync } from "./useAsync";
  * bar says what it waits for, and the report reloads when a run finishes.
  * While one runs, the page is its waiting screen (`RunProgress`) instead.
  *
- * An analysis builds no role map (ADR 0070): the user starts every build on
+ * An analysis builds no role map (ADR 0071): the user starts every build on
  * Roles. So while there is no map, or the map was built from an older
  * analysis, the report points there.
  */

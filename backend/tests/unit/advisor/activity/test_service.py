@@ -96,7 +96,7 @@ def _pending(label: str, *, age: timedelta = timedelta()) -> PendingSourceView:
 @pytest.fixture
 async def world() -> World:
     """A user an analysis has already handed candidates for: a build has
-    something to place (ADR 0070)."""
+    something to place (ADR 0071)."""
     made = World()
     await made.rolemap.replace_candidates(
         OWNER,
@@ -221,7 +221,7 @@ async def test_a_lost_build_is_closed_and_a_new_one_queued(world: World) -> None
     assert fresh.should_queue and fresh.build.id != lost.build.id
 
 
-# --- the user starts every build (ADR 0070) ------------------------------
+# --- the user starts every build (ADR 0071) ------------------------------
 
 
 async def test_an_analysis_builds_no_role_map_unasked(world: World) -> None:

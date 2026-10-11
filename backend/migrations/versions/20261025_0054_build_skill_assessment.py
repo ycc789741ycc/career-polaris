@@ -1,4 +1,4 @@
-"""A build records the analysis it built from (ADR 0070).
+"""A build records the analysis it built from (ADR 0071).
 
 No build follows an analysis any more, so the role map says when the
 strengths changed since it was built. ``rolemap.build_run`` gains

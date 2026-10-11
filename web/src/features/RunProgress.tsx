@@ -228,7 +228,7 @@ export function EmptyMap() {
 /**
  * The analysis's steps. It is one call on the user's key, so after the facts
  * it has read there is one step running. No build follows it: the user starts
- * one on the role map (ADR 0070). Pure.
+ * one on the role map (ADR 0071). Pure.
  */
 export function getAnalysisSteps(
   facts: Evidence[] | null,
@@ -314,7 +314,7 @@ export function getBuildSteps({
 }
 
 /** Whether the role map has a build on its way: running, or waiting for an
- * analysis or the market. An analysis alone builds nothing (ADR 0070). Pure. */
+ * analysis or the market. An analysis alone builds nothing (ADR 0071). Pure. */
 export function isMapComing(activity: Activity | null): boolean {
   return isBusy(activity?.role_map);
 }

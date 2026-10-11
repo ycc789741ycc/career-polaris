@@ -24,7 +24,7 @@ const GROUPS: { kind: TargetLocationOption["kind"]; label: string }[] = [
  *
  * What they decide is market scope: which postings the role map is built from
  * and which salary bands it shows. So they sit on 03 Roles, above the map and
- * its Build button (ADR 0070). Each change saves the whole set; the role map
+ * its Build button (ADR 0071). Each change saves the whole set; the role map
  * then says the locations changed, and is rebuilt on them when the user asks
  * (ADR 0027). A country or "Remote" is also searched for the roles an analysis
  * recommends; a region is not.

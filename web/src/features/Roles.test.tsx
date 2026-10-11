@@ -535,7 +535,7 @@ describe("the role map while an analysis runs", () => {
     expect(screen.queryByRole("button", { name: "Remove Berlin" })).toBeNull();
   });
 
-  it("keeps the map, not a building screen, while only an analysis runs (ADR 0070)", async () => {
+  it("keeps the map, not a building screen, while only an analysis runs (ADR 0071)", async () => {
     renderRoles(null, {
       syncing: [],
       advisor_jobs: [],
@@ -801,7 +801,7 @@ describe("the skill fit helpers", () => {
   });
 });
 
-describe("where you want to work, and building on request (ADR 0070)", () => {
+describe("where you want to work, and building on request (ADR 0071)", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = {
       apiBaseUrl: "http://api.test",

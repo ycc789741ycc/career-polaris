@@ -1,4 +1,4 @@
-# 0070. An analysis and the role-map build are separate; the user starts every build
+# 0071. An analysis and the role-map build are separate; the user starts every build
 
 **Status:** Accepted — 2026-10-11. Supersedes [0020](0020-analyse-ten-roles-and-build-the-map-after-every-analysis.md) where it builds the map after every analysis; its fixed count was already superseded by [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md).
 

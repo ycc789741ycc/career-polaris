@@ -145,7 +145,7 @@ export interface paths {
         /**
          * Cost Estimate
          * @description An analysis is priced and confirmed before it runs. It is the analysis
-         *     alone: no role-map build follows it (ADR 0070).
+         *     alone: no role-map build follows it (ADR 0071).
          */
         get: operations["cost_estimate_api_v1_assessments_cost_estimate_get"];
         put?: never;
@@ -1092,7 +1092,7 @@ export interface paths {
         /**
          * Role Map State
          * @description How current the map is: the market it was built from, and whether the
-         *     target locations (ADR 0027) or the strengths (ADR 0070) changed since.
+         *     target locations (ADR 0027) or the strengths (ADR 0071) changed since.
          */
         get: operations["role_map_state_api_v1_role_map_get"];
         put?: never;
@@ -2875,7 +2875,7 @@ export interface components {
          * RoleMapState
          * @description How current the map on screen is (ADR 0027). It is built only when the
          *     user asks, so it says how old its market is, and whether the target
-         *     locations or the strengths changed since (ADR 0070). The first two are
+         *     locations or the strengths changed since (ADR 0071). The first two are
          *     null before the first map.
          */
         RoleMapState: {

@@ -186,7 +186,7 @@ async def test_an_analysis_queued_while_the_worker_is_away_is_not_lost(
 async def test_a_role_map_before_any_analysis_is_refused(
     services: _Services, account: uuid.UUID
 ) -> None:
-    """With no candidates a build would place nothing (ADR 0070)."""
+    """With no candidates a build would place nothing (ADR 0071)."""
     with pytest.raises(ValidationError):
         await services.activity.request_role_map(account)
 

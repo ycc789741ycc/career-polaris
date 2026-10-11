@@ -129,7 +129,7 @@ async def test_a_finished_analysis_queues_the_build_that_waited_for_it(
 async def test_a_finished_analysis_builds_nothing_when_no_build_waited(
     status: str, queued: list[dict[str, Any]]
 ) -> None:
-    """The user starts every build (ADR 0070): a successful analysis alone
+    """The user starts every build (ADR 0071): a successful analysis alone
     asks for none."""
     activity = FakeActivity(released=None)
 

@@ -400,7 +400,7 @@ class BuildRunView:
     locations: tuple[str, ...] = ()
     needed_source_ids: tuple[uuid.UUID, ...] = ()
     market_data_at: datetime | None = None
-    # The analysis whose candidates it placed (ADR 0070).
+    # The analysis whose candidates it placed (ADR 0071).
     skill_assessment_id: uuid.UUID | None = None
 
     @property
@@ -770,7 +770,7 @@ class RoleMapService:
 
     async def is_behind_strengths(self, owner_id: uuid.UUID) -> bool:
         """Whether an analysis newer than the one the map on screen was built
-        from has handed over its candidates (ADR 0070). False with no map, no
+        from has handed over its candidates (ADR 0071). False with no map, no
         candidates, or a map whose analysis was never recorded."""
         built = await self.last_finished_build(owner_id)
         if built is None or built.skill_assessment_id is None:
@@ -799,7 +799,7 @@ class RoleMapService:
         if not requested.is_running:
             return []
         # Which analysis it builds from, so the map can say when the strengths
-        # changed after it (ADR 0070).
+        # changed after it (ADR 0071).
         read = await self._candidates(owner_id)
         skill_assessment_id = read[0].assessment_id if read else None
 
