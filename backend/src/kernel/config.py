@@ -208,6 +208,9 @@ class Settings(BaseSettings):
     # How many recommended roles a build keeps, names, analyses and scores:
     # three calls each on the user's key, and the whole map.
     role_map_top_k: int = Field(default=10, ge=1, alias="ROLE_MAP_TOP_K")
+    # How many of a build's per-role AI calls (naming and bar, then fits) run
+    # at once: 1 is one after another. What a build spends does not change.
+    role_map_ai_concurrency: int = Field(default=4, ge=1, alias="ROLE_MAP_AI_CONCURRENCY")
 
     # --- Limits per account and per address (ADR 0054) ----------------------
     # Accounts made from one address in a day. Addresses are not verified yet
@@ -287,6 +290,14 @@ class Settings(BaseSettings):
         # price roles no build can make.
         if self.role_map_top_k > self.role_candidate_count:
             raise ValueError("ROLE_MAP_TOP_K must not exceed ROLE_CANDIDATE_COUNT")
+        return self
+
+    @model_validator(mode="after")
+    def _ai_concurrency_within_the_top_k(self) -> Settings:
+        # A build has at most k roles to call for; more slots than that would
+        # read as a promise no build can keep.
+        if self.role_map_ai_concurrency > self.role_map_top_k:
+            raise ValueError("ROLE_MAP_AI_CONCURRENCY must not exceed ROLE_MAP_TOP_K")
         return self
 
     @model_validator(mode="after")

@@ -16,8 +16,9 @@ stores nothing.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -438,9 +439,12 @@ class RoleMapService:
         embedding_model: str,
         top_k: int,
         candidate_count: int,
+        ai_concurrency: int,
     ) -> None:
         if not 1 <= top_k <= candidate_count:
             raise ValueError("a build keeps between 1 and candidate_count roles")
+        if ai_concurrency < 1:
+            raise ValueError("a build makes at least one AI call at a time")
         self._uow = uow
         self._market = market
         self._gateway = gateway
@@ -449,6 +453,8 @@ class RoleMapService:
         # scores, and how many candidates an analysis may hand over (ADR 0029).
         self._top_k = top_k
         self._candidate_count = candidate_count
+        # How many of a build's per-role AI calls run at once.
+        self._ai_concurrency = ai_concurrency
 
     async def roles(self, owner_id: uuid.UUID) -> list[RoleView]:
         """The live roles, newest first, each with its requirements, weightiest
@@ -907,6 +913,7 @@ class RoleMapService:
         )
 
         placed: dict[uuid.UUID, uuid.UUID] = {}
+        analysed: list[Callable[[], Awaitable[None]]] = []
         for index, group in enumerate(groups):
             role_id = uuid.UUID(reconciliation.assignments[index])
             placed[group.candidate.id] = role_id
@@ -916,6 +923,28 @@ class RoleMapService:
                 owner_id, role_id=role_id, postings=group.postings
             ):
                 continue
+            analysed.append(self._get_analysis(owner_id, role_id=role_id, group=group))
+        # Each role is its own calls and its own rows, so they run side by side.
+        await _execute_concurrently(analysed, limit=self._ai_concurrency)
+
+        await self._record_lineage(owner_id, reconciliation)
+        await self._place_candidates(
+            owner_id,
+            build_id,
+            candidates,
+            placed=placed,
+            counts=counts,
+            eligible={candidates[i].id for i in eligible},
+            estimates={candidates[i].id: estimates[i] for i in eligible},
+        )
+
+    def _get_analysis(
+        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, group: _Group
+    ) -> Callable[[], Awaitable[None]]:
+        """One role's analysis, to run when its turn comes: its prompt's
+        descriptions are read then, not before."""
+
+        async def analyse() -> None:
             await self._analyse(
                 owner_id,
                 role_id=role_id,
@@ -928,16 +957,7 @@ class RoleMapService:
                 ),
             )
 
-        await self._record_lineage(owner_id, reconciliation)
-        await self._place_candidates(
-            owner_id,
-            build_id,
-            candidates,
-            placed=placed,
-            counts=counts,
-            eligible={candidates[i].id for i in eligible},
-            estimates={candidates[i].id: estimates[i] for i in eligible},
-        )
+        return analyse
 
     async def _searched_by(
         self, owner_id: uuid.UUID, candidates: list[RoleCandidate], postings: list[PostingHeadView]
@@ -1130,6 +1150,7 @@ class RoleMapService:
         assessment_id = strengths[0].assessment_id
         latest = await self._latest_role_fits(owner_id)
         reused = 0
+        projections: list[Callable[[], Awaitable[None]]] = []
         for role in roles:
             if not role.requirements:
                 continue
@@ -1142,7 +1163,9 @@ class RoleMapService:
             ):
                 reused += 1
                 continue
-            await self._project(owner_id, strengths, role, digest=digest)
+            projections.append(self._get_projection(owner_id, strengths, role, digest=digest))
+        # Each role's fit is its own call and its own row, so they run side by side.
+        await _execute_concurrently(projections, limit=self._ai_concurrency)
         log.info("rolemap.fits_reused", roles=len(roles), reused=reused)
         await self._derive_opening_fits(owner_id, strengths)
 
@@ -1384,6 +1407,21 @@ class RoleMapService:
         async with self._uow.for_owner(owner_id) as mine:
             found = await mine.strengths.get_list(CandidateStrengthFilter())
         return sorted(found, key=lambda s: s.dimension_key)
+
+    def _get_projection(
+        self,
+        owner_id: uuid.UUID,
+        strengths: list[CandidateStrength],
+        role: RoleView,
+        *,
+        digest: str,
+    ) -> Callable[[], Awaitable[None]]:
+        """One role's fit, to score when its turn comes."""
+
+        async def project() -> None:
+            await self._project(owner_id, strengths, role, digest=digest)
+
+        return project
 
     async def _project(
         self,
@@ -1789,6 +1827,33 @@ class RoleMapService:
             if split_or_merged:
                 mine.record(RoleSplitOrMerged(owner_id=owner_id, changes=split_or_merged))
             mine.record(RolesReclustered(owner_id=owner_id, roles=len(reconciliation.assignments)))
+
+
+async def _execute_concurrently(
+    calls: Sequence[Callable[[], Awaitable[None]]], *, limit: int
+) -> None:
+    """Run ``calls``, at most ``limit`` at a time; ``limit=1`` runs them in
+    order, one after another.
+
+    The first to fail cancels the rest, before or during their AI call, and
+    its own error is raised, not a group of them: a build's error code is
+    read from it. A call cancelled mid-way stores nothing, because each one
+    writes only after its replies are in.
+    """
+    if not calls:
+        return
+    slots = asyncio.Semaphore(limit)
+
+    async def run(call: Callable[[], Awaitable[None]]) -> None:
+        async with slots:
+            await call()
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            for call in calls:
+                group.create_task(run(call))
+    except BaseExceptionGroup as failed:
+        raise failed.exceptions[0] from None
 
 
 def _posting_key(posting: PostingHeadView) -> str:

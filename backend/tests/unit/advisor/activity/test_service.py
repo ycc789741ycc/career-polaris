@@ -67,6 +67,7 @@ class World:
             embedding_model="test-model",
             top_k=10,
             candidate_count=10,
+            ai_concurrency=4,
         )
         self.activity = ActivityService(
             profile=self.profile,  # type: ignore[arg-type]
