@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type {
   StringPage,
@@ -29,16 +29,18 @@ const GROUPS: { kind: TargetLocationOption["kind"]; label: string }[] = [
  * (ADR 0027). A country or "Remote" is also searched for the roles an analysis
  * recommends; a region is not.
  *
- * With places chosen it shows them as chips, the list folded behind
- * "+ Add a place"; with none, the list is open. `isReadOnly` keeps the set
- * as it is while a build reads it.
+ * One line, no panel: the label, the chosen places as chips, "+ Add" and the
+ * `note`. The list opens as a dropdown under "+ Add", over the page, so the
+ * map does not move; picking a place saves and closes it, and Escape or a
+ * click outside closes it without saving. What the places mean is behind the
+ * ⓘ. `isReadOnly` keeps the set as it is while a build reads it.
  */
 export function TargetLocations({
   note,
   isReadOnly = false,
   onSaved,
 }: {
-  // What the chosen places take in, under the chips: the market scope line.
+  // What the chosen places take in, at the end of the line.
   note?: ReactNode;
   isReadOnly?: boolean;
   onSaved?: (locations: string[]) => void;
@@ -55,8 +57,11 @@ export function TargetLocations({
   const [answered, setAnswered] = useState<string[] | null>(null);
   const [filter, setFilter] = useState("");
   const [isListOpen, setIsListOpen] = useState(false);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addRef = useRef<HTMLDivElement>(null);
+  const aboutRef = useRef<HTMLDivElement>(null);
 
   const chosen = answered ?? saved.data ?? [];
   const isFull = chosen.length >= MAX_TARGET_LOCATIONS;
@@ -69,16 +74,42 @@ export function TargetLocations({
   const shown = (options.data ?? []).filter((option) =>
     option.name.toLowerCase().includes(wanted),
   );
+  const isListShown = isListOpen && !isReadOnly && !isFull;
+
+  // Escape or a click outside closes whichever popover is open.
+  useEffect(() => {
+    if (!isListShown && !isAboutOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setIsListOpen(false);
+      setIsAboutOpen(false);
+      setFilter("");
+    }
+    function onPointer(event: PointerEvent) {
+      const target = event.target as Node;
+      if (!addRef.current?.contains(target)) {
+        setIsListOpen(false);
+        setFilter("");
+      }
+      if (!aboutRef.current?.contains(target)) setIsAboutOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [isListShown, isAboutOpen]);
 
   async function save(locations: string[]) {
     setBusy(true);
     setError(null);
     try {
-      const saved = await api.put<string[]>("/target-locations", {
+      const stored = await api.put<string[]>("/target-locations", {
         locations,
       });
-      setAnswered(saved);
-      onSaved?.(saved);
+      setAnswered(stored);
+      onSaved?.(stored);
       return true;
     } catch (err) {
       setError(messageOf(err));
@@ -97,28 +128,20 @@ export function TargetLocations({
   }
 
   return (
-    <section className="panel" aria-labelledby="target-locations-heading">
-      <div className="row-between">
-        <h3 id="target-locations-heading" style={{ margin: 0 }}>
-          Where you want to work
-        </h3>
-        <span className="muted" style={{ fontSize: 12.5, fontWeight: 700 }}>
-          {chosen.length} of {MAX_TARGET_LOCATIONS} chosen
-        </span>
-      </div>
-      <p className="subcopy">
-        Pick up to {MAX_TARGET_LOCATIONS} places. Your role map is built from
-        postings in these places, and salary bands are shown for them.
-      </p>
+    <section className="location-line" aria-label="Where you want to work">
+      <span className="location-line-label">Where you want to work</span>
       {saved.loading || options.loading ? (
         <Loading what="your locations" />
-      ) : chosen.length > 0 && !isListOpen ? (
+      ) : (
         <>
-          <div
-            className="row"
-            style={{ gap: 8, margin: "10px 0", flexWrap: "wrap" }}
-          >
-            {chosen.map((location) => (
+          {chosen.length === 0 ? (
+            <span className="muted">
+              {isReadOnly
+                ? "Anywhere (the platform's baseline postings)"
+                : "Anywhere (newest baseline postings)"}
+            </span>
+          ) : (
+            chosen.map((location) => (
               <span key={location} className="chip location-chip">
                 {location}
                 {kindOf.get(location) === "region" && (
@@ -138,130 +161,114 @@ export function TargetLocations({
                   </button>
                 )}
               </span>
-            ))}
-            {!isReadOnly && !isFull && (
+            ))
+          )}
+          {!isReadOnly && !isFull && (
+            <div className="location-add" ref={addRef}>
               <button
                 type="button"
-                className="link-button"
-                onClick={() => setIsListOpen(true)}
+                className="location-add-button"
+                aria-expanded={isListShown}
+                aria-haspopup="dialog"
+                disabled={busy}
+                onClick={() => {
+                  setIsListOpen((open) => !open);
+                  setFilter("");
+                }}
               >
-                + Add a place
+                + Add
               </button>
-            )}
-          </div>
-          {note && (
-            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
-              {note}
-            </p>
-          )}
-          {hasRegion && (
-            <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
-              Regions use the postings we already have. Pick a country for a
-              fresh search of your recommended roles.
-            </p>
-          )}
-        </>
-      ) : isReadOnly ? (
-        <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
-          None chosen: this build uses the platform&apos;s baseline postings.
-        </p>
-      ) : (
-        <>
-          {chosen.length > 0 && (
-            <div className="row" style={{ gap: 8, margin: "10px 0" }}>
-              {chosen.map((location) => (
-                <span key={location} className="chip location-chip">
-                  {location}
-                  {kindOf.get(location) === "region" && (
-                    <span className="location-chip-kind">region</span>
-                  )}
-                  <button
-                    type="button"
-                    className="location-chip-remove"
-                    aria-label={`Remove ${location}`}
-                    disabled={busy}
-                    onClick={() =>
-                      void save(chosen.filter((other) => other !== location))
-                    }
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          <input
-            className="input"
-            aria-label="Find a place"
-            value={filter}
-            placeholder="Type to filter: a country, a region or Remote…"
-            disabled={isFull}
-            onChange={(event) => setFilter(event.target.value)}
-            style={{ marginTop: 10 }}
-          />
-          {!isFull && (
-            <div className="location-options">
-              {GROUPS.map(({ kind, label }) => {
-                const inGroup = shown.filter((option) => option.kind === kind);
-                if (inGroup.length === 0) return null;
-                return (
-                  <div key={kind} role="group" aria-label={label}>
-                    <div className="location-options-heading">{label}</div>
-                    {inGroup.map((option) => {
-                      const isChosen = chosen.includes(option.name);
+              {isListShown && (
+                <div
+                  className="location-dropdown"
+                  role="dialog"
+                  aria-label="Add a place"
+                >
+                  <input
+                    className="input"
+                    aria-label="Find a place"
+                    value={filter}
+                    placeholder="Type to filter: a country, a region or Remote…"
+                    autoFocus
+                    onChange={(event) => setFilter(event.target.value)}
+                  />
+                  <div className="location-options">
+                    {GROUPS.map(({ kind, label }) => {
+                      const inGroup = shown.filter(
+                        (option) => option.kind === kind,
+                      );
+                      if (inGroup.length === 0) return null;
                       return (
-                        <button
-                          key={option.name}
-                          type="button"
-                          className="location-option"
-                          disabled={busy || isChosen}
-                          aria-label={
-                            isChosen
-                              ? `${option.name}, already chosen`
-                              : `Add ${option.name}`
-                          }
-                          onClick={() => void add(option.name)}
-                        >
-                          {option.name}
-                        </button>
+                        <div key={kind} role="group" aria-label={label}>
+                          <div className="location-options-heading">
+                            {label}
+                          </div>
+                          {inGroup.map((option) => {
+                            const isChosen = chosen.includes(option.name);
+                            return (
+                              <button
+                                key={option.name}
+                                type="button"
+                                className="location-option"
+                                disabled={busy || isChosen}
+                                aria-label={
+                                  isChosen
+                                    ? `${option.name}, already chosen`
+                                    : `Add ${option.name}`
+                                }
+                                onClick={() => void add(option.name)}
+                              >
+                                {option.name}
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
+                    {shown.length === 0 && (
+                      <p className="muted" style={{ margin: 8 }}>
+                        No place matches “{filter.trim()}”.
+                      </p>
+                    )}
                   </div>
-                );
-              })}
-              {shown.length === 0 && (
-                <p className="muted" style={{ margin: 8 }}>
-                  No place matches “{filter.trim()}”.
-                </p>
+                </div>
               )}
             </div>
           )}
-          {chosen.length > 0 && (
+          {note && <span className="muted location-line-note">{note}</span>}
+          <div className="location-about" ref={aboutRef}>
             <button
               type="button"
-              className="link-button"
-              style={{ marginTop: 8 }}
-              onClick={() => {
-                setIsListOpen(false);
-                setFilter("");
-              }}
+              className="location-about-button"
+              aria-label="About where you want to work"
+              aria-expanded={isAboutOpen}
+              onClick={() => setIsAboutOpen((open) => !open)}
             >
-              Done
+              ⓘ
             </button>
-          )}
-          <p className="muted" style={{ fontSize: 12.5, margin: "8px 0 0" }}>
-            {isFull
-              ? `At ${MAX_TARGET_LOCATIONS}, remove one to add another.`
-              : chosen.length === 0
-                ? "None chosen: your map uses the platform's newest baseline postings."
-                : `${left} ${left === 1 ? "slot" : "slots"} left. At ${MAX_TARGET_LOCATIONS}, remove one to add another.`}
-          </p>
-          {hasRegion && (
-            <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
-              Regions use the postings we already have. Pick a country for a
-              fresh search of your recommended roles.
-            </p>
-          )}
+            {isAboutOpen && (
+              <div className="location-about-popover" role="note">
+                <p>
+                  Pick up to {MAX_TARGET_LOCATIONS} places. Your role map is
+                  built from postings in these places, and salary bands are
+                  shown for them.
+                </p>
+                <p>
+                  {isFull
+                    ? `At ${MAX_TARGET_LOCATIONS}, remove one to add another.`
+                    : chosen.length === 0
+                      ? "None chosen: your map uses the platform's newest baseline postings."
+                      : `${left} ${left === 1 ? "slot" : "slots"} left. At ${MAX_TARGET_LOCATIONS}, remove one to add another.`}
+                </p>
+                {hasRegion && (
+                  <p>
+                    Regions use the postings we already have. Pick a country for
+                    a fresh search of your recommended roles.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </>
       )}
       <ErrorNote error={error ?? options.error} />
