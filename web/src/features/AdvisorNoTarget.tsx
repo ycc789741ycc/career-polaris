@@ -49,23 +49,15 @@ export function AdvisorNoTarget({
       </section>
 
       <nav
-        className="row advisor-steps"
+        className="advisor-stepper"
         aria-label="Advisor steps (locked until a target is chosen)"
       >
-        <span className="eyebrow">First</span>
-        <span className="step-locked" aria-disabled="true">
-          Fill the gap
+        <LockedStep number={1} name="Fill the gap" />
+        <span className="advisor-stepper-then" aria-hidden="true">
+          → then, either
         </span>
-        <span className="muted" aria-hidden="true">
-          →
-        </span>
-        <span className="eyebrow">Then, either</span>
-        <span className="step-locked" aria-disabled="true">
-          Gap plan
-        </span>
-        <span className="step-locked" aria-disabled="true">
-          Résumé
-        </span>
+        <LockedStep number={2} name="Gap plan" />
+        <LockedStep number={3} name="Résumé" />
         <span className="muted" style={{ fontSize: 13 }}>
           Opens once you pick a target
         </span>
@@ -199,4 +191,20 @@ export function getBestFit(
       ? `${band.currency} ${Math.round(band.low / 1000)}k–${Math.round(band.high / 1000)}k`
       : null,
   };
+}
+
+/** A step of the Advisor, shown but not usable before a target is set. */
+function LockedStep({ number, name }: { number: number; name: string }) {
+  return (
+    <span
+      className="advisor-step advisor-step-locked"
+      aria-disabled="true"
+      aria-label={name}
+    >
+      <span className="advisor-step-number" aria-hidden="true">
+        {number}
+      </span>
+      <span className="advisor-step-name">{name}</span>
+    </span>
+  );
 }

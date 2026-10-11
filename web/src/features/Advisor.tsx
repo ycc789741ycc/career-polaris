@@ -1,13 +1,18 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useActivity } from "../shell/activity";
 import {
   AdvisorJobCard,
   AdvisorJobNotice,
   jobsFor,
   jobTab,
-  jobWord,
-  Spinner,
 } from "./AdvisorJobs";
+import {
+  AdvisorSteps,
+  FillGapBanner,
+  FillGapFirst,
+  getGapFillState,
+  getStepNotes,
+} from "./AdvisorSteps";
 import { api } from "../api/client";
 import type {
   Fit,
@@ -18,6 +23,7 @@ import type {
   OwnPosting,
   PlanSummary,
   PlanSummaryPage,
+  QuestionSet,
   ResumeSummary,
   ResumeSummaryPage,
   Role,
@@ -30,7 +36,6 @@ import {
   ErrorNote,
   Eyebrow,
   Loading,
-  PillToggle,
   StatTile,
 } from "../components/ui";
 import {
@@ -54,8 +59,8 @@ import { OwnRole, statusLine, useOwnPostings } from "./OwnRole";
 import { PreviousTargets } from "./PreviousTargets";
 import { Resume } from "./Resume";
 import { Credit, pickBand } from "./Roles";
-import { type AdvisorTarget, sameTarget } from "./target";
-import { useAsync } from "./useAsync";
+import { type AdvisorTarget, sameTarget, targetQuery } from "./target";
+import { messageOf, useAsync } from "./useAsync";
 
 /**
  * The Advisor: Fill the gap first, then either the gap plan or the tailored
@@ -310,6 +315,35 @@ function Aimed({
   const hasDrafted = (entries: { target: TargetRef }[]) =>
     entries.some((entry) => sameTarget(entry.target, target.ref));
 
+  // Fill the gap comes first: the plan and résumé warn until its answers are
+  // submitted, read again when a job ends or answers go in. Undefined until
+  // the first read, so neither tab flashes a warning it then takes back.
+  const [gapSet, setGapSet] = useState<QuestionSet | null | undefined>(
+    undefined,
+  );
+  const [gapSetError, setGapSetError] = useState<string | null>(null);
+  const [answersSubmitted, setAnswersSubmitted] = useState(0);
+  const [draftAnyway, setDraftAnyway] = useState<AdvisorTab[]>([]);
+  const gapQuery = targetQuery(target.ref);
+  useEffect(() => {
+    let isCurrent = true;
+    api.get<QuestionSet | null>(`/gap-question-sets/current?${gapQuery}`).then(
+      (set) => {
+        if (!isCurrent) return;
+        setGapSet(set);
+        setGapSetError(null);
+      },
+      (caught: unknown) => {
+        if (isCurrent) setGapSetError(messageOf(caught));
+      },
+    );
+    return () => {
+      isCurrent = false;
+    };
+  }, [gapQuery, settled.advisor, answersSubmitted]);
+  const gapFill = getGapFillState(gapSet ?? null);
+  const isGapFilled = gapFill.kind === "submitted";
+
   // A job that ended changed a plan or a résumé: the lists read it again.
   useEffect(() => {
     if (settled.advisor === 0) return;
@@ -317,17 +351,6 @@ function Aimed({
     onResumesChanged();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled.advisor]);
-
-  const stepLabel = (which: AdvisorTab, name: string) => {
-    const job = jobOn(which);
-    return job ? (
-      <span className="step-busy">
-        {name} <Spinner /> {jobWord(job.kind)}
-      </span>
-    ) : (
-      name
-    );
-  };
 
   // Working against it is using it: it is the Target the Advisor opens on
   // next time, and the newest of the previous ones after another is set.
@@ -360,36 +383,13 @@ function Aimed({
         onSwitch={onSwitch}
       />
 
-      <div
-        className="row advisor-steps"
-        role="group"
-        aria-label="Advisor tabs"
-        style={{ marginBottom: 20, alignItems: "center" }}
-      >
-        <span className="eyebrow">First</span>
-        <PillToggle
-          pressed={tab === "gaps"}
-          onClick={() => navigate("advisor", { tab: "gaps" })}
-        >
-          {stepLabel("gaps", "Fill the gap")}
-        </PillToggle>
-        <span className="muted" aria-hidden="true">
-          →
-        </span>
-        <span className="eyebrow">Then, either</span>
-        <PillToggle
-          pressed={tab === "plan"}
-          onClick={() => navigate("advisor", { tab: "plan" })}
-        >
-          {stepLabel("plan", "Gap plan")}
-        </PillToggle>
-        <PillToggle
-          pressed={tab === "resume"}
-          onClick={() => navigate("advisor", { tab: "resume" })}
-        >
-          {stepLabel("resume", "Résumé")}
-        </PillToggle>
-      </div>
+      <AdvisorSteps
+        tab={tab === "own" ? "gaps" : tab}
+        notes={getStepNotes({ gapFill, target, plans, resumes })}
+        jobOn={jobOn}
+        onPick={(next) => navigate("advisor", { tab: next })}
+      />
+      <ErrorNote error={gapSetError} />
       {elsewhere[0] && (
         <AdvisorJobNotice
           job={elsewhere[0]}
@@ -408,10 +408,13 @@ function Aimed({
         <FillTheGap
           target={target}
           onSubmitted={() => {
+            setAnswersSubmitted((count) => count + 1);
             onPlansChanged();
             onResumesChanged();
           }}
         />
+      ) : gapSet === undefined && gapSetError === null ? (
+        <Loading what="Fill the gap" />
       ) : isUnscoredOpening && !hasDrafted(tab === "plan" ? plans : resumes) ? (
         <EmptyState title="Run the gap analysis first">
           {tab === "plan" ? "A gap plan" : "A résumé"} for this opening is
@@ -423,20 +426,40 @@ function Aimed({
             </Button>
           </span>
         </EmptyState>
-      ) : tab === "plan" ? (
-        <GapPlan
+      ) : gapSet !== undefined &&
+        !isGapFilled &&
+        !hasDrafted(tab === "plan" ? plans : resumes) &&
+        !draftAnyway.includes(tab) ? (
+        <FillGapFirst
+          tab={tab === "resume" ? "resume" : "plan"}
+          gapFill={gapFill}
           target={target}
-          history={plans}
-          onChanged={onPlansChanged}
-          onRevisit={(entry) => onRevisit(entry.target)}
+          onFill={() => navigate("advisor", { tab: "gaps" })}
+          onDraftAnyway={() => setDraftAnyway([...draftAnyway, tab])}
         />
       ) : (
-        <Resume
-          target={target}
-          saved={resumes}
-          onChanged={onResumesChanged}
-          onRevisit={(entry) => onRevisit(entry.target)}
-        />
+        <>
+          {gapSet !== undefined && !isGapFilled && (
+            <FillGapBanner
+              onFill={() => navigate("advisor", { tab: "gaps" })}
+            />
+          )}
+          {tab === "plan" ? (
+            <GapPlan
+              target={target}
+              history={plans}
+              onChanged={onPlansChanged}
+              onRevisit={(entry) => onRevisit(entry.target)}
+            />
+          ) : (
+            <Resume
+              target={target}
+              saved={resumes}
+              onChanged={onResumesChanged}
+              onRevisit={(entry) => onRevisit(entry.target)}
+            />
+          )}
+        </>
       )}
     </section>
   );

@@ -1111,3 +1111,14 @@ On `epic/no-ticket/user-started-runs`, one branch per step:
     fit for one. The gap plan and résumé tabs of an unscored opening with
     nothing drafted say "Run the gap analysis first".
 
+## Fill the gap first
+
+On `feature/no-ticket/fill-gap-first` (no ADR, SPA only): the Advisor's steps
+are a numbered stepper (`AdvisorSteps`), each with a line on where it stands —
+Fill the gap's answers (`getGapFillState`, from `/gap-question-sets/current`),
+the plan's and résumé's latest version for the Target (`getStepNotes`). Until
+the Target's answers are submitted, the plan and résumé tabs warn rather than
+lock: with nothing drafted, `FillGapFirst` ("Go to Fill the gap", or "Draft
+anyway" / "Write anyway"); with something drafted, or after drafting anyway,
+`FillGapBanner` above it. An unscored opening still locks, as above.
+

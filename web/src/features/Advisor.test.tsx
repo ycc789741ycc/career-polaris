@@ -9,6 +9,7 @@ import type {
   OpeningFit,
   OwnPosting,
   PlanSummary,
+  QuestionSet,
   Role,
 } from "../api/types";
 import type { AdvisorTab, Focus } from "../shell/navigation";
@@ -128,6 +129,39 @@ let openingFit: OpeningFit | null = {
   scored_at: "2026-10-10T09:00:00Z",
 };
 
+// The Target's current gap questions: answered and submitted unless a test
+// says otherwise, so the plan and résumé tabs open without a warning.
+function questionSet(overrides: Partial<QuestionSet> = {}): QuestionSet {
+  return {
+    id: "s1",
+    target: {
+      role_id: "r1",
+      job_posting_id: null,
+      private_job_posting_id: null,
+    },
+    label: "Staff Backend Engineer",
+    status: "ready",
+    gaps: [],
+    questions: [
+      {
+        id: "q1",
+        gap_key: "dim:incidents",
+        text: "Have you been on call?",
+        asked_because: "",
+        answer_type: "choice",
+        choices: ["Yes", "No"],
+        evidence_id: "e1",
+      },
+    ],
+    model_id: "claude-opus-5",
+    error: null,
+    created_at: "2026-10-01T09:00:00Z",
+    submitted_at: "2026-10-01T10:00:00Z",
+    ...overrides,
+  };
+}
+let gapSet: QuestionSet | null = questionSet();
+
 function serve() {
   vi.stubGlobal(
     "fetch",
@@ -138,25 +172,27 @@ function serve() {
           ? page([backend, principal])
           : url === "/fits"
             ? page([fit("r1", 81), fit("r3", 64)])
-            : url.startsWith("/opening-fit?job_posting_id=p1")
-              ? openingFit
-              : url.startsWith("/matched-postings?role_id=r1")
-                ? page([northwind])
-                : url.startsWith("/matched-postings")
-                  ? page([])
-                  : url === "/gap-plans"
-                    ? page([
-                        plan("r3", null, "plan-1"),
-                        plan(null, null, "plan-2", "j1"),
-                      ])
-                    : url === "/tailored-resumes"
-                      ? page([])
-                      : url === "/own-postings"
-                        ? page([
-                            own("j1"),
-                            own("j2", { status: "running", fit: null }),
-                          ])
-                        : null;
+            : url.startsWith("/gap-question-sets/current")
+              ? gapSet
+              : url.startsWith("/opening-fit?job_posting_id=p1")
+                ? openingFit
+                : url.startsWith("/matched-postings?role_id=r1")
+                  ? page([northwind])
+                  : url.startsWith("/matched-postings")
+                    ? page([])
+                    : url === "/gap-plans"
+                      ? page([
+                          plan("r3", null, "plan-1"),
+                          plan(null, null, "plan-2", "j1"),
+                        ])
+                      : url === "/tailored-resumes"
+                        ? page([])
+                        : url === "/own-postings"
+                          ? page([
+                              own("j1"),
+                              own("j2", { status: "running", fit: null }),
+                            ])
+                          : null;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -211,6 +247,7 @@ describe("the Advisor's one target role", () => {
       privacyContactEmail: "privacy@example.test",
     };
     window.localStorage.clear();
+    gapSet = questionSet();
     openingFit = {
       job_posting_id: "p1",
       fit: 86,
@@ -250,7 +287,7 @@ describe("the Advisor's one target role", () => {
       name: "Advisor steps (locked until a target is chosen)",
     });
     expect(within(steps).queryAllByRole("button")).toHaveLength(0);
-    expect(within(steps).getByText("Résumé")).toHaveAttribute(
+    expect(within(steps).getByLabelText("Résumé")).toHaveAttribute(
       "aria-disabled",
       "true",
     );
@@ -443,6 +480,83 @@ describe("the Advisor's one target role", () => {
     expect(
       within(banner).getByRole("button", { name: "Use your own role" }),
     ).toBeInTheDocument();
+  });
+
+  it("warns on the gap plan before Fill the gap is submitted, and drafts anyway on request", async () => {
+    const user = userEvent.setup();
+    gapSet = null;
+    const shell = renderAdvisor({ role: "r1" }, "plan");
+
+    const tabs = await screen.findByRole("group", { name: "Advisor tabs" });
+    expect(
+      within(tabs).getByRole("button", { name: "Fill the gap" }),
+    ).toHaveAccessibleDescription("Start here");
+    expect(
+      within(tabs).getByRole("button", { name: "Gap plan" }),
+    ).toHaveAccessibleDescription("⚠ Fill the gap first");
+    expect(
+      await screen.findByText(
+        /You haven't analysed the gaps for Staff Backend Engineer yet/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Generate gap plan" }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: "Go to Fill the gap" }),
+    );
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", { tab: "gaps" });
+
+    await user.click(screen.getByRole("button", { name: "Draft anyway" }));
+    expect(
+      screen.getByRole("button", { name: "Generate gap plan" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Fill the gap first" }),
+    ).toHaveTextContent("Your gap answers aren't in yet");
+  });
+
+  it("opens a plan already drafted with a reminder while the answers are unsubmitted", async () => {
+    gapSet = questionSet({
+      target: {
+        role_id: "r3",
+        job_posting_id: null,
+        private_job_posting_id: null,
+      },
+      submitted_at: null,
+    });
+    renderAdvisor({ role: "r3" }, "plan");
+
+    // Principal Engineer has a plan already: it opens, with the banner.
+    expect(
+      await screen.findByRole("status", { name: "Fill the gap first" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Generate gap plan" }),
+    ).toBeInTheDocument();
+    const tabs = screen.getByRole("group", { name: "Advisor tabs" });
+    expect(
+      within(tabs).getByRole("button", { name: "Fill the gap" }),
+    ).toHaveAccessibleDescription("1 question to answer");
+    expect(
+      within(tabs).getByRole("button", { name: "Gap plan" }),
+    ).toHaveAccessibleDescription("⚠ v1");
+  });
+
+  it("shows no warning once the answers are submitted", async () => {
+    renderAdvisor({ role: "r1" }, "resume");
+
+    const tabs = await screen.findByRole("group", { name: "Advisor tabs" });
+    await waitFor(() =>
+      expect(
+        within(tabs).getByRole("button", { name: "Fill the gap" }),
+      ).toHaveAccessibleDescription("✓ 1 of 1 answered"),
+    );
+    expect(screen.queryByText("Fill the gap first")).toBeNull();
+    expect(
+      within(tabs).getByRole("button", { name: "Résumé" }),
+    ).toHaveAccessibleDescription("Not yet");
   });
 
   it("says so when the target has left the map", async () => {
