@@ -209,7 +209,80 @@ h4 { font-size: 17px; margin: 0; }
   color: var(--color-bg);
 }
 
-/* A target location: dark, with its own remove button (01 Sources). */
+/* "Where you want to work": one line above the role map, its list and its
+   explanation in popovers over the page (03 Roles). */
+.location-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.location-line-label {
+  font-weight: 700;
+  margin-right: 4px;
+}
+.location-line-note { font-size: 13px; margin-left: auto; }
+.location-add,
+.location-about { position: relative; }
+.location-add-button {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px dashed var(--color-divider);
+  font-weight: 600;
+  font-size: 13px;
+}
+.location-add-button:hover:not(:disabled) { background: var(--color-neutral-200); }
+.location-add-button:focus-visible,
+.location-about-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.location-add-button:disabled { cursor: default; opacity: 0.5; }
+.location-dropdown,
+.location-about-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 20;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.location-dropdown {
+  left: 0;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px;
+}
+.location-dropdown .location-options { margin-top: 8px; }
+.location-about-button {
+  all: unset;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+}
+.location-about-button:hover { opacity: 1; background: var(--color-neutral-200); }
+.location-about-popover {
+  right: 0;
+  width: min(300px, calc(100vw - 32px));
+  padding: 4px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 560px) {
+  .location-line-note { margin-left: 0; }
+  .location-add { position: static; }
+  .location-dropdown { left: 0; right: 0; width: auto; }
+  .location-line { position: relative; }
+}
+
+/* A target location: dark, with its own remove button (03 Roles). */
 .location-chip {
   gap: 4px;
   padding: 4px 4px 4px 14px;
@@ -402,6 +475,21 @@ h4 { font-size: 17px; margin: 0; }
   font-size: 12.5px;
   font-weight: 600;
 }
+
+/* Cancel inside a running bar's pill (ADR 0072). */
+.pill-cancel {
+  all: unset;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--color-accent-800);
+  font-weight: 700;
+  cursor: pointer;
+}
+.pill-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent-800) 12%, transparent);
+}
+.pill-cancel:disabled { cursor: default; opacity: 0.7; }
+.pill-cancel:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 /* The running bar under the header (ADR 0018). */
 .activity-bar {

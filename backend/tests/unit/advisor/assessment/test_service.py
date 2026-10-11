@@ -27,6 +27,7 @@ from kernel.errors import (
     NotFoundError,
     OutputInvalidError,
 )
+from kernel.progress import Progress
 from tests.unit.advisor.assessment.fakes import FakeAssessmentUnitOfWork
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -258,7 +259,7 @@ async def test_a_finished_analysis_closes_its_run_and_announces_it(
     requested = await service.request_run(OWNER)
     produced = object()
 
-    async def run(owner_id: uuid.UUID) -> object:
+    async def run(owner_id: uuid.UUID, **_: Any) -> object:
         return produced
 
     monkeypatch.setattr(service, "run", run)
@@ -275,7 +276,7 @@ async def test_a_finished_analysis_closes_its_run_and_announces_it(
 def _failing_run(
     service: AssessmentService, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    async def run(owner_id: uuid.UUID) -> object:
+    async def run(owner_id: uuid.UUID, **_: Any) -> object:
         raise error
 
     monkeypatch.setattr(service, "run", run)
@@ -352,69 +353,44 @@ class _PricedGateway:
 
 
 class _PricedRoleMap:
-    """Prices each fit projection at $0.10, as the role map would: one per
-    recommended role the build may make, plus the user's own."""
+    """Counts every price asked of the role map: Analyze asks none."""
 
-    def __init__(self, cost: dict[str, Any], custom_roles: int = 0) -> None:
-        self.cost = cost
-        self.custom_roles = custom_roles
-        self.fits_asked: list[int | None] = []
+    def __init__(self) -> None:
+        self.asked = 0
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        return self.cost
+        self.asked += 1
+        return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
 
     async def estimate_fits(
         self, owner_id: uuid.UUID, *, recommended: int | None = None
     ) -> dict[str, Any]:
-        self.fits_asked.append(recommended)
-        roles = (recommended or 0) + self.custom_roles
-        return {
-            "cost_usd": str(Decimal("0.10") * roles) if roles else "0",
-            "roles": roles,
-            "rate_is_published": True,
-        }
+        self.asked += 1
+        return {"cost_usd": "1.00", "roles": 10, "rate_is_published": True}
 
 
-def _priced(role_map_cost: dict[str, Any], custom_roles: int = 0) -> AssessmentService:
-    return AssessmentService(
+async def test_analyze_is_priced_as_the_analysis_alone() -> None:
+    """No build follows an analysis (ADR 0071), so neither a build nor its
+    fits are priced with it."""
+    rolemap = _PricedRoleMap()
+    service = AssessmentService(
         FakeAssessmentUnitOfWork(),
         profile=FakeProfile(),  # type: ignore[arg-type]
-        rolemap=_PricedRoleMap(role_map_cost, custom_roles),  # type: ignore[arg-type]
+        rolemap=rolemap,  # type: ignore[arg-type]
         gateway=_PricedGateway(),  # type: ignore[arg-type]
         confidence_threshold=0.5,
         candidate_count=10,
     )
 
-
-async def test_analyze_is_priced_with_the_role_map_build_and_fits_that_follow_it() -> None:
-    """Each call is priced at $0.10 here: one analysis, and one fit projection
-    for each of the ten roles and the user's two own."""
-    service = _priced(
-        {
-            "max_roles": 10,
-            "cost_usd": "0.40",
-            "model_id": "claude-opus-5",
-            "rate_is_published": True,
-        },
-        custom_roles=2,
-    )
-
     estimate = await service.estimate_cost(OWNER)
 
-    assert (estimate["analysis_cost_usd"], estimate["role_map_cost_usd"]) == ("0.10", "0.40")
-    assert estimate["fits_cost_usd"] == "1.20"
-    assert estimate["cost_usd"] == "1.70"
-    assert estimate["max_roles"] == 10
-    assert estimate["rate_is_published"] is True
-
-
-async def test_analyze_on_a_market_too_thin_for_a_role_costs_the_analysis_alone() -> None:
-    service = _priced({"max_roles": 0, "cost_usd": "0", "model_id": None})
-
-    estimate = await service.estimate_cost(OWNER)
-
-    assert estimate["cost_usd"] == "0.10"
-    assert (estimate["max_roles"], estimate["fits_cost_usd"]) == (0, "0")
+    assert estimate == {
+        "cost_usd": "0.10",
+        "model_id": "claude-opus-5",
+        "input_tokens": 1200,
+        "rate_is_published": True,
+    }
+    assert rolemap.asked == 0
 
 
 # --- candidate roles for the role map (ADR 0024) ----------------------------
@@ -610,3 +586,72 @@ async def test_a_reply_with_no_positions_empties_the_timeline() -> None:
 
     profile: Any = service._profile
     assert [readings for _, readings in profile.timelines] == [[]]
+
+
+# --- cancelling an analysis (ADR 0072) --------------------------------------
+
+
+class _CancellingGateway(FakeGateway):
+    """The user cancels the run while the model writes; then the reply goes on
+    streaming (``mid_call``), or comes back whole."""
+
+    def __init__(self, reply: dict[str, Any], *, mid_call: bool) -> None:
+        super().__init__(reply)
+        self.mid_call = mid_call
+        self.service: AssessmentService | None = None
+        self.run_id: uuid.UUID | None = None
+
+    async def run(self, owner_id: uuid.UUID, *, inputs: dict[str, str], **kwargs: Any) -> _Result:
+        assert self.service is not None and self.run_id is not None
+        await self.service.cancel_run(owner_id, self.run_id)
+        if self.mid_call:
+            await kwargs["on_progress"](Progress(fraction=0.4, estimated_cost_usd=Decimal("0.1")))
+        return await super().run(owner_id, inputs=inputs, **kwargs)
+
+
+@pytest.mark.parametrize("mid_call", [True, False])
+async def test_a_cancelled_analysis_stops_and_saves_nothing(mid_call: bool) -> None:
+    """Mid-call, through the progress callback, or before its save: either
+    way nothing is stored, and the run is cancelled, never failed."""
+    uow = FakeAssessmentUnitOfWork()
+    rolemap = _RecordingRoleMap()
+    gateway = _CancellingGateway(_reply(_roles(2)), mid_call=mid_call)
+    service = AssessmentService(
+        uow,
+        profile=FakeProfile(),  # type: ignore[arg-type]
+        rolemap=rolemap,  # type: ignore[arg-type]
+        gateway=gateway,  # type: ignore[arg-type]
+        confidence_threshold=0.5,
+        candidate_count=10,
+    )
+    requested = await service.request_run(OWNER)
+    gateway.service, gateway.run_id = service, requested.id
+
+    assert await service.analyse(OWNER, requested.id) is None
+
+    latest = await service.latest_run(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("cancelled", None)
+    assert uow.store.assessments == {} and rolemap.handed == []
+    profile: Any = service._profile
+    assert profile.timelines == []
+    assert uow.store.events == [
+        AnalysisFinished(owner_id=OWNER, run_id=requested.id, status="cancelled")
+    ]
+
+
+async def test_cancelling_a_closed_run_does_nothing() -> None:
+    uow = FakeAssessmentUnitOfWork()
+    service = _service(uow)
+    requested = await service.request_run(OWNER)
+
+    assert await service.cancel_run(OWNER, requested.id)
+    assert not await service.cancel_run(OWNER, requested.id)
+    assert len(uow.store.events) == 1
+
+
+async def test_another_owners_run_is_not_found_to_cancel() -> None:
+    service = _service(FakeAssessmentUnitOfWork())
+    theirs = await service.request_run(OTHER)
+
+    with pytest.raises(NotFoundError):
+        await service.cancel_run(OWNER, theirs.id)

@@ -37,7 +37,8 @@ from advisor.rolemap.domain import (
 )
 from advisor.rolemap.service import MAX_POSTINGS_IN_A_PROMPT, _RoleExtraction
 from kernel.clock import utcnow
-from kernel.errors import ValidationError
+from kernel.errors import NotFoundError, ValidationError
+from kernel.progress import Progress
 from tests.unit.advisor.rolemap.fakes import (
     MARKET_AS_OF,
     FakeMarket,
@@ -325,9 +326,67 @@ async def test_top_matched_names_each_company_once_and_a_roles_list_keeps_all() 
 # --- builds (ADR 0006, ADR 0018) -------------------------------------------
 
 
+ANALYSIS_ID = uuid.uuid4()
+
+
+async def _analysed(rolemap: RoleMapService, owner_id: uuid.UUID = OWNER) -> None:
+    """An analysis has handed over its candidates: there is something to build."""
+    await rolemap.replace_candidates(
+        owner_id, ANALYSIS_ID, [_candidate("Backend Engineer", "services")]
+    )
+
+
+async def test_a_build_is_refused_before_any_analysis() -> None:
+    """With no candidates a build would place nothing (ADR 0071)."""
+    service = _service(FakeRoleMapUnitOfWork())
+
+    with pytest.raises(ValidationError):
+        await service.request_build(OWNER, wait=False)
+    assert await service.latest_build(OWNER) is None
+
+
+async def test_a_build_may_wait_for_the_first_analysis() -> None:
+    """Asked for while the first analysis runs, it reads what that writes."""
+    service = _service(FakeRoleMapUnitOfWork())
+
+    waiting = await service.request_build(OWNER, wait=True)
+
+    assert waiting.build.status == "waiting"
+
+
+async def test_a_finished_build_records_the_analysis_it_built_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
+    requested = await service.request_build(OWNER, wait=False)
+
+    async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
+        return []
+
+    monkeypatch.setattr(service, "recluster", recluster)
+    await service.build(OWNER, requested.build.id)
+
+    finished = await service.last_finished_build(OWNER)
+    assert finished is not None and finished.skill_assessment_id == ANALYSIS_ID
+    assert not await service.is_behind_strengths(OWNER)
+
+    await service.replace_candidates(OWNER, uuid.uuid4(), [_candidate("Data Engineer", "d")])
+
+    assert await service.is_behind_strengths(OWNER)
+
+
+async def test_with_no_map_it_is_behind_nothing() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
+
+    assert not await service.is_behind_strengths(OWNER)
+
+
 async def test_a_build_with_nothing_due_runs_now_and_is_queued_once() -> None:
     market = FakeMarket(markets=["Taiwan"])
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
 
     first = await service.request_build(OWNER, wait=False)
     again = await service.request_build(OWNER, wait=False)
@@ -343,6 +402,7 @@ async def test_a_build_asks_the_market_for_its_titles_and_places() -> None:
     uow = FakeRoleMapUnitOfWork()
     market = FakeMarket(markets=["Taiwan", "Europe"])
     service = _service(uow, market)
+    await _analysed(service)
     await service.replace_candidates(
         OWNER, uuid.uuid4(), [_candidate("Data Engineer", "d"), _candidate("ML Engineer", "m")]
     )
@@ -357,6 +417,7 @@ async def test_a_build_with_due_sources_waits_for_them_and_then_starts() -> None
     due = (uuid.uuid4(), uuid.uuid4())
     market = FakeMarket(due=due)
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
 
     requested = await service.request_build(OWNER, wait=False)
 
@@ -385,6 +446,7 @@ async def test_a_build_with_due_sources_waits_for_them_and_then_starts() -> None
 async def test_a_build_starts_at_its_deadline_on_what_is_stored() -> None:
     market = FakeMarket(due=(uuid.uuid4(),))
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     found = await service.check_market(
@@ -399,6 +461,7 @@ async def test_a_build_waits_for_the_crawler_while_it_is_away() -> None:
     deadline does not run out then (ADR 0052)."""
     market = FakeMarket(due=(uuid.uuid4(),))
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     found = await service.check_market(
@@ -411,6 +474,7 @@ async def test_a_build_waits_for_the_crawler_while_it_is_away() -> None:
 async def test_a_builds_deadline_counts_from_when_the_crawler_came_back() -> None:
     market = FakeMarket(due=(uuid.uuid4(),))
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
     back = utcnow()
 
@@ -424,6 +488,7 @@ async def test_a_builds_deadline_counts_from_when_the_crawler_came_back() -> Non
 async def test_a_build_asked_for_during_an_analysis_asks_the_market_once_it_is_released() -> None:
     market = FakeMarket()
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
 
     waiting = await service.request_build(OWNER, wait=True)
     assert not waiting.should_queue and waiting.build.status == "waiting"
@@ -440,6 +505,7 @@ async def test_a_build_asked_for_during_an_analysis_asks_the_market_once_it_is_r
 
 async def test_asking_again_once_nothing_is_running_releases_the_waiting_build() -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     waiting = await service.request_build(OWNER, wait=True)
 
     now = await service.request_build(OWNER, wait=False)
@@ -451,6 +517,7 @@ async def test_asking_again_once_nothing_is_running_releases_the_waiting_build()
 async def test_a_build_already_waiting_for_the_market_is_joined_not_asked_again() -> None:
     market = FakeMarket(due=(uuid.uuid4(),))
     service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
     first = await service.request_build(OWNER, wait=False)
 
     again = await service.request_build(OWNER, wait=False)
@@ -464,6 +531,7 @@ async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
@@ -484,6 +552,7 @@ async def test_a_finished_build_is_ready_and_the_next_request_is_a_new_one(
 
 async def test_a_failed_build_is_recorded_not_raised(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
@@ -503,6 +572,7 @@ async def test_a_build_that_stops_unexpectedly_is_recorded_and_still_raised(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
@@ -518,6 +588,7 @@ async def test_a_build_that_stops_unexpectedly_is_recorded_and_still_raised(
 
 async def test_a_waiting_build_is_not_run_by_its_job() -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     waiting = await service.request_build(OWNER, wait=True)
 
     assert await service.build(OWNER, waiting.build.id) == []
@@ -527,7 +598,9 @@ async def test_a_waiting_build_is_not_run_by_its_job() -> None:
 
 async def test_builds_are_per_user() -> None:
     service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
     mine = await service.request_build(OWNER, wait=False)
+    await _analysed(service, OTHER)
 
     theirs = await service.request_build(OTHER, wait=False)
 
@@ -1108,6 +1181,7 @@ async def test_a_finished_build_announces_itself_for_its_fits(
 ) -> None:
     uow = FakeRoleMapUnitOfWork()
     service = _service(uow)
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     async def recluster(owner_id: uuid.UUID, build_id: uuid.UUID) -> list[Any]:
@@ -1122,6 +1196,7 @@ async def test_a_finished_build_announces_itself_for_its_fits(
 async def test_a_failed_build_still_announces_itself_for_its_fits() -> None:
     uow = FakeRoleMapUnitOfWork()
     service = _service(uow)
+    await _analysed(service)
     requested = await service.request_build(OWNER, wait=False)
 
     await service.fail_build(OWNER, requested.build.id, code="stale", message="Lost.")
@@ -1647,3 +1722,84 @@ async def test_a_fit_that_fails_fails_the_job_and_announces_nothing() -> None:
 
     uow = rolemap._uow
     assert not any(isinstance(e, RoleFitsComputed) for e in uow.store.events)  # type: ignore[attr-defined]
+
+
+# --- cancelling a build (ADR 0072) ------------------------------------------
+
+
+class _CancellingGateway(ScriptedGateway):
+    """The user cancels the build while its first role is being named."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.service: RoleMapService | None = None
+        self.build_id: uuid.UUID | None = None
+        self.calls = 0
+
+    async def run(self, owner_id: uuid.UUID, *, task: str, inputs: dict[str, str], **kw: Any):
+        self.calls += 1
+        assert self.service is not None and self.build_id is not None
+        await self.service.cancel_build(owner_id, self.build_id)
+        await kw["on_progress"](Progress(fraction=0.2, estimated_cost_usd=Decimal("0.01")))
+        return await super().run(owner_id, task=task, inputs=inputs, **kw)
+
+
+@pytest.mark.usefixtures("embedded")
+async def test_a_build_cancelled_mid_call_stops_and_is_not_failed() -> None:
+    postings = [_posting(f"Backend Engineer {i}") for i in range(4)]
+    texts = [f"{p.title}\n{p.title}\n{p.location}" for p in postings]
+    market = FakeMarket(
+        postings,
+        vectors={p.id: v for p, v in zip(postings, _fake_embed(texts, model_name=""), strict=True)},
+    )
+    uow = FakeRoleMapUnitOfWork()
+    gateway = _CancellingGateway()
+    service = _service(uow, market, gateway, top_k=1)
+    await service.replace_candidates(
+        OWNER, uuid.uuid4(), [_candidate("Backend Engineer", "Backend services.")]
+    )
+    requested = await service.request_build(OWNER, wait=False)
+    gateway.service, gateway.build_id = service, requested.build.id
+
+    assert await service.build(OWNER, requested.build.id) == []
+
+    latest = await service.latest_build(OWNER)
+    assert latest is not None and (latest.status, latest.error_code) == ("cancelled", None)
+    # Stopped at its first call: no role, no placements, no fits to score.
+    assert gateway.calls == 1 and uow.store.roles == {} and uow.store.placements == {}
+    finished = [e for e in uow.store.events if isinstance(e, RoleMapBuildFinished)]
+    assert [e.status for e in finished] == ["cancelled"]
+
+
+async def test_cancelling_a_closed_build_does_nothing() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service)
+    requested = await service.request_build(OWNER, wait=False)
+
+    assert await service.cancel_build(OWNER, requested.build.id)
+    assert not await service.cancel_build(OWNER, requested.build.id)
+
+
+async def test_another_owners_build_is_not_found_to_cancel() -> None:
+    service = _service(FakeRoleMapUnitOfWork())
+    await _analysed(service, OTHER)
+    theirs = await service.request_build(OTHER, wait=False)
+
+    with pytest.raises(NotFoundError):
+        await service.cancel_build(OWNER, theirs.build.id)
+
+
+async def test_a_build_waiting_for_the_market_is_done_once_cancelled() -> None:
+    market = FakeMarket(due=(uuid.uuid4(),))
+    service = _service(FakeRoleMapUnitOfWork(), market)
+    await _analysed(service)
+    waiting = await service.request_build(OWNER, wait=False)
+
+    await service.cancel_build(OWNER, waiting.build.id)
+
+    assert (
+        await service.check_market(
+            OWNER, waiting.build.id, deadline=timedelta(0), crawler_online_since=utcnow()
+        )
+        == MarketWait.DONE
+    )

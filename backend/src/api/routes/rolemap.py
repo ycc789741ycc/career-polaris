@@ -44,16 +44,23 @@ async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
 @router.get("/role-map")
 async def role_map_state(user: CurrentUser, deps: Deps) -> RoleMapState:
     """How current the map is: the market it was built from, and whether the
-    target locations changed since (ADR 0027)."""
+    target locations (ADR 0027) or the strengths (ADR 0071) changed since."""
     built = await deps.rolemap.last_finished_build(user)
+    strengths_changed = await deps.rolemap.is_behind_strengths(user)
     if built is None or not built.needed_source_ids:
         # No map yet, or one built before builds recorded what they read.
-        return RoleMapState(market_data_at=None, built_for_locations=None, locations_changed=False)
+        return RoleMapState(
+            market_data_at=None,
+            built_for_locations=None,
+            locations_changed=False,
+            strengths_changed=strengths_changed,
+        )
     current = await deps.market.target_locations(user)
     return RoleMapState(
         market_data_at=built.market_data_at,
         built_for_locations=list(built.locations),
         locations_changed=sorted(built.locations) != sorted(current),
+        strengths_changed=strengths_changed,
     )
 
 
@@ -80,6 +87,14 @@ async def recluster(user: CurrentUser, deps: Deps) -> RunStatus:
     analysis is running and it starts after (ADR 0018). Asking while one is
     already under way returns that one."""
     return RunStatus.from_build(await _request_build(user, deps))
+
+
+@router.post("/roles/builds/{build_id}/cancel", status_code=204)
+async def cancel_build(build_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stop a role-map build, waiting or running (ADR 0072). The market
+    sources it marked due stay due. Cancelling a closed build does nothing;
+    another owner's build is not found."""
+    await deps.activity.cancel_role_map(user, build_id)
 
 
 def _with_fits(estimate: dict[str, Any], fits: dict[str, Any]) -> dict[str, Any]:

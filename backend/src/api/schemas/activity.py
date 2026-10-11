@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Literal
 
 from advisor.activity import ActivityView, PendingView, RunningJobView, RunStatusView
@@ -10,7 +11,7 @@ from advisor.rolemap import BuildRunView
 from api.schemas.common import ApiModel, JobError, Timestamp
 from api.schemas.target import TargetRefBody
 
-RunState = Literal["waiting", "running", "ready", "failed"]
+RunState = Literal["waiting", "running", "ready", "failed", "cancelled"]
 WaitingFor = Literal["analysis", "market"]
 
 
@@ -29,8 +30,10 @@ class RunStatus(ApiModel):
     """The newest analysis or role-map build. A ``waiting`` build says what it
     waits for: an analysis that is running, or the market sources it reads,
     being fetched (ADR 0027). A run that stopped responding reads as
-    ``failed`` with the code ``stale``."""
+    ``failed`` with the code ``stale``; one the user stopped, as ``cancelled``
+    (ADR 0072). ``id`` is what a cancel names."""
 
+    id: uuid.UUID | None = None
     status: RunState
     started_at: Timestamp
     finished_at: Timestamp | None
@@ -40,6 +43,7 @@ class RunStatus(ApiModel):
     @classmethod
     def from_view(cls, found: RunStatusView) -> RunStatus:
         return cls(
+            id=found.id,
             status=_state(found.status),
             started_at=found.started_at,
             finished_at=found.finished_at,
@@ -50,6 +54,7 @@ class RunStatus(ApiModel):
     @classmethod
     def from_analysis(cls, found: AnalysisRunView) -> RunStatus:
         return cls(
+            id=found.id,
             status=_state(found.status),
             started_at=found.started_at,
             finished_at=found.finished_at,
@@ -62,6 +67,7 @@ class RunStatus(ApiModel):
         if found.status == "waiting":
             waiting_for = "market" if found.is_waiting_for_market else "analysis"
         return cls(
+            id=found.id,
             status=_state(found.status),
             started_at=found.started_at or found.requested_at,
             finished_at=found.finished_at,
@@ -172,7 +178,7 @@ def _waiting_for(value: str | None) -> WaitingFor | None:
 
 def _state(status: str) -> RunState:
     match status:
-        case "waiting" | "running" | "ready" | "failed":
+        case "waiting" | "running" | "ready" | "failed" | "cancelled":
             return status
         case _:
             raise ValueError(f"unknown run status {status!r}")

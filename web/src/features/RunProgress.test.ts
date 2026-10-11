@@ -40,9 +40,9 @@ function states(steps: { state: string }[]): string[] {
 }
 
 describe("the analysis's steps", () => {
-  it("has read the facts, scores on the model, and builds the map next", () => {
+  it("has read the facts and scores on the model, with no build after", () => {
     const steps = getAnalysisSteps([fact("github"), fact("resume")], "m");
-    expect(states(steps)).toEqual(["done", "running", "waiting"]);
+    expect(states(steps)).toEqual(["done", "running"]);
     expect(steps[1]?.label).toBe("Scoring your strengths on m");
   });
 
@@ -66,10 +66,13 @@ describe("the build's steps", () => {
     maxRoles: 10,
   };
 
-  it("waits on an analysis that is still running", () => {
+  it("waits on the analysis it was asked for during", () => {
     const steps = getBuildSteps({
       ...args,
-      activity: activity({ analysis: { status: "running", ...running } }),
+      activity: activity({
+        analysis: { status: "running", ...running },
+        role_map: { status: "waiting", waiting_for: "analysis", ...running },
+      }),
     });
     expect(states(steps)).toEqual(["running", "waiting", "waiting"]);
   });
@@ -99,12 +102,12 @@ describe("the build's steps", () => {
 });
 
 describe("whether a map is on its way", () => {
-  it("is while a build runs or waits, or an analysis runs", () => {
+  it("is while a build runs or waits; an analysis alone builds nothing", () => {
     expect(isMapComing(null)).toBe(false);
     expect(isMapComing(activity({}))).toBe(false);
     expect(
       isMapComing(activity({ analysis: { status: "running", ...running } })),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isMapComing(activity({ role_map: { status: "waiting", ...running } })),
     ).toBe(true);

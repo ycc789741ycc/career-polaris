@@ -282,9 +282,10 @@ contract.
 - **The crawler holds no secrets and has no grant on any user schema.** It
   fetches only the sources a build marked due, and announces nothing: no market
   change is ever resolved to users, and nothing reads across users (ADR 0027).
-- **A role map is built only when the user asks.** An analysis, or "Rebuild
-  role map", each with a cost they confirmed. Neither the market
-  nor a change of locations builds one, because a build spends their key.
+- **A role map is built only when the user asks.** "Build role map" on 03
+  Roles, with a cost they confirmed. Neither an analysis (ADR 0071), the
+  market, nor a change of locations builds one, because a build spends their
+  key.
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
   `target.private_job_posting`, in a schema the crawler role has no grant on,
   so it physically cannot reach them.
@@ -370,7 +371,8 @@ Not yet: unlinking Google, or linking it from Settings.
 
 The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
 
-- **Target locations.** 01 Sources asks "Where you want to work": one to three
+- **Target locations.** "Where you want to work" (on 01 Sources until ADR
+  0071, on 03 Roles since): one to three
   places, a `market` domain rule (`chosen_target_locations`) checked again by
   the request schema. `PUT /target-locations` saves the whole set; a change
   emits `TargetLocationsChanged`, which since ADR 0027 builds nothing: the
@@ -384,10 +386,8 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `subscription` Target kind are gone. Board discovery stayed, for the
   companies custom roles named, until Phase 8 removed both (ADR 0030).
 - **Ten roles, built after every analysis** (ADR 0020). Since ADR 0029 the
-  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). `AnalysisFinished`
-  goes to `activity.build_after_analysis`: a successful analysis always builds
-  the map, a failed one only releases a build that waited. Analyze's estimate
-  (`AnalysisEstimate`) includes the build's, so it is confirmed once.
+  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). Since ADR 0071 no build
+  follows an analysis (see "Builds on request").
 - **Roles come from the strengths** (ADR 0024). The analysis recommends up to
   `ROLE_CANDIDATE_COUNT` candidate roles (20 until ADR 0029, 10 now); `assessment` hands them to `rolemap.replace_candidates`,
   and `rolemap.role_candidate` holds the latest set. A build matches them to
@@ -1028,3 +1028,52 @@ Postgres over the tunnel (ADR 0051), so a build reads as little as it can:
   time, through `_execute_concurrently`; `1` is one after another. The
   first failure cancels the rest and is raised itself. Same calls, same
   cost; the user's own cap may be passed by up to that many calls less one.
+
+## Builds on request
+
+On `epic/no-ticket/user-started-runs`, one branch per step:
+
+- **An analysis builds nothing** (ADR 0071, superseding ADR 0020's build
+  after every analysis). `AnalysisFinished` goes to
+  `activity.release_build_after_analysis`, which releases only a build the
+  user asked for while the analysis ran, succeeded or failed (ADR 0018).
+  Analyze is priced as the analysis alone: `GET /assessments/cost-estimate`
+  answers a plain `CostEstimate`, and `AnalysisEstimate` is gone. A build
+  before any analysis is refused (`validation_failed`) unless it would wait
+  for one running.
+- **The map says when it is behind the strengths.** A finished `BuildRun`
+  records the `skill_assessment_id` whose candidates it placed (migration
+  0054, backfilled through placements); `RoleMapService.is_behind_strengths`
+  compares it with the candidates', and `GET /role-map` carries
+  `strengths_changed` beside `locations_changed`. 03 Roles words both in one
+  note with Rebuild (`getBehindLine`); 02 Strengths shows "Next: see where
+  these strengths fit" while there is no map or it is behind, reading only
+  `/role-map`, never the roles or fits.
+- **Where you want to work, on 03 Roles.** `TargetLocations` is one
+  borderless line above the map in every state: the label, the chips, "+ Add"
+  and the count (`getScopeCount`), with "Anywhere (newest baseline postings)"
+  when nothing is chosen. "+ Add" opens the grouped list as a dropdown over
+  the page (`location-dropdown`), closed by a pick, Escape or a click
+  outside; what the places mean, the slots left and the region note are
+  behind the ⓘ. Read-only while a build runs. Before any analysis Roles says "No
+  roles yet" with Build disabled; once analysed with no map, "Your strengths
+  are ready" with Build role map. Only a build makes the progress screen: an
+  analysis running alone leaves the map in place (`isMapComing`).
+- **Cancel an analysis or a build** (ADR 0072, migration 0055). Both runs can
+  be `cancelled`: closed, never failed. `POST /assessments/runs/{id}/cancel`
+  and `POST /roles/builds/{id}/cancel` answer 204, idempotent, through
+  `ActivityService.cancel_analysis` (which also cancels a build waiting for
+  that analysis, through `RoleMapService.cancel_waiting_for_analysis`, but
+  not one waiting for the market) and `cancel_role_map`. The jobs stop
+  themselves, as the Advisor's do: `AssessmentService.run(run_id=)` and the
+  build pass a check as the gateway's `on_progress` and call it before they
+  save, raising `JobCancelledError`; the build checks before each role is
+  stored and before lineage. The dispatcher releases nothing for a cancelled
+  `AnalysisFinished` and scores no fits for a cancelled
+  `RoleMapBuildFinished`. `RunStatus` carries the `id` Cancel names. In the
+  SPA, `shell/CancelRunButton` sits in `RunProgress`'s header on Strengths
+  and Roles and, compact, in the running bar's pills
+  (`getActivityLines`), never for syncs or parses; no confirmation, and
+  "Cancelling…" until `/activity` says closed. `getOutcomeToast` words the
+  toast, never as a failure.
+

@@ -145,6 +145,7 @@ def build_run(row: models.BuildRun) -> BuildRun:
         locations=tuple(row.locations or ()),
         awaited_since=row.awaited_since,
         market_data_at=row.market_data_at,
+        skill_assessment_id=row.skill_assessment_id,
     )
 
 
@@ -165,6 +166,7 @@ def apply_build_run(row: models.BuildRun, entity: BuildRun) -> None:
     row.locations = list(entity.locations)
     row.awaited_since = entity.awaited_since
     row.market_data_at = entity.market_data_at
+    row.skill_assessment_id = entity.skill_assessment_id
 
 
 def candidate(row: models.RoleCandidate) -> RoleCandidate:

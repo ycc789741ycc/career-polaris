@@ -24,6 +24,8 @@ class BuildRunStatus(StrEnum):
     RUNNING = "running"
     READY = "ready"
     FAILED = "failed"
+    # Stopped by the user (ADR 0072): closed, never a failure.
+    CANCELLED = "cancelled"
 
 
 @dataclass(slots=True)
@@ -48,6 +50,9 @@ class BuildRun:
     # When it asked the market; its deadline runs from here.
     awaited_since: datetime | None = None
     market_data_at: datetime | None = None
+    # The analysis whose candidates it placed, in assessment.skill_assessment:
+    # a newer one means the strengths changed since this map (ADR 0071).
+    skill_assessment_id: uuid.UUID | None = None
 
     @classmethod
     def requested(cls, *, owner_id: uuid.UUID, at: datetime, wait: bool) -> BuildRun:
@@ -113,10 +118,25 @@ class BuildRun:
         self.status = BuildRunStatus.RUNNING
         self.started_at = at
 
-    def ready(self, at: datetime, *, market_data_at: datetime | None = None) -> None:
+    def ready(
+        self,
+        at: datetime,
+        *,
+        market_data_at: datetime | None = None,
+        skill_assessment_id: uuid.UUID | None = None,
+    ) -> None:
         self.status = BuildRunStatus.READY
         self.finished_at = at
         self.market_data_at = market_data_at
+        self.skill_assessment_id = skill_assessment_id
+
+    def cancel(self, at: datetime) -> None:
+        """The user stopped it (ADR 0072). Only a waiting or running build
+        can be. The market sources it marked due stay due."""
+        if not self.is_open:
+            raise ValueError(f"a {self.status} build cannot be cancelled")
+        self.status = BuildRunStatus.CANCELLED
+        self.finished_at = at
 
     def failed(self, *, code: str, message: str, at: datetime) -> None:
         self.status = BuildRunStatus.FAILED

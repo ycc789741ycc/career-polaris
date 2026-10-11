@@ -11,7 +11,7 @@ import pytest
 from advisor.activity import ActivityService
 from advisor.assessment import AssessmentService
 from advisor.profile import PendingSourceView, SourceProcessingView
-from advisor.rolemap import RoleMapService
+from advisor.rolemap import CandidateInput, RoleMapService
 from kernel.clock import utcnow
 from kernel.errors import AnalysisRunningError, SourcesProcessingError
 from kernel.presence import PresenceView, UnitPresence
@@ -94,8 +94,16 @@ def _pending(label: str, *, age: timedelta = timedelta()) -> PendingSourceView:
 
 
 @pytest.fixture
-def world() -> World:
-    return World()
+async def world() -> World:
+    """A user an analysis has already handed candidates for: a build has
+    something to place (ADR 0071)."""
+    made = World()
+    await made.rolemap.replace_candidates(
+        OWNER,
+        uuid.uuid4(),
+        [CandidateInput(title="Backend Engineer", description="services", dimension_keys=("x",))],
+    )
+    return made
 
 
 # --- 02 waits for 01 -------------------------------------------------------
@@ -185,7 +193,7 @@ async def test_a_role_map_waits_for_a_running_analysis_and_is_released_after(
     assert status.role_map is not None and status.role_map.status == "waiting"
 
     await world.assessment.fail_run(OWNER, run.id, code="ai_budget_exceeded", message="spent")
-    released = await world.activity.build_after_analysis(OWNER, succeeded=False)
+    released = await world.activity.release_build_after_analysis(OWNER)
 
     assert released is not None and released.build.id == requested.build.id
     assert released.should_queue and released.build.status == "running"
@@ -213,45 +221,34 @@ async def test_a_lost_build_is_closed_and_a_new_one_queued(world: World) -> None
     assert fresh.should_queue and fresh.build.id != lost.build.id
 
 
-# --- 03 follows every successful analysis (ADR 0020) ----------------------
+# --- the user starts every build (ADR 0071) ------------------------------
 
 
-async def test_a_successful_analysis_builds_the_role_map_unasked(world: World) -> None:
+async def test_an_analysis_builds_no_role_map_unasked(world: World) -> None:
     run = await world.activity.request_analysis(OWNER)
     await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
 
-    build = await world.activity.build_after_analysis(OWNER, succeeded=True)
-
-    assert build is not None and build.should_queue and build.build.status == "running"
-
-
-async def test_a_failed_analysis_builds_nothing_that_did_not_wait(world: World) -> None:
-    run = await world.activity.request_analysis(OWNER)
-    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
-
-    assert await world.activity.build_after_analysis(OWNER, succeeded=False) is None
+    assert await world.activity.release_build_after_analysis(OWNER) is None
     assert await world.rolemap.latest_build(OWNER) is None
 
 
-async def test_a_successful_analysis_starts_the_build_that_waited_rather_than_another(
+async def test_an_analysis_starts_the_build_the_user_asked_for_while_it_ran(
     world: World,
 ) -> None:
     run = await world.activity.request_analysis(OWNER)
     waiting = await world.activity.request_role_map(OWNER)
     await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
 
-    build = await world.activity.build_after_analysis(OWNER, succeeded=True)
+    build = await world.activity.release_build_after_analysis(OWNER)
 
     assert build is not None and build.build.id == waiting.build.id
     assert build.should_queue and build.build.status == "running"
 
 
-async def test_a_successful_analysis_joins_a_build_already_running(world: World) -> None:
+async def test_an_analysis_leaves_a_build_already_running_alone(world: World) -> None:
     await world.activity.request_role_map(OWNER)
 
-    joined = await world.activity.build_after_analysis(OWNER, succeeded=True)
-
-    assert joined is not None and not joined.should_queue and not joined.should_await_market
+    assert await world.activity.release_build_after_analysis(OWNER) is None
 
 
 # --- the market a build reads (ADR 0027) ----------------------------------
@@ -288,7 +285,7 @@ async def test_a_build_long_queued_behind_an_analysis_is_judged_from_when_it_ask
     for build in world.rolemaps.store.builds.values():
         build.requested_at -= timedelta(seconds=STALE_AFTER + 1)
     await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
-    await world.activity.build_after_analysis(OWNER, succeeded=True)
+    await world.activity.release_build_after_analysis(OWNER)
 
     status = await world.activity.status(OWNER)
 
@@ -355,3 +352,66 @@ async def test_a_build_waiting_for_the_market_is_not_lost_while_the_crawler_is_a
 
     assert status.role_map is not None
     assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+async def test_cancelling_an_analysis_cancels_the_build_waiting_for_it(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    waiting = await world.activity.request_role_map(OWNER)
+
+    cancelled = await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert cancelled.is_cancelled and cancelled.cancelled_build_id == waiting.build.id
+    status = await world.activity.status(OWNER)
+    assert status.analysis is not None and status.analysis.status == "cancelled"
+    assert status.role_map is not None and status.role_map.status == "cancelled"
+    assert status.analysis.id == run.id and status.role_map.id == waiting.build.id
+    # Nothing is left waiting to be released.
+    assert await world.activity.release_build_after_analysis(OWNER) is None
+
+
+async def test_cancelling_an_analysis_leaves_a_build_waiting_for_the_market(
+    world: World,
+) -> None:
+    world.market.due = (uuid.uuid4(),)
+    searching = await world.activity.request_role_map(OWNER)
+    run = await world.activity.request_analysis(OWNER)
+
+    cancelled = await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert cancelled.is_cancelled and cancelled.cancelled_build_id is None
+    status = await world.activity.status(OWNER)
+    assert status.role_map is not None and status.role_map.id == searching.build.id
+    assert (status.role_map.status, status.role_map.waiting_for) == ("waiting", "market")
+
+
+async def test_a_cancelled_analysis_frees_analyze_at_once(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+
+    await world.activity.cancel_analysis(OWNER, run.id)
+
+    assert (await world.activity.request_analysis(OWNER)).is_running
+
+
+async def test_cancelling_a_build_closes_only_the_build(world: World) -> None:
+    world.market.due = (uuid.uuid4(),)
+    searching = await world.activity.request_role_map(OWNER)
+
+    first = await world.activity.cancel_role_map(OWNER, searching.build.id)
+    again = await world.activity.cancel_role_map(OWNER, searching.build.id)
+
+    assert first.is_cancelled and not again.is_cancelled
+    status = await world.activity.status(OWNER)
+    assert status.role_map is not None and status.role_map.status == "cancelled"
+    # The next request is a new build.
+    fresh = await world.activity.request_role_map(OWNER)
+    assert fresh.build.id != searching.build.id
+
+
+async def test_cancelling_a_closed_analysis_does_nothing(world: World) -> None:
+    run = await world.activity.request_analysis(OWNER)
+    await world.assessment.fail_run(OWNER, run.id, code="internal", message="closed")
+
+    assert not (await world.activity.cancel_analysis(OWNER, run.id)).is_cancelled

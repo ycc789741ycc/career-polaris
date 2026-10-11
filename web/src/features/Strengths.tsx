@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import type { Assessment, Evidence, EvidencePage } from "../api/types";
+import type {
+  Assessment,
+  Evidence,
+  EvidencePage,
+  RoleMapState,
+} from "../api/types";
 import { SkillRadar } from "../charts/SkillRadar";
 import {
   AutoGrid,
@@ -12,6 +17,7 @@ import {
   ProgressBar,
 } from "../components/ui";
 import { isBusy, sourcesBusy, useActivity } from "../shell/activity";
+import { CancelRunButton } from "../shell/CancelRunButton";
 import {
   chargedTo,
   modelName,
@@ -45,6 +51,10 @@ import { useAsync } from "./useAsync";
  * source is still syncing or a résumé still parsing (ADR 0018); the running
  * bar says what it waits for, and the report reloads when a run finishes.
  * While one runs, the page is its waiting screen (`RunProgress`) instead.
+ *
+ * An analysis builds no role map (ADR 0071): the user starts every build on
+ * Roles. So while there is no map, or the map was built from an older
+ * analysis, the report points there.
  */
 export function Strengths() {
   const { status, navigate } = useShell();
@@ -56,6 +66,13 @@ export function Strengths() {
   const evidence = useAsync<Evidence[]>(
     () => api.items<EvidencePage>("/evidence"),
     [],
+  );
+  // Whether the role map is missing or behind these strengths: then the next
+  // step is building it, on Roles. Only how current the map is, never its
+  // roles or fits: a later step never reshapes this report.
+  const mapState = useAsync<RoleMapState>(
+    () => api.get("/role-map"),
+    [settled.analysis, settled.roleMap],
   );
   const start = useStartAnalysis();
   const [selected, setSelected] = useState<string | undefined>(undefined);
@@ -91,8 +108,9 @@ export function Strengths() {
         previewTitle="Your skill radar will appear here"
         preview={<EmptyRadar axes={dimensions.length} />}
         previewNote="It is drawn once every dimension is scored."
-        leaveCopy="The analysis keeps running if you leave this page. When it finishes, your role map starts building automatically."
+        leaveCopy="The analysis keeps running if you leave this page. When it finishes, build your role map from it on Roles."
         back={{ label: "Back to Sources", onClick: () => navigate("sources") }}
+        action={<CancelRunButton run="analysis" />}
         costCopy={`Charged to ${chargedTo(
           status,
         )}, at the estimate you confirmed before it started.`}
@@ -158,6 +176,15 @@ export function Strengths() {
         </p>
       )}
       {start.confirmation}
+      {assessment.data &&
+        mapState.data &&
+        (mapState.data.built_for_locations === null ||
+          mapState.data.strengths_changed) && (
+          <NextStep
+            hasMap={mapState.data.built_for_locations !== null}
+            onGo={() => navigate("roles")}
+          />
+        )}
 
       {assessment.loading ? (
         <Loading what="your analysis" />
@@ -384,4 +411,26 @@ export function analysedLine(
   const parts = [`Analysed ${dayLabel(createdAt)} on ${modelId}`];
   if (factsRead !== null) parts.push(`${factCount(factsRead)} read`);
   return parts.join(" · ");
+}
+
+/** The step after an analysis: building the role map from it, on Roles. */
+function NextStep({ hasMap, onGo }: { hasMap: boolean; onGo: () => void }) {
+  return (
+    <div
+      className="panel panel-tight row-between"
+      role="note"
+      aria-label="Next step"
+      style={{ gap: 14, flexWrap: "wrap", margin: "8px 0 18px" }}
+    >
+      <div>
+        <div className="card-title">Next: see where these strengths fit</div>
+        <div className="subcopy" style={{ marginTop: 3 }}>
+          {hasMap
+            ? "Your role map was built from an earlier analysis. Rebuild it on Roles to place these strengths."
+            : "Your analysis recommended roles. Choose where you want to work and build your role map."}
+        </div>
+      </div>
+      <Button onClick={onGo}>Go to Roles →</Button>
+    </div>
+  );
 }

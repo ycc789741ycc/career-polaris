@@ -87,11 +87,11 @@ class FakeActivity:
     def __init__(self, *, released: Any = None, requested: Any = None) -> None:
         self.released = released
         self.requested = requested
-        self.releases: list[tuple[uuid.UUID, bool]] = []
+        self.releases: list[uuid.UUID] = []
         self.requests: list[uuid.UUID] = []
 
-    async def build_after_analysis(self, owner_id: uuid.UUID, *, succeeded: bool) -> Any:
-        self.releases.append((owner_id, succeeded))
+    async def release_build_after_analysis(self, owner_id: uuid.UUID) -> Any:
+        self.releases.append(owner_id)
         return self.released
 
     async def request_role_map(self, owner_id: uuid.UUID) -> Any:
@@ -111,28 +111,31 @@ def _analysis_finished(status: str) -> OutboxEvent:
     )
 
 
-@pytest.mark.parametrize(("status", "succeeded"), [("ready", True), ("failed", False)])
-async def test_a_finished_analysis_queues_the_build_activity_hands_back(
-    status: str, succeeded: bool, queued: list[dict[str, Any]]
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_finished_analysis_queues_the_build_that_waited_for_it(
+    status: str, queued: list[dict[str, Any]]
 ) -> None:
     requested = SimpleNamespace(build=SimpleNamespace(id=uuid.uuid4()), should_queue=True)
     activity = FakeActivity(released=requested)
 
     await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
-    assert activity.releases == [(OWNER, succeeded)]
+    assert activity.releases == [OWNER]
     # Queued, or set waiting for the market, by the one helper the routes use too.
     assert queued == [{"name": "queue_build", "owner_id": OWNER, "requested": requested}]
 
 
-async def test_a_finished_analysis_queues_nothing_when_there_is_no_build_to_start(
-    queued: list[dict[str, Any]],
+@pytest.mark.parametrize("status", ["ready", "failed"])
+async def test_a_finished_analysis_builds_nothing_when_no_build_waited(
+    status: str, queued: list[dict[str, Any]]
 ) -> None:
+    """The user starts every build (ADR 0071): a successful analysis alone
+    asks for none."""
     activity = FakeActivity(released=None)
 
-    await dispatcher._handle(_container(activity=activity), _analysis_finished("failed"))
+    await dispatcher._handle(_container(activity=activity), _analysis_finished(status))
 
-    assert activity.releases == [(OWNER, False)] and queued == []
+    assert activity.releases == [OWNER] and activity.requests == [] and queued == []
 
 
 class FakeRoleMap:
@@ -196,5 +199,28 @@ async def test_scores_and_requirements_changing_do_not_score_fits_on_their_own(
     """Each would score every role again, just before the build replaces them;
     the build that follows scores them once when it closes."""
     await dispatcher._handle(_container(), OutboxEvent(name=str(name), owner_id=OWNER, payload={}))
+
+    assert queued == []
+
+
+# --- cancelled runs (ADR 0072) ----------------------------------------------
+
+
+async def test_a_cancelled_analysis_releases_nothing(queued: list[dict[str, Any]]) -> None:
+    activity = FakeActivity(released=SimpleNamespace(build=None, should_queue=True))
+
+    await dispatcher._handle(_container(activity=activity), _analysis_finished("cancelled"))
+
+    assert activity.releases == [] and queued == []
+
+
+async def test_a_cancelled_build_scores_no_fits(queued: list[dict[str, Any]]) -> None:
+    event = OutboxEvent(
+        name=str(EventName.ROLE_MAP_BUILD_FINISHED),
+        owner_id=OWNER,
+        payload={"build_id": str(uuid.uuid4()), "status": "cancelled"},
+    )
+
+    await dispatcher._handle(_container(), event)
 
     assert queued == []

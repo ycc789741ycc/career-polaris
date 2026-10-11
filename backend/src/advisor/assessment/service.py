@@ -13,7 +13,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field, create_model
@@ -78,6 +77,7 @@ from kernel.errors import (
 )
 from kernel.logging import get_logger
 from kernel.paging import Page
+from kernel.progress import JobCancelledError, Progress, ProgressCallback
 
 __all__ = [
     "AnalysisRunView",
@@ -221,8 +221,8 @@ class AssessmentService:
     # -- cost ---------------------------------------------------------------
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
-        """Priced before anything is spent: the analysis, the role-map build
-        that follows it, and the fits scored once that build ends."""
+        """Priced before anything is spent: the analysis alone. No build
+        follows it (ADR 0071); the user prices one on 03 Roles."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError(
@@ -240,25 +240,11 @@ class AssessmentService:
             ),
             untrusted=frozenset({"evidence"}),
         )
-        # The role map is built after every analysis, so its cost is part of
-        # the one confirmation (domain decision 24, ADR 0020), and so are the
-        # fits that build is scored with (ADR 0024).
-        role_map = await self._rolemap.estimate_cost(owner_id)
-        role_map_cost = Decimal(role_map["cost_usd"])
-        fits = await self._rolemap.estimate_fits(owner_id, recommended=role_map["max_roles"])
-        fits_cost = Decimal(fits["cost_usd"])
-        total = estimate.cost_usd + role_map_cost + fits_cost
         return {
-            "cost_usd": str(total),
+            "cost_usd": str(estimate.cost_usd),
             "model_id": estimate.model_id,
             "input_tokens": estimate.input_tokens,
-            "rate_is_published": estimate.rate_is_published
-            and role_map.get("rate_is_published") is not False
-            and fits["rate_is_published"],
-            "analysis_cost_usd": str(estimate.cost_usd),
-            "role_map_cost_usd": role_map["cost_usd"],
-            "fits_cost_usd": fits["cost_usd"],
-            "max_roles": role_map["max_roles"],
+            "rate_is_published": estimate.rate_is_published,
         }
 
     # -- the strength report ------------------------------------------------
@@ -295,7 +281,12 @@ class AssessmentService:
             return None
 
         try:
-            assessment = await self.run(owner_id)
+            assessment = await self.run(owner_id, run_id=run_id)
+        except JobCancelledError:
+            # The user cancelled it (ADR 0072): the run is already closed, and
+            # nothing of it was saved.
+            log.info("assessment.run_cancelled", run_id=str(run_id))
+            return None
         except DomainError as exc:
             log.warning("assessment.run_failed", run_id=str(run_id), code=str(exc.code))
             await self.fail_run(owner_id, run_id, code=str(exc.code), message=exc.message)
@@ -341,7 +332,32 @@ class AssessmentService:
                 )
             )
 
-    async def run(self, owner_id: uuid.UUID) -> AssessmentView:
+    async def cancel_run(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> bool:
+        """Close a running run because the user asked (ADR 0072). The job sees
+        it before its next save, or mid-call, and stops. False when the run had
+        already closed, so cancelling twice does nothing.
+
+        Raises ``NotFoundError`` for a run that is not the user's."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.runs.get(run_id)
+            if found is None:
+                raise NotFoundError("analysis run not found", run_id=str(run_id))
+            if not found.is_running:
+                return False
+            found.cancel(utcnow())
+            await mine.runs.update(found)
+            mine.record(
+                AnalysisFinished(
+                    owner_id=owner_id, run_id=run_id, status=str(AnalysisRunStatus.CANCELLED)
+                )
+            )
+        log.info("assessment.run_cancel_requested", run_id=str(run_id))
+        return True
+
+    async def run(self, owner_id: uuid.UUID, *, run_id: uuid.UUID | None = None) -> AssessmentView:
+        """Analyse the evidence and store the result. As the work of run
+        ``run_id`` it stops, raising ``JobCancelledError``, once that run is
+        cancelled: while the model writes, and before anything is saved."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError("there is no evidence to analyse yet", evidence=0)
@@ -360,6 +376,7 @@ class AssessmentService:
             ),
             output_schema=self._reply,
             untrusted=frozenset({"evidence"}),
+            on_progress=None if run_id is None else self._get_cancel_check(owner_id, run_id),
         )
 
         owned_evidence = await self._profile.evidence_ids(owner_id)
@@ -401,6 +418,8 @@ class AssessmentService:
             citable={str(e.id) for e in snapshot.evidence if e.source in _STATES_POSITIONS},
         )
 
+        if run_id is not None:
+            await self._assert_still_running(owner_id, run_id)
         assessment_id = await self._store(
             owner_id,
             snapshot_version=snapshot.version,
@@ -463,6 +482,21 @@ class AssessmentService:
         return Page(views, page, page_size, total)
 
     # -- internals ----------------------------------------------------------
+
+    def _get_cancel_check(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> ProgressCallback:
+        """The gateway's progress callback for run ``run_id``: it stops the
+        streamed call once the run is cancelled (ADR 0072)."""
+
+        async def check(_progress: Progress) -> None:
+            await self._assert_still_running(owner_id, run_id)
+
+        return check
+
+    async def _assert_still_running(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.runs.get(run_id)
+        if found is None or not found.is_running:
+            raise JobCancelledError
 
     async def _existing_dimensions(self, owner_id: uuid.UUID) -> dict[str, str]:
         async with self._uow.for_owner(owner_id) as mine:

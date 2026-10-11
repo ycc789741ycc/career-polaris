@@ -80,7 +80,7 @@ export function AdvisorNoTarget({
           <p className="subcopy" style={{ margin: 0 }}>
             {roles.length > 0
               ? `Choose one of the ${roles.length} roles matched to your strengths in your locations.`
-              : "Your role map is built after an analysis of your strengths. Open it to see where it stands."}
+              : "You build your role map on Roles, from an analysis of your strengths. Open it to see where it stands."}
           </p>
           {best && (
             <div className="inset" style={{ marginTop: 14 }}>

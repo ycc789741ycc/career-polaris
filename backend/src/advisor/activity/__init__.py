@@ -9,9 +9,22 @@ import only what is listed here (import-linter contract
 ``activity-public-surface``).
 """
 
-from advisor.activity.service import ActivityService, ActivityView, PendingView, RunStatusView
+from advisor.activity.service import (
+    ActivityService,
+    ActivityView,
+    CancelView,
+    PendingView,
+    RunStatusView,
+)
 from kernel.progress import RunningJobView
 
 # ``RunningJobView`` is the kernel's: each Advisor component reports its
 # running jobs in it, and the route gathers them (ADR 0042).
-__all__ = ["ActivityService", "ActivityView", "PendingView", "RunStatusView", "RunningJobView"]
+__all__ = [
+    "ActivityService",
+    "ActivityView",
+    "CancelView",
+    "PendingView",
+    "RunStatusView",
+    "RunningJobView",
+]

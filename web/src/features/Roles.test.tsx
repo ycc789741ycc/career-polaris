@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Activity, Fit, Role } from "../api/types";
@@ -9,6 +9,7 @@ import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
 import {
   builtLine,
+  getBehindLine,
   getClearCount,
   getSkillFits,
   humanizeKey,
@@ -128,7 +129,15 @@ function serve(overrides: Record<string, unknown> = {}) {
       market_data_at: "2026-09-30T12:00:00+00:00",
       built_for_locations: ["Berlin"],
       locations_changed: true,
+      strengths_changed: false,
     },
+    "/target-locations": page(["Berlin", "Remote EU"]),
+    "/target-location-options": page([
+      { name: "Remote", kind: "remote" },
+      { name: "Berlin", kind: "country" },
+      { name: "Remote EU", kind: "country" },
+      { name: "Taiwan", kind: "country" },
+    ]),
     "/roles/cost-estimate": {
       max_roles: 8,
       fits_cost_usd: "0.10",
@@ -509,14 +518,14 @@ describe("the role map while an analysis runs", () => {
       .map((step) => step.textContent);
   }
 
-  it("shows the building screen, waiting on the analysis, since a finished analysis builds the map", async () => {
+  it("shows the building screen for a build asked for during an analysis, waiting on it", async () => {
     renderRoles(null, {
       syncing: [],
       advisor_jobs: [],
       processing: ONLINE,
       parsing: [],
       analysis: { status: "running", ...running },
-      role_map: null,
+      role_map: { status: "waiting", waiting_for: "analysis", ...running },
     });
 
     expect(
@@ -566,6 +575,27 @@ describe("the role map while an analysis runs", () => {
       screen.queryByRole("button", { name: /Rebuild|Building/ }),
     ).toBeNull();
     expect(screen.queryByText("Role market map")).not.toBeInTheDocument();
+    // The places it reads stay in sight, and stay as they are.
+    expect(
+      await screen.findByText("Where you want to work"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove Berlin" })).toBeNull();
+  });
+
+  it("keeps the map, not a building screen, while only an analysis runs (ADR 0071)", async () => {
+    renderRoles(null, {
+      syncing: [],
+      advisor_jobs: [],
+      processing: ONLINE,
+      parsing: [],
+      analysis: { status: "running", ...running },
+      role_map: null,
+    });
+
+    expect(await screen.findByText("Role market map")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Role map progress" }),
+    ).toBeNull();
   });
 
   it("says when the map was built and that the locations moved since", async () => {
@@ -624,11 +654,14 @@ describe("how much of the market the role map takes in", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("counts the open postings in the chosen locations", async () => {
+  it("counts the open postings in the chosen locations, beside their chips", async () => {
     renderRoles(null);
 
+    const line = await screen.findByRole("region", {
+      name: "Where you want to work",
+    });
     expect(
-      await screen.findByText(/1,284 open postings in Berlin and Remote EU/),
+      await within(line).findByText("1,284 open postings"),
     ).toBeInTheDocument();
   });
 
@@ -762,7 +795,7 @@ describe("the role map toolbar", () => {
 
     expect(
       await screen.findByText(
-        "Built 30 Sep 2026 on your model · 1,284 open postings in Berlin and Remote EU · about $0.40 on your key to rebuild",
+        "Built 30 Sep 2026 on your model · about $0.40 on your key to rebuild",
       ),
     ).toBeInTheDocument();
     expect(
@@ -815,5 +848,184 @@ describe("the skill fit helpers", () => {
     expect(signed(-23)).toBe("\u221223");
     expect(signed(14)).toBe("+14");
     expect(signed(0)).toBe("+0");
+  });
+});
+
+describe("where you want to work, and building on request (ADR 0071)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ASSESSMENT = {
+    id: "a1",
+    dimensions: [],
+    created_at: "2026-09-27T09:00:00Z",
+    model_id: "claude-opus-5",
+    profile_confidence: 0.7,
+  };
+  const NO_MAP = {
+    market_data_at: null,
+    built_for_locations: null,
+    locations_changed: false,
+    strengths_changed: false,
+  };
+
+  it("chooses the places above the map, folded to their chips", async () => {
+    serve();
+    renderRoles(null);
+
+    expect(
+      await screen.findByText("Where you want to work"),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Remove Berlin" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+  });
+
+  it("puts the places on one line above the toolbar, the list folded away", async () => {
+    serve();
+    renderRoles(null);
+
+    const line = await screen.findByRole("region", {
+      name: "Where you want to work",
+    });
+    const rebuild = await screen.findByRole("button", {
+      name: "Rebuild role map",
+    });
+    expect(line.compareDocumentPosition(rebuild)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(screen.queryByLabelText("Find a place")).toBeNull();
+  });
+
+  it("before any analysis, points to Strengths and offers no build", async () => {
+    serve({ "/roles": page([]), "/fits": page([]), "/role-map": NO_MAP });
+    renderRoles(null);
+
+    expect(await screen.findByText("No roles yet")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Build role map" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Rebuild role map" }),
+    ).toBeNull();
+  });
+
+  it("once analysed, asks for a build from the places chosen", async () => {
+    const user = userEvent.setup();
+    serve({
+      "/roles": page([]),
+      "/fits": page([]),
+      "/role-map": NO_MAP,
+      "/assessments/latest": ASSESSMENT,
+    });
+    renderRoles(null);
+
+    const card = await screen.findByRole("region", {
+      name: "Build your role map",
+    });
+    expect(card).toHaveTextContent("Your strengths are ready");
+    await user.click(
+      within(card).getByRole("button", { name: "Build role map" }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: "Cost estimate" }),
+    ).toHaveTextContent("$0.40");
+  });
+
+  it("says when the strengths changed since the map, with Rebuild beside it", async () => {
+    serve({
+      "/role-map": {
+        market_data_at: "2026-09-30T12:00:00+00:00",
+        built_for_locations: ["Berlin", "Remote EU"],
+        locations_changed: false,
+        strengths_changed: true,
+      },
+    });
+    renderRoles(null);
+
+    const note = await screen.findByText(
+      /Your strengths changed since this map was built/,
+    );
+    expect(
+      within(note.closest("p") as HTMLElement).getByRole("button", {
+        name: "Rebuild map",
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("what the map is behind", () => {
+  const current = {
+    market_data_at: null,
+    built_for_locations: ["Berlin"],
+    locations_changed: false,
+    strengths_changed: false,
+  };
+
+  it("says nothing while the map is current", () => {
+    expect(getBehindLine(current)).toBeNull();
+    expect(getBehindLine(null)).toBeNull();
+  });
+
+  it("names the strengths, the places, or both in one line", () => {
+    expect(getBehindLine({ ...current, strengths_changed: true })).toBe(
+      "Your strengths changed since this map was built.",
+    );
+    expect(getBehindLine({ ...current, locations_changed: true })).toMatch(
+      /^Your locations changed since this map was built/,
+    );
+    expect(
+      getBehindLine({
+        ...current,
+        strengths_changed: true,
+        locations_changed: true,
+      }),
+    ).toBe("Your strengths and locations changed since this map was built.");
+  });
+});
+
+describe("cancelling a build (ADR 0072)", () => {
+  beforeEach(() => {
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: "http://api.test",
+      privacyContactEmail: "privacy@example.test",
+    };
+    serve();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers Cancel on the building screen, whatever the build waits for", async () => {
+    for (const waiting_for of ["analysis", "market"] as const) {
+      renderRoles(null, {
+        syncing: [],
+        advisor_jobs: [],
+        processing: ONLINE,
+        parsing: [],
+        analysis: null,
+        role_map: {
+          id: "build-1",
+          status: "waiting",
+          waiting_for,
+          started_at: "2026-09-28T09:00:00Z",
+          finished_at: null,
+          error: null,
+        },
+      });
+
+      const progress = await screen.findByRole("region", {
+        name: "Role map progress",
+      });
+      expect(
+        within(progress).getByRole("button", { name: "Cancel" }),
+      ).toBeInTheDocument();
+      cleanup();
+    }
   });
 });

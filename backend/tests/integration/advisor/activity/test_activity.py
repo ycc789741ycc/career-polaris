@@ -9,16 +9,17 @@ from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from advisor.activity import ActivityService
 from advisor.assessment import AssessmentService, create_assessment_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.profile.domain import ResumeFile, ResumeStatus, SourceConnection
 from advisor.profile.infra.unit_of_work import SqlAlchemyProfileUnitOfWork
-from advisor.rolemap import RoleMapService, create_rolemap_service
+from advisor.rolemap import CandidateInput, RoleMapService, create_rolemap_service
 from kernel.clock import utcnow
 from kernel.db import Database
-from kernel.errors import SourcesProcessingError
+from kernel.errors import NotFoundError, SourcesProcessingError, ValidationError
 from kernel.presence import PresenceView, UnitPresence
 from tests.unit.advisor.rolemap.fakes import FakeMarket
 
@@ -138,7 +139,7 @@ async def test_a_role_map_waits_for_the_analysis_and_starts_when_it_finishes(
     assert (await services.activity.status(other_account)).role_map is None
 
     await services.assessment.fail_run(account, run.id, code="ai_budget_exceeded", message="spent")
-    released = await services.activity.build_after_analysis(account, succeeded=False)
+    released = await services.activity.release_build_after_analysis(account)
 
     assert released is not None and released.build.id == requested.build.id
     status = await services.activity.status(account)
@@ -181,3 +182,93 @@ async def test_an_analysis_queued_while_the_worker_is_away_is_not_lost(
     services.presence.worker_since = utcnow() - timedelta(hours=1)
     back = await services.activity.status(account)
     assert back.analysis is not None and back.analysis.error_code == "stale"
+
+
+async def test_a_role_map_before_any_analysis_is_refused(
+    services: _Services, account: uuid.UUID
+) -> None:
+    """With no candidates a build would place nothing (ADR 0071)."""
+    with pytest.raises(ValidationError):
+        await services.activity.request_role_map(account)
+
+    assert (await services.activity.status(account)).role_map is None
+
+
+async def test_a_finished_map_says_when_a_newer_analysis_changed_the_strengths(
+    services: _Services, account: uuid.UUID
+) -> None:
+    first = uuid.uuid4()
+    await services.rolemap.replace_candidates(account, first, [_candidate("Backend Engineer")])
+    requested = await services.activity.request_role_map(account)
+    await services.rolemap.build(account, requested.build.id)
+
+    built = await services.rolemap.last_finished_build(account)
+    assert built is not None and built.skill_assessment_id == first
+    assert not await services.rolemap.is_behind_strengths(account)
+
+    await services.rolemap.replace_candidates(account, uuid.uuid4(), [_candidate("Data Engineer")])
+
+    assert await services.rolemap.is_behind_strengths(account)
+    # And the analysis built nothing on its own.
+    assert (await services.rolemap.latest_build(account)).id == requested.build.id  # type: ignore[union-attr]
+
+
+def _candidate(title: str) -> CandidateInput:
+    return CandidateInput(title=title, description="The work.", dimension_keys=("backend",))
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+async def test_a_cancelled_analysis_takes_its_waiting_build_and_frees_analyze(
+    database: Database, services: _Services, account: uuid.UUID
+) -> None:
+    await services.rolemap.replace_candidates(account, uuid.uuid4(), [_candidate("Backend")])
+    run = await services.activity.request_analysis(account)
+    waiting = await services.activity.request_role_map(account)
+
+    cancelled = await services.activity.cancel_analysis(account, run.id)
+
+    assert cancelled.is_cancelled and cancelled.cancelled_build_id == waiting.build.id
+    status = await services.activity.status(account)
+    assert status.analysis is not None and status.analysis.status == "cancelled"
+    assert status.role_map is not None and status.role_map.status == "cancelled"
+    # No stale wait: Analyze is free at once.
+    assert (await services.activity.request_analysis(account)).is_running
+    async with database.shared() as session:
+        rows = await session.execute(
+            text(
+                "SELECT name, payload->>'status' FROM outbox.event WHERE owner_id = :owner"
+                " ORDER BY occurred_at"
+            ),
+            {"owner": account},
+        )
+        assert [tuple(row) for row in rows.all()] == [
+            ("AnalysisFinished", "cancelled"),
+            ("RoleMapBuildFinished", "cancelled"),
+        ]
+
+
+async def test_cancelling_twice_does_nothing_and_another_owners_run_is_not_found(
+    services: _Services, account: uuid.UUID, other_account: uuid.UUID
+) -> None:
+    run = await services.activity.request_analysis(account)
+
+    assert (await services.activity.cancel_analysis(account, run.id)).is_cancelled
+    assert not (await services.activity.cancel_analysis(account, run.id)).is_cancelled
+    with pytest.raises(NotFoundError):
+        await services.activity.cancel_analysis(other_account, run.id)
+
+
+async def test_the_database_refuses_a_status_it_does_not_know(
+    database: Database, services: _Services, account: uuid.UUID
+) -> None:
+    """Migration 0055 widened the checks to ``cancelled`` and nothing else."""
+    run = await services.activity.request_analysis(account)
+
+    with pytest.raises(DBAPIError):
+        async with database.for_user(account) as session:
+            await session.execute(
+                text("UPDATE assessment.analysis_run SET status = 'paused' WHERE id = :id"),
+                {"id": run.id},
+            )

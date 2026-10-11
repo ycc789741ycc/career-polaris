@@ -6,7 +6,9 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from advisor.rolemap.domain import BuildRun
+import pytest
+
+from advisor.rolemap.domain import BuildRun, BuildRunStatus
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
@@ -37,3 +39,26 @@ def test_the_wait_counts_from_when_the_crawler_came_back() -> None:
     assert build.is_market_wait_over(
         NOW + timedelta(minutes=1), deadline=DEADLINE, crawler_online_since=back
     )
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+def test_a_waiting_or_running_build_is_cancelled_and_closed() -> None:
+    at = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
+    waiting = BuildRun.requested(owner_id=uuid.uuid4(), at=at, wait=True)
+    running = BuildRun.requested(owner_id=uuid.uuid4(), at=at, wait=False)
+
+    for build in (waiting, running):
+        build.cancel(at)
+        assert (build.status, build.finished_at) == (BuildRunStatus.CANCELLED, at)
+        assert not build.is_open
+
+
+def test_a_closed_build_cannot_be_cancelled() -> None:
+    at = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
+    build = BuildRun.requested(owner_id=uuid.uuid4(), at=at, wait=False)
+    build.ready(at)
+
+    with pytest.raises(ValueError):
+        build.cancel(at)

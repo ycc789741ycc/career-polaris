@@ -2,22 +2,32 @@
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter
 
 from api.dependencies import CurrentUser, Deps, Paging
 from api.schemas.activity import RunStatus
 from api.schemas.assessment import Assessment, AssessmentPage
-from api.schemas.common import AnalysisEstimate
+from api.schemas.common import CostEstimate
 from wiring.queue import enqueue
 
 router = APIRouter(tags=["assessment"])
 
 
 @router.get("/assessments/cost-estimate")
-async def cost_estimate(user: CurrentUser, deps: Deps) -> AnalysisEstimate:
-    """An analysis is priced and confirmed before it runs, with the role-map
-    build that follows it."""
-    return AnalysisEstimate.model_validate(await deps.assessment.estimate_cost(user))
+async def cost_estimate(user: CurrentUser, deps: Deps) -> CostEstimate:
+    """An analysis is priced and confirmed before it runs. It is the analysis
+    alone: no role-map build follows it (ADR 0071)."""
+    return CostEstimate.model_validate(await deps.assessment.estimate_cost(user))
+
+
+@router.post("/assessments/runs/{run_id}/cancel", status_code=204)
+async def cancel_run(run_id: uuid.UUID, user: CurrentUser, deps: Deps) -> None:
+    """Stop an analysis, and a role-map build waiting for it (ADR 0072). A
+    call already sent is still charged. Cancelling a closed run does nothing;
+    another owner's run is not found."""
+    await deps.activity.cancel_analysis(user, run_id)
 
 
 @router.post("/assessments", status_code=202)

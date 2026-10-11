@@ -144,8 +144,8 @@ export interface paths {
         };
         /**
          * Cost Estimate
-         * @description An analysis is priced and confirmed before it runs, with the role-map
-         *     build that follows it.
+         * @description An analysis is priced and confirmed before it runs. It is the analysis
+         *     alone: no role-map build follows it (ADR 0071).
          */
         get: operations["cost_estimate_api_v1_assessments_cost_estimate_get"];
         put?: never;
@@ -167,6 +167,28 @@ export interface paths {
         get: operations["latest_api_v1_assessments_latest_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assessments/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Stop an analysis, and a role-map build waiting for it (ADR 0072). A
+         *     call already sent is still charged. Cancelling a closed run does nothing;
+         *     another owner's run is not found.
+         */
+        post: operations["cancel_run_api_v1_assessments_runs__run_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1092,7 +1114,7 @@ export interface paths {
         /**
          * Role Map State
          * @description How current the map is: the market it was built from, and whether the
-         *     target locations changed since (ADR 0027).
+         *     target locations (ADR 0027) or the strengths (ADR 0071) changed since.
          */
         get: operations["role_map_state_api_v1_role_map_get"];
         put?: never;
@@ -1117,6 +1139,28 @@ export interface paths {
         get: operations["list_roles_api_v1_roles_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roles/builds/{build_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Build
+         * @description Stop a role-map build, waiting or running (ADR 0072). The market
+         *     sources it marked due stay due. Cancelling a closed build does nothing;
+         *     another owner's build is not found.
+         */
+        post: operations["cancel_build_api_v1_roles_builds__build_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1554,30 +1598,6 @@ export interface components {
              */
             source: "own" | "platform";
         };
-        /**
-         * AnalysisEstimate
-         * @description The price of Analyze: the analysis, the role-map build that follows it,
-         *     and the fits that build is scored with, confirmed once (domain decision 24,
-         *     ADR 0024). ``cost_usd`` is their sum.
-         */
-        AnalysisEstimate: {
-            /** Analysis Cost Usd */
-            analysis_cost_usd: string;
-            /** Cost Usd */
-            cost_usd: string;
-            /** Fits Cost Usd */
-            fits_cost_usd: string;
-            /** Input Tokens */
-            input_tokens: number;
-            /** Max Roles */
-            max_roles: number;
-            /** Model Id */
-            model_id: string | null;
-            /** Rate Is Published */
-            rate_is_published: boolean;
-            /** Role Map Cost Usd */
-            role_map_cost_usd: string;
-        };
         /** AnswerBody */
         AnswerBody: {
             /** Choice */
@@ -1713,6 +1733,20 @@ export interface components {
             kind: string;
             /** Status */
             status: string;
+        };
+        /**
+         * CostEstimate
+         * @description What an AI run will cost on the user's key, shown before it runs.
+         */
+        CostEstimate: {
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model Id */
+            model_id: string | null;
+            /** Rate Is Published */
+            rate_is_published: boolean;
         };
         /** Coverage */
         Coverage: {
@@ -2885,7 +2919,8 @@ export interface components {
          * RoleMapState
          * @description How current the map on screen is (ADR 0027). It is built only when the
          *     user asks, so it says how old its market is, and whether the target
-         *     locations changed since. Both are null before the first map.
+         *     locations or the strengths changed since (ADR 0071). The first two are
+         *     null before the first map.
          */
         RoleMapState: {
             /** Built For Locations */
@@ -2894,6 +2929,8 @@ export interface components {
             locations_changed: boolean;
             /** Market Data At */
             market_data_at: string | null;
+            /** Strengths Changed */
+            strengths_changed: boolean;
         };
         /** RolePage */
         RolePage: {
@@ -2920,19 +2957,22 @@ export interface components {
          * @description The newest analysis or role-map build. A ``waiting`` build says what it
          *     waits for: an analysis that is running, or the market sources it reads,
          *     being fetched (ADR 0027). A run that stopped responding reads as
-         *     ``failed`` with the code ``stale``.
+         *     ``failed`` with the code ``stale``; one the user stopped, as ``cancelled``
+         *     (ADR 0072). ``id`` is what a cancel names.
          */
         RunStatus: {
             error: components["schemas"]["JobError"] | null;
             /** Finished At */
             finished_at: string | null;
+            /** Id */
+            id?: string | null;
             /** Started At */
             started_at: string;
             /**
              * Status
              * @enum {string}
              */
-            status: "waiting" | "running" | "ready" | "failed";
+            status: "waiting" | "running" | "ready" | "failed" | "cancelled";
             /** Waiting For */
             waiting_for?: ("analysis" | "market") | null;
         };
@@ -3902,7 +3942,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnalysisEstimate"];
+                    "application/json": components["schemas"]["CostEstimate"];
                 };
             };
             /** @description The request could not be read. */
@@ -3951,6 +3991,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Assessment"] | null;
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_assessments_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {
@@ -6536,6 +6623,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RolePage"];
                 };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_build_api_v1_roles_builds__build_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                build_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description The request could not be read. */
             422: {

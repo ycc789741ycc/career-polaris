@@ -17,6 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from advisor.activity import CancelView
 from advisor.rolemap import (
     BuildRequestView,
     BuildRunView,
@@ -28,12 +29,14 @@ from advisor.rolemap import (
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import rolemap as rolemap_api
+from kernel.errors import NotFoundError
 from wiring import queue
 
 
 class FakeRoleMap:
     def __init__(self) -> None:
         self.finished: BuildRunView | None = None
+        self.behind_strengths = False
         # How many recommended roles each fits estimate was asked to price.
         self.priced: list[dict[str, Any]] = []
         self.matched_for: list[uuid.UUID | None] = []
@@ -81,6 +84,9 @@ class FakeRoleMap:
     async def last_finished_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         return self.finished
 
+    async def is_behind_strengths(self, owner_id: uuid.UUID) -> bool:
+        return self.behind_strengths
+
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         return {"max_roles": 10, "cost_usd": "0.40", "model_id": "claude-opus-5"}
 
@@ -110,6 +116,7 @@ class FakeRoleMap:
 
 
 ROLE_ID = uuid.uuid4()
+BUILD_ID = uuid.uuid4()
 
 
 def _role(*, opening_count: int) -> RoleView:
@@ -143,6 +150,13 @@ class FakeActivity:
         self.should_queue = True
         self.should_await_market = False
         self.requests = 0
+        self.cancelled: list[uuid.UUID] = []
+
+    async def cancel_role_map(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> CancelView:
+        if build_id != BUILD_ID:
+            raise NotFoundError("role map build not found")
+        self.cancelled.append(build_id)
+        return CancelView(is_cancelled=len(self.cancelled) == 1)
 
     async def request_role_map(self, owner_id: uuid.UUID) -> BuildRequestView:
         self.requests += 1
@@ -324,8 +338,18 @@ def test_the_map_says_how_old_its_market_is_and_whether_the_locations_moved(
         "market_data_at": "2026-09-30T12:00:00+00:00",
         "built_for_locations": ["Taiwan", "Remote"],
         "locations_changed": False,
+        "strengths_changed": False,
     }
     assert moved["locations_changed"] is True
+
+
+def test_the_map_says_when_a_newer_analysis_finished_after_it(
+    client: TestClient, rolemap: FakeRoleMap
+) -> None:
+    rolemap.finished = _finished(("Taiwan",), (uuid.uuid4(),))
+    rolemap.behind_strengths = True
+
+    assert client.get("/role-map").json()["strengths_changed"] is True
 
 
 @pytest.mark.parametrize("finished", [None, "before ADR 0027"])
@@ -338,6 +362,7 @@ def test_with_no_map_or_one_from_before_there_is_nothing_to_say(
         "market_data_at": None,
         "built_for_locations": None,
         "locations_changed": False,
+        "strengths_changed": False,
     }
 
 
@@ -414,3 +439,20 @@ def test_the_roles_are_drawn_with_the_openings_they_have_now(client: TestClient)
     assert response.status_code == 200
     [role] = response.json()["items"]
     assert (role["id"], role["opening_count"]) == (str(ROLE_ID), 2)
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+def test_cancelling_a_build_answers_no_content_every_time(
+    client: TestClient, activity: FakeActivity
+) -> None:
+    first = client.post(f"/roles/builds/{BUILD_ID}/cancel")
+    again = client.post(f"/roles/builds/{BUILD_ID}/cancel")
+
+    assert (first.status_code, again.status_code) == (204, 204)
+    assert activity.cancelled == [BUILD_ID, BUILD_ID]
+
+
+def test_cancelling_a_build_that_is_not_yours_is_not_found(client: TestClient) -> None:
+    assert client.post(f"/roles/builds/{uuid.uuid4()}/cancel").status_code == 404

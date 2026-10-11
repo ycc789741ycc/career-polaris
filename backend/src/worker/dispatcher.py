@@ -67,23 +67,31 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # Target's gaps, in Fill the gap (ADR 0023).
         return
 
+    if name == EventName.ROLE_MAP_BUILD_FINISHED and event.payload.get("status") == "cancelled":
+        # The user stopped it (ADR 0072): nothing changed, so nothing to score.
+        return
+
     if name == EventName.ROLE_MAP_BUILD_FINISHED and owner_id:
         # Fits are scored once per build, when it closes, whatever it changed
-        # (ADR 0024). A successful analysis always builds the map (ADR 0020),
-        # so its new scores reach the fits here too; AssessmentCompleted,
-        # DimensionsChanged and RoleRequirementsChanged queue nothing.
+        # (ADR 0024). An analysis builds nothing (ADR 0071), so its new scores
+        # reach the fits with the next build the user starts;
+        # AssessmentCompleted, DimensionsChanged and RoleRequirementsChanged
+        # queue nothing.
         await enqueue("rolemap.compute_fits", owner_id=str(owner_id))
         return
 
+    if name == EventName.ANALYSIS_FINISHED and event.payload.get("status") == "cancelled":
+        # The user stopped it (ADR 0072), and the build waiting for it with it:
+        # there is nothing to release.
+        return
+
     if name == EventName.ANALYSIS_FINISHED and owner_id:
-        # Recorded as the run closed, so it no longer counts as running. A
-        # successful analysis always builds the role map, its cost confirmed
-        # with the analysis's (ADR 0020); a failed one still releases a build
-        # that waited for it (ADR 0018). Either build first waits for the
-        # market sources it reads (ADR 0027).
-        requested = await deps.activity.build_after_analysis(
-            owner_id, succeeded=event.payload.get("status") == "ready"
-        )
+        # Recorded as the run closed, so it no longer counts as running. It
+        # builds nothing on its own: the user starts every build (ADR 0071).
+        # A build they asked for during the analysis waited for it (ADR 0018)
+        # and goes on now, first waiting for the market sources it reads
+        # (ADR 0027).
+        requested = await deps.activity.release_build_after_analysis(owner_id)
         if requested is not None:
             await queue_build(owner_id, requested)
         return

@@ -42,7 +42,7 @@ export type Fit = Schemas["Fit"];
 /** An opening inside one of the user's roles, ranked by that role's fit. */
 export type MatchedPosting = Schemas["MatchedPosting"];
 /** Analyze: the analysis and the role-map build after it, confirmed once (ADR 0020). */
-export type AnalysisEstimate = Schemas["AnalysisEstimate"];
+export type CostEstimate = Schemas["CostEstimate"];
 
 // Role map
 export type SalaryBand = Schemas["SalaryBand"];

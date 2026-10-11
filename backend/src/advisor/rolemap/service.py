@@ -21,6 +21,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -101,6 +102,7 @@ from kernel.clock import utcnow
 from kernel.embeddings import embed
 from kernel.errors import DomainError, NotFoundError, ValidationError
 from kernel.logging import get_logger
+from kernel.progress import JobCancelledError, Progress, ProgressCallback
 
 __all__ = [
     "BuildRequestView",
@@ -128,6 +130,9 @@ log = get_logger(__name__)
 # The user's key is spent per role, so a first run has a predictable cost.
 MAX_POSTINGS_IN_A_PROMPT = 12
 MAX_DESCRIPTION_CHARS = 4000
+
+# What a cancel check is handed between steps, where no call is streaming.
+_NO_PROGRESS = Progress(fraction=0.0, estimated_cost_usd=Decimal(0))
 
 
 class _Requirement(BaseModel):
@@ -400,6 +405,8 @@ class BuildRunView:
     locations: tuple[str, ...] = ()
     needed_source_ids: tuple[uuid.UUID, ...] = ()
     market_data_at: datetime | None = None
+    # The analysis whose candidates it placed (ADR 0071).
+    skill_assessment_id: uuid.UUID | None = None
 
     @property
     def is_open(self) -> bool:
@@ -663,6 +670,13 @@ class RoleMapService:
                     return BuildRequestView(_build_view(current), should_queue=False)
                 build_id = current.id
             else:
+                # With no candidates there is nothing to place: a build would
+                # spend nothing and show nothing. One waiting for an analysis
+                # reads the candidates that analysis writes.
+                if not wait and not await mine.candidates.get_count(RoleCandidateFilter()):
+                    raise ValidationError(
+                        "analyse your strengths before building the role map", candidates=0
+                    )
                 created = await mine.builds.create(
                     BuildRun.requested(owner_id=owner_id, at=utcnow(), wait=True)
                 )
@@ -673,8 +687,9 @@ class RoleMapService:
         return await self._ask_market(owner_id, build_id)
 
     async def release_waiting(self, owner_id: uuid.UUID) -> BuildRequestView | None:
-        """The analysis a build waited for ended without a result: the build
-        goes on, asking the market for what it reads first."""
+        """The analysis a build waited for ended, with a result or without:
+        the build goes on, asking the market for what it reads first. None
+        when no build waited for one."""
         async with self._uow.for_owner(owner_id) as mine:
             waiting = await mine.builds.get_list(
                 BuildRunFilter(statuses=(BuildRunStatus.WAITING,)), page_size=1
@@ -758,6 +773,32 @@ class RoleMapService:
             )
         return _build_view(ready[0]) if ready else None
 
+    def _get_cancel_check(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> ProgressCallback:
+        """The gateway's progress callback for build ``build_id``, also called
+        between steps: it raises ``JobCancelledError`` once the recorded build
+        is closed — cancelled by the user (ADR 0072), or given up on as lost.
+        Each look is a transaction of its own."""
+
+        async def check(_progress: Progress) -> None:
+            async with self._uow.for_owner(owner_id) as mine:
+                found = await mine.builds.get(build_id)
+            if found is not None and not found.is_running:
+                raise JobCancelledError
+
+        return check
+
+    async def is_behind_strengths(self, owner_id: uuid.UUID) -> bool:
+        """Whether an analysis newer than the one the map on screen was built
+        from has handed over its candidates (ADR 0071). False with no map, no
+        candidates, or a map whose analysis was never recorded."""
+        built = await self.last_finished_build(owner_id)
+        if built is None or built.skill_assessment_id is None:
+            return False
+        candidates = await self._candidates(owner_id)
+        if not candidates:
+            return False
+        return candidates[0].assessment_id != built.skill_assessment_id
+
     async def latest_build(self, owner_id: uuid.UUID) -> BuildRunView | None:
         async with self._uow.for_owner(owner_id) as mine:
             newest = await mine.builds.get_list(BuildRunFilter(), page_size=1)
@@ -776,9 +817,17 @@ class RoleMapService:
             raise NotFoundError("role map build not found", build_id=str(build_id))
         if not requested.is_running:
             return []
+        # Which analysis it builds from, so the map can say when the strengths
+        # changed after it (ADR 0071).
+        read = await self._candidates(owner_id)
+        skill_assessment_id = read[0].assessment_id if read else None
 
         try:
             roles = await self.recluster(owner_id, build_id)
+        except JobCancelledError:
+            # The user cancelled it (ADR 0072): the build is already closed.
+            log.info("rolemap.build_cancelled", build_id=str(build_id))
+            return []
         except DomainError as exc:
             log.warning("rolemap.build_failed", build_id=str(build_id), code=str(exc.code))
             await self.fail_build(owner_id, build_id, code=str(exc.code), message=exc.message)
@@ -796,7 +845,11 @@ class RoleMapService:
         async with self._uow.for_owner(owner_id) as mine:
             done = await mine.builds.get(build_id)
             if done is not None and done.is_running:
-                done.ready(utcnow(), market_data_at=market_data_at)
+                done.ready(
+                    utcnow(),
+                    market_data_at=market_data_at,
+                    skill_assessment_id=skill_assessment_id,
+                )
                 await mine.builds.update(done)
                 # Its fits are scored once, now, whatever it changed (ADR 0024).
                 mine.record(
@@ -805,6 +858,43 @@ class RoleMapService:
                     )
                 )
         return roles
+
+    async def cancel_build(self, owner_id: uuid.UUID, build_id: uuid.UUID) -> bool:
+        """Close a waiting or running build because the user asked (ADR 0072).
+        A running job sees it before its next model call, mid-call, or before
+        it records lineage, and stops; a check on the market finds it no longer
+        waiting. The sources it marked due stay due. False when it had already
+        closed, so cancelling twice does nothing.
+
+        Raises ``NotFoundError`` for a build that is not the user's."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.builds.get(build_id)
+            if found is None:
+                raise NotFoundError("role map build not found", build_id=str(build_id))
+            if not found.is_open:
+                return False
+            found.cancel(utcnow())
+            await mine.builds.update(found)
+            # Nothing changed, so the dispatcher scores no fits for it.
+            mine.record(
+                RoleMapBuildFinished(
+                    owner_id=owner_id, build_id=build_id, status=str(BuildRunStatus.CANCELLED)
+                )
+            )
+        log.info("rolemap.build_cancel_requested", build_id=str(build_id))
+        return True
+
+    async def cancel_waiting_for_analysis(self, owner_id: uuid.UUID) -> uuid.UUID | None:
+        """Cancel the build that waits for an analysis, if one does: one that
+        has not yet asked the market (ADR 0072). Its id, or None."""
+        async with self._uow.for_owner(owner_id) as mine:
+            waiting = await mine.builds.get_list(
+                BuildRunFilter(statuses=(BuildRunStatus.WAITING,)), page_size=1
+            )
+        if not waiting or waiting[0].awaited_since is not None:
+            return None
+        await self.cancel_build(owner_id, waiting[0].id)
+        return waiting[0].id
 
     async def fail_build(
         self, owner_id: uuid.UUID, build_id: uuid.UUID, *, code: str, message: str
@@ -836,13 +926,23 @@ class RoleMapService:
         """
         candidates = await self._candidates(owner_id)
         if candidates:
-            await self._build_recommended(owner_id, candidates, build_id=build_id)
+            await self._build_recommended(
+                owner_id,
+                candidates,
+                build_id=build_id,
+                check=self._get_cancel_check(owner_id, build_id),
+            )
         else:
             log.info("rolemap.no_candidates", owner_id=str(owner_id))
         return await self.roles(owner_id)
 
     async def _build_recommended(
-        self, owner_id: uuid.UUID, candidates: list[RoleCandidate], *, build_id: uuid.UUID
+        self,
+        owner_id: uuid.UUID,
+        candidates: list[RoleCandidate],
+        *,
+        build_id: uuid.UUID,
+        check: ProgressCallback,
     ) -> None:
         """The top k of the candidates the market has, analysed on the user's
         key; nothing is spent on the rest (ADR 0029).
@@ -923,10 +1023,13 @@ class RoleMapService:
                 owner_id, role_id=role_id, postings=group.postings
             ):
                 continue
-            analysed.append(self._get_analysis(owner_id, role_id=role_id, group=group))
+            analysed.append(self._get_analysis(owner_id, role_id=role_id, group=group, check=check))
         # Each role is its own calls and its own rows, so they run side by side.
         await _execute_concurrently(analysed, limit=self._ai_concurrency)
 
+        # Cancelled while the last role was stored: no lineage, no placements,
+        # as when a build fails part way (ADR 0069, ADR 0072).
+        await check(_NO_PROGRESS)
         await self._record_lineage(owner_id, reconciliation)
         await self._place_candidates(
             owner_id,
@@ -939,7 +1042,7 @@ class RoleMapService:
         )
 
     def _get_analysis(
-        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, group: _Group
+        self, owner_id: uuid.UUID, *, role_id: uuid.UUID, group: _Group, check: ProgressCallback
     ) -> Callable[[], Awaitable[None]]:
         """One role's analysis, to run when its turn comes: its prompt's
         descriptions are read then, not before."""
@@ -955,6 +1058,7 @@ class RoleMapService:
                         [p.id for p in group.postings[:MAX_POSTINGS_IN_A_PROMPT]]
                     )
                 ),
+                check=check,
             )
 
         return analyse
@@ -1061,10 +1165,12 @@ class RoleMapService:
         keys: set[str],
         postings: list[PostingHeadView],
         block: str,
+        check: ProgressCallback,
     ) -> None:
         """Name a role, read out what it requires and estimate its bar, on the
         user's key: two calls. ``block`` is the untrusted text read: a
-        candidate's openings."""
+        candidate's openings. ``check`` stops it once the build is cancelled:
+        before and during each call, and before the role is stored."""
         extracted = await self._gateway.run(
             owner_id,
             task="rolemap.extract",
@@ -1072,6 +1178,7 @@ class RoleMapService:
             inputs={"postings": block},
             output_schema=_RoleExtraction,
             untrusted=frozenset({"postings"}),
+            on_progress=check,
         )
         requirements_block = "\n".join(
             f"- {r.statement} (weight {r.weight}, {r.expected_level})"
@@ -1088,7 +1195,9 @@ class RoleMapService:
             },
             output_schema=_DifficultyEstimate,
             untrusted=frozenset({"postings"}),
+            on_progress=check,
         )
+        await check(_NO_PROGRESS)
         # Phase 1 has no InterviewReports, so every bar is an estimate.
         bar = blend(
             estimated=difficulty.value.difficulty,
@@ -1972,6 +2081,7 @@ def _build_view(build: BuildRun) -> BuildRunView:
         locations=build.locations,
         needed_source_ids=build.needed_source_ids,
         market_data_at=build.market_data_at,
+        skill_assessment_id=build.skill_assessment_id,
     )
 
 

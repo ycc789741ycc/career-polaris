@@ -16,11 +16,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from advisor.activity import CancelView
 from advisor.assessment import AnalysisRunView
 from api import errors
 from api.dependencies import current_user, get_container
 from api.routes import assessment as assessment_api
-from kernel.errors import SourcesProcessingError
+from kernel.errors import NotFoundError, SourcesProcessingError
 
 
 class FakeAssessment:
@@ -33,6 +34,13 @@ RUN_ID = uuid.uuid4()
 class FakeActivity:
     def __init__(self) -> None:
         self.sources_busy = False
+        self.cancelled: list[uuid.UUID] = []
+
+    async def cancel_analysis(self, owner_id: uuid.UUID, run_id: uuid.UUID) -> CancelView:
+        if run_id != RUN_ID:
+            raise NotFoundError("analysis run not found")
+        self.cancelled.append(run_id)
+        return CancelView(is_cancelled=len(self.cancelled) == 1)
 
     async def request_analysis(self, owner_id: uuid.UUID) -> AnalysisRunView:
         if self.sources_busy:
@@ -93,7 +101,9 @@ def test_an_analysis_is_recorded_running_and_queued_with_its_run(
     response = client.post("/assessments")
 
     assert response.status_code == 202
+    # Its id is what Cancel names (ADR 0072).
     assert response.json() == {
+        "id": str(RUN_ID),
         "status": "running",
         "started_at": "2026-09-28T09:00:00+00:00",
         "finished_at": None,
@@ -113,3 +123,22 @@ def test_an_analysis_while_sources_are_processing_is_refused_with_a_stable_code(
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "sources_processing"
     assert queued == []
+
+
+# --- cancelling (ADR 0072) --------------------------------------------------
+
+
+def test_cancelling_an_analysis_answers_no_content_every_time(
+    client: TestClient, activity: FakeActivity
+) -> None:
+    first = client.post(f"/assessments/runs/{RUN_ID}/cancel")
+    again = client.post(f"/assessments/runs/{RUN_ID}/cancel")
+
+    assert (first.status_code, again.status_code) == (204, 204)
+    assert activity.cancelled == [RUN_ID, RUN_ID]
+
+
+def test_cancelling_a_run_that_is_not_yours_is_not_found(client: TestClient) -> None:
+    response = client.post(f"/assessments/runs/{uuid.uuid4()}/cancel")
+
+    assert response.status_code == 404

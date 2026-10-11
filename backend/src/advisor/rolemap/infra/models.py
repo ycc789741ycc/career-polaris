@@ -125,7 +125,9 @@ class BuildRun(Base, OwnedMixin):
 
     __tablename__ = "build_run"
     __table_args__ = (
-        CheckConstraint("status IN ('waiting', 'running', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "status IN ('waiting', 'running', 'ready', 'failed', 'cancelled')", name="status"
+        ),
         Index("ix_build_run_owner_requested", "owner_id", "requested_at"),
         {"schema": "rolemap"},
     )
@@ -147,6 +149,9 @@ class BuildRun(Base, OwnedMixin):
     locations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     awaited_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     market_data_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The analysis whose candidates it placed (ADR 0071). No foreign key: the
+    # schemas belong to different components.
+    skill_assessment_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
 
 
 class RoleCandidate(Base, OwnedMixin):
