@@ -20,6 +20,8 @@ import {
   coverageStatus,
   FONTS_WITHOUT_BOLD,
   getLineAdded,
+  getLineMoved,
+  getLineStep,
   getSpecWithLook,
   getStackWith,
   getTextSizes,
@@ -909,6 +911,105 @@ describe("résumé screen", () => {
     expect(
       screen.getByRole("button", { name: /^Save as v\d+$/ }),
     ).toBeEnabled();
+  });
+
+  it("moves a line by its handle with the keyboard, into the next entry, keeping its citation", async () => {
+    const two: TailoredResume = {
+      ...resume,
+      content: {
+        ...resume.content!,
+        sections: resume.content!.sections.map((s) =>
+          s.kind === "experience"
+            ? {
+                ...s,
+                entries: [
+                  s.entries[0]!,
+                  {
+                    title: "Engineer",
+                    org: "Harbor",
+                    when: "2019 — 2022",
+                    link: "",
+                    bullets: [
+                      {
+                        text: "Ran the batch jobs",
+                        evidence_ids: [],
+                        origin: "yours",
+                        answers: null,
+                      },
+                    ],
+                  },
+                ],
+              }
+            : s,
+        ),
+      },
+    };
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return two;
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v2", number: 2, source: "manual" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const handle = within(page).getByRole("button", {
+      name: "Move line: Owned the retry layer for payments-svc",
+    });
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+
+    // Past the end of its entry, it leads the next one, and keeps the focus.
+    const moved = within(page).getByRole("button", {
+      name: "Move line: Owned the retry layer for payments-svc",
+    });
+    expect(document.activeElement).toBe(moved);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    const [first, second] = experience(body.content).entries;
+    expect(first!.bullets).toEqual([]);
+    expect(second!.bullets.map((l) => l.text)).toEqual([
+      "Owned the retry layer for payments-svc",
+      "Ran the batch jobs",
+    ]);
+    expect(second!.bullets[0]!.evidence_ids).toEqual(["e1"]);
+  });
+
+  it("drags a line onto another in its section", async () => {
+    const lines = ["First", "Second", "Third"].map((text) => ({
+      text,
+      evidence_ids: [],
+      origin: "yours" as const,
+      answers: null,
+    }));
+    const three: TailoredResume = {
+      ...resume,
+      content: {
+        ...resume.content!,
+        sections: resume.content!.sections.map((s) =>
+          s.kind === "experience"
+            ? { ...s, entries: [{ ...s.entries[0]!, bullets: lines }] }
+            : s,
+        ),
+      },
+    };
+    serve((call) => (call.url === "/tailored-resumes/res-1" ? three : null));
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    fireEvent.dragStart(
+      within(page).getByRole("button", { name: "Move line: Third" }),
+    );
+    fireEvent.dragOver(within(page).getByText("First").closest("li")!);
+    fireEvent.drop(within(page).getByText("First").closest("li")!);
+
+    expect(
+      within(page)
+        .getAllByLabelText("Line")
+        .map((l) => l.textContent),
+    ).toEqual(["Third", "First", "Second"]);
   });
 
   it("undoes unsaved edits one at a time, back to the saved version", async () => {
@@ -1810,6 +1911,87 @@ describe("the résumé's own look (ADR 0075)", () => {
     expect(getWeight(true, "Caprasimo", FONTS_WITHOUT_BOLD)).toBe(400);
     expect(getWeight(false, "Inter", FONTS_WITHOUT_BOLD)).toBe(400);
     expect(FONTS_WITHOUT_BOLD).toEqual(limits.fonts_without_bold);
+  });
+});
+
+describe("moving a line", () => {
+  const line = (text: string) => ({
+    text,
+    evidence_ids: [],
+    origin: "yours" as const,
+    answers: null,
+  });
+  const entry = (...texts: string[]) => ({
+    title: "T",
+    org: "",
+    when: "",
+    link: "",
+    bullets: texts.map(line),
+  });
+  const jobs = section("experience", {
+    entries: [entry("a", "b"), entry("c")],
+  });
+  const texts = (s: ResumeSection) =>
+    s.entries.map((e) => e.bullets.map((b) => b.text));
+
+  it("takes the place it is dropped on within its entry", () => {
+    const moved = getLineMoved(
+      jobs,
+      { entry: 0, line: 1 },
+      { entry: 0, line: 0 },
+    );
+    expect(texts(moved)).toEqual([["b", "a"], ["c"]]);
+  });
+
+  it("goes into another entry before the line it is dropped on", () => {
+    const moved = getLineMoved(
+      jobs,
+      { entry: 0, line: 0 },
+      { entry: 1, line: 0 },
+    );
+    expect(texts(moved)).toEqual([["b"], ["a", "c"]]);
+  });
+
+  it("is refused by an entry already full", () => {
+    const full = section("experience", {
+      entries: [
+        entry("a"),
+        entry(...Array.from({ length: 8 }, (_, i) => `${i}`)),
+      ],
+    });
+    expect(
+      getLineMoved(full, { entry: 0, line: 0 }, { entry: 1, line: 0 }),
+    ).toBe(full);
+  });
+
+  it("moves a custom section's own lines", () => {
+    const own = section("custom", {
+      title: "Mine",
+      bullets: ["x", "y"].map(line),
+    });
+    const moved = getLineMoved(
+      own,
+      { entry: null, line: 0 },
+      { entry: null, line: 1 },
+    );
+    expect(moved.bullets.map((b) => b.text)).toEqual(["y", "x"]);
+  });
+
+  it("steps past an entry's end to the next, and stops at the section's", () => {
+    expect(getLineStep(jobs, { entry: 0, line: 0 }, 1)).toEqual({
+      entry: 0,
+      line: 1,
+    });
+    expect(getLineStep(jobs, { entry: 0, line: 1 }, 1)).toEqual({
+      entry: 1,
+      line: 0,
+    });
+    expect(getLineStep(jobs, { entry: 1, line: 0 }, -1)).toEqual({
+      entry: 0,
+      line: 2,
+    });
+    expect(getLineStep(jobs, { entry: 1, line: 0 }, 1)).toBeNull();
+    expect(getLineStep(jobs, { entry: 0, line: 0 }, -1)).toBeNull();
   });
 });
 

@@ -2084,3 +2084,25 @@ select.input { appearance: auto; }
 .own-look-row { gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .own-look-row .round-check { margin-bottom: 8px; }
 .size-picker { max-width: 140px; }
+/* A line's move handle, in the page margin left of its bullet, as the
+ * entry's × is: shown on hover and focus, never printed. */
+.resume-line { position: relative; }
+.resume-move-line {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0.15em;
+  left: calc(var(--pt) * -26);
+  width: 14px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  fill: #8a847e;
+  opacity: 0;
+}
+.resume-line:hover .resume-move-line,
+.resume-move-line:focus-visible { opacity: 1; }
+.resume-move-line:focus-visible { outline: 2px solid var(--color-accent); border-radius: 4px; }
+@media (hover: none) { .resume-move-line { opacity: 1; } }
