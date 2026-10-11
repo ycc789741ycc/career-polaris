@@ -211,17 +211,15 @@ export function Roles() {
 
   // Above the map in every state; read-only while a build reads it.
   const locations = (
-    <div style={{ marginBottom: 18 }}>
-      <TargetLocations
-        note={scope.data ? scopeLine(scope.data) : undefined}
-        isReadOnly={waiting}
-        onSaved={() => {
-          void scope.reload();
-          void state.reload();
-          void rebuildCost.reload();
-        }}
-      />
-    </div>
+    <TargetLocations
+      note={scope.data ? getScopeCount(scope.data) : undefined}
+      isReadOnly={waiting}
+      onSaved={() => {
+        void scope.reload();
+        void state.reload();
+        void rebuildCost.reload();
+      }}
+    />
   );
   const behind = getBehindLine(state.data);
   useHeading(waiting ? "Building your role map" : null);
@@ -783,6 +781,14 @@ export function getBehindLine(state: RoleMapState | null): string | null {
   if (state.locations_changed)
     return "Your locations changed since this map was built. Rebuild to search the new places.";
   return null;
+}
+
+/** "1,284 open postings": what the chosen places take in, beside their chips,
+ * which already name them. Pure. */
+export function getScopeCount(scope: MarketScope): string {
+  return `${scope.open_posting_count.toLocaleString("en")} open ${
+    scope.open_posting_count === 1 ? "posting" : "postings"
+  }`;
 }
 
 export function scopeLine(scope: MarketScope): string {

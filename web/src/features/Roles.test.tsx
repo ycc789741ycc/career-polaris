@@ -654,11 +654,14 @@ describe("how much of the market the role map takes in", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("counts the open postings in the chosen locations", async () => {
+  it("counts the open postings in the chosen locations, beside their chips", async () => {
     renderRoles(null);
 
+    const line = await screen.findByRole("region", {
+      name: "Where you want to work",
+    });
     expect(
-      await screen.findByText(/1,284 open postings in Berlin and Remote EU/),
+      await within(line).findByText("1,284 open postings"),
     ).toBeInTheDocument();
   });
 
@@ -881,9 +884,23 @@ describe("where you want to work, and building on request (ADR 0071)", () => {
     expect(
       await screen.findByRole("button", { name: "Remove Berlin" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "+ Add a place" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+  });
+
+  it("puts the places on one line above the toolbar, the list folded away", async () => {
+    serve();
+    renderRoles(null);
+
+    const line = await screen.findByRole("region", {
+      name: "Where you want to work",
+    });
+    const rebuild = await screen.findByRole("button", {
+      name: "Rebuild role map",
+    });
+    expect(line.compareDocumentPosition(rebuild)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(screen.queryByLabelText("Find a place")).toBeNull();
   });
 
   it("before any analysis, points to Strengths and offers no build", async () => {

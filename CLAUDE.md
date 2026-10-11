@@ -1049,10 +1049,13 @@ On `epic/no-ticket/user-started-runs`, one branch per step:
   note with Rebuild (`getBehindLine`); 02 Strengths shows "Next: see where
   these strengths fit" while there is no map or it is behind, reading only
   `/role-map`, never the roles or fits.
-- **Where you want to work, on 03 Roles.** `TargetLocations` sits above the
-  map in every state: folded to chips and "+ Add a place" once something is
-  chosen, the list open while nothing is, read-only while a build runs, with
-  the market scope line under the chips. Before any analysis Roles says "No
+- **Where you want to work, on 03 Roles.** `TargetLocations` is one
+  borderless line above the map in every state: the label, the chips, "+ Add"
+  and the count (`getScopeCount`), with "Anywhere (newest baseline postings)"
+  when nothing is chosen. "+ Add" opens the grouped list as a dropdown over
+  the page (`location-dropdown`), closed by a pick, Escape or a click
+  outside; what the places mean, the slots left and the region note are
+  behind the ⓘ. Read-only while a build runs. Before any analysis Roles says "No
   roles yet" with Build disabled; once analysed with no map, "Your strengths
   are ready" with Build role map. Only a build makes the progress screen: an
   analysis running alone leaves the map in place (`isMapComing`).
