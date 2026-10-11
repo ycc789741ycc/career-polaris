@@ -23,15 +23,12 @@ OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 @pytest.fixture
 def queued(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Everything the dispatcher queues: it queues only builds."""
     calls: list[dict[str, Any]] = []
-
-    async def enqueue(name: str, **kwargs: Any) -> None:
-        calls.append({"name": name, **kwargs})
 
     async def queue_build(owner_id: uuid.UUID, requested: Any) -> None:
         calls.append({"name": "queue_build", "owner_id": owner_id, "requested": requested})
 
-    monkeypatch.setattr(dispatcher, "enqueue", enqueue)
     monkeypatch.setattr(dispatcher, "queue_build", queue_build)
     return calls
 
@@ -167,13 +164,13 @@ async def test_new_target_locations_build_nothing_and_search_nothing(
     assert activity.requests == [] and queued == []
 
 
-# --- Fits, once per build (ADR 0024) ---------------------------------------
+# --- Fits, scored by the build itself (ADR 0024) ---------------------------
 
 
-@pytest.mark.parametrize("status", ["ready", "failed"])
-async def test_a_closed_build_scores_the_fits_once(
-    status: str, queued: list[dict[str, Any]]
-) -> None:
+@pytest.mark.parametrize("status", ["ready", "failed", "cancelled"])
+async def test_a_closed_build_queues_no_fits(status: str, queued: list[dict[str, Any]]) -> None:
+    """A build scores its fits before it is ready, so nothing afterwards moves
+    the map it finished with."""
     event = OutboxEvent(
         name=str(EventName.ROLE_MAP_BUILD_FINISHED),
         owner_id=OWNER,
@@ -182,7 +179,7 @@ async def test_a_closed_build_scores_the_fits_once(
 
     await dispatcher._handle(_container(), event)
 
-    assert queued == [{"name": "rolemap.compute_fits", "owner_id": str(OWNER)}]
+    assert queued == []
 
 
 @pytest.mark.parametrize(
@@ -212,15 +209,3 @@ async def test_a_cancelled_analysis_releases_nothing(queued: list[dict[str, Any]
     await dispatcher._handle(_container(activity=activity), _analysis_finished("cancelled"))
 
     assert activity.releases == [] and queued == []
-
-
-async def test_a_cancelled_build_scores_no_fits(queued: list[dict[str, Any]]) -> None:
-    event = OutboxEvent(
-        name=str(EventName.ROLE_MAP_BUILD_FINISHED),
-        owner_id=OWNER,
-        payload={"build_id": str(uuid.uuid4()), "status": "cancelled"},
-    )
-
-    await dispatcher._handle(_container(), event)
-
-    assert queued == []

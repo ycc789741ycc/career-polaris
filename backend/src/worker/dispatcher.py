@@ -13,7 +13,7 @@ from kernel.db.base import utcnow
 from kernel.logging import get_logger
 from kernel.outbox import EventName, OutboxEvent
 from wiring.container import Container
-from wiring.queue import enqueue, queue_build
+from wiring.queue import queue_build
 
 log = get_logger(__name__)
 
@@ -67,17 +67,12 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
         # Target's gaps, in Fill the gap (ADR 0023).
         return
 
-    if name == EventName.ROLE_MAP_BUILD_FINISHED and event.payload.get("status") == "cancelled":
-        # The user stopped it (ADR 0072): nothing changed, so nothing to score.
-        return
-
-    if name == EventName.ROLE_MAP_BUILD_FINISHED and owner_id:
-        # Fits are scored once per build, when it closes, whatever it changed
-        # (ADR 0024). An analysis builds nothing (ADR 0071), so its new scores
-        # reach the fits with the next build the user starts;
-        # AssessmentCompleted, DimensionsChanged and RoleRequirementsChanged
-        # queue nothing.
-        await enqueue("rolemap.compute_fits", owner_id=str(owner_id))
+    if name == EventName.ROLE_MAP_BUILD_FINISHED:
+        # Queues nothing: a build scores its fits itself, before it is ready,
+        # so a finished map does not move afterwards (ADR 0024). A failed or
+        # cancelled one scores nothing, and the map says when it is behind
+        # the strengths (ADR 0071). AssessmentCompleted, DimensionsChanged
+        # and RoleRequirementsChanged queue nothing either.
         return
 
     if name == EventName.ANALYSIS_FINISHED and event.payload.get("status") == "cancelled":
