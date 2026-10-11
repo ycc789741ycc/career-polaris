@@ -74,6 +74,7 @@ new record that supersedes the old one.
 | [0066](0066-eligible-accounts-run-on-careerpolaris-ai-by-default.md) | Eligible accounts run on CareerPolaris AI by default, and its model is never named | Accepted, amends 0064 |
 | [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
 | [0068](0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md) | A scope with no location chosen keeps only the newest baseline postings | Accepted |
+| [0069](0069-run-a-builds-per-role-ai-calls-side-by-side.md) | A build runs its per-role AI calls side by side, up to a setting | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

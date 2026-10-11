@@ -1020,3 +1020,9 @@ Postgres over the tunnel (ADR 0051), so a build reads as little as it can:
   `posted_on`, else first seen (`PostingScope.baseline_limit`).
   `GET /market-scope` says `is_capped`, and 03 Roles says "The newest 500
   open postings in the platform's baseline".
+- **AI calls side by side** (ADR 0069). `recluster`'s analyses (extract,
+  then difficulty, per changed role) and `compute_fits`' projections run at
+  most `ROLE_MAP_AI_CONCURRENCY` (default 4, at most `ROLE_MAP_TOP_K`) at a
+  time, through `_execute_concurrently`; `1` is one after another. The
+  first failure cancels the rest and is raised itself. Same calls, same
+  cost; the user's own cap may be passed by up to that many calls less one.

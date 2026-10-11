@@ -342,6 +342,7 @@ async def test_an_assessment_citing_evidence_the_user_lacks_is_rejected(
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
     assessment = create_assessment_service(
         database,
@@ -413,6 +414,7 @@ async def test_the_role_map_estimate_runs_no_local_ml(
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
 
     estimate = await rolemap.estimate_cost(account)
@@ -494,6 +496,9 @@ async def test_a_role_map_analyses_the_first_ten_candidates_the_market_has(
         embedding_model=settings.embedding_model_name,
         top_k=top_k,
         candidate_count=candidate_count,
+        # The stub answers in the order the replies were queued, a role's
+        # extraction then its bar, so its roles take their turns.
+        ai_concurrency=1,
     )
     await rolemap.replace_candidates(
         account,
@@ -558,6 +563,7 @@ async def test_an_analysis_stores_the_roles_it_recommends_for_the_role_map(
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
     assessment = create_assessment_service(
         database,
@@ -640,6 +646,7 @@ async def test_an_analysis_records_the_positions_the_evidence_states(
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
     assessment = create_assessment_service(
         database,
@@ -784,6 +791,9 @@ async def test_a_small_k_names_analyses_and_scores_only_k_roles(
         embedding_model=settings.embedding_model_name,
         top_k=3,
         candidate_count=5,
+        # The stub answers in the order the replies were queued, a role's
+        # extraction then its bar, so its roles take their turns.
+        ai_concurrency=1,
     )
     await rolemap.replace_candidates(
         account,
@@ -860,6 +870,7 @@ async def test_the_ceiling_is_k_roles_however_large_the_market(
         embedding_model=settings.embedding_model_name,
         top_k=settings.role_map_top_k,
         candidate_count=settings.role_candidate_count,
+        ai_concurrency=settings.role_map_ai_concurrency,
     )
 
     estimate = await rolemap.estimate_cost(account)

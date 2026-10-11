@@ -63,6 +63,7 @@ class _Services:
             embedding_model="test-model",
             top_k=10,
             candidate_count=10,
+            ai_concurrency=4,
         )
         self.assessment: AssessmentService = create_assessment_service(
             database,

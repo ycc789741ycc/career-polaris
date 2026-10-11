@@ -220,6 +220,11 @@ step 6:
 
      `_store_role` replaces the role's members and requirements, stores one
      salary band per selected market, and records `RoleRequirementsChanged`.
+
+     The analysed roles run side by side, at most `ROLE_MAP_AI_CONCURRENCY`
+     at a time (default 4; ADR 0069). The first failure cancels the rest and
+     fails the build with its own error; steps 7 and 8 run only once every
+     role is done.
 7. **Lineage.** Split, merged and retired roles are recorded. Every role
    that no longer comes from a kept candidate is retired, including one merged
    into another, whose postings now belong to the role it merged into. A role an earlier build already retired gets no new
@@ -303,7 +308,9 @@ dimension scores the analysis handed over with the candidates
 (`rolemap.candidate_strength`):
 - **Fits:** one `fit_projection` per role with requirements. It maps each
   requirement to a dimension, sets target scores, and stores the fit in
-  `rolemap.role_fit` with its gaps and uncovered requirements.
+  `rolemap.role_fit` with its gaps and uncovered requirements. Roles are
+  scored side by side, at most `ROLE_MAP_AI_CONCURRENCY` at a time, as their
+  analyses are.
 - **The estimate's agreement:** logged as `rolemap.estimate_agreement`, the
   Spearman rank correlation between the local estimate and the fits. Numbers
   only, no user data.

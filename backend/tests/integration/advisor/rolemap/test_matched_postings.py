@@ -144,6 +144,7 @@ async def test_top_matched_lists_open_postings_in_live_roles_by_role_fit(
             embedding_model=settings.embedding_model_name,
             top_k=settings.role_map_top_k,
             candidate_count=settings.role_candidate_count,
+            ai_concurrency=settings.role_map_ai_concurrency,
         )
 
         async def fits(owner_id: uuid.UUID) -> list[FitView]:
