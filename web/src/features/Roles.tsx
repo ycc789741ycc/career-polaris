@@ -52,7 +52,7 @@ import { messageOf, useAsync } from "./useAsync";
  * The role map: which roles exist in this user's market, and how they fit.
  *
  * Where the user wants to work is chosen here, above the map, because it is
- * what a build reads. The user starts every build (ADR 0070): an analysis
+ * what a build reads. The user starts every build (ADR 0071): an analysis
  * builds nothing, so the page says when the map is behind the strengths or
  * the places.
  *
@@ -719,7 +719,7 @@ function listed(places: readonly string[]): string {
  * baseline is bounded to its newest postings (ADR 0068), and says so. Pure.
  */
 /** What the map on screen is behind, as one line, or null when it is current
- * (ADR 0027, ADR 0070). Pure. */
+ * (ADR 0027, ADR 0071). Pure. */
 export function getBehindLine(state: RoleMapState | null): string | null {
   if (!state) return null;
   if (state.strengths_changed && state.locations_changed)

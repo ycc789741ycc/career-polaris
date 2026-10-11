@@ -1,5 +1,5 @@
 """Migration 0054: a finished build learns the analysis it built from, through
-the candidates it placed (ADR 0070). The backfill runs here as each owner,
+the candidates it placed (ADR 0071). The backfill runs here as each owner,
 under the owner policy."""
 
 from __future__ import annotations

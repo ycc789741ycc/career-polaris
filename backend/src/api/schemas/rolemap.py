@@ -99,7 +99,7 @@ class RolePage(Page[Role]):
 class RoleMapState(ApiModel):
     """How current the map on screen is (ADR 0027). It is built only when the
     user asks, so it says how old its market is, and whether the target
-    locations or the strengths changed since (ADR 0070). The first two are
+    locations or the strengths changed since (ADR 0071). The first two are
     null before the first map."""
 
     # The oldest fetch among the sources its last build read.

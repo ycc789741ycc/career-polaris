@@ -336,7 +336,7 @@ async def _analysed(rolemap: RoleMapService, owner_id: uuid.UUID = OWNER) -> Non
 
 
 async def test_a_build_is_refused_before_any_analysis() -> None:
-    """With no candidates a build would place nothing (ADR 0070)."""
+    """With no candidates a build would place nothing (ADR 0071)."""
     service = _service(FakeRoleMapUnitOfWork())
 
     with pytest.raises(ValidationError):

@@ -16,7 +16,7 @@ router = APIRouter(tags=["assessment"])
 @router.get("/assessments/cost-estimate")
 async def cost_estimate(user: CurrentUser, deps: Deps) -> CostEstimate:
     """An analysis is priced and confirmed before it runs. It is the analysis
-    alone: no role-map build follows it (ADR 0070)."""
+    alone: no role-map build follows it (ADR 0071)."""
     return CostEstimate.model_validate(await deps.assessment.estimate_cost(user))
 
 

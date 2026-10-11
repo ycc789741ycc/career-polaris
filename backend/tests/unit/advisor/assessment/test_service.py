@@ -369,7 +369,7 @@ class _PricedRoleMap:
 
 
 async def test_analyze_is_priced_as_the_analysis_alone() -> None:
-    """No build follows an analysis (ADR 0070), so neither a build nor its
+    """No build follows an analysis (ADR 0071), so neither a build nor its
     fits are priced with it."""
     rolemap = _PricedRoleMap()
     service = AssessmentService(

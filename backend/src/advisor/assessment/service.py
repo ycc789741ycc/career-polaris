@@ -221,7 +221,7 @@ class AssessmentService:
 
     async def estimate_cost(self, owner_id: uuid.UUID) -> dict[str, Any]:
         """Priced before anything is spent: the analysis alone. No build
-        follows it (ADR 0070); the user prices one on 03 Roles."""
+        follows it (ADR 0071); the user prices one on 03 Roles."""
         snapshot = await self._profile.snapshot(owner_id)
         if not snapshot.evidence:
             raise ValidationError(

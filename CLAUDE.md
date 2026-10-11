@@ -283,7 +283,7 @@ contract.
   fetches only the sources a build marked due, and announces nothing: no market
   change is ever resolved to users, and nothing reads across users (ADR 0027).
 - **A role map is built only when the user asks.** "Build role map" on 03
-  Roles, with a cost they confirmed. Neither an analysis (ADR 0070), the
+  Roles, with a cost they confirmed. Neither an analysis (ADR 0071), the
   market, nor a change of locations builds one, because a build spends their
   key.
 - **Privacy is a storage location, not a flag.** Pasted JDs live in
@@ -372,7 +372,7 @@ Not yet: unlinking Google, or linking it from Settings.
 The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
 
 - **Target locations.** "Where you want to work" (on 01 Sources until ADR
-  0070, on 03 Roles since): one to three
+  0071, on 03 Roles since): one to three
   places, a `market` domain rule (`chosen_target_locations`) checked again by
   the request schema. `PUT /target-locations` saves the whole set; a change
   emits `TargetLocationsChanged`, which since ADR 0027 builds nothing: the
@@ -386,7 +386,7 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
   `subscription` Target kind are gone. Board discovery stayed, for the
   companies custom roles named, until Phase 8 removed both (ADR 0030).
 - **Ten roles, built after every analysis** (ADR 0020). Since ADR 0029 the
-  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). Since ADR 0070 no build
+  ten is the `ROLE_MAP_TOP_K` setting (Phase 6). Since ADR 0071 no build
   follows an analysis (see "Builds on request").
 - **Roles come from the strengths** (ADR 0024). The analysis recommends up to
   `ROLE_CANDIDATE_COUNT` candidate roles (20 until ADR 0029, 10 now); `assessment` hands them to `rolemap.replace_candidates`,
@@ -1031,7 +1031,7 @@ Postgres over the tunnel (ADR 0051), so a build reads as little as it can:
 
 On `epic/no-ticket/user-started-runs`, one branch per step:
 
-- **An analysis builds nothing** (ADR 0070, superseding ADR 0020's build
+- **An analysis builds nothing** (ADR 0071, superseding ADR 0020's build
   after every analysis). `AnalysisFinished` goes to
   `activity.release_build_after_analysis`, which releases only a build the
   user asked for while the analysis ran, succeeded or failed (ADR 0018).

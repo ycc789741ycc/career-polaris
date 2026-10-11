@@ -273,7 +273,7 @@ describe("Strengths", () => {
     expect(screen.getByRole("button", { name: "Re-analyse" })).toBeEnabled();
   });
 
-  it("prices the analysis alone: no role map is built after it (ADR 0070)", async () => {
+  it("prices the analysis alone: no role map is built after it (ADR 0071)", async () => {
     serve(assessment({}));
     renderStrengths();
 

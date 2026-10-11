@@ -44,7 +44,7 @@ async def list_roles(user: CurrentUser, deps: Deps, paging: Paging) -> RolePage:
 @router.get("/role-map")
 async def role_map_state(user: CurrentUser, deps: Deps) -> RoleMapState:
     """How current the map is: the market it was built from, and whether the
-    target locations (ADR 0027) or the strengths (ADR 0070) changed since."""
+    target locations (ADR 0027) or the strengths (ADR 0071) changed since."""
     built = await deps.rolemap.last_finished_build(user)
     strengths_changed = await deps.rolemap.is_behind_strengths(user)
     if built is None or not built.needed_source_ids:

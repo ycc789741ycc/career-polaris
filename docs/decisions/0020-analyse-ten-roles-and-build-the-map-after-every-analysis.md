@@ -1,6 +1,6 @@
 # 0020. Analyse ten roles, fixed by the system, and build the role map after every analysis
 
-**Status:** Accepted — 2026-09-29. Supersedes [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md). Amended by [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md), [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) and [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md). Superseded in part by [0070](0070-analysis-and-the-role-map-build-are-separate.md): no build follows an analysis.
+**Status:** Accepted — 2026-09-29. Supersedes [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md). Amended by [0024](0024-recommend-roles-from-the-assessment-and-keep-the-ten-the-market-has.md), [0027](0027-fetch-the-market-only-when-a-build-needs-it.md) and [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md). Superseded in part by [0071](0071-analysis-and-the-role-map-build-are-separate.md): no build follows an analysis.
 
 ## Context
 

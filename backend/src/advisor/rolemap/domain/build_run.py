@@ -49,7 +49,7 @@ class BuildRun:
     awaited_since: datetime | None = None
     market_data_at: datetime | None = None
     # The analysis whose candidates it placed, in assessment.skill_assessment:
-    # a newer one means the strengths changed since this map (ADR 0070).
+    # a newer one means the strengths changed since this map (ADR 0071).
     skill_assessment_id: uuid.UUID | None = None
 
     @classmethod

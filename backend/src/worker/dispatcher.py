@@ -69,7 +69,7 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
 
     if name == EventName.ROLE_MAP_BUILD_FINISHED and owner_id:
         # Fits are scored once per build, when it closes, whatever it changed
-        # (ADR 0024). An analysis builds nothing (ADR 0070), so its new scores
+        # (ADR 0024). An analysis builds nothing (ADR 0071), so its new scores
         # reach the fits with the next build the user starts;
         # AssessmentCompleted, DimensionsChanged and RoleRequirementsChanged
         # queue nothing.
@@ -78,7 +78,7 @@ async def _handle(deps: Container, event: OutboxEvent) -> None:
 
     if name == EventName.ANALYSIS_FINISHED and owner_id:
         # Recorded as the run closed, so it no longer counts as running. It
-        # builds nothing on its own: the user starts every build (ADR 0070).
+        # builds nothing on its own: the user starts every build (ADR 0071).
         # A build they asked for during the analysis waited for it (ADR 0018)
         # and goes on now, first waiting for the market sources it reads
         # (ADR 0027).
