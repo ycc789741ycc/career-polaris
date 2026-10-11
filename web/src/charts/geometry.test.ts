@@ -6,6 +6,7 @@ import {
   radarPoint,
   radarPolygon,
   ticks,
+  wrapLabel,
 } from "./geometry";
 
 const CENTRE = { x: 100, y: 100 };
@@ -113,5 +114,32 @@ describe("ticks", () => {
     expect(values[0]).toBe(0);
     expect(values.at(-1)).toBe(100);
     expect(values).toHaveLength(5);
+  });
+});
+
+describe("wrapLabel", () => {
+  it("keeps a short label on one line", () => {
+    expect(wrapLabel("Testing", 16, 3)).toEqual(["Testing"]);
+  });
+
+  it("breaks at spaces", () => {
+    expect(wrapLabel("Distributed systems design", 16, 3)).toEqual([
+      "Distributed",
+      "systems design",
+    ]);
+  });
+
+  it("cuts a word longer than a line", () => {
+    expect(wrapLabel("Internationalisation", 8, 3)).toEqual([
+      "Internat",
+      "ionalisa",
+      "tion",
+    ]);
+  });
+
+  it("ends with an ellipsis past the last line", () => {
+    const lines = wrapLabel("one two three four five six", 7, 2);
+    expect(lines).toEqual(["one two", "three…"]);
+    expect(lines.every((line) => line.length <= 7)).toBe(true);
   });
 });

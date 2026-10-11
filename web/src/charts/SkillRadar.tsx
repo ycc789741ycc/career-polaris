@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { radarPoint, radarPolygon } from "./geometry";
+import { radarPoint, radarPolygon, wrapLabel } from "./geometry";
 
 export interface RadarDimension {
   key: string;
@@ -18,10 +18,17 @@ interface Props {
   selectedKey?: string | undefined;
 }
 
-const SIZE = 420;
-const CENTRE = { x: SIZE / 2, y: SIZE / 2 };
-const RADIUS = 150;
+// Wider than tall: the labels at three and nine o'clock run sideways, away
+// from the plot, and need room the viewBox would otherwise clip.
+const WIDTH = 560;
+const HEIGHT = 420;
+const CENTRE = { x: WIDTH / 2, y: HEIGHT / 2 };
+const RADIUS = 140;
 const RINGS = [25, 50, 75, 100];
+// A short name is at most 32 characters; at 12px, 16 a line fits the gutter.
+const LABEL_MAX_CHARS = 16;
+const LABEL_MAX_LINES = 3;
+const LABEL_LINE_HEIGHT = 14;
 
 /**
  * The strength report.
@@ -58,11 +65,11 @@ export function SkillRadar({
     <div>
       <div style={{ position: "relative" }}>
         <svg
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           width="100%"
           role="img"
           aria-labelledby={titleId}
-          style={{ maxWidth: SIZE, display: "block", margin: "0 auto" }}
+          style={{ maxWidth: WIDTH, display: "block", margin: "0 auto" }}
         >
           <title id={titleId}>
             Skill strength across {dimensions.length} dimensions
@@ -137,6 +144,11 @@ export function SkillRadar({
               CENTRE,
             );
             const isSelected = dimension.key === selectedKey;
+            const lines = wrapLabel(
+              dimension.shortName || dimension.name,
+              LABEL_MAX_CHARS,
+              LABEL_MAX_LINES,
+            );
             return (
               <g key={dimension.key}>
                 {/* 2px surface ring so a marker over the fill stays legible. */}
@@ -172,14 +184,23 @@ export function SkillRadar({
                 />
                 <text
                   x={label.x}
-                  y={label.y}
+                  y={label.y + firstLineOffset(label.y, lines.length)}
                   textAnchor={anchorFor(label.x)}
                   dominantBaseline="middle"
                   fontSize="12"
                   fill="var(--text-secondary)"
                   fontWeight={isSelected ? 700 : 400}
                 >
-                  {dimension.shortName || dimension.name}
+                  <title>{dimension.name}</title>
+                  {lines.map((line, lineIndex) => (
+                    <tspan
+                      key={lineIndex}
+                      x={label.x}
+                      dy={lineIndex === 0 ? 0 : LABEL_LINE_HEIGHT}
+                    >
+                      {line}
+                    </tspan>
+                  ))}
                 </text>
               </g>
             );
@@ -259,6 +280,14 @@ export function SkillRadar({
       </details>
     </div>
   );
+}
+
+/** A label above the centre grows upwards, one below it downwards. */
+function firstLineOffset(y: number, lineCount: number): number {
+  const extra = (lineCount - 1) * LABEL_LINE_HEIGHT;
+  if (y < CENTRE.y - 8) return -extra;
+  if (y > CENTRE.y + 8) return 0;
+  return -extra / 2;
 }
 
 function anchorFor(x: number): "start" | "middle" | "end" {
