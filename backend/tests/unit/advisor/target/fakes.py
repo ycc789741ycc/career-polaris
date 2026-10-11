@@ -9,6 +9,15 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from advisor.target.domain import (
+    OpeningFit,
+    OpeningFitFilter,
+    OpeningFitRepository,
+    OpeningRequirement,
+    OpeningRequirementFilter,
+    OpeningRequirementFit,
+    OpeningRequirementFitFilter,
+    OpeningRequirementFitRepository,
+    OpeningRequirementRepository,
     OwnerTarget,
     OwnPostingFit,
     OwnPostingFitFilter,
@@ -37,6 +46,9 @@ class Store:
     requirements: dict[uuid.UUID, PostingRequirement] = field(default_factory=dict)
     requirement_fits: dict[uuid.UUID, PostingRequirementFit] = field(default_factory=dict)
     fits: dict[uuid.UUID, OwnPostingFit] = field(default_factory=dict)
+    opening_requirements: dict[uuid.UUID, OpeningRequirement] = field(default_factory=dict)
+    opening_requirement_fits: dict[uuid.UUID, OpeningRequirementFit] = field(default_factory=dict)
+    opening_fits: dict[uuid.UUID, OpeningFit] = field(default_factory=dict)
 
 
 class FakePostings(
@@ -107,6 +119,39 @@ class FakeFits(FakeRepository[OwnPostingFit, OwnPostingFitFilter], OwnPostingFit
         )
 
 
+class FakeOpeningRequirements(
+    FakeRepository[OpeningRequirement, OpeningRequirementFilter], OpeningRequirementRepository
+):
+    created_field = "id"
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "opening requirement"
+
+    def matches(self, entity: OpeningRequirement, filter: OpeningRequirementFilter) -> bool:
+        return filter.job_posting_id is None or entity.job_posting_id == filter.job_posting_id
+
+
+class FakeOpeningRequirementFits(
+    FakeRepository[OpeningRequirementFit, OpeningRequirementFitFilter],
+    OpeningRequirementFitRepository,
+):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "opening requirement fit"
+
+    def matches(self, entity: OpeningRequirementFit, filter: OpeningRequirementFitFilter) -> bool:
+        return filter.job_posting_id is None or entity.job_posting_id == filter.job_posting_id
+
+
+class FakeOpeningFits(FakeRepository[OpeningFit, OpeningFitFilter], OpeningFitRepository):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "opening fit"
+
+    def matches(self, entity: OpeningFit, filter: OpeningFitFilter) -> bool:
+        return filter.job_posting_ids is None or entity.job_posting_id in filter.job_posting_ids
+
+
 class FakeOwner(OwnerTarget):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.postings = FakePostings(store.postings, owner_id=owner_id)
@@ -114,6 +159,13 @@ class FakeOwner(OwnerTarget):
         self.requirements = FakeRequirements(store.requirements, owner_id=owner_id)
         self.requirement_fits = FakeRequirementFits(store.requirement_fits, owner_id=owner_id)
         self.fits = FakeFits(store.fits, owner_id=owner_id)
+        self.opening_requirements = FakeOpeningRequirements(
+            store.opening_requirements, owner_id=owner_id
+        )
+        self.opening_requirement_fits = FakeOpeningRequirementFits(
+            store.opening_requirement_fits, owner_id=owner_id
+        )
+        self.opening_fits = FakeOpeningFits(store.opening_fits, owner_id=owner_id)
 
 
 class FakeTargetUnitOfWork(TargetUnitOfWork):

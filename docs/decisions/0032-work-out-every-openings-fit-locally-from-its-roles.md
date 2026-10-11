@@ -1,6 +1,6 @@
 # 0032. Work out every opening's fit locally from its role's, and rank a role's openings by it
 
-**Status:** Accepted — 2026-10-04. Amends [0022](0022-make-a-target-a-role-and-an-optional-opening.md) and [0028](0028-score-the-fit-in-the-role-map.md).
+**Status:** Superseded by [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md). Accepted — 2026-10-04. Amends [0022](0022-make-a-target-a-role-and-an-optional-opening.md) and [0028](0028-score-the-fit-in-the-role-map.md).
 
 ## Context
 

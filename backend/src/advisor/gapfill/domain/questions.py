@@ -150,6 +150,8 @@ class QuestionSetStatus(StrEnum):
 class QuestionStage(StrEnum):
     """Where writing a set has got, recorded as it passes (ADR 0042)."""
 
+    # Scoring an opening against the user before its gaps are known (ADR 0073).
+    SCORING_TARGET = "scoring_target"
     READING = "reading"
     WRITING = "writing"
     CHECKING = "checking"
@@ -204,6 +206,18 @@ class QuestionSet:
             gaps=gaps,
             created_at=at,
         )
+
+    @property
+    def is_waiting_for_gaps(self) -> bool:
+        """Recorded for an opening not scored yet: its gaps are known only
+        once the job has scored it (ADR 0073)."""
+        return not self.gaps
+
+    def update_gaps(self, *, label: str, gaps: tuple[AskedGap, ...]) -> None:
+        if not gaps:
+            raise GapFillError("a set is written for at least one gap")
+        self.label = label[:400]
+        self.gaps = gaps
 
     @property
     def is_open(self) -> bool:

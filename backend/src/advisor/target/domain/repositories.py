@@ -6,9 +6,9 @@ over one frozen filter per aggregate whose unset fields do not filter.
 Requirements have no creation time stored, so they list by id; the use cases
 order them by weight.
 
-Everything stored is a posting of the user's own and what was made of it, all
-owner-zone, so the unit of work has one scope: one user's data, in one
-transaction.
+Everything stored is a posting of the user's own or an opening the user aimed
+at, and what was made of it, all owner-zone, so the unit of work has one
+scope: one user's data, in one transaction.
 """
 
 from __future__ import annotations
@@ -18,6 +18,11 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from advisor.target.domain.opening_fit import (
+    OpeningFit,
+    OpeningRequirement,
+    OpeningRequirementFit,
+)
 from advisor.target.domain.own_posting import PostingEvaluation, PrivateJobPosting
 from advisor.target.domain.posting_fit import (
     OwnPostingFit,
@@ -92,12 +97,43 @@ class OwnPostingFitFilter:
 class OwnPostingFitRepository(Repository[OwnPostingFit, OwnPostingFitFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class OpeningRequirementFilter:
+    job_posting_id: uuid.UUID | None = None
+
+
+class OpeningRequirementRepository(
+    Repository[OpeningRequirement, OpeningRequirementFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class OpeningRequirementFitFilter:
+    job_posting_id: uuid.UUID | None = None
+
+
+class OpeningRequirementFitRepository(
+    Repository[OpeningRequirementFit, OpeningRequirementFitFilter], Protocol
+): ...
+
+
+@dataclass(frozen=True, slots=True)
+class OpeningFitFilter:
+    job_posting_ids: tuple[uuid.UUID, ...] | None = None
+
+
+class OpeningFitRepository(Repository[OpeningFit, OpeningFitFilter], Protocol): ...
+
+
 class OwnerTarget(Protocol):
     postings: PrivateJobPostingRepository
     evaluations: PostingEvaluationRepository
     requirements: PostingRequirementRepository
     requirement_fits: PostingRequirementFitRepository
     fits: OwnPostingFitRepository
+    opening_requirements: OpeningRequirementRepository
+    opening_requirement_fits: OpeningRequirementFitRepository
+    opening_fits: OpeningFitRepository
 
 
 class TargetUnitOfWork(Protocol):

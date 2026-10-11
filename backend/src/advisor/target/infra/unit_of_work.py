@@ -1,7 +1,8 @@
 """Target's unit of work over SQL: one owner-zone transaction per scope.
 
 The scope opens ``Database.for_user``, so row-level security applies. Target
-records no events: a posting of the user's own builds nothing and tells no one.
+records no events: a posting of the user's own, or an opening's fit, builds
+nothing and tells no one.
 """
 
 from __future__ import annotations
@@ -14,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from advisor.target.domain import OwnerTarget, TargetUnitOfWork
 from advisor.target.infra.repositories import (
+    SqlAlchemyOpeningFitRepository,
+    SqlAlchemyOpeningRequirementFitRepository,
+    SqlAlchemyOpeningRequirementRepository,
     SqlAlchemyOwnPostingFitRepository,
     SqlAlchemyPostingEvaluationRepository,
     SqlAlchemyPostingRequirementFitRepository,
@@ -32,6 +36,13 @@ class SqlAlchemyOwnerTarget(OwnerTarget):
             session, owner_id=owner_id
         )
         self.fits = SqlAlchemyOwnPostingFitRepository(session, owner_id=owner_id)
+        self.opening_requirements = SqlAlchemyOpeningRequirementRepository(
+            session, owner_id=owner_id
+        )
+        self.opening_requirement_fits = SqlAlchemyOpeningRequirementFitRepository(
+            session, owner_id=owner_id
+        )
+        self.opening_fits = SqlAlchemyOpeningFitRepository(session, owner_id=owner_id)
 
 
 class SqlAlchemyTargetUnitOfWork(TargetUnitOfWork):

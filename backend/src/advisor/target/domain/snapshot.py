@@ -26,8 +26,8 @@ class RequirementBasis(StrEnum):
 
     # A posting of the user's own: the JD they pasted.
     POSTING = "posting"
-    # One opening in a Role: the Role's requirements, as that opening weighs
-    # them (Phase 8).
+    # One opening in a Role: what its own description asks for, read when its
+    # gap analysis ran (ADR 0073).
     OPENING = "opening"
     # The Role's requirements across its openings.
     ROLE = "role"

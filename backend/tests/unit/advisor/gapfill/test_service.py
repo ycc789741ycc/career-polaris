@@ -50,11 +50,34 @@ def _snapshot(*, cleared: bool = False) -> TargetSnapshot:
 
 
 class FakeTarget:
-    def __init__(self, snapshot: TargetSnapshot) -> None:
+    """A Target already scored, unless ``scored`` is false: then it is an
+    opening whose fit ``create_opening_fit`` works out (ADR 0073)."""
+
+    def __init__(self, snapshot: TargetSnapshot, *, scored: bool = True) -> None:
         self.current = snapshot
+        self.scored = scored
+        self.scorings = 0
 
     async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+        if not self.scored:
+            raise TargetUnusableError("run its gap analysis in Fill the gap first")
         return self.current
+
+    async def is_scored(self, owner_id: uuid.UUID, ref: TargetRef) -> bool:
+        return self.scored
+
+    async def get_label(self, owner_id: uuid.UUID, ref: TargetRef) -> str:
+        return "Staff Backend Engineer · Northwind Pay"
+
+    async def estimate_opening_fit(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
+        return {"cost_usd": "0.20", "model_id": "claude-opus-5", "rate_is_published": True}
+
+    async def create_opening_fit(
+        self, owner_id: uuid.UUID, ref: TargetRef, *, checkpoint: Any
+    ) -> None:
+        await checkpoint()
+        self.scorings += 1
+        self.scored = True
 
 
 @dataclass(frozen=True)
@@ -440,3 +463,76 @@ async def test_a_set_being_written_is_listed_as_a_running_job() -> None:
 
     assert (job.kind, job.id, job.role_id) == ("questions", str(requested.id), REF.role_id)
     assert await service.running_jobs(OTHER) == ()
+
+
+OPENING = TargetRef("00000000-0000-0000-0000-0000000000aa", "00000000-0000-0000-0000-0000000000bb")
+
+
+async def test_an_unscored_opening_is_scored_first_then_asked_about() -> None:
+    """Its gaps are known only once it is scored, so the set is recorded
+    without them and the job scores it before it writes (ADR 0073)."""
+    uow = FakeGapFillUnitOfWork()
+    target = FakeTarget(_snapshot(), scored=False)
+    service = _service(uow, target=target)
+
+    requested = await service.request(OWNER, OPENING)
+    assert requested.status == "writing" and requested.gaps == ()
+    assert requested.label == "Staff Backend Engineer · Northwind Pay"
+
+    await service.write(OWNER, requested.id)
+    written = await service.get(OWNER, requested.id)
+
+    assert target.scorings == 1
+    assert written.status == "ready"
+    assert [g.key for g in written.gaps] == ["dim:incidents", "req:multi-region-capacity"]
+
+
+async def test_a_scored_opening_with_nothing_to_ask_fails_its_set() -> None:
+    uow = FakeGapFillUnitOfWork()
+    service = _service(uow, target=FakeTarget(_snapshot(cleared=True), scored=False))
+
+    requested = await service.request(OWNER, OPENING)
+    await service.write(OWNER, requested.id)
+    found = await service.get(OWNER, requested.id)
+
+    assert found.status == "failed" and found.error_code == "target_unusable"
+    assert found.error_message is not None and "nothing to ask" in found.error_message
+
+
+async def test_a_set_cancelled_while_its_opening_is_scored_writes_nothing() -> None:
+    uow = FakeGapFillUnitOfWork()
+    gateway = FakeGateway()
+    target = FakeTarget(_snapshot(), scored=False)
+    service = _service(uow, target=target, gateway=gateway)
+    requested = await service.request(OWNER, OPENING)
+    await service.cancel(OWNER, requested.id)
+
+    await service.write(OWNER, requested.id)
+
+    assert target.scorings == 0 and gateway.inputs == []
+
+
+async def test_an_unscored_opening_is_priced_with_its_scoring() -> None:
+    class PricedGateway(FakeGateway):
+        async def estimate(self, owner_id: uuid.UUID, **_: Any) -> Any:
+            return type(
+                "Estimate",
+                (),
+                {
+                    "cost_usd": Decimal("0.05"),
+                    "model_id": "claude-opus-5",
+                    "input_tokens": 900,
+                    "rate_is_published": True,
+                },
+            )()
+
+    service = _service(
+        FakeGapFillUnitOfWork(),
+        target=FakeTarget(_snapshot(), scored=False),
+        gateway=PricedGateway(),
+    )
+
+    priced = await service.estimate_cost(OWNER, OPENING)
+
+    assert priced["cost_usd"] == "0.25"
+    assert priced["rate_is_published"] is True

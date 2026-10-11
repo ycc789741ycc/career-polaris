@@ -12,6 +12,11 @@ from advisor.target.domain.draft_basis import (
     OutdatedReason,
     get_target_digest,
 )
+from advisor.target.domain.opening_fit import (
+    OpeningFit,
+    OpeningRequirement,
+    OpeningRequirementFit,
+)
 from advisor.target.domain.own_posting import (
     EvaluationStage,
     OwnPostingError,
@@ -29,6 +34,12 @@ from advisor.target.domain.posting_fit import (
     PostingRequirementFit,
 )
 from advisor.target.domain.repositories import (
+    OpeningFitFilter,
+    OpeningFitRepository,
+    OpeningRequirementFilter,
+    OpeningRequirementFitFilter,
+    OpeningRequirementFitRepository,
+    OpeningRequirementRepository,
     OwnerTarget,
     OwnPostingFitFilter,
     OwnPostingFitRepository,
@@ -66,6 +77,15 @@ __all__ = [
     "DimensionGap",
     "DraftBasis",
     "EvaluationStage",
+    "OpeningFit",
+    "OpeningFitFilter",
+    "OpeningFitRepository",
+    "OpeningRequirement",
+    "OpeningRequirementFilter",
+    "OpeningRequirementFit",
+    "OpeningRequirementFitFilter",
+    "OpeningRequirementFitRepository",
+    "OpeningRequirementRepository",
     "OutdatedReason",
     "OwnPostingError",
     "OwnPostingFit",

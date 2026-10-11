@@ -19,13 +19,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from advisor.rolemap.domain.constants import (
-    OPENING_EMPHASIS,
-    OPENING_WEIGHT_CEILING,
-    OPENING_WEIGHT_FLOOR,
-)
-from advisor.rolemap.domain.similarity import get_similarity_matrix
-
 # How much an uncovered requirement costs, relative to a dimension scored zero
 # against its target. A requirement with no evidence at all is worse than a low
 # score, so it is not discounted.
@@ -203,35 +196,6 @@ class RoleFit:
         )
 
 
-@dataclass(slots=True)
-class PostingFit:
-    """The user's fit to one opening in one of their roles, worked out locally
-    from the role's ``RoleFit`` (Phase 8, ADR 0032). It is never an AI call.
-
-    ``posting_key`` is the shared posting's id, and ``role_id`` its role.
-    ``source_fit_id`` is the role fit it came from, and ``assessment_id`` the
-    analysis whose scores it was worked out against.
-
-    It is a cache of a pure computation: never edited, worked out again by
-    every build, and rebuildable from the fits and the embeddings with no AI
-    call. A posting of the user's own has its fit in Target (ADR 0033).
-    """
-
-    id: uuid.UUID
-    owner_id: uuid.UUID
-    posting_key: str
-    role_id: uuid.UUID
-    source_fit_id: uuid.UUID
-    assessment_id: uuid.UUID
-    score: int
-    requirements: tuple[dict[str, Any], ...]
-    requirement_map: dict[str, str | None]
-    target_profile: dict[str, int]
-    gaps: tuple[dict[str, Any], ...]
-    uncovered: tuple[dict[str, Any], ...]
-    created_at: datetime | None = None
-
-
 def get_posting_fit(
     *,
     requirements: Sequence[Mapping[str, Any]],
@@ -285,95 +249,3 @@ def get_requirements_digest(
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def get_requirement_relevance(
-    requirement_vectors: Sequence[Sequence[float]],
-    opening_vectors: Sequence[Sequence[float]],
-) -> list[list[float]]:
-    """How much each opening asks for each requirement, compared with the
-    other openings of its role: ``[opening][requirement]``.
-
-    A requirement's similarity to an opening is centred on its mean over the
-    role's openings. One every opening asks for is 0 everywhere, so it weighs
-    the same in each; one an opening stresses is above 0 there. Plain
-    arithmetic over local vectors.
-    """
-    if not opening_vectors:
-        return []
-    similarity = get_similarity_matrix(opening_vectors, requirement_vectors)
-    means = [
-        sum(row[i] for row in similarity) / len(similarity) for i in range(len(requirement_vectors))
-    ]
-    return [[row[i] - means[i] for i in range(len(requirement_vectors))] for row in similarity]
-
-
-def get_opening_fit(
-    *,
-    requirements: Sequence[Mapping[str, Any]],
-    requirement_map: Mapping[str, str | None],
-    target_profile: Mapping[str, int],
-    user_scores: Mapping[str, int],
-    relevance: Sequence[float],
-) -> tuple[FitResult, tuple[dict[str, Any], ...]]:
-    """One opening's fit, worked out from its role's AI fit with no AI call
-    (Phase 8): the role's requirements reweighted by how much the opening asks
-    for each (``relevance``, from ``get_requirement_relevance``), evaluated
-    with the role fit's mapping and targets. Returns the result and the
-    requirements as the opening weighs them.
-
-    A requirement's weight is scaled by ``1 + OPENING_EMPHASIS x relevance``,
-    at most ``OPENING_WEIGHT_CEILING``; below ``OPENING_WEIGHT_FLOOR`` the
-    opening does not ask for it, and it drops out. A dimension counts by the
-    weight its requirements kept, relative to the role's; one with none mapped
-    counts as for the role. With every opening alike, each scores its role's
-    fit.
-    """
-    if len(relevance) != len(requirements):
-        raise ValueError("relevance needs one entry per requirement")
-    scales = [_opening_scale(r) for r in relevance]
-    kept = tuple(
-        {**requirement, "weight": round(float(requirement["weight"]) * scale, 4)}
-        for requirement, scale in zip(requirements, scales, strict=True)
-        if scale > 0
-    )
-    role_weight: dict[str, float] = {}
-    opening_weight: dict[str, float] = {}
-    for requirement, scale in zip(requirements, scales, strict=True):
-        dimension = requirement_map.get(str(requirement["statement"]))
-        if dimension is not None and dimension in user_scores:
-            weight = float(requirement["weight"])
-            role_weight[dimension] = role_weight.get(dimension, 0.0) + weight
-            opening_weight[dimension] = opening_weight.get(dimension, 0.0) + weight * scale
-    dimension_weights = {
-        key: opening_weight[key] / role_weight[key] if role_weight.get(key) else 1.0
-        for key in target_profile
-    }
-    targets = [
-        TargetScore(dimension_id=key, target=target)
-        for key, target in sorted(target_profile.items())
-        if key in user_scores and dimension_weights[key] > 0
-    ]
-    seen: set[str] = set()
-    uncovered: list[UncoveredRequirement] = []
-    for requirement in kept:
-        statement = str(requirement["statement"])
-        if statement in seen:
-            continue
-        seen.add(statement)
-        if requirement_map.get(statement) not in user_scores:
-            uncovered.append(UncoveredRequirement(statement, float(requirement["weight"])))
-    result = evaluate(
-        user_scores=dict(user_scores),
-        targets=targets,
-        uncovered=uncovered,
-        dimension_weights=dimension_weights,
-    )
-    return result, kept
-
-
-def _opening_scale(relevance: float) -> float:
-    scale = 1.0 + OPENING_EMPHASIS * relevance
-    if scale < OPENING_WEIGHT_FLOOR:
-        return 0.0
-    return min(OPENING_WEIGHT_CEILING, scale)

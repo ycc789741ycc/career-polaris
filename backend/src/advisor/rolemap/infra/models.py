@@ -282,35 +282,3 @@ class RoleFit(Base, OwnedMixin):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
-
-class PostingFit(Base, OwnedMixin):
-    """The user's fit to one opening in one of their roles, worked out locally
-    from the role's fit; never an AI call. Replaced by each build, as a cache.
-    A posting of the user's own has its fit in ``target`` (ADR 0033)."""
-
-    __tablename__ = "posting_fit"
-    __table_args__ = (
-        Index("ix_posting_fit_owner_role", "owner_id", "role_id"),
-        Index("ix_posting_fit_owner_key", "owner_id", "posting_key", "created_at"),
-        {"schema": "rolemap"},
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
-    # The shared posting's id, as role_member keys it.
-    posting_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    # The role's role_fit it was worked out from.
-    source_fit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    role_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("rolemap.role.id", ondelete="CASCADE"), nullable=False
-    )
-    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
-    score: Mapped[int] = mapped_column(Integer, nullable=False)
-    requirements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    requirement_map: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    target_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    uncovered: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )

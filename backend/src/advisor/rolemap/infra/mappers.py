@@ -11,7 +11,6 @@ from advisor.rolemap.domain import (
     CandidateStrength,
     LineageEntry,
     PlacementOutcome,
-    PostingFit,
     Role,
     RoleCandidate,
     RoleChange,
@@ -267,43 +266,6 @@ def apply_fit(row: models.RoleFit, entity: RoleFit) -> None:
     row.requirements_digest = entity.requirements_digest
     row.model_id = entity.model_id
     row.template_version = entity.template_version
-
-
-def posting_fit(row: models.PostingFit) -> PostingFit:
-    return PostingFit(
-        id=row.id,
-        owner_id=row.owner_id,
-        posting_key=row.posting_key,
-        source_fit_id=row.source_fit_id,
-        assessment_id=row.assessment_id,
-        score=row.score,
-        requirements=tuple(row.requirements),
-        requirement_map=dict(row.requirement_map),
-        target_profile=dict(row.target_profile),
-        gaps=tuple(row.gaps),
-        uncovered=tuple(row.uncovered),
-        role_id=row.role_id,
-        created_at=row.created_at,
-    )
-
-
-def posting_fit_row(entity: PostingFit) -> models.PostingFit:
-    row = models.PostingFit(id=entity.id, owner_id=entity.owner_id)
-    apply_posting_fit(row, entity)
-    return row
-
-
-def apply_posting_fit(row: models.PostingFit, entity: PostingFit) -> None:
-    row.posting_key = entity.posting_key
-    row.source_fit_id = entity.source_fit_id
-    row.role_id = entity.role_id
-    row.assessment_id = entity.assessment_id
-    row.score = entity.score
-    row.requirements = list(entity.requirements)
-    row.requirement_map = dict(entity.requirement_map)
-    row.target_profile = dict(entity.target_profile)
-    row.gaps = list(entity.gaps)
-    row.uncovered = list(entity.uncovered)
 
 
 def placement(row: models.CandidatePlacement) -> CandidatePlacement:

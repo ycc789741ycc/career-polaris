@@ -18,6 +18,7 @@ in one place (ADR 0028). Resolving a Target spends nothing.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -41,6 +42,12 @@ from advisor.target.domain import (
     DimensionGap,
     DraftBasis,
     EvaluationStage,
+    OpeningFit,
+    OpeningFitFilter,
+    OpeningRequirement,
+    OpeningRequirementFilter,
+    OpeningRequirementFit,
+    OpeningRequirementFitFilter,
     OutdatedReason,
     OwnerTarget,
     OwnPostingError,
@@ -80,6 +87,7 @@ from kernel.storage import ObjectStore, object_key
 __all__ = [
     "DimensionGap",
     "DraftBasis",
+    "OpeningFitView",
     "OutdatedReason",
     "OwnPostingView",
     "TargetError",
@@ -129,6 +137,19 @@ class OwnPostingView:
     scored_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class OpeningFitView:
+    """The user's fit to one opening, scored by AI from its own description
+    when its gap analysis ran (ADR 0073)."""
+
+    job_posting_id: uuid.UUID
+    fit: int
+    # Scored against an analysis older than the latest: the next gap analysis
+    # rescores it.
+    is_stale: bool
+    scored_at: datetime
+
+
 class TargetService:
     def __init__(
         self,
@@ -153,14 +174,32 @@ class TargetService:
 
         A posting of the user's own is measured against its JD's requirements
         and its own fit. A role is measured against its requirements across its
-        openings. An opening is measured against its own fit, the role's
-        requirements as it weighs them (Phase 8), or against its role's before
-        a build has worked that out.
+        openings. An opening is measured against its own requirements and fit,
+        read and scored by AI when its gap analysis ran (ADR 0073); before
+        that it cannot be planned or written for, and never falls back to its
+        role's.
         """
         if ref.is_own_posting:
             return await self._own_posting_snapshot(owner_id, ref)
         role = await self._role(owner_id, ref)
         opening = await self._opening(owner_id, role, ref)
+        if opening is not None:
+            opening_fit = await self._opening_fit(owner_id, opening.id)
+            if opening_fit is None:
+                raise TargetUnusableError(
+                    f"{_opening_label(role, opening)} has not been scored against your profile"
+                    " yet; run its gap analysis in Fill the gap first",
+                    **ref.to_dict(),
+                )
+            return await self._freeze(
+                owner_id,
+                ref,
+                role=role,
+                title=opening.title,
+                company=opening.company_name,
+                fit=opening_fit,
+                basis=RequirementBasis.OPENING,
+            )
         fit = next((f for f in await self._rolemap.fits(owner_id) if f.role_id == role.id), None)
         if fit is None:
             raise TargetUnusableError(
@@ -168,17 +207,14 @@ class TargetService:
                 "it is scored when the role map is built",
                 role_id=str(role.id),
             )
-        opening_fit = (
-            await self._rolemap.opening_fit(owner_id, role.id, opening.id) if opening else None
-        )
         return await self._freeze(
             owner_id,
             ref,
             role=role,
-            title=opening.title if opening else role.name,
-            company=opening.company_name if opening else "",
-            fit=opening_fit or fit,
-            basis=RequirementBasis.OPENING if opening_fit else RequirementBasis.ROLE,
+            title=role.name,
+            company="",
+            fit=fit,
+            basis=RequirementBasis.ROLE,
         )
 
     async def _own_posting_snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
@@ -234,6 +270,252 @@ class TargetService:
             snapshot=snapshot,
             requirements_text=requirements_block(snapshot),
         )
+
+    async def get_label(self, owner_id: uuid.UUID, ref: TargetRef) -> str:
+        """How a Target is named, as its snapshot names it, resolved without
+        its fit: for a set recorded before an opening is scored."""
+        if ref.is_own_posting:
+            posting = await self._posting(owner_id, _uuid(ref.private_job_posting_id or "", ref))
+            return _posting_label(posting)
+        role = await self._role(owner_id, ref)
+        opening = await self._opening(owner_id, role, ref)
+        return _opening_label(role, opening) if opening is not None else role.name
+
+    # -- openings (ADR 0073) -------------------------------------------------
+
+    async def is_scored(self, owner_id: uuid.UUID, ref: TargetRef) -> bool:
+        """Whether the Target's fit can be planned against as it is. A role is
+        scored by its build and a posting of the user's own when it is set as
+        the target, so only an opening is ever unscored here: before its first
+        gap analysis, or after a newer analysis of the user. Spends nothing."""
+        if ref.opening_uuid is None:
+            return True
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.opening_fits.get_list(
+                OpeningFitFilter(job_posting_ids=(ref.opening_uuid,)), page_size=1
+            )
+        if not found:
+            return False
+        strengths = await self._rolemap.strengths(owner_id)
+        return not found[0].is_stale(strengths.assessment_id if strengths else None)
+
+    async def get_opening_fit(
+        self, owner_id: uuid.UUID, job_posting_id: uuid.UUID
+    ) -> OpeningFitView | None:
+        """The user's current fit to an opening, or none before its first gap
+        analysis. Spends nothing."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.opening_fits.get_list(
+                OpeningFitFilter(job_posting_ids=(job_posting_id,)), page_size=1
+            )
+        if not found:
+            return None
+        fit = found[0]
+        # Set by the database when the fit was stored.
+        assert fit.created_at is not None, "a stored fit has a creation time"
+        strengths = await self._rolemap.strengths(owner_id)
+        return OpeningFitView(
+            job_posting_id=job_posting_id,
+            fit=fit.score,
+            is_stale=fit.is_stale(strengths.assessment_id if strengths else None),
+            scored_at=fit.created_at,
+        )
+
+    async def estimate_opening_fit(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
+        """What scoring an opening costs: nothing when its fit is current;
+        otherwise reading what its description asks for, if that has not been
+        read yet, and scoring the fit. The fit is a ceiling."""
+        if await self.is_scored(owner_id, ref):
+            return {"cost_usd": "0", "model_id": None, "rate_is_published": True}
+        role = await self._role(owner_id, ref)
+        opening = await self._require_opening(owner_id, role, ref)
+        fit = await self._rolemap.estimate_projection(owner_id)
+        if await self._opening_requirements(owner_id, opening.id):
+            return {
+                "cost_usd": str(fit.cost_usd),
+                "model_id": fit.model_id,
+                "rate_is_published": fit.rate_is_published,
+            }
+        read = await self._rolemap.estimate_requirements(
+            owner_id,
+            title=opening.title,
+            company_name=opening.company_name,
+            job_description=await self._opening_description(opening),
+        )
+        return {
+            "cost_usd": str(read.cost_usd + fit.cost_usd),
+            "model_id": read.model_id,
+            "rate_is_published": read.rate_is_published and fit.rate_is_published,
+        }
+
+    async def create_opening_fit(
+        self,
+        owner_id: uuid.UUID,
+        ref: TargetRef,
+        *,
+        checkpoint: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Score the user against one opening, on their key or the platform's
+        (ADR 0073): read what its description asks for, once; map that onto
+        the user's dimensions, unless the projection there is would come out
+        the same; then work out the fit from it locally. ``checkpoint`` runs
+        before each call, and raises to stop the job there. A fit already
+        current is left as it is. Worker only."""
+        if await self.is_scored(owner_id, ref):
+            return
+        strengths = await self._require_strengths(owner_id)
+        role = await self._role(owner_id, ref)
+        opening = await self._require_opening(owner_id, role, ref)
+        read = await self._opening_requirements(owner_id, opening.id)
+        if not read:
+            description = await self._opening_description(opening)
+            await checkpoint()
+            found = await self._rolemap.extract_requirements(
+                owner_id,
+                title=opening.title,
+                company_name=opening.company_name,
+                job_description=description,
+            )
+            async with self._uow.for_owner(owner_id) as mine:
+                for requirement in found.requirements:
+                    await mine.opening_requirements.create(
+                        OpeningRequirement(
+                            id=uuid.uuid4(),
+                            owner_id=owner_id,
+                            job_posting_id=opening.id,
+                            statement=requirement.statement,
+                            weight=requirement.weight,
+                            expected_level=requirement.expected_level,
+                        )
+                    )
+            read = await self._opening_requirements(owner_id, opening.id)
+        if not read:
+            raise ValidationError("no requirements could be read out of this opening")
+        source = await self._project_opening(
+            owner_id, strengths, opening, read, checkpoint=checkpoint
+        )
+        found_fit = get_posting_fit_result(
+            requirements=source.requirements,
+            requirement_map=source.requirement_map,
+            target_profile=source.target_profile,
+            user_scores=strengths.scores,
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            await mine.opening_fits.create(
+                OpeningFit(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    job_posting_id=opening.id,
+                    source_fit_id=source.id,
+                    assessment_id=source.assessment_id,
+                    score=found_fit.score,
+                    requirements=source.requirements,
+                    requirement_map=dict(source.requirement_map),
+                    target_profile=dict(source.target_profile),
+                    gaps=found_fit.gaps,
+                    uncovered=found_fit.uncovered,
+                )
+            )
+        log.info("target.opening_scored", job_posting_id=str(opening.id), score=found_fit.score)
+
+    async def _project_opening(
+        self,
+        owner_id: uuid.UUID,
+        strengths: StrengthsView,
+        opening: PostingHeadView,
+        read: tuple[RequirementView, ...],
+        *,
+        checkpoint: Callable[[], Awaitable[None]],
+    ) -> OpeningRequirementFit:
+        """The AI's projection of the opening's requirements onto the user's
+        dimensions: the one there is, when it read the same requirements and
+        the same analysis's scores, else a new call."""
+        async with self._uow.for_owner(owner_id) as mine:
+            earlier = await mine.opening_requirement_fits.get_list(
+                OpeningRequirementFitFilter(job_posting_id=opening.id), page_size=1
+            )
+        if earlier and earlier[0].is_current(
+            assessment_id=strengths.assessment_id,
+            requirements_digest=get_projection_digest(read),
+        ):
+            return earlier[0]
+        await checkpoint()
+        projection = await self._rolemap.project_requirements(
+            owner_id, title=opening.title, requirements=read
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            return await mine.opening_requirement_fits.create(
+                OpeningRequirementFit(
+                    id=uuid.uuid4(),
+                    owner_id=owner_id,
+                    job_posting_id=opening.id,
+                    assessment_id=projection.assessment_id,
+                    requirements=projection.requirements,
+                    requirement_map=dict(projection.requirement_map),
+                    target_profile=dict(projection.target_profile),
+                    reasoning=projection.reasoning,
+                    model_id=projection.model_id,
+                    template_version=projection.template_version,
+                    requirements_digest=projection.requirements_digest,
+                )
+            )
+
+    async def _opening_requirements(
+        self, owner_id: uuid.UUID, job_posting_id: uuid.UUID
+    ) -> tuple[RequirementView, ...]:
+        """What an opening asks for, as read once, weightiest first."""
+        async with self._uow.for_owner(owner_id) as mine:
+            read = await mine.opening_requirements.get_list(
+                OpeningRequirementFilter(job_posting_id=job_posting_id)
+            )
+        return tuple(
+            RequirementView(r.statement, r.weight, r.expected_level)
+            for r in sorted(read, key=lambda r: (-r.weight, r.statement))
+        )
+
+    async def _opening_description(self, opening: PostingHeadView) -> str:
+        description = await self._rolemap.opening_description(opening.id)
+        if description is None:
+            raise ValidationError(
+                "this opening's description is no longer available to read",
+                job_posting_id=str(opening.id),
+            )
+        return description[:MAX_JOB_DESCRIPTION]
+
+    async def _opening_fit(
+        self, owner_id: uuid.UUID, job_posting_id: uuid.UUID
+    ) -> PostingFitView | None:
+        """The current fit to an opening, or none before it is scored."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.opening_fits.get_list(
+                OpeningFitFilter(job_posting_ids=(job_posting_id,)), page_size=1
+            )
+        if not found:
+            return None
+        fit = found[0]
+        assert fit.created_at is not None, "a stored fit has a creation time"
+        return PostingFitView(
+            posting_key=str(fit.job_posting_id),
+            score=fit.score,
+            gaps=fit.gaps,
+            uncovered=fit.uncovered,
+            requirements=tuple(
+                RequirementView(r["statement"], r["weight"], r["expected_level"])
+                for r in fit.requirements
+            ),
+            requirement_map=dict(fit.requirement_map),
+            target_profile=dict(fit.target_profile),
+            assessment_id=fit.assessment_id,
+            created_at=fit.created_at,
+        )
+
+    async def _require_opening(
+        self, owner_id: uuid.UUID, role: RoleView, ref: TargetRef
+    ) -> PostingHeadView:
+        opening = await self._opening(owner_id, role, ref)
+        if opening is None:
+            raise ValidationError("only an opening is scored this way", **ref.to_dict())
+        return opening
 
     # -- postings of the user's own (Phase 8, ADR 0033) ----------------------
 
@@ -871,6 +1153,11 @@ def _own_posting_view(
         is_stale=fit is not None and fit.is_stale(latest_assessment),
         scored_at=fit.created_at if fit is not None else None,
     )
+
+
+def _opening_label(role: RoleView, opening: PostingHeadView) -> str:
+    """As a snapshot labels an opening: its role, then its company."""
+    return f"{role.name} · {opening.company_name}" if opening.company_name else role.name
 
 
 def _posting_label(posting: PrivateJobPosting | None) -> str:

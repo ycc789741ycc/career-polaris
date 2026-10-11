@@ -101,7 +101,6 @@ function serve(overrides: Record<string, unknown> = {}) {
           url: null,
           salary: { min: 165_000, max: 190_000, currency: "EUR" },
           fit: 62,
-          fit_basis: "posting",
           source_kind: "atsBoard",
           credited_to: null,
           posted_on: "2026-10-02",
@@ -119,7 +118,6 @@ function serve(overrides: Record<string, unknown> = {}) {
           url: "https://himalayas.app/companies/kestrel-labs/jobs/platform-engineer",
           salary: null,
           fit: 84,
-          fit_basis: "posting",
           source_kind: "publicApi",
           credited_to: "Himalayas",
           posted_on: null,
@@ -151,17 +149,7 @@ function serve(overrides: Record<string, unknown> = {}) {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input).replace("http://api.test/api/v1", "");
-      // Writing a Target's questions, priced before "Target this role".
-      const body = url.startsWith("/gap-question-sets/cost-estimate")
-        ? {
-            cost_usd: "0.03",
-            model_id: "claude-opus-5",
-            input_tokens: 900,
-            rate_is_published: true,
-          }
-        : url === "/gap-question-sets"
-          ? { id: "q1" }
-          : (routes[url] ?? null);
+      const body = routes[url] ?? null;
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -216,32 +204,23 @@ describe("the role map's one Advisor target", () => {
 
     const bar = await screen.findByRole("region", { name: "Advisor target" });
     expect(bar).toHaveTextContent("Platform Engineer");
+    const before = vi.mocked(globalThis.fetch).mock.calls.length;
     await user.click(
       within(bar).getByRole("button", { name: "Target this role" }),
     );
-    // The questions are priced first, and start only once confirmed.
-    const confirm = await screen.findByRole("region", {
-      name: "Cost estimate",
+    // It only aims the Advisor: nothing is priced, asked for or spent; the
+    // gap analysis starts in Fill the gap (ADR 0073).
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      tab: "gaps",
+      focus: { role: "r2" },
     });
-    expect(confirm).toHaveTextContent("$0.03");
-    expect(shell.navigate).not.toHaveBeenCalled();
-    await user.click(within(confirm).getAllByRole("button")[0]!);
-    await vi.waitFor(() =>
-      expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-        tab: "gaps",
-        focus: { role: "r2" },
-      }),
-    );
-    const posted = vi
-      .mocked(globalThis.fetch)
-      .mock.calls.find(
-        ([url, init]) =>
-          String(url).endsWith("/gap-question-sets") && init?.method === "POST",
-      );
-    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
-      role_id: "r2",
-      job_posting_id: null,
-    });
+    expect(screen.queryByRole("region", { name: "Cost estimate" })).toBeNull();
+    expect(
+      vi
+        .mocked(globalThis.fetch)
+        .mock.calls.slice(before)
+        .some(([url]) => String(url).includes("/gap-question-sets")),
+    ).toBe(false);
     // It is the Advisor's target from now on, for the sidebar's next visit.
     expect(getStoredTargets("maya@example.com").current).toMatchObject({
       role_id: "r2",
@@ -274,23 +253,11 @@ describe("the role map's one Advisor target", () => {
     await user.click(
       within(bar).getByRole("button", { name: "Target this opening" }),
     );
-    const confirm = await screen.findByRole("region", {
-      name: "Cost estimate",
+    expect(shell.navigate).toHaveBeenCalledWith("advisor", {
+      tab: "gaps",
+      focus: { role: "r1", opening: "p1" },
     });
-    await user.click(within(confirm).getAllByRole("button")[0]!);
-    await vi.waitFor(() =>
-      expect(shell.navigate).toHaveBeenCalledWith("advisor", {
-        tab: "gaps",
-        focus: { role: "r1", opening: "p1" },
-      }),
-    );
-    const posted = vi
-      .mocked(globalThis.fetch)
-      .mock.calls.find(
-        ([url, init]) =>
-          String(url).endsWith("/gap-question-sets") && init?.method === "POST",
-      );
-    expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
+    expect(getStoredTargets("maya@example.com").current).toMatchObject({
       role_id: "r1",
       job_posting_id: "p1",
     });
@@ -370,7 +337,6 @@ describe("the role map's one Advisor target", () => {
       url: null,
       salary: null,
       fit: 62,
-      fit_basis: "posting",
       source_kind: "atsBoard",
       credited_to: null,
       posted_on: "2026-10-01",

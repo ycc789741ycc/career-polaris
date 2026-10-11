@@ -205,7 +205,22 @@ class GapFillService:
         )
 
     async def estimate_cost(self, owner_id: uuid.UUID, ref: TargetRef) -> dict[str, Any]:
-        """Priced before anything is spent."""
+        """Priced before anything is spent. An opening not scored yet is priced
+        with its scoring, and its questions as a ceiling, since its gaps are
+        not known until it is scored: one confirmation covers both (ADR
+        0073)."""
+        if not await self._target.is_scored(owner_id, ref):
+            scoring = await self._target.estimate_opening_fit(owner_id, ref)
+            questions = await self.estimate_ceiling(
+                owner_id, await self._target.get_label(owner_id, ref)
+            )
+            return {
+                "cost_usd": str(Decimal(scoring["cost_usd"]) + Decimal(questions["cost_usd"])),
+                "model_id": questions["model_id"],
+                "input_tokens": questions["input_tokens"],
+                "rate_is_published": scoring["rate_is_published"]
+                and questions["rate_is_published"],
+            }
         snapshot = await self._target.snapshot(owner_id, ref)
         estimate = await self._gateway.estimate(
             owner_id,
@@ -257,17 +272,20 @@ class GapFillService:
         """Record a set as writing; the caller queues ``write``.
 
         The Target is resolved here, so one with nothing to ask about is
-        refused now. Once written, a newer set supersedes the Target's earlier
+        refused now. An opening not scored yet is recorded without its gaps:
+        the job scores it first, and refuses it then if there is nothing to
+        ask (ADR 0073). Once written, a newer set supersedes the Target's earlier
         ones, so cancelling it leaves them as they were (ADR 0042); answers
         already submitted stay evidence. A Target with a set still being written
         is refused: there is one job of a kind per Target at a time.
         """
-        snapshot = await self._target.snapshot(owner_id, ref)
-        gaps = _asked(snapshot)
-        if not gaps:
-            raise TargetUnusableError(
-                f"you already clear everything {snapshot.label} asks for; there is nothing to ask"
-            )
+        if await self._target.is_scored(owner_id, ref):
+            snapshot = await self._target.snapshot(owner_id, ref)
+            label, gaps = snapshot.label, _asked(snapshot)
+            if not gaps:
+                raise _nothing_to_ask(label)
+        else:
+            label, gaps = await self._target.get_label(owner_id, ref), ()
         async with self._uow.for_owner(owner_id) as mine:
             if await mine.sets.get_list(
                 _for_target(ref, statuses=(QuestionSetStatus.WRITING,)), page_size=1
@@ -279,7 +297,7 @@ class GapFillService:
                     role_id=ref.role_uuid,
                     job_posting_id=ref.opening_uuid,
                     private_job_posting_id=ref.own_posting_uuid,
-                    label=snapshot.label,
+                    label=label,
                     gaps=gaps,
                     at=utcnow(),
                 )
@@ -294,6 +312,8 @@ class GapFillService:
         if found.status is not QuestionSetStatus.WRITING:
             return
         try:
+            if found.is_waiting_for_gaps:
+                found = await self._score_target(owner_id, found)
             await self._advance(owner_id, set_id, QuestionStage.READING)
             await self._write(owner_id, found)
         except JobCancelledError:
@@ -416,6 +436,28 @@ class GapFillService:
         )
 
     # -- internals ----------------------------------------------------------
+
+    async def _score_target(self, owner_id: uuid.UUID, found: QuestionSet) -> QuestionSet:
+        """Score the opening the set is for, then record the gaps its
+        questions are written for (ADR 0073). Refused when there is nothing
+        to ask."""
+
+        async def checkpoint() -> None:
+            await self._advance(owner_id, found.id, QuestionStage.SCORING_TARGET)
+
+        await checkpoint()
+        ref = _ref_of(found)
+        await self._target.create_opening_fit(owner_id, ref, checkpoint=checkpoint)
+        snapshot = await self._target.snapshot(owner_id, ref)
+        gaps = _asked(snapshot)
+        if not gaps:
+            raise _nothing_to_ask(snapshot.label)
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await _owned(mine, found.id)
+            if not stored.is_writing:
+                raise JobCancelledError
+            stored.update_gaps(label=snapshot.label, gaps=gaps)
+            return await mine.sets.update(stored)
 
     async def _write(self, owner_id: uuid.UUID, found: QuestionSet) -> None:
         ref = _ref_of(found)
@@ -560,6 +602,12 @@ def _asked(snapshot: TargetSnapshot) -> tuple[AskedGap, ...]:
         if isinstance(gap, DimensionGap)
         else AskedGap(key=gap.key, label=gap.statement, status=GapStatus.NO_EVIDENCE, lift=gap.lift)
         for gap in snapshot.open_gaps[:ASKED_GAPS]
+    )
+
+
+def _nothing_to_ask(label: str) -> DomainError:
+    return TargetUnusableError(
+        f"you already clear everything {label} asks for; there is nothing to ask"
     )
 
 

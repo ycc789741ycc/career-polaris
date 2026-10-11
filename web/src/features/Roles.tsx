@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ApiError, api } from "../api/client";
+import { api } from "../api/client";
 import type {
   Assessment,
   Fit,
@@ -12,7 +12,6 @@ import type {
   RolePage,
   SalaryBand,
   MarketScope,
-  PlanEstimate,
   TargetRef,
 } from "../api/types";
 import { RoleMap, type RoleBubble } from "../charts/RoleMap";
@@ -39,7 +38,6 @@ import {
 import { recordTargetUse } from "./advisorTarget";
 import { TargetLocations } from "./TargetLocations";
 import { CostConfirm } from "./CostConfirm";
-import { targetQuery } from "./target";
 import {
   EmptyMap,
   getBuildSteps,
@@ -92,12 +90,6 @@ export function Roles() {
     [settled.analysis, settled.roleMap],
   );
   const [estimate, setEstimate] = useState<RoleMapEstimate | null>(null);
-  // "Target this role" prices writing its questions first (ADR 0042).
-  const [questionCost, setQuestionCost] = useState<{
-    focus: Focus;
-    label: string;
-    cost: PlanEstimate;
-  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -224,50 +216,12 @@ export function Roles() {
   const behind = getBehindLine(state.data);
   useHeading(waiting ? "Building your role map" : null);
 
-  /** Price the questions for what the bar aims at; a Target with nothing to
-   * ask about, or one already being prepared, opens without a spend. */
-  async function priceTarget(target: { focus: Focus; label: string }) {
-    setBusy(true);
-    setError(null);
-    try {
-      const cost = await api.get<PlanEstimate>(
-        `/gap-question-sets/cost-estimate?${targetQuery(refOf(target.focus))}`,
-      );
-      setQuestionCost({ ...target, cost });
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.code === "target_unusable") {
-        recordTargetUse(account, refOf(target.focus), target.label);
-        navigate("advisor", { tab: "gaps", focus: target.focus });
-      } else {
-        setError(messageOf(caught));
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Aim the Advisor and start writing the questions: Fill the gap opens
-   * preparing, and every other tab stays usable meanwhile. */
-  async function targetAndAsk() {
-    if (!questionCost) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post("/gap-question-sets", refOf(questionCost.focus));
-    } catch (caught) {
-      // Questions already being written for it: open them as they are.
-      if (!(caught instanceof ApiError && caught.code === "conflict")) {
-        setError(messageOf(caught));
-        setBusy(false);
-        return;
-      }
-    }
-    setBusy(false);
-    const focus = questionCost.focus;
-    recordTargetUse(account, refOf(focus), questionCost.label);
-    setQuestionCost(null);
-    await refreshActivity();
-    navigate("advisor", { tab: "gaps", focus });
+  /** Aim the Advisor at what the bar names and open Fill the gap. Nothing
+   * runs and nothing is spent: its gap analysis starts there, when the user
+   * asks for it (ADR 0073). */
+  function aimAdvisor(target: { focus: Focus; label: string }) {
+    recordTargetUse(account, refOf(target.focus), target.label);
+    navigate("advisor", { tab: "gaps", focus: target.focus });
   }
 
   async function rebuild() {
@@ -380,19 +334,6 @@ export function Roles() {
         </p>
       )}
       <ErrorNote error={error} />
-      {questionCost && (
-        <CostConfirm
-          busy={busy}
-          onCancel={() => setQuestionCost(null)}
-          onConfirm={() => void targetAndAsk()}
-        >
-          Aiming the Advisor at {questionCost.label} starts by writing your
-          follow-up questions about its gaps. That costs about{" "}
-          <strong>${questionCost.cost.cost_usd}</strong> on{" "}
-          {getShownModel(status, questionCost.cost.model_id)} and runs in the
-          background — the gap plan and the résumé stay open while it does.
-        </CostConfirm>
-      )}
       {estimate && (
         <CostConfirm
           busy={busy}
@@ -674,7 +615,7 @@ export function Roles() {
             <Eyebrow>Advisor target</Eyebrow>
             <div className="ellipsis target-bar-label">{aim.label}</div>
           </div>
-          <Button busy={busy} onClick={() => void priceTarget(aim)}>
+          <Button onClick={() => aimAdvisor(aim)}>
             Target this {aim.what}
           </Button>
         </div>

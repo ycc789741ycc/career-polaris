@@ -52,6 +52,7 @@ const STAGES: Record<string, string> = {
   reading_file: "Reading the file you uploaded.",
   reading_requirements: "Reading what the role asks for.",
   scoring: "Scoring your fit to it.",
+  scoring_target: "Reading this opening and scoring your fit to it.",
   working_out_fit: "Working out your fit.",
 };
 

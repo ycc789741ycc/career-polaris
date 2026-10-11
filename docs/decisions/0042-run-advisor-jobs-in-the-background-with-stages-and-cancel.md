@@ -1,6 +1,6 @@
 # 0042. Advisor jobs run in the background, record their stage, and can be cancelled
 
-**Status:** Accepted — 2026-10-11.
+**Status:** Accepted — 2026-10-11. Amended by [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md).
 
 ## Context
 

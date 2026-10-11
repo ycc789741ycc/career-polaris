@@ -1,7 +1,8 @@
 """The target component.
 
-Resolves what a plan or résumé aims at, and keeps the postings of the user's
-own that one can aim at instead of a role (ADR 0005, ADR 0033).
+Resolves what a plan or résumé aims at, keeps the postings of the user's own
+that one can aim at instead of a role (ADR 0005, ADR 0033), and scores the
+user against an opening aimed at (ADR 0073).
 
 This file is the component's public API. Everything else in the package is
 private: other components, the delivery mechanisms and the composition root
@@ -23,6 +24,7 @@ from advisor.target.factory import create_target_service
 from advisor.target.service import (
     DimensionGap,
     DraftBasis,
+    OpeningFitView,
     OutdatedReason,
     OwnPostingView,
     TargetError,
@@ -43,6 +45,7 @@ __all__ = [
     "MAX_TITLE",
     "DimensionGap",
     "DraftBasis",
+    "OpeningFitView",
     "OutdatedReason",
     "OwnPostingView",
     "TargetError",

@@ -29,7 +29,6 @@ from advisor.rolemap.infra.repositories import (
     SqlAlchemyCandidatePlacementRepository,
     SqlAlchemyCandidateStrengthRepository,
     SqlAlchemyLineageEntryRepository,
-    SqlAlchemyPostingFitRepository,
     SqlAlchemyRoleCandidateRepository,
     SqlAlchemyRoleFitRepository,
     SqlAlchemyRoleMemberRepository,
@@ -51,7 +50,6 @@ class SqlAlchemyOwnerRoleMap(OwnerRoleMap):
         self.candidates = SqlAlchemyRoleCandidateRepository(session, owner_id=owner_id)
         self.strengths = SqlAlchemyCandidateStrengthRepository(session, owner_id=owner_id)
         self.fits = SqlAlchemyRoleFitRepository(session, owner_id=owner_id)
-        self.posting_fits = SqlAlchemyPostingFitRepository(session, owner_id=owner_id)
         self.pending: list[RoleMapEvent] = []
 
     def record(self, event: RoleMapEvent) -> None:

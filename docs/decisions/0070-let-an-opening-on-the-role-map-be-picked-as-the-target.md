@@ -1,6 +1,6 @@
 # 0070. An opening on the role map can be picked as the Advisor's target
 
-**Status:** Accepted — 2026-10-11. Supersedes 0049.
+**Status:** Accepted — 2026-10-11. Supersedes 0049. Amended by [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md).
 
 ## Context
 

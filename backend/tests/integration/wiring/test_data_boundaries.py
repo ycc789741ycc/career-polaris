@@ -99,6 +99,8 @@ async def test_every_owner_zone_table_actually_has_the_policy(database: Database
         "identity.provider_credential",
         "target.private_job_posting",
         "target.own_posting_fit",
+        "target.opening_requirement",
+        "target.opening_fit",
         "assessment.skill_assessment",
         "rolemap.role",
         "rolemap.role_candidate",

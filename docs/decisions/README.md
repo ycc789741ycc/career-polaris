@@ -37,7 +37,7 @@ new record that supersedes the old one.
 | [0029](0029-set-the-candidate-count-and-the-top-k-as-settings.md) | Set the candidate count and the top k as settings, and spend only on the k | Accepted |
 | [0030](0030-aim-at-a-posting-of-your-own-instead-of-adding-a-custom-role.md) | Aim the Advisor at a posting of your own instead of adding a custom role | Accepted, amended by 0033 |
 | [0031](0031-record-what-a-build-made-of-each-candidate-on-the-build.md) | Keep a role candidate as a query, and record what a build made of it on the build | Accepted |
-| [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md) | Work out every opening's fit locally from its role's, and rank a role's openings by it | Accepted |
+| [0032](0032-work-out-every-openings-fit-locally-from-its-roles.md) | Work out every opening's fit locally from its role's, and rank a role's openings by it | Superseded by 0073 |
 | [0033](0033-keep-a-posting-of-your-own-in-target.md) | Keep a posting of your own in Target, and score it with the role map's fit kit | Accepted |
 | [0034](0034-add-a-role-of-your-own-without-evaluating-it.md) | Add a role of your own without spending anything, and evaluate it when it is set as the target | Accepted |
 | [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted |
@@ -47,7 +47,7 @@ new record that supersedes the old one.
 | [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
 | [0040](0040-keep-resume-templates-as-checked-specs.md) | A résumé template is a checked spec, and a user can keep their own | Accepted |
 | [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
-| [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted |
+| [0042](0042-run-advisor-jobs-in-the-background-with-stages-and-cancel.md) | Advisor jobs run in the background, record their stage, and can be cancelled | Accepted, amended by 0073 |
 | [0043](0043-write-every-resume-section-at-once-and-show-what-the-user-picks.md) | A résumé writes every section at once, and the user picks which to show | Accepted |
 | [0044](0044-let-a-resume-claim-a-gap-from-the-answers-given-about-it.md) | A résumé may claim a gap from the answers given about it, and nothing else | Accepted |
 | [0045](0045-read-the-career-timeline-in-the-analysis.md) | The career timeline is the analysis's reading of the evidence | Accepted |
@@ -75,9 +75,10 @@ new record that supersedes the old one.
 | [0067](0067-runs-on-careerpolaris-ai-start-without-a-cost-confirmation.md) | Runs on CareerPolaris AI start without a cost confirmation | Accepted |
 | [0068](0068-bound-a-scope-with-no-location-to-the-newest-baseline-postings.md) | A scope with no location chosen keeps only the newest baseline postings | Accepted |
 | [0069](0069-run-a-builds-per-role-ai-calls-side-by-side.md) | A build runs its per-role AI calls side by side, up to a setting | Accepted |
-| [0070](0070-let-an-opening-on-the-role-map-be-picked-as-the-target.md) | An opening on the role map can be picked as the Advisor's target | Accepted |
+| [0070](0070-let-an-opening-on-the-role-map-be-picked-as-the-target.md) | An opening on the role map can be picked as the Advisor's target | Accepted, amended by 0073 |
 | [0071](0071-analysis-and-the-role-map-build-are-separate.md) | An analysis and the role-map build are separate; the user starts every build | Accepted |
 | [0072](0072-cancel-an-analysis-or-a-role-map-build.md) | The user can cancel an analysis or a role-map build | Accepted |
+| [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md) | Score an opening Target with AI when its gap analysis runs, started only from the Advisor | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
