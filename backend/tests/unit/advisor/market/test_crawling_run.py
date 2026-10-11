@@ -1,7 +1,7 @@
 """A crawl run fetches only what builds are waiting for (ADR 0027): it goes on
 past a board it cannot reach or whose postings cannot be stored, leaves a
-source on a host that asked us to stop due, and marks what it fetched only
-once its postings are embedded."""
+source on a host that asked us to stop due, and marks each source fetched as
+soon as its postings are embedded, searches first."""
 
 from __future__ import annotations
 
@@ -60,14 +60,14 @@ def _politeness(**guard: Any) -> run.CrawlPoliteness:
 _RUN: dict[str, Any] = {"user_agent": "test", "timeout_seconds": 1, "embedding_model": "m"}
 
 
-def _source(name: str, *, host: str = "boards.test") -> CrawlSourceView:
+def _source(name: str, *, host: str = "boards.test", market: str | None = None) -> CrawlSourceView:
     return CrawlSourceView(
         id=uuid.uuid4(),
         kind="greenhouse",
         endpoint=f"https://{host}/{name}",
         company_id=uuid.uuid4(),
         company_name=name,
-        market=None,
+        market=market,
     )
 
 
@@ -87,7 +87,7 @@ async def _one_posting(client: Any, source: CrawlSourceView, **_: Any) -> list[N
     ]
 
 
-async def test_what_a_run_fetched_is_marked_only_after_it_is_embedded(
+async def test_each_source_is_marked_fetched_once_it_is_embedded_not_at_the_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first, second = _source("Acme"), _source("Kestrel")
@@ -96,11 +96,29 @@ async def test_what_a_run_fetched_is_marked_only_after_it_is_embedded(
 
     await run.crawl_due(ingest, _politeness(), **_RUN)  # type: ignore[arg-type]
 
+    # A build waiting only for the first starts before the second is fetched.
     assert ingest.log == [
         ("record", first.id),
+        ("embed", None),
+        ("fetched", [first.id]),
         ("record", second.id),
         ("embed", None),
-        ("fetched", [first.id, second.id]),
+        ("fetched", [second.id]),
+    ]
+
+
+async def test_searches_are_fetched_before_boards(monkeypatch: pytest.MonkeyPatch) -> None:
+    board = _source("Stripe")
+    search = _source("backend-engineer", host="api.test", market="Germany")
+    ingest = FakeIngest([board, search])
+    monkeypatch.setattr(run, "fetch_source", _one_posting)
+
+    outcomes = await run.crawl_due(ingest, _politeness(), **_RUN)  # type: ignore[arg-type]
+
+    assert [o.source_id for o in outcomes] == [search.id, board.id]
+    assert [entry for entry in ingest.log if entry[0] == "fetched"] == [
+        ("fetched", [search.id]),
+        ("fetched", [board.id]),
     ]
 
 
@@ -128,7 +146,10 @@ async def test_one_board_that_cannot_be_stored_does_not_stop_the_run(
     assert (bad.id, 0, "storing postings failed: RuntimeError") in ingest.recorded
     assert (good.id, 1, None) in ingest.recorded
     # A failure counts as fetched: the builds waiting for it go on without it.
-    assert ingest.log[-1] == ("fetched", [bad.id, good.id])
+    assert [entry for entry in ingest.log if entry[0] == "fetched"] == [
+        ("fetched", [bad.id]),
+        ("fetched", [good.id]),
+    ]
 
 
 def _resolve(host: str, port: int) -> list[str]:

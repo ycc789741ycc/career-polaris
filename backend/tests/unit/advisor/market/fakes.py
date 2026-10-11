@@ -70,9 +70,20 @@ class FakeCompanies(FakeRepository[Company, CompanyFilter], CompanyRepository):
     noun = "company"
 
     def matches(self, entity: Company, filter: CompanyFilter) -> bool:
-        return (filter.ids is None or entity.id in filter.ids) and _set(
-            entity.normalized_name, filter.normalized_name
+        return (
+            (filter.ids is None or entity.id in filter.ids)
+            and _set(entity.normalized_name, filter.normalized_name)
+            and (
+                filter.normalized_names is None or entity.normalized_name in filter.normalized_names
+            )
         )
+
+    async def create_absent(self, companies: list[Company]) -> None:
+        stored = {c.normalized_name for c in self._rows.values()}
+        for company in companies:
+            if company.normalized_name not in stored:
+                await self.create(company)
+                stored.add(company.normalized_name)
 
 
 class FakeSources(FakeRepository[CrawlSource, CrawlSourceFilter], CrawlSourceRepository):
@@ -118,6 +129,7 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
         return (
             (filter.ids is None or entity.id in filter.ids)
             and _set(entity.canonical_key, filter.canonical_key)
+            and (filter.canonical_keys is None or entity.canonical_key in filter.canonical_keys)
             and _set(entity.status, filter.status)
             and (filter.has_salary is None or (entity.salary is not None) == filter.has_salary)
             and (
@@ -126,6 +138,14 @@ class FakePostings(FakeRepository[JobPosting, JobPostingFilter], JobPostingRepos
                 or embedded.model_name != filter.missing_embedding_for
             )
         )
+
+    async def create_many(self, postings: list[JobPosting]) -> None:
+        for posting in postings:
+            await self.create(posting)
+
+    async def update_many(self, postings: list[JobPosting]) -> None:
+        for posting in postings:
+            await self.update(posting)
 
     async def expire_unseen(self, source_id: uuid.UUID, seen_keys: set[str]) -> int:
         expired = 0
@@ -239,6 +259,10 @@ class FakeEmbeddings(
         return (filter.posting_ids is None or entity.posting_id in filter.posting_ids) and _set(
             entity.model_name, filter.model_name
         )
+
+    async def create_many(self, embeddings: list[PostingEmbedding]) -> None:
+        for embedding in embeddings:
+            await self.create(embedding)
 
 
 # --- owner zone ------------------------------------------------------------
