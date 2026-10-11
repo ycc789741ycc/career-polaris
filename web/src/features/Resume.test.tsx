@@ -18,7 +18,9 @@ import { startDownload } from "./download";
 import {
   citeLine,
   coverageStatus,
+  getLineAdded,
   getStackWith,
+  MAX_LINES,
   pageStyle,
   Resume,
   savedLine,
@@ -660,6 +662,81 @@ describe("résumé screen", () => {
     );
     const body = saved?.body as { content: ResumeContent };
     expect(experience(body.content).entries).toEqual([]);
+  });
+
+  it("adds a line under an entry, kept until the version is saved", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const job = within(page)
+      .getByText("Owned the retry layer for payments-svc")
+      .closest("section")!;
+    await user.click(
+      within(job as HTMLElement).getByRole("button", { name: "+ Add line" }),
+    );
+
+    // The new line takes the caret, its text selected to type over.
+    const added = within(job as HTMLElement).getByText("New line");
+    expect(document.activeElement).toBe(added);
+    added.textContent = "Ran the on-call rotation";
+    fireEvent.blur(added);
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    const lines = experience(body.content).entries[0]!.bullets;
+    expect(lines.map((l) => l.text)).toEqual([
+      "Owned the retry layer for payments-svc",
+      "Ran the on-call rotation",
+    ]);
+    expect(lines[1]).toMatchObject({ origin: "yours", evidence_ids: [] });
+  });
+
+  it("adds a line below with Enter, and removes an empty one with Backspace", async () => {
+    serve(defaults);
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    fireEvent.keyDown(line, { key: "Enter" });
+
+    const added = await within(page).findByText("New line");
+    expect(document.activeElement).toBe(added);
+    added.textContent = "";
+    fireEvent.keyDown(added, { key: "Backspace" });
+
+    expect(within(page).queryByText("New line")).toBeNull();
+    expect(document.activeElement).toBe(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    );
+  });
+
+  it("drops a line cleared to nothing", async () => {
+    serve(defaults);
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    line.textContent = "  ";
+    fireEvent.blur(line);
+
+    expect(within(page).queryAllByLabelText("Line")).toHaveLength(0);
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeEnabled();
   });
 
   it("undoes unsaved edits one at a time, back to the saved version", async () => {
@@ -1529,6 +1606,39 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+describe("adding a line", () => {
+  const line = (text: string) => ({
+    text,
+    evidence_ids: [],
+    origin: "yours" as const,
+    answers: null,
+  });
+
+  it("puts the new line just below, keeping what was typed into the line above", () => {
+    const next = getLineAdded(
+      [line("a"), line("c")],
+      0,
+      " a, edited ",
+      line("b"),
+    );
+    expect(next.map((l) => l.text)).toEqual(["a, edited", "b", "c"]);
+  });
+
+  it("leaves a line alone when nothing was typed into it", () => {
+    const first = {
+      ...line("a"),
+      origin: "written" as const,
+      evidence_ids: ["e1"],
+    };
+    const next = getLineAdded([first], 0, "a", line("b"));
+    expect(next[0]).toBe(first);
+  });
+
+  it("holds at most as many lines as the server takes", () => {
+    expect(MAX_LINES).toBe(8);
   });
 });
 
