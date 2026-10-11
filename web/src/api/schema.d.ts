@@ -2770,6 +2770,8 @@ export interface components {
             };
             /** Fonts */
             fonts: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono")[];
+            /** Fonts Without Bold */
+            fonts_without_bold: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono")[];
             /** Heading Pt Range */
             heading_pt_range: [
                 number,
@@ -3070,9 +3072,17 @@ export interface components {
         SettingsRequest: {
             /** Body Font */
             body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Body Pt */
+            body_pt?: number | null;
+            /** Bold Headings */
+            bold_headings?: boolean | null;
+            /** Bold Titles */
+            bold_titles?: boolean | null;
             /** Heading Font */
             heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             options: components["schemas"]["OptionsBody"];
+            /** Section Font */
+            section_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Template */
             template: string;
         };
@@ -3133,6 +3143,12 @@ export interface components {
         TailoredResume: {
             /** Body Font */
             body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Body Pt */
+            body_pt: number | null;
+            /** Bold Headings */
+            bold_headings: boolean | null;
+            /** Bold Titles */
+            bold_titles: boolean | null;
             content: components["schemas"]["ResumeContent"] | null;
             /** Coverage */
             coverage: components["schemas"]["Coverage"][];
@@ -3161,6 +3177,8 @@ export interface components {
             outdated_by: ("evidence" | "target")[];
             /** Revisions */
             revisions: components["schemas"]["Revision"][];
+            /** Section Font */
+            section_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Section Plan */
             section_plan: components["schemas"]["ResumeSectionSlot"][];
             snapshot: components["schemas"]["ResumeSnapshot"] | null;
@@ -3278,6 +3296,16 @@ export interface components {
             /** Body Pt */
             body_pt: number;
             /**
+             * Bold Headings
+             * @default true
+             */
+            bold_headings: boolean;
+            /**
+             * Bold Titles
+             * @default false
+             */
+            bold_titles: boolean;
+            /**
              * Bullet
              * @default dot
              * @enum {string}
@@ -3315,6 +3343,8 @@ export interface components {
             rule: "none" | "thin" | "thick";
             /** Rule Color */
             rule_color: string;
+            /** Section Font */
+            section_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Sidebar Kinds */
             sidebar_kinds?: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
             /** Text Color */
@@ -3363,6 +3393,10 @@ export interface components {
             body_font: "Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono";
             /** Body Pt */
             body_pt: number;
+            /** Bold Headings */
+            bold_headings: boolean;
+            /** Bold Titles */
+            bold_titles: boolean;
             /**
              * Bullet
              * @enum {string}
@@ -3396,6 +3430,8 @@ export interface components {
             rule: "none" | "thin" | "thick";
             /** Rule Color */
             rule_color: string;
+            /** Section Font */
+            section_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
             /** Sidebar Kinds */
             sidebar_kinds: ("summary" | "experience" | "side_projects" | "open_source" | "education" | "talks_and_writing" | "skills" | "certifications" | "custom")[];
             /** Text Color */

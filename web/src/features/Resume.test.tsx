@@ -18,8 +18,12 @@ import { startDownload } from "./download";
 import {
   citeLine,
   coverageStatus,
+  FONTS_WITHOUT_BOLD,
   getLineAdded,
+  getSpecWithLook,
   getStackWith,
+  getTextSizes,
+  getWeight,
   MAX_LINES,
   pageStyle,
   Resume,
@@ -174,6 +178,10 @@ const resume: TailoredResume = {
   },
   heading_font: null,
   body_font: null,
+  section_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
   section_plan: [
     { kind: "summary", title: null, is_shown: true },
     { kind: "experience", title: null, is_shown: true },
@@ -235,6 +243,9 @@ const organic: ResumeTemplateLook = {
     sidebar_kinds: [],
     heading_case: "upper",
     bullet: "dot",
+    section_font: null,
+    bold_titles: false,
+    bold_headings: true,
   },
   rule: "3px solid #c67139",
   band_color: "#f8ede6",
@@ -267,6 +278,7 @@ const templates = {
 
 const limits: ResumeTemplateLimits = {
   fonts: ["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"],
+  fonts_without_bold: ["Caprasimo"],
   name_pt_range: [16, 30],
   heading_pt_range: [7, 11],
   body_pt_range: [8.5, 11.5],
@@ -651,6 +663,53 @@ describe("résumé screen", () => {
     );
     const page = screen.getByRole("article", { name: "Résumé" });
     expect(page.getAttribute("style")).toContain("DejaVu Serif");
+  });
+
+  it("sets headings in a font of their own, titles in bold, and the text size", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    // Organic's titles are Caprasimo, which has no bold: the switch is off.
+    const boldTitles = screen.getByRole("checkbox", { name: "Bold titles" });
+    expect(boldTitles).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByRole("combobox", { name: "Headings in" }),
+    ).toHaveDisplayValue("Template's (Figtree)");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Titles in" }),
+      "DejaVu Serif",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Bold titles" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Headings in" }),
+      "DejaVu Sans Mono",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Bold headings" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text size" }),
+      "11",
+    );
+
+    const puts = calls.filter(
+      (c) => c.url === "/tailored-resumes/res-1/settings",
+    );
+    expect(puts.at(-1)?.body).toMatchObject({
+      heading_font: "DejaVu Serif",
+      bold_titles: true,
+      section_font: "DejaVu Sans Mono",
+      bold_headings: false,
+      body_pt: 11,
+    });
+    const style = screen
+      .getByRole("article", { name: "Résumé" })
+      .getAttribute("style")!;
+    expect(style).toContain('--section-font: "DejaVu Sans Mono"');
+    expect(style).toContain("--title-weight: 700");
+    expect(style).toContain("--heading-weight: 400");
+    expect(style).toContain("--body-pt: 11");
+    expect(style).toContain("--title-pt: 12");
   });
 
   it("writes a failed résumé again once priced", async () => {
@@ -1719,6 +1778,38 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+describe("the résumé's own look (ADR 0075)", () => {
+  it("lays the résumé's choices over its template's, null keeping the template's", () => {
+    const spec = getSpecWithLook(organic.spec, {
+      heading_font: null,
+      section_font: "Lato",
+      body_font: null,
+      bold_titles: true,
+      bold_headings: null,
+      body_pt: 9,
+    });
+    expect(spec).toMatchObject({
+      heading_font: "Caprasimo",
+      section_font: "Lato",
+      body_font: "Figtree",
+      bold_titles: true,
+      bold_headings: true,
+      body_pt: 9,
+    });
+  });
+
+  it("offers every half point in the range", () => {
+    expect(getTextSizes([8.5, 10])).toEqual([8.5, 9, 9.5, 10]);
+  });
+
+  it("sets bold only in a font with a bold cut, as the PDF does", () => {
+    expect(getWeight(true, "Inter", FONTS_WITHOUT_BOLD)).toBe(700);
+    expect(getWeight(true, "Caprasimo", FONTS_WITHOUT_BOLD)).toBe(400);
+    expect(getWeight(false, "Inter", FONTS_WITHOUT_BOLD)).toBe(400);
+    expect(FONTS_WITHOUT_BOLD).toEqual(limits.fonts_without_bold);
   });
 });
 

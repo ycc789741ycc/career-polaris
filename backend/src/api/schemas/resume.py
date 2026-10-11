@@ -9,6 +9,7 @@ from pydantic import Field
 
 from advisor.resume import (
     ExportView,
+    OwnLook,
     ResumeSummaryView,
     ResumeView,
     RevisionDone,
@@ -69,10 +70,24 @@ class ResumeRequest(TargetFields):
 class SettingsRequest(RequestModel):
     template: TemplateId
     options: OptionsBody
-    # The résumé's own fonts over its template's; null, or left out, keeps the
-    # template's (ADR 0047).
+    # The résumé's own look over its template's; null, or left out, keeps the
+    # template's (ADR 0047, ADR 0075). The server checks the size's range.
     heading_font: FontName | None = None
     body_font: FontName | None = None
+    section_font: FontName | None = None
+    bold_titles: bool | None = None
+    bold_headings: bool | None = None
+    body_pt: float | None = None
+
+    def to_look(self) -> OwnLook:
+        return OwnLook(
+            heading_font=self.heading_font,
+            section_font=self.section_font,
+            body_font=self.body_font,
+            bold_titles=self.bold_titles,
+            bold_headings=self.bold_headings,
+            body_pt=self.body_pt,
+        )
 
 
 class VersionRequest(RequestModel):
@@ -290,13 +305,19 @@ class TailoredResume(ResumeSummary):
     outdated_by: list[OutdatedReasonName]
     # The sections every new version is written to, in order (ADR 0039).
     section_plan: list[ResumeSectionSlot]
-    # Its own fonts over its template's; null keeps the template's (ADR 0047).
+    # Its own look over its template's; null keeps the template's (ADR 0047,
+    # ADR 0075).
     heading_font: FontName | None
     body_font: FontName | None
+    section_font: FontName | None
+    bold_titles: bool | None
+    bold_headings: bool | None
+    body_pt: float | None
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
         snapshot = resume.snapshot
+        look = resume.own_look
         return cls(
             **ResumeSummary.from_view(resume.summary).model_dump(),
             template=resume.template,
@@ -355,8 +376,12 @@ class TailoredResume(ResumeSummary):
                 ResumeSectionSlot(kind=str(slot.kind), title=slot.title, is_shown=slot.is_shown)
                 for slot in resume.section_plan
             ],
-            heading_font=resume.heading_font,
-            body_font=resume.body_font,
+            heading_font=look.heading_font,
+            body_font=look.body_font,
+            section_font=look.section_font,
+            bold_titles=look.bold_titles,
+            bold_headings=look.bold_headings,
+            body_pt=look.body_pt,
         )
 
 
@@ -440,6 +465,10 @@ class TemplateDesign(RequestModel):
     sidebar_kinds: list[SectionKindName] = Field(default_factory=list, max_length=12)
     heading_case: HeadingCaseName = "upper"
     bullet: BulletName = "dot"
+    # Null sets section headings in the body font (ADR 0075).
+    section_font: FontName | None = None
+    bold_titles: bool = False
+    bold_headings: bool = True
 
 
 class TemplateRequest(RequestModel):
@@ -462,6 +491,9 @@ class TemplateSpecBody(ApiModel):
     sidebar_kinds: list[SectionKindName]
     heading_case: HeadingCaseName
     bullet: BulletName
+    section_font: FontName | None
+    bold_titles: bool
+    bold_headings: bool
 
 
 class ResumeTemplate(ApiModel):
@@ -519,6 +551,9 @@ class ResumeTemplateLimits(ApiModel):
     """What a template of the user's own may set, for the editor."""
 
     fonts: list[FontName]
+    # The fonts with no bold cut: a title or heading in one stays regular, so
+    # its Bold switch is off (ADR 0075).
+    fonts_without_bold: list[FontName]
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
@@ -539,6 +574,7 @@ class ResumeTemplateLimits(ApiModel):
         return cls.model_validate(
             {
                 "fonts": list(limits.fonts),
+                "fonts_without_bold": list(limits.fonts_without_bold),
                 "name_pt_range": limits.name_pt_range,
                 "heading_pt_range": limits.heading_pt_range,
                 "body_pt_range": limits.body_pt_range,

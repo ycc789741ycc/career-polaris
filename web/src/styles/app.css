@@ -839,6 +839,7 @@ select.input { appearance: auto; }
 .resume-main { flex: 1; min-width: 0; }
 .resume-name {
   font-family: var(--heading-font), "DejaVu Sans", serif;
+  font-weight: var(--title-weight, 400);
   font-size: calc(var(--pt) * var(--name-pt));
   line-height: 1.1;
   color: var(--name-color);
@@ -869,10 +870,11 @@ select.input { appearance: auto; }
   color: #5a5550;
 }
 .resume-section {
+  font-family: var(--section-font), "DejaVu Sans", sans-serif;
   font-size: calc(var(--pt) * var(--heading-pt));
   letter-spacing: 0.1em;
   text-transform: var(--heading-case, uppercase);
-  font-weight: 800;
+  font-weight: var(--heading-weight, 700);
   color: var(--name-color);
   margin: calc(var(--pt) * 14) 0 calc(var(--pt) * 6);
 }
@@ -916,6 +918,7 @@ select.input { appearance: auto; }
 @media (hover: none) { .resume-remove-entry { opacity: 1; } }
 .resume-job-title {
   font-family: var(--heading-font), "DejaVu Sans", serif;
+  font-weight: var(--title-weight, 400);
   font-size: calc(var(--pt) * var(--title-pt));
 }
 .resume-when { font-size: calc(var(--pt) * var(--small-pt)); color: #6b6560; white-space: nowrap; }
@@ -2076,3 +2079,8 @@ select.input { appearance: auto; }
   background: var(--color-accent-100);
   font-size: 12.5px;
 }
+/* The résumé's own look: each font with its Bold switch, and the text
+ * size beside the text font. */
+.own-look-row { gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.own-look-row .round-check { margin-bottom: 8px; }
+.size-picker { max-width: 140px; }

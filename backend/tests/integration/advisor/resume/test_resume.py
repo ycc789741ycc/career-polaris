@@ -30,6 +30,7 @@ from advisor.market import MarketService, create_market_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.resume import (
     Options,
+    OwnLook,
     ResumeService,
     RevisionDone,
     RevisionFailed,
@@ -805,12 +806,14 @@ async def test_a_resume_keeps_its_own_fonts_and_the_database_refuses_others(
         resume_id,
         template=Template.PLAIN,
         options=Options(),
-        heading_font="DejaVu Serif",
-        body_font="DejaVu Sans Mono",
+        look=OwnLook(heading_font="DejaVu Serif", body_font="DejaVu Sans Mono"),
     )
 
     view = await world.resume.get(account, resume_id)
-    assert (view.heading_font, view.body_font) == ("DejaVu Serif", "DejaVu Sans Mono")
+    assert (view.own_look.heading_font, view.own_look.body_font) == (
+        "DejaVu Serif",
+        "DejaVu Sans Mono",
+    )
     with pytest.raises(IntegrityError, match="ck_resume_body_font"):
         async with database.for_user(account) as session:
             await session.execute(
@@ -831,8 +834,28 @@ async def test_a_resume_can_set_each_of_the_fonts_added_later(
             resume_id,
             template=Template.PLAIN,
             options=Options(),
-            heading_font=heading,
-            body_font=body,
+            look=OwnLook(heading_font=heading, body_font=body),
         )
         view = await world.resume.get(account, resume_id)
-        assert (view.heading_font, view.body_font) == (heading, body)
+        assert (view.own_look.heading_font, view.own_look.body_font) == (heading, body)
+
+
+async def test_a_resume_keeps_its_own_look_and_the_database_refuses_what_it_cannot_print(
+    world: World, account: uuid.UUID, database: Database
+) -> None:
+    """ADR 0075, migration 0057."""
+    resume_id = await _written(world, account)
+    look = OwnLook(section_font="Lato", bold_titles=True, bold_headings=False, body_pt=9.5)
+
+    await world.resume.update_settings(
+        account, resume_id, template=Template.PLAIN, options=Options(), look=look
+    )
+
+    assert (await world.resume.get(account, resume_id)).own_look == look
+    for column, value in (("section_font", "'Comic Sans'"), ("body_pt", "30")):
+        with pytest.raises(IntegrityError, match=f"ck_resume_{column}"):
+            async with database.for_user(account) as session:
+                await session.execute(
+                    text(f"UPDATE resume.resume SET {column} = {value} WHERE id = :id"),
+                    {"id": resume_id},
+                )

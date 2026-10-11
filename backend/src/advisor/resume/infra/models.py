@@ -30,7 +30,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from advisor.resume.domain.constants import TEMPLATE_FONTS
+from advisor.resume.domain.constants import BODY_PT_RANGE, TEMPLATE_FONTS
 from kernel.db.base import Base, OwnedMixin, new_id
 
 _FONTS = ", ".join(f"'{font}'" for font in TEMPLATE_FONTS)
@@ -48,7 +48,12 @@ class Resume(Base, OwnedMixin):
         # Its own fonts, one of TEMPLATE_FONTS each, or none (ADR 0047).
         *(
             CheckConstraint(f"{column} IS NULL OR {column} IN ({_FONTS})", name=column)
-            for column in ("heading_font", "body_font")
+            for column in ("heading_font", "body_font", "section_font")
+        ),
+        # Its own text size, in the range a template's may take (ADR 0075).
+        CheckConstraint(
+            f"body_pt IS NULL OR body_pt BETWEEN {BODY_PT_RANGE[0]} AND {BODY_PT_RANGE[1]}",
+            name="body_pt",
         ),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
         Index("ix_resume_owner_updated", "owner_id", "updated_at"),
@@ -113,6 +118,12 @@ class Resume(Base, OwnedMixin):
     # template's.
     heading_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
     body_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Its section headings' font, bold titles and headings, and text size
+    # (ADR 0075); null keeps the template's.
+    section_font: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    bold_titles: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    bold_headings: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    body_pt: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class ResumeVersion(Base, OwnedMixin):
