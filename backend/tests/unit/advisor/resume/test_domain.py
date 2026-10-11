@@ -23,6 +23,8 @@ from advisor.resume.domain import (
     get_built_in_spec,
     get_claims_settled,
     get_download_name,
+    get_numbers,
+    get_unbacked_lines,
     mark_edits,
     settle_revision,
 )
@@ -306,3 +308,33 @@ def test_a_download_is_named_for_the_person_and_the_role(
     name: str, label: str, saved_as: str
 ) -> None:
     assert get_download_name(name, label) == saved_as
+
+
+# -- numbers a line states (ADR 0076) ------------------------------------------
+
+
+def test_a_number_is_read_without_its_separators_or_marks() -> None:
+    assert get_numbers("Cut p99 by 20% across 1,200 calls in 2.5 weeks, 20+ tests") == {
+        "99",
+        "20",
+        "1200",
+        "2.5",
+    }
+
+
+def test_a_written_line_whose_number_no_cited_fact_states_is_unbacked() -> None:
+    backed = Bullet("Authored 142 commits in acme/ledger", ("e1",))
+    invented = Bullet("Cut checkout latency by 40%", ("e1",))
+    plain = Bullet("Owned the retry layer", ("e1",))
+    yours = Bullet("Led 3 hires", (), Origin.YOURS)
+    facts = {"e1": "GitHub · acme/ledger 142 commits authored in acme/ledger in Sep 2026."}
+
+    assert get_unbacked_lines(content(backed, invented, plain, yours), facts) == (invented,)
+
+
+def test_a_number_may_come_from_any_fact_the_line_cites() -> None:
+    line = Bullet("Shipped 38 issues over 6 months", ("e1", "e2"))
+    facts = {"e1": "38 issues worked in the epic PAY-1", "e2": "Ran it for 6 months"}
+
+    assert get_unbacked_lines(content(line), facts) == ()
+    assert get_unbacked_lines(content(line), {"e1": facts["e1"]}) == (line,)

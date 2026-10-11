@@ -313,6 +313,9 @@ class TailoredResume(ResumeSummary):
     bold_titles: bool | None
     bold_headings: bool | None
     body_pt: float | None
+    # The model's lines that state a number none of their cited facts states
+    # (ADR 0076), by their text: the page flags them.
+    unbacked_lines: list[str]
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
@@ -382,6 +385,7 @@ class TailoredResume(ResumeSummary):
             bold_titles=look.bold_titles,
             bold_headings=look.bold_headings,
             body_pt=look.body_pt,
+            unbacked_lines=list(resume.unbacked_lines),
         )
 
 

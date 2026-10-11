@@ -25,8 +25,10 @@ from advisor.resume.domain.content import (
     coverage,
     get_claims_settled,
     get_headings_kept,
+    get_numbers,
     get_planned,
     get_proposal_layout,
+    get_unbacked_lines,
     mark_edits,
     settle_revision,
 )
@@ -186,10 +188,12 @@ __all__ = [
     "get_font_kind",
     "get_full_plan",
     "get_headings_kept",
+    "get_numbers",
     "get_planned",
     "get_proposal_layout",
     "get_spec_with_look",
     "get_template_spec_from_runs",
+    "get_unbacked_lines",
     "mark_edits",
     "settle_revision",
 ]

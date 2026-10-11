@@ -7,6 +7,8 @@ connector OAuth tokens can be decrypted.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
@@ -26,6 +28,26 @@ class EvidenceDraft:
     granularity: EvidenceGranularity = EvidenceGranularity.ITEM
     tally: int | None = None
     subject: str | None = None
+
+
+def get_span_label(dates: Iterable[date | None]) -> str:
+    """When a tally's work happened, to put after it: " between Mar 2025 and
+    Sep 2026", " in Sep 2026" within one month, or nothing with no dates. A
+    résumé line quantified from the tally can then say over how long. Pure."""
+    known = sorted(d for d in dates if d is not None)
+    if not known:
+        return ""
+    first, last = (f"{d:%b %Y}" for d in (known[0], known[-1]))
+    return f" in {last}" if first == last else f" between {first} and {last}"
+
+
+def get_count_label(names: Iterable[str]) -> str:
+    """ "3 Story, 1 Bug": how many of each name, the commonest first, then by
+    name. Pure."""
+    counts = Counter(n for n in names if n)
+    return ", ".join(
+        f"{count} {name}" for name, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
 
 
 class Connector(Protocol):

@@ -16,7 +16,7 @@ from datetime import date
 from typing import Any
 
 from advisor.profile.domain import EvidenceGranularity
-from advisor.profile.infra.connectors.base import Connector, EvidenceDraft
+from advisor.profile.infra.connectors.base import Connector, EvidenceDraft, get_span_label
 from kernel.errors import UpstreamFailedError
 from kernel.fetch import GuardedClient
 from kernel.parsing import parse_date
@@ -32,6 +32,8 @@ SCOPE_DESCRIPTIONS = (
 _PAGE_SIZE = 100
 _MAX_COMMITS = 1000
 _MAX_REVIEWS = 100
+# Repositories whose reviews are counted on their own, the busiest first.
+_REVIEWED_REPOS = 5
 
 
 class GitHubConnector(Connector):
@@ -40,7 +42,8 @@ class GitHubConnector(Connector):
     # them, so the same work never counts once as merged pull requests and
     # again as commits.
     retired_refs: tuple[str, ...] = ("github:merged:*", "github:pr:*")
-    replaced_refs: tuple[str, ...] = ()
+    # Reviews per repository: one no longer among the busiest stops counting.
+    replaced_refs: tuple[str, ...] = ("github:reviews:*",)
 
     def __init__(self, api_base_url: str) -> None:
         self._base = api_base_url.rstrip("/")
@@ -65,14 +68,13 @@ class GitHubConnector(Connector):
         for repo, count in by_repo.most_common(10):
             if not repo:
                 continue
+            dates = [_commit_date(c) for c in commits if _repo_of_commit(c) == repo]
             drafts.append(
                 EvidenceDraft(
                     external_ref=f"github:commits:{repo}",
                     reference=f"GitHub · {repo}",
-                    fact=f"{count} commits authored in {repo}.",
-                    observed_on=_latest(
-                        _commit_date(c) for c in commits if _repo_of_commit(c) == repo
-                    ),
+                    fact=f"{count} commits authored in {repo}{get_span_label(dates)}.",
+                    observed_on=_latest(dates),
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=count,
                     subject=repo,
@@ -80,17 +82,38 @@ class GitHubConnector(Connector):
             )
 
         if reviewed:
+            dates = [_issue_date(i) for i in reviewed]
             drafts.append(
                 EvidenceDraft(
                     external_ref="github:reviews",
                     reference="GitHub reviews",
                     fact=(
                         f"{len(reviewed)} pull requests reviewed across "
-                        f"{len({_repo_of_issue(i) for i in reviewed})} repositories."
+                        f"{len({_repo_of_issue(i) for i in reviewed})} repositories"
+                        f"{get_span_label(dates)}."
                     ),
-                    observed_on=_latest(_issue_date(i) for i in reviewed),
+                    observed_on=_latest(dates),
                     granularity=EvidenceGranularity.SUMMARY,
                     tally=len(reviewed),
+                )
+            )
+        by_reviewed = Counter(_repo_of_issue(i) for i in reviewed)
+        for repo, count in by_reviewed.most_common(_REVIEWED_REPOS):
+            if not repo:
+                continue
+            dates = [_issue_date(i) for i in reviewed if _repo_of_issue(i) == repo]
+            drafts.append(
+                EvidenceDraft(
+                    external_ref=f"github:reviews:{repo}",
+                    reference=f"GitHub reviews · {repo}",
+                    fact=(
+                        f"{count} pull request{'' if count == 1 else 's'} reviewed in {repo}"
+                        f"{get_span_label(dates)}."
+                    ),
+                    observed_on=_latest(dates),
+                    granularity=EvidenceGranularity.SUMMARY,
+                    tally=count,
+                    subject=repo,
                 )
             )
 
