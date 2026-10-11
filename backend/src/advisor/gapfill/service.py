@@ -8,6 +8,11 @@ evidence through ``profile`` in one transaction, and ``GapAnswersSubmitted``
 is recorded. Submitting spends nothing: the Target's gap plan and résumé read
 as outdated by the new evidence until the user regenerates them (ADR 0035).
 An unanswered question stays a gap.
+
+Since ADR 0077 a submit also reads the answers into the Target's fit: one call
+says, per answered gap, the score or coverage the answers support, and
+``target`` keeps it. That call is priced and, on the user's own key,
+confirmed; the answers are stored whether or not it runs or succeeds.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from advisor.gapfill.domain import (
     ASKED_GAPS,
+    MAX_ANSWER_CHARS,
     MAX_CHOICES,
     QUESTION_STAGE_SHARES,
     Answer,
@@ -40,11 +46,25 @@ from advisor.gapfill.domain import (
     QuestionSetFilter,
     QuestionSetStatus,
     QuestionStage,
+    ReadingDraft,
     answer_fact,
     assert_questions_valid,
+    get_readings_settled,
 )
-from advisor.profile import AnswerRecord, ProfileService, get_evidence_line
-from advisor.target import DimensionGap, TargetRef, TargetService, TargetSnapshot
+from advisor.profile import (
+    AnswerRecord,
+    CitationError,
+    CitationHandles,
+    ProfileService,
+    get_evidence_line,
+)
+from advisor.target import (
+    AnswerReadingInput,
+    DimensionGap,
+    TargetRef,
+    TargetService,
+    TargetSnapshot,
+)
 from kernel.ai_gateway import AiGateway
 from kernel.ai_gateway import load as load_template
 from kernel.clock import utcnow
@@ -72,6 +92,10 @@ log = get_logger(__name__)
 
 _TEMPLATE = ("gap_questions", "v2")
 _UNTRUSTED = frozenset({"gaps", "evidence"})
+_READING = ("answer_reading", "v1")
+# The answers, and the requirements' and dimensions' names, are text a person
+# or a posting wrote.
+_READING_UNTRUSTED = frozenset({"gaps"})
 # The evidence shown to the model, so a large profile stays one predictable call.
 MAX_EVIDENCE_LINES = 60
 
@@ -86,6 +110,18 @@ class _Question(BaseModel):
 
 class _Questions(BaseModel):
     questions: list[_Question] = Field(min_length=1, max_length=12)
+
+
+class _Reading(BaseModel):
+    gap_key: str = Field(min_length=1, max_length=128)
+    score: int | None = Field(default=None, ge=0, le=100)
+    coverage: Literal["covered", "partly", "not"] | None = None
+    reasoning: str = Field(min_length=1, max_length=400)
+    evidence_ids: list[str] = Field(min_length=1, max_length=12)
+
+
+class _Readings(BaseModel):
+    readings: list[_Reading] = Field(max_length=12)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +157,10 @@ class QuestionSetView:
     error_message: str | None
     created_at: datetime
     submitted_at: datetime | None
+    # Reading the answers into the fit (ADR 0077): None until submitted.
+    fit_reading: str | None = None
+    fit_reading_error_code: str | None = None
+    fit_reading_error_message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,7 +374,11 @@ class GapFillService:
         async with self._uow.for_owner(owner_id) as mine:
             found = await _owned(mine, set_id)
             try:
-                found.update_cancelled()
+                if found.is_reading_answers:
+                    # Its answers stay evidence; the fit stays as it was.
+                    found.update_fit_reading_cancelled()
+                else:
+                    found.update_cancelled()
             except GapFillError as exc:
                 raise ConflictError(str(exc), set_id=str(set_id)) from exc
             await mine.sets.update(found)
@@ -346,9 +390,10 @@ class GapFillService:
             writing = await mine.sets.get_list(
                 QuestionSetFilter(statuses=(QuestionSetStatus.WRITING,))
             )
+            reading = await mine.sets.get_list(QuestionSetFilter(is_reading_answers=True))
         return tuple(
             RunningJobView(
-                kind="questions",
+                kind="questions" if found.is_writing else "fit_update",
                 id=str(found.id),
                 role_id=str(found.role_id) if found.role_id else None,
                 job_posting_id=str(found.job_posting_id) if found.job_posting_id else None,
@@ -361,7 +406,7 @@ class GapFillService:
                 started_at=found.created_at,
                 estimated_cost_usd=found.estimated_cost_usd,
             )
-            for found in writing
+            for found in (*writing, *reading)
         )
 
     async def submit(
@@ -434,6 +479,191 @@ class GapFillService:
             evidence_ids=tuple(evidence.values()),
             skipped=len(questions) - len(evidence),
         )
+
+    # -- reading the answers into the fit (ADR 0077) -------------------------
+
+    async def estimate_fit_reading(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> dict[str, Any]:
+        """What reading this set's answers into the fit costs, priced before
+        they are submitted: every question answered at full length, so a
+        ceiling."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            questions = await _questions(mine, set_id)
+        snapshot = await self._target.snapshot(owner_id, _ref_of(found), with_answers=False)
+        placeholder = "x" * MAX_ANSWER_CHARS
+        estimate = await self._gateway.estimate(
+            owner_id,
+            task="gapfill.read_answers",
+            template=load_template(*_READING),
+            inputs=_reading_inputs(
+                snapshot,
+                {
+                    q.gap_key: [f"[E{n}] (user_answer, answered today) {q.text} — {placeholder}"]
+                    for n, q in enumerate(questions, start=1)
+                },
+            ),
+            untrusted=_READING_UNTRUSTED,
+        )
+        return {
+            "cost_usd": str(estimate.cost_usd),
+            "model_id": estimate.model_id,
+            "input_tokens": estimate.input_tokens,
+            "rate_is_published": estimate.rate_is_published,
+        }
+
+    async def start_fit_reading(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> QuestionSetView:
+        """Record the set's answers as being read into the fit; the caller
+        queues ``read_answers``. Refused before the answers are submitted, or
+        while they are already being read."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            try:
+                found.start_fit_reading()
+            except GapFillError as exc:
+                raise ConflictError(str(exc), set_id=str(set_id)) from exc
+            updated = await mine.sets.update(found)
+            return await _view(mine, updated)
+
+    async def read_answers(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> None:
+        """The worker job: read every answer given about the gaps this set
+        answered — in it, or in an earlier set for the Target — into the fit.
+        An expected failure is recorded on the set and not retried."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            questions = await _questions(mine, set_id)
+        if not found.is_reading_answers:
+            return
+        try:
+            await self._read_answers(owner_id, found, questions)
+        except JobCancelledError:
+            log.info("gapfill.read_answers_cancelled", set_id=str(set_id))
+        except DomainError as exc:
+            log.warning("gapfill.read_answers_failed", set_id=str(set_id), code=str(exc.code))
+            await self._fail_reading(owner_id, set_id, code=str(exc.code), message=exc.message)
+        except Exception:
+            await self._fail_reading(
+                owner_id, set_id, code="internal", message="reading your answers stopped"
+            )
+            raise
+
+    async def _read_answers(
+        self, owner_id: uuid.UUID, found: QuestionSet, questions: Sequence[GapQuestion]
+    ) -> None:
+        ref = _ref_of(found)
+        answered_gaps = {q.gap_key for q in questions if q.evidence_id is not None}
+        answers = [a for a in await self.get_answers(owner_id, ref) if a.gap_key in answered_gaps]
+        if not answers:
+            raise ValidationError("none of these answers is evidence any more")
+        profile = await self._profile.snapshot(owner_id)
+        facts = {str(e.id): e for e in profile.evidence}
+        handles = CitationHandles(str(a.evidence_id) for a in answers)
+        by_gap: dict[str, list[str]] = {}
+        for answer in answers:
+            evidence = facts.get(str(answer.evidence_id))
+            if evidence is not None:
+                by_gap.setdefault(answer.gap_key, []).append(
+                    get_evidence_line(evidence, handles.handle(evidence.id))
+                )
+        snapshot = await self._target.snapshot(owner_id, ref, with_answers=False)
+
+        async def reading(progress: Progress) -> None:
+            await self._advance_reading(
+                owner_id,
+                found.id,
+                fraction=progress.fraction,
+                cost=progress.estimated_cost_usd,
+            )
+
+        await self._advance_reading(owner_id, found.id)
+        result = await self._gateway.run(
+            owner_id,
+            task="gapfill.read_answers",
+            template=load_template(*_READING),
+            inputs=_reading_inputs(snapshot, by_gap),
+            output_schema=_Readings,
+            untrusted=_READING_UNTRUSTED,
+            on_progress=reading,
+        )
+        drafts = []
+        for item in result.value.readings:
+            try:
+                cited = handles.resolve(item.evidence_ids)
+            except CitationError:
+                # Read as a citation of something else: get_readings_settled
+                # drops it.
+                cited = ("(invented)",)
+            drafts.append(
+                ReadingDraft(
+                    gap_key=item.gap_key,
+                    score=item.score,
+                    coverage=item.coverage,
+                    reasoning=item.reasoning.strip(),
+                    evidence_ids=cited,
+                )
+            )
+        answers_by_gap: dict[str, set[str]] = {}
+        for answer in answers:
+            answers_by_gap.setdefault(answer.gap_key, set()).add(str(answer.evidence_id))
+        settled = get_readings_settled(drafts, answers_by_gap)
+        if len(settled) < len(drafts):
+            log.info(
+                "gapfill.readings_dropped",
+                set_id=str(found.id),
+                count=len(drafts) - len(settled),
+            )
+        async with self._uow.for_owner(owner_id) as mine:
+            if not (await _owned(mine, found.id)).is_reading_answers:
+                raise JobCancelledError
+        await self._target.record_answer_readings(
+            owner_id,
+            ref,
+            question_set_id=found.id,
+            readings=[
+                AnswerReadingInput(
+                    gap_key=d.gap_key,
+                    score=d.score,
+                    coverage=d.coverage,
+                    reasoning=d.reasoning,
+                    evidence_ids=d.evidence_ids,
+                )
+                for d in settled
+            ],
+            model_id=result.model_id,
+            template_version=result.template_version,
+        )
+        async with self._uow.for_owner(owner_id) as mine:
+            stored = await _owned(mine, found.id)
+            stored.update_fit_read()
+            await mine.sets.update(stored)
+        log.info("gapfill.answers_read", set_id=str(found.id), readings=len(settled))
+
+    async def _advance_reading(
+        self,
+        owner_id: uuid.UUID,
+        set_id: uuid.UUID,
+        *,
+        fraction: float = 0.0,
+        cost: Decimal | None = None,
+    ) -> None:
+        """Record how far the reading has got, unless it was cancelled, which
+        stops the job here."""
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await _owned(mine, set_id)
+            if not found.is_reading_answers:
+                raise JobCancelledError
+            found.update_stage(
+                QuestionStage.READING_ANSWERS, progress=min(0.95, fraction), cost=cost
+            )
+            await mine.sets.update(found)
+
+    async def _fail_reading(
+        self, owner_id: uuid.UUID, set_id: uuid.UUID, *, code: str, message: str
+    ) -> None:
+        async with self._uow.for_owner(owner_id) as mine:
+            found = await mine.sets.get(set_id)
+            if found is not None and found.is_reading_answers:
+                found.update_fit_reading_failed(code=code, message=message)
+                await mine.sets.update(found)
 
     # -- internals ----------------------------------------------------------
 
@@ -605,6 +835,32 @@ def _asked(snapshot: TargetSnapshot) -> tuple[AskedGap, ...]:
     )
 
 
+def _reading_inputs(snapshot: TargetSnapshot, by_gap: dict[str, list[str]]) -> dict[str, str]:
+    """Each answered gap, what the analysis made of it, and the answers given
+    about it, for ``answer_reading``."""
+    dimensions = {d.key: d for d in snapshot.dimensions}
+    uncovered = {u.key: u for u in snapshot.uncovered}
+    blocks = []
+    for key, lines in by_gap.items():
+        dimension = dimensions.get(key)
+        requirement = uncovered.get(key)
+        if dimension is not None:
+            head = (
+                f"- {key} — {dimension.name}: the analysis scored {dimension.user_score},"
+                f" the job expects {dimension.target_score}."
+            )
+        elif requirement is not None:
+            head = (
+                f"- {key} — the job asks for: {requirement.statement}."
+                " Nothing in the evidence spoke to it."
+            )
+        else:
+            # A gap the Target no longer has: nothing to read it into.
+            continue
+        blocks.append("\n".join([head, *(f"  {line}" for line in lines)]))
+    return {"target": snapshot.label, "gaps": "\n".join(blocks) or "(no answered gaps)"}
+
+
 def _nothing_to_ask(label: str) -> DomainError:
     return TargetUnusableError(
         f"you already clear everything {label} asks for; there is nothing to ask"
@@ -666,4 +922,7 @@ async def _view(mine: OwnerGapFill, found: QuestionSet) -> QuestionSetView:
         error_message=found.error_message,
         created_at=found.created_at,
         submitted_at=found.submitted_at,
+        fit_reading=str(found.fit_reading) if found.fit_reading else None,
+        fit_reading_error_code=found.fit_reading_error_code,
+        fit_reading_error_message=found.fit_reading_error_message,
     )

@@ -109,6 +109,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/answered-fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Answered Fit
+         * @description The Target's fit, and with the answers given in Fill the gap read into
+         *     it (ADR 0077). A Target not scored yet is a 422, as for its plan.
+         */
+        get: operations["answered_fit_api_v1_answered_fit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assessments": {
         parameters: {
             query?: never;
@@ -655,8 +676,9 @@ export interface paths {
         /**
          * Submit
          * @description Every answer at once: checked as a batch and stored as ``user_answer``
-         *     evidence. Spends nothing and rewrites nothing: the Target's plan and résumé
-         *     then read as outdated, and the user regenerates them (ADR 0035).
+         *     evidence. With ``update_fit``, then read into the Target's fit by a job
+         *     the set reports (ADR 0077); the plan and résumé read as outdated either
+         *     way, and the user regenerates them (ADR 0035).
          */
         post: operations["submit_api_v1_gap_question_sets__set_id__answers_post"];
         delete?: never;
@@ -680,6 +702,48 @@ export interface paths {
          *     0042). A call already sent is still charged.
          */
         post: operations["cancel_set_api_v1_gap_question_sets__set_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}/fit-reading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Answers
+         * @description Read a submitted set's answers into the fit again, after a failure or
+         *     a cancel (ADR 0077); priced first, like the submit.
+         */
+        post: operations["read_answers_api_v1_gap_question_sets__set_id__fit_reading_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gap-question-sets/{set_id}/fit-reading-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Fit Reading Estimate
+         * @description Reading the answers into the fit runs on the user's key, so it is
+         *     priced before they are submitted: a ceiling (ADR 0077).
+         */
+        get: operations["fit_reading_estimate_api_v1_gap_question_sets__set_id__fit_reading_estimate_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1585,7 +1649,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "questions" | "gap_plan" | "resume" | "section" | "own_posting_evaluation";
+            kind: "questions" | "fit_update" | "gap_plan" | "resume" | "section" | "own_posting_evaluation";
             /** Label */
             label: string;
             /** Progress */
@@ -1632,12 +1696,30 @@ export interface components {
             text?: string | null;
         };
         /**
+         * AnsweredFit
+         * @description A Target's fit as the latest analysis scored it, and with the answers
+         *     read into it; ``answered_fit`` is null while none were.
+         */
+        AnsweredFit: {
+            /** Answered Fit */
+            answered_fit: number | null;
+            /** Fit */
+            fit: number | null;
+            /** Readings */
+            readings: components["schemas"]["GapReading"][];
+        };
+        /**
          * AnswersRequest
          * @description Every answer at once; a question left out stays a gap.
          */
         AnswersRequest: {
             /** Answers */
             answers: components["schemas"]["AnswerBody"][];
+            /**
+             * Update Fit
+             * @default true
+             */
+            update_fit: boolean;
         };
         /** Assessment */
         Assessment: {
@@ -1994,6 +2076,24 @@ export interface components {
             id: string;
             /** Text */
             text: string;
+        };
+        /**
+         * GapReading
+         * @description One gap the answers given in Fill the gap moved (ADR 0077).
+         */
+        GapReading: {
+            /** Coverage */
+            coverage: ("covered" | "partly" | "not") | null;
+            /** Gap Key */
+            gap_key: string;
+            /** Label */
+            label: string;
+            /** Reasoning */
+            reasoning: string;
+            /** Score After */
+            score_after: number | null;
+            /** Score Before */
+            score_before: number | null;
         };
         /**
          * JobError
@@ -2455,6 +2555,9 @@ export interface components {
             /** Created At */
             created_at: string;
             error: components["schemas"]["JobError"] | null;
+            /** Fit Reading */
+            fit_reading: ("reading" | "ready" | "failed" | "cancelled") | null;
+            fit_reading_error: components["schemas"]["JobError"] | null;
             /** Gaps */
             gaps: components["schemas"]["Gap"][];
             /**
@@ -3870,6 +3973,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiSourceBody"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    answered_fit_api_v1_answered_fit_get: {
+        parameters: {
+            query?: {
+                role_id?: string | null;
+                job_posting_id?: string | null;
+                private_job_posting_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnsweredFit"];
                 };
             };
             /** @description The request could not be read. */
@@ -5401,6 +5555,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_answers_api_v1_gap_question_sets__set_id__fit_reading_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description The request could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Refused, with a stable code. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Failed, with a stable code. */
+            "5XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    fit_reading_estimate_api_v1_gap_question_sets__set_id__fit_reading_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetEstimate"];
+                };
             };
             /** @description The request could not be read. */
             422: {

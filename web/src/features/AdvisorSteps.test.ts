@@ -25,6 +25,8 @@ const target: AdvisorTarget = {
 
 function set(overrides: Partial<QuestionSet> = {}): QuestionSet {
   return {
+    fit_reading: null,
+    fit_reading_error: null,
     id: "s1",
     target: ref,
     label: "Backend Engineer",

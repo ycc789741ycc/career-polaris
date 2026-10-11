@@ -7,11 +7,17 @@ from advisor.gapfill.domain.constants import (
     QUESTION_STAGE_SHARES,
 )
 from advisor.gapfill.domain.events import GapAnswersSubmitted, GapFillEvent
+from advisor.gapfill.domain.fit_reading import (
+    COVERAGES,
+    ReadingDraft,
+    get_readings_settled,
+)
 from advisor.gapfill.domain.questions import (
     Answer,
     AnswerType,
     AskedGap,
     DraftQuestion,
+    FitReadingStatus,
     GapFillError,
     GapQuestion,
     GapStatus,
@@ -33,6 +39,7 @@ from advisor.gapfill.domain.repositories import (
 
 __all__ = [
     "ASKED_GAPS",
+    "COVERAGES",
     "MAX_ANSWER_CHARS",
     "MAX_CHOICES",
     "MAX_QUESTIONS_PER_GAP",
@@ -42,6 +49,7 @@ __all__ = [
     "AnswerType",
     "AskedGap",
     "DraftQuestion",
+    "FitReadingStatus",
     "GapAnswersSubmitted",
     "GapFillError",
     "GapFillEvent",
@@ -56,7 +64,9 @@ __all__ = [
     "QuestionSetRepository",
     "QuestionSetStatus",
     "QuestionStage",
+    "ReadingDraft",
     "Repository",
     "answer_fact",
     "assert_questions_valid",
+    "get_readings_settled",
 ]

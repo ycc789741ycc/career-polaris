@@ -100,7 +100,9 @@ class _Snapshots(TargetService):
     def __init__(self, now: TargetSnapshot | Exception) -> None:
         self.now = now
 
-    async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+    async def snapshot(
+        self, owner_id: uuid.UUID, ref: TargetRef, *, with_answers: bool = True
+    ) -> TargetSnapshot:
         if isinstance(self.now, Exception):
             raise self.now
         return self.now

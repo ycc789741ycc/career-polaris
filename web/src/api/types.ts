@@ -71,6 +71,9 @@ export type QuestionSet = Schemas["QuestionSet"];
 export type GapQuestion = Schemas["GapQuestion"];
 /** What submitting costs: the plan and résumé written again, if they exist. */
 export type Submitted = Schemas["Submitted"];
+/** A Target's fit, and with the submitted answers read into it (ADR 0077). */
+export type AnsweredFit = Schemas["AnsweredFit"];
+export type GapReading = Schemas["GapReading"];
 
 // Gap plan
 export type PlanSummary = Schemas["PlanSummary"];

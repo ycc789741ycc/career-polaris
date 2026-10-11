@@ -72,6 +72,10 @@ class QuestionSet(ApiModel):
     error: JobError | None
     created_at: Timestamp
     submitted_at: Timestamp | None
+    # Reading the submitted answers into the Target's fit (ADR 0077): null
+    # until submitted.
+    fit_reading: Literal["reading", "ready", "failed", "cancelled"] | None
+    fit_reading_error: JobError | None
 
     @classmethod
     def from_view(cls, found: QuestionSetView) -> QuestionSet:
@@ -86,6 +90,10 @@ class QuestionSet(ApiModel):
             error=JobError.of(found.error_code, found.error_message),
             created_at=found.created_at,
             submitted_at=found.submitted_at,
+            fit_reading=found.fit_reading,
+            fit_reading_error=JobError.of(
+                found.fit_reading_error_code, found.fit_reading_error_message
+            ),
         )
 
 
@@ -99,6 +107,9 @@ class AnswersRequest(RequestModel):
     """Every answer at once; a question left out stays a gap."""
 
     answers: list[AnswerBody] = Field(min_length=1, max_length=MAX_ANSWERS)
+    # Also read them into the Target's fit, at the price
+    # ``/gap-question-sets/{id}/fit-reading-estimate`` gave (ADR 0077).
+    update_fit: bool = True
 
 
 class Submitted(ApiModel):

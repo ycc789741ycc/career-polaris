@@ -15,8 +15,10 @@ from advisor.gapfill.domain import (
     DraftQuestion,
     GapFillError,
     GapStatus,
+    ReadingDraft,
     answer_fact,
     assert_questions_valid,
+    get_readings_settled,
 )
 
 GAPS = (
@@ -124,3 +126,35 @@ def test_an_answer_the_question_does_not_take_is_refused(
 ) -> None:
     with pytest.raises(GapFillError):
         answer_fact(text="Q?", answer_type=answer_type, choices=("Yes", "No"), answer=answer)
+
+
+# --- reading the answers into the fit (ADR 0077) -----------------------------
+
+
+def test_a_reading_stands_only_on_its_own_gaps_answers_with_what_its_kind_needs() -> None:
+    answers = {"dim:incidents": {"a1"}, "req:capacity": {"a2"}}
+    drafts = [
+        ReadingDraft("dim:incidents", 75, None, "Led it.", ("a1",)),
+        # Cites another gap's answer.
+        ReadingDraft("req:capacity", None, "covered", "Borrowed.", ("a1",)),
+        # A gap nobody answered.
+        ReadingDraft("dim:other", 50, None, "Unasked.", ("a1",)),
+        # A dimension with no score.
+        ReadingDraft("dim:incidents", None, "covered", "Wrong kind.", ("a1",)),
+        ReadingDraft("req:capacity", None, "partly", "Planned one region.", ("a2",)),
+        # The same gap again: the first written stands.
+        ReadingDraft("req:capacity", None, "covered", "Again.", ("a2",)),
+    ]
+
+    settled = get_readings_settled(drafts, answers)
+
+    assert [(r.gap_key, r.score, r.coverage) for r in settled] == [
+        ("dim:incidents", 75, None),
+        ("req:capacity", None, "partly"),
+    ]
+
+
+def test_a_reading_citing_nothing_does_not_stand() -> None:
+    drafts = [ReadingDraft("dim:incidents", 75, None, "Led it.", ())]
+
+    assert get_readings_settled(drafts, {"dim:incidents": {"a1"}}) == ()

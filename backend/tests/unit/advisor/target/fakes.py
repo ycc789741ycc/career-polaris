@@ -9,6 +9,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from advisor.target.domain import (
+    AnswerReading,
+    AnswerReadingFilter,
+    AnswerReadingRepository,
     OpeningFit,
     OpeningFitFilter,
     OpeningFitRepository,
@@ -49,6 +52,7 @@ class Store:
     opening_requirements: dict[uuid.UUID, OpeningRequirement] = field(default_factory=dict)
     opening_requirement_fits: dict[uuid.UUID, OpeningRequirementFit] = field(default_factory=dict)
     opening_fits: dict[uuid.UUID, OpeningFit] = field(default_factory=dict)
+    answer_readings: dict[uuid.UUID, AnswerReading] = field(default_factory=dict)
 
 
 class FakePostings(
@@ -152,6 +156,24 @@ class FakeOpeningFits(FakeRepository[OpeningFit, OpeningFitFilter], OpeningFitRe
         return filter.job_posting_ids is None or entity.job_posting_id in filter.job_posting_ids
 
 
+class FakeAnswerReadings(
+    FakeRepository[AnswerReading, AnswerReadingFilter], AnswerReadingRepository
+):
+    updated_field = None
+    owner_field = "owner_id"
+    noun = "answer reading"
+
+    def matches(self, entity: AnswerReading, filter: AnswerReadingFilter) -> bool:
+        if filter.private_job_posting_id is not None:
+            if entity.private_job_posting_id != filter.private_job_posting_id:
+                return False
+        if filter.role_id is not None and (
+            entity.role_id != filter.role_id or entity.job_posting_id != filter.job_posting_id
+        ):
+            return False
+        return filter.assessment_id is None or entity.assessment_id == filter.assessment_id
+
+
 class FakeOwner(OwnerTarget):
     def __init__(self, store: Store, owner_id: uuid.UUID) -> None:
         self.postings = FakePostings(store.postings, owner_id=owner_id)
@@ -166,6 +188,7 @@ class FakeOwner(OwnerTarget):
             store.opening_requirement_fits, owner_id=owner_id
         )
         self.opening_fits = FakeOpeningFits(store.opening_fits, owner_id=owner_id)
+        self.answer_readings = FakeAnswerReadings(store.answer_readings, owner_id=owner_id)
 
 
 class FakeTargetUnitOfWork(TargetUnitOfWork):

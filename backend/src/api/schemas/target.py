@@ -18,6 +18,7 @@ from advisor.target import (
     MAX_REQUIREMENT_LINE,
     MAX_REQUIREMENT_LINES,
     MAX_TITLE,
+    AnsweredFitView,
     OpeningFitView,
     OwnPostingView,
     TargetRef,
@@ -129,6 +130,44 @@ class OwnPosting(ApiModel):
 
 class OwnPostingPage(Page[OwnPosting]):
     pass
+
+
+class GapReading(ApiModel):
+    """One gap the answers given in Fill the gap moved (ADR 0077)."""
+
+    gap_key: str
+    label: str
+    score_before: int | None
+    score_after: int | None
+    coverage: Literal["covered", "partly", "not"] | None
+    reasoning: str
+
+
+class AnsweredFit(ApiModel):
+    """A Target's fit as the latest analysis scored it, and with the answers
+    read into it; ``answered_fit`` is null while none were."""
+
+    fit: int | None
+    answered_fit: int | None
+    readings: list[GapReading]
+
+    @classmethod
+    def from_view(cls, found: AnsweredFitView) -> AnsweredFit:
+        return cls(
+            fit=found.fit_score,
+            answered_fit=found.answered_score,
+            readings=[
+                GapReading(
+                    gap_key=r.gap_key,
+                    label=r.label,
+                    score_before=r.score_before,
+                    score_after=r.score_after,
+                    coverage=r.coverage,
+                    reasoning=r.reasoning,
+                )
+                for r in found.readings
+            ],
+        )
 
 
 class OpeningFit(ApiModel):

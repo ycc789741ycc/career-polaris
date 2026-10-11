@@ -15,6 +15,7 @@ import {
 } from "./AdvisorSteps";
 import { api } from "../api/client";
 import type {
+  AnsweredFit,
   Fit,
   FitPage,
   MatchedPosting,
@@ -323,6 +324,9 @@ function Aimed({
   );
   const [gapSetError, setGapSetError] = useState<string | null>(null);
   const [answersSubmitted, setAnswersSubmitted] = useState(0);
+  // The fit with the submitted answers read into it (ADR 0077), read again
+  // when a job ends — reading them is one — or answers go in.
+  const [answeredFit, setAnsweredFit] = useState<number | null>(null);
   const [draftAnyway, setDraftAnyway] = useState<AdvisorTab[]>([]);
   const gapQuery = targetQuery(target.ref);
   useEffect(() => {
@@ -341,6 +345,22 @@ function Aimed({
       isCurrent = false;
     };
   }, [gapQuery, settled.advisor, answersSubmitted]);
+  useEffect(() => {
+    let isCurrent = true;
+    if (target.fit === null) return;
+    api.get<AnsweredFit | null>(`/answered-fit?${gapQuery}`).then(
+      (fit) => {
+        if (isCurrent) setAnsweredFit(fit?.answered_fit ?? null);
+      },
+      // Unscored, or gone: the banner shows the fit it has.
+      () => {
+        if (isCurrent) setAnsweredFit(null);
+      },
+    );
+    return () => {
+      isCurrent = false;
+    };
+  }, [gapQuery, target.fit, settled.advisor, answersSubmitted]);
   const gapFill = getGapFillState(gapSet ?? null);
   const isGapFilled = gapFill.kind === "submitted";
 
@@ -377,6 +397,7 @@ function Aimed({
     <section>
       <TargetBanner
         target={target}
+        answeredFit={answeredFit}
         previous={previous}
         onPickFromMap={() => navigate("roles")}
         onUseOwn={() => navigate("advisor", { tab: "own" })}
@@ -468,12 +489,15 @@ function Aimed({
 /** "Your target role": the one thing every number on this page is about. */
 function TargetBanner({
   target,
+  answeredFit,
   previous,
   onPickFromMap,
   onUseOwn,
   onSwitch,
 }: {
   target: AdvisorTarget;
+  /** The fit with the submitted answers read into it, if they were. */
+  answeredFit: number | null;
   previous: PreviousTarget[];
   onPickFromMap: () => void;
   onUseOwn: () => void;
@@ -521,8 +545,12 @@ function TargetBanner({
         </div>
         <div className="row" style={{ gap: 10, alignItems: "stretch" }}>
           <StatTile
-            label="Fit today"
-            value={target.fit !== null ? `${target.fit}%` : "—"}
+            label={
+              fitTodayLine(target.fit, answeredFit).isAnswered
+                ? "Fit today, with your answers"
+                : "Fit today"
+            }
+            value={fitTodayLine(target.fit, answeredFit).value}
           />
           <StatTile label="Band" value={target.band ?? "—"} />
           <div className="stack" style={{ gap: 8 }}>
@@ -538,6 +566,18 @@ function TargetBanner({
       </div>
     </div>
   );
+}
+
+/** "Fit today": the fit, and with the answers read into it when they moved
+ * it (ADR 0077). Pure. */
+export function fitTodayLine(
+  fit: number | null,
+  answered: number | null,
+): { value: string; isAnswered: boolean } {
+  if (fit === null) return { value: "—", isAnswered: false };
+  if (answered === null || answered === fit)
+    return { value: `${fit}%`, isAnswered: false };
+  return { value: `${fit}% → ${answered}%`, isAnswered: true };
 }
 
 /**

@@ -181,6 +181,10 @@ def _register(app: App) -> None:
     async def write_questions(owner_id: str, set_id: str) -> None:
         await gapfill_jobs.write(deps(), owner_id=owner_id, set_id=set_id)
 
+    @app.task(name="gapfill.read_answers", queue=str(Queue.AI))
+    async def read_answers(owner_id: str, set_id: str) -> None:
+        await gapfill_jobs.read_answers(deps(), owner_id=owner_id, set_id=set_id)
+
     @app.task(name="resume.generate", queue=str(Queue.AI))
     async def generate_resume(owner_id: str, resume_id: str) -> None:
         await resume_jobs.generate(deps(), owner_id=owner_id, resume_id=resume_id)

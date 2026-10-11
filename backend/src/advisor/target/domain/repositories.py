@@ -18,6 +18,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol
 
+from advisor.target.domain.answer_reading import AnswerReading
 from advisor.target.domain.opening_fit import (
     OpeningFit,
     OpeningRequirement,
@@ -125,6 +126,20 @@ class OpeningFitFilter:
 class OpeningFitRepository(Repository[OpeningFit, OpeningFitFilter], Protocol): ...
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerReadingFilter:
+    """One Target's readings: a role alone (``job_posting_id`` None), an
+    opening in it, or a posting of the user's own; under one analysis."""
+
+    role_id: uuid.UUID | None = None
+    job_posting_id: uuid.UUID | None = None
+    private_job_posting_id: uuid.UUID | None = None
+    assessment_id: uuid.UUID | None = None
+
+
+class AnswerReadingRepository(Repository[AnswerReading, AnswerReadingFilter], Protocol): ...
+
+
 class OwnerTarget(Protocol):
     postings: PrivateJobPostingRepository
     evaluations: PostingEvaluationRepository
@@ -134,6 +149,7 @@ class OwnerTarget(Protocol):
     opening_requirements: OpeningRequirementRepository
     opening_requirement_fits: OpeningRequirementFitRepository
     opening_fits: OpeningFitRepository
+    answer_readings: AnswerReadingRepository
 
 
 class TargetUnitOfWork(Protocol):
