@@ -1126,3 +1126,46 @@ lock: with nothing drafted, `FillGapFirst` ("Go to Fill the gap", or "Draft
 anyway" / "Write anyway"); with something drafted, or after drafting anyway,
 `FillGapBanner` above it. An unscored opening still locks, as above.
 
+
+## Résumé editing
+
+On `epic/no-ticket/resume-editing`, one branch per step:
+
+- **Lines.** Every entry's lines and a custom section's end in "+ Add line"
+  (`MAX_LINES`, the server's eight); Enter adds one below, Backspace removes
+  an empty one, and a cleared line goes. Each line has a handle in the page
+  margin (`resume-move-line`) that drags it, or moves it with the arrow keys
+  (Alt+arrow from inside the line), anywhere in its section
+  (`getLineMoved`, `getLineStep`; `features/reorder.ts` is shared with the
+  Sections panel). A moved line keeps its citations, matched by text.
+- **Versions.** Beside the Version list of résumés, a second list
+  (`versionLine`) opens any saved version of the open résumé
+  (`GET /tailored-resumes/{id}?version=n`) as the editable draft. Saving
+  always makes the next version, and sends `based_on`, so `save_version`
+  judges untouched lines against that version and they keep their citations.
+  An unedited older version exports as itself.
+- **Its own look** (ADR 0075, migration 0057). Over its template's, a résumé
+  sets `section_font`, `bold_titles`, `bold_headings` and `body_pt` beside
+  ADR 0047's fonts, as one `OwnLook` laid on by `get_spec_with_look`;
+  `TemplateSpec` carries the three look fields, defaulting to how every
+  template printed. `FONTS_WITHOUT_BOLD` (Caprasimo) stay regular, and the
+  Layout card's Bold switch is off for them.
+- **Numbers** (ADR 0076). GitHub and Jira tallies say over how long
+  (`get_span_label`), GitHub counts reviews per repository, Jira a site's
+  issues by type. `resume_write` v6, `resume_revise` v6 and `resume_section`
+  v2 all read the options (`_options_block`) and state only numbers a cited
+  fact states. `get_unbacked_lines` flags the rest: logged
+  (`resume.unbacked_number`), kept, and noted on the page from
+  `unbacked_lines`. The Layout card says which of GitHub and Jira Quantify can
+  draw on, and that a changed option applies on the next write.
+- **The fit follows the answers** (ADR 0077, migration 0058). A submit in Fill
+  the gap (with `update_fit`, the default) queues `gapfill.read_answers`, a
+  `fit_update` Advisor job: `answer_reading` v1 reads each answered gap's
+  answers into a score or a coverage, `get_readings_settled` keeps only those
+  citing that gap's answers, and `target.answer_reading` (RLS) keeps them
+  against the latest analysis. `TargetService.snapshot` lays them over the
+  fit (`get_answered_snapshot`, `answered_from`) unless `with_answers=False`;
+  `GET /answered-fit` serves before and after. The banner shows "Fit today
+  a% → b%". Priced first (`/fit-reading-estimate`), confirmed on the user's
+  own key; "Submit without updating fit" spends nothing; "Update fit" retries.
+  The role map's fits are untouched.
