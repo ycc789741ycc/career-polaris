@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type DragEvent,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -122,6 +123,8 @@ export function Resume({
   const { refresh: refreshActivity } = useActivity();
   const model = modelName(status);
   const ref: Ref = target.ref;
+  // Ties each font list in the Layout card to its label.
+  const lookId = useId();
 
   // Opens with this Target's résumé, if it has one.
   const [resumeId, setResumeId] = useState<string | null>(
@@ -869,88 +872,99 @@ export function Resume({
                       limits.fonts_without_bold as string[]
                     ).includes(font);
                     return (
-                      <div key={key} className="row own-look-row">
-                        <label className="font-picker">
-                          <span className="field-label">{label}</span>
-                          <select
-                            className="input"
-                            value={fonts[key] ?? ""}
-                            disabled={resume?.status !== "ready"}
-                            onChange={(event) =>
-                              void changeSettings(template, options, {
-                                ...fonts,
-                                [key]: (event.target.value ||
-                                  null) as ResumeLook["heading_font"],
-                              })
-                            }
+                      <div key={key} className="own-look-group">
+                        <div className="own-look-head">
+                          <label
+                            className="field-label"
+                            htmlFor={`${lookId}-${key}`}
                           >
-                            <option value="">
-                              Template&apos;s (
-                              {getTemplateFont(chosen.spec, key)})
-                            </option>
-                            {limits.fonts.map((name) => (
-                              <option key={name} value={name}>
-                                {name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {bold && (
-                          <span
-                            title={hasBold ? undefined : `${font} has no bold`}
-                          >
-                            <RoundCheck
-                              checked={
-                                hasBold && (fonts[bold] ?? chosen.spec[bold])
-                              }
-                              disabled={!hasBold || resume?.status !== "ready"}
-                              onChange={(on) =>
-                                void changeSettings(template, options, {
-                                  ...fonts,
-                                  [bold]: on,
-                                })
+                            {label}
+                          </label>
+                          {bold && (
+                            <span
+                              title={
+                                hasBold ? undefined : `${font} has no bold`
                               }
                             >
-                              {bold === "bold_titles"
-                                ? "Bold titles"
-                                : "Bold headings"}
-                            </RoundCheck>
-                          </span>
-                        )}
-                        {sizes.map((size) => (
-                          <div key={size} className="font-picker size-picker">
-                            <span className="field-label" aria-hidden="true">
-                              {SIZE_PICKERS[size].label}
+                              <RoundCheck
+                                checked={
+                                  hasBold && (fonts[bold] ?? chosen.spec[bold])
+                                }
+                                disabled={
+                                  !hasBold || resume?.status !== "ready"
+                                }
+                                onChange={(on) =>
+                                  void changeSettings(template, options, {
+                                    ...fonts,
+                                    [bold]: on,
+                                  })
+                                }
+                              >
+                                {bold === "bold_titles"
+                                  ? "Bold titles"
+                                  : "Bold headings"}
+                              </RoundCheck>
                             </span>
-                            <select
-                              className="input"
-                              aria-label={SIZE_PICKERS[size].name}
-                              value={fonts[size] ?? ""}
-                              disabled={resume?.status !== "ready"}
-                              onChange={(event) =>
-                                void changeSettings(template, options, {
-                                  ...fonts,
-                                  [size]: event.target.value
-                                    ? Number(event.target.value)
-                                    : null,
-                                })
-                              }
-                            >
-                              <option value="">
-                                Template&apos;s (
-                                {getTemplateSize(chosen.spec, size)}pt)
-                              </option>
-                              {getTextSizes(
-                                limits[SIZE_PICKERS[size].range],
-                                SIZE_PICKERS[size].step,
-                              ).map((pt) => (
-                                <option key={pt} value={pt}>
-                                  {pt}pt
+                          )}
+                        </div>
+                        <select
+                          id={`${lookId}-${key}`}
+                          className="input"
+                          value={fonts[key] ?? ""}
+                          disabled={resume?.status !== "ready"}
+                          onChange={(event) =>
+                            void changeSettings(template, options, {
+                              ...fonts,
+                              [key]: (event.target.value ||
+                                null) as ResumeLook["heading_font"],
+                            })
+                          }
+                        >
+                          <option value="">
+                            Template&apos;s ({getTemplateFont(chosen.spec, key)}
+                            )
+                          </option>
+                          {limits.fonts.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="own-look-sizes">
+                          {sizes.map((size) => (
+                            <label key={size} className="font-picker">
+                              <span className="field-label">
+                                {SIZE_PICKERS[size].label}
+                              </span>
+                              <select
+                                className="input"
+                                value={fonts[size] ?? ""}
+                                disabled={resume?.status !== "ready"}
+                                onChange={(event) =>
+                                  void changeSettings(template, options, {
+                                    ...fonts,
+                                    [size]: event.target.value
+                                      ? Number(event.target.value)
+                                      : null,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  Template&apos;s (
+                                  {getTemplateSize(chosen.spec, size)}pt)
                                 </option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
+                                {getTextSizes(
+                                  limits[SIZE_PICKERS[size].range],
+                                  SIZE_PICKERS[size].step,
+                                ).map((pt) => (
+                                  <option key={pt} value={pt}>
+                                    {pt}pt
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
@@ -2364,42 +2378,21 @@ const NO_LOOK: ResumeLook = {
 
 type SizeKey = "name_pt" | "title_pt" | "heading_pt" | "body_pt";
 
-/** Each size a résumé can set over its template's (ADR 0078): its label, its
- * accessible name, its range in the limits, and its step. */
+/** Each size a résumé can set over its template's (ADR 0078): its label,
+ * its range in the limits, and its step. */
 const SIZE_PICKERS: Record<
   SizeKey,
   {
     label: string;
-    name: string;
     range:
       "name_pt_range" | "title_pt_range" | "heading_pt_range" | "body_pt_range";
     step: number;
   }
 > = {
-  name_pt: {
-    label: "Name",
-    name: "Name size",
-    range: "name_pt_range",
-    step: 1,
-  },
-  title_pt: {
-    label: "Title",
-    name: "Title size",
-    range: "title_pt_range",
-    step: 0.5,
-  },
-  heading_pt: {
-    label: "Size",
-    name: "Heading size",
-    range: "heading_pt_range",
-    step: 0.5,
-  },
-  body_pt: {
-    label: "Size",
-    name: "Text size",
-    range: "body_pt_range",
-    step: 0.5,
-  },
+  name_pt: { label: "Name size", range: "name_pt_range", step: 1 },
+  title_pt: { label: "Title size", range: "title_pt_range", step: 0.5 },
+  heading_pt: { label: "Heading size", range: "heading_pt_range", step: 0.5 },
+  body_pt: { label: "Text size", range: "body_pt_range", step: 0.5 },
 };
 
 /** A template's size for one picker; an entry title takes the text size
@@ -2424,7 +2417,7 @@ const FONT_PICKERS: {
 }[] = [
   {
     key: "heading_font",
-    label: "Titles in",
+    label: "Name & titles in",
     bold: "bold_titles",
     sizes: ["name_pt", "title_pt"],
   },

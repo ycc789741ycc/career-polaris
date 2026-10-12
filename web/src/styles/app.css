@@ -1929,7 +1929,7 @@ select.input { appearance: auto; }
 .tool-card-coverage .callout-note { color: var(--color-accent-2-900); }
 .template-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 8px;
 }
 .resume-page-actions {
@@ -2079,11 +2079,29 @@ select.input { appearance: auto; }
   background: var(--color-accent-100);
   font-size: 12.5px;
 }
-/* The résumé's own look: each font with its Bold switch, and the text
- * size beside the text font. */
-.own-look-row { gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-.own-look-row .round-check { margin-bottom: 8px; }
-.size-picker { max-width: 140px; }
+/* The résumé's own look, one group per font: its label and Bold switch on
+ * one line, the font list across the card, and its sizes beneath, two to a
+ * line only when "Template's (22pt)" still fits in each, so nothing is
+ * squeezed however narrow the card is. */
+.own-look-group { display: flex; flex-direction: column; gap: 6px; }
+.own-look-group + .own-look-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-200);
+}
+.own-look-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.own-look-head .round-check { font-size: 12.5px; }
+.own-look-group > .input { width: 100%; }
+.own-look-sizes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
 /* A line's move handle, in the page margin left of its bullet, as the
  * entry's × is: shown on hover and focus, never printed. */
 .resume-line { position: relative; }
