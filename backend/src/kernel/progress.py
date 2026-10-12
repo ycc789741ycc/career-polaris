@@ -50,7 +50,7 @@ class JobCancelledError(Exception):
 class RunningJobView:
     """One Advisor job still running, as ``GET /activity`` lists it."""
 
-    # questions | gap_plan | resume | section | own_posting_evaluation
+    # questions | fit_update | gap_plan | resume | section | own_posting_evaluation
     kind: str
     id: str
     role_id: str | None

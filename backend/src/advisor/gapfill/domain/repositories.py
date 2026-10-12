@@ -50,6 +50,8 @@ class QuestionSetFilter:
     role_only: bool = False
     private_job_posting_id: uuid.UUID | None = None
     statuses: tuple[QuestionSetStatus, ...] | None = None
+    # Only sets whose answers are being read into the fit (ADR 0077).
+    is_reading_answers: bool = False
 
 
 class QuestionSetRepository(Repository[QuestionSet, QuestionSetFilter], Protocol): ...

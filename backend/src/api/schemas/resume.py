@@ -9,6 +9,7 @@ from pydantic import Field
 
 from advisor.resume import (
     ExportView,
+    OwnLook,
     ResumeSummaryView,
     ResumeView,
     RevisionDone,
@@ -69,15 +70,38 @@ class ResumeRequest(TargetFields):
 class SettingsRequest(RequestModel):
     template: TemplateId
     options: OptionsBody
-    # The résumé's own fonts over its template's; null, or left out, keeps the
-    # template's (ADR 0047).
+    # The résumé's own look over its template's; null, or left out, keeps the
+    # template's (ADR 0047, ADR 0075). The server checks the size's range.
     heading_font: FontName | None = None
     body_font: FontName | None = None
+    section_font: FontName | None = None
+    bold_titles: bool | None = None
+    bold_headings: bool | None = None
+    body_pt: float | None = None
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
+
+    def to_look(self) -> OwnLook:
+        return OwnLook(
+            heading_font=self.heading_font,
+            section_font=self.section_font,
+            body_font=self.body_font,
+            bold_titles=self.bold_titles,
+            bold_headings=self.bold_headings,
+            body_pt=self.body_pt,
+            name_pt=self.name_pt,
+            title_pt=self.title_pt,
+            heading_pt=self.heading_pt,
+        )
 
 
 class VersionRequest(RequestModel):
     content: dict[str, Any]
     label: str | None = Field(default=None, max_length=200)
+    # The older version the draft was opened from, if it was: what the save
+    # keeps citations against. It is still saved as the next version.
+    based_on: int | None = Field(default=None, ge=1)
 
 
 class RevisionRequest(RequestModel):
@@ -287,13 +311,25 @@ class TailoredResume(ResumeSummary):
     outdated_by: list[OutdatedReasonName]
     # The sections every new version is written to, in order (ADR 0039).
     section_plan: list[ResumeSectionSlot]
-    # Its own fonts over its template's; null keeps the template's (ADR 0047).
+    # Its own look over its template's; null keeps the template's (ADR 0047,
+    # ADR 0075).
     heading_font: FontName | None
     body_font: FontName | None
+    section_font: FontName | None
+    bold_titles: bool | None
+    bold_headings: bool | None
+    body_pt: float | None
+    name_pt: float | None
+    title_pt: float | None
+    heading_pt: float | None
+    # The model's lines that state a number none of their cited facts states
+    # (ADR 0076), by their text: the page flags them.
+    unbacked_lines: list[str]
 
     @classmethod
     def from_resume(cls, resume: ResumeView) -> TailoredResume:
         snapshot = resume.snapshot
+        look = resume.own_look
         return cls(
             **ResumeSummary.from_view(resume.summary).model_dump(),
             template=resume.template,
@@ -352,8 +388,16 @@ class TailoredResume(ResumeSummary):
                 ResumeSectionSlot(kind=str(slot.kind), title=slot.title, is_shown=slot.is_shown)
                 for slot in resume.section_plan
             ],
-            heading_font=resume.heading_font,
-            body_font=resume.body_font,
+            heading_font=look.heading_font,
+            body_font=look.body_font,
+            section_font=look.section_font,
+            bold_titles=look.bold_titles,
+            bold_headings=look.bold_headings,
+            body_pt=look.body_pt,
+            name_pt=look.name_pt,
+            title_pt=look.title_pt,
+            heading_pt=look.heading_pt,
+            unbacked_lines=list(resume.unbacked_lines),
         )
 
 
@@ -437,6 +481,12 @@ class TemplateDesign(RequestModel):
     sidebar_kinds: list[SectionKindName] = Field(default_factory=list, max_length=12)
     heading_case: HeadingCaseName = "upper"
     bullet: BulletName = "dot"
+    # Null sets section headings in the body font (ADR 0075).
+    section_font: FontName | None = None
+    bold_titles: bool = False
+    bold_headings: bool = True
+    # Null takes the text size plus a point (ADR 0078).
+    title_pt: float | None = None
 
 
 class TemplateRequest(RequestModel):
@@ -459,6 +509,10 @@ class TemplateSpecBody(ApiModel):
     sidebar_kinds: list[SectionKindName]
     heading_case: HeadingCaseName
     bullet: BulletName
+    section_font: FontName | None
+    bold_titles: bool
+    bold_headings: bool
+    title_pt: float | None
 
 
 class ResumeTemplate(ApiModel):
@@ -516,9 +570,13 @@ class ResumeTemplateLimits(ApiModel):
     """What a template of the user's own may set, for the editor."""
 
     fonts: list[FontName]
+    # The fonts with no bold cut: a title or heading in one stays regular, so
+    # its Bold switch is off (ADR 0075).
+    fonts_without_bold: list[FontName]
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
+    title_pt_range: tuple[float, float]
     # The name and the text against the white page.
     min_contrast: float
     max_name: int
@@ -536,9 +594,11 @@ class ResumeTemplateLimits(ApiModel):
         return cls.model_validate(
             {
                 "fonts": list(limits.fonts),
+                "fonts_without_bold": list(limits.fonts_without_bold),
                 "name_pt_range": limits.name_pt_range,
                 "heading_pt_range": limits.heading_pt_range,
                 "body_pt_range": limits.body_pt_range,
+                "title_pt_range": limits.title_pt_range,
                 "min_contrast": limits.min_contrast,
                 "max_name": limits.max_name,
                 "max_templates": limits.max_templates,

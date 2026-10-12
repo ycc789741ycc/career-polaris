@@ -183,3 +183,36 @@ def test_settings_take_the_resumes_own_fonts_from_the_ones_it_can_set() -> None:
     assert chosen.heading_font == "DejaVu Serif"
     with pytest.raises(ValidationError):
         SettingsRequest.model_validate({**body, "body_font": "Comic Sans"})
+
+
+def test_settings_carry_the_resumes_own_look() -> None:
+    """ADR 0075: a headings font, bold titles and headings, a text size."""
+    body = {
+        "template": "organic",
+        "options": {"metrics": True, "reorder": True, "trim": False},
+        "section_font": "Lato",
+        "bold_titles": True,
+        "body_pt": 9.5,
+    }
+    look = SettingsRequest.model_validate(body).to_look()
+    assert (look.section_font, look.bold_titles, look.bold_headings, look.body_pt) == (
+        "Lato",
+        True,
+        None,
+        9.5,
+    )
+    with pytest.raises(ValidationError):
+        SettingsRequest.model_validate({**body, "section_font": "Comic Sans"})
+
+
+def test_settings_carry_the_resumes_own_sizes() -> None:
+    """ADR 0078: the name's, the titles' and the headings' sizes."""
+    body = {
+        "template": "organic",
+        "options": {"metrics": True, "reorder": True, "trim": False},
+        "name_pt": 26,
+        "title_pt": 12.5,
+        "heading_pt": 10,
+    }
+    look = SettingsRequest.model_validate(body).to_look()
+    assert (look.name_pt, look.title_pt, look.heading_pt, look.body_pt) == (26, 12.5, 10, None)

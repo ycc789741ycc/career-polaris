@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, replace
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -66,6 +66,7 @@ from advisor.resume.domain import (
     Options,
     Origin,
     OwnerResumes,
+    OwnLook,
     ReadingStatus,
     ResumeContent,
     ResumeError,
@@ -100,14 +101,16 @@ from advisor.resume.domain import (
     get_headings_kept,
     get_planned,
     get_proposal_layout,
-    get_spec_with_fonts,
+    get_spec_with_look,
     get_template_spec_from_runs,
+    get_unbacked_lines,
     mark_edits,
     settle_revision,
 )
 from advisor.resume.domain.constants import (
     BODY_PT_RANGE,
     CONTACT_ICONS,
+    FONTS_WITHOUT_BOLD,
     HEADING_PT_RANGE,
     MAX_CONTACT,
     MAX_CONTACTS,
@@ -125,6 +128,7 @@ from advisor.resume.domain.constants import (
     RESUME_STAGE_SHARES,
     TEMPLATE_FONTS,
     TEMPLATE_READING_KEEP_SECONDS,
+    TITLE_PT_RANGE,
 )
 from advisor.resume.infra.render import render_html, render_pdf
 from advisor.resume.infra.style_reader import read_style_runs
@@ -161,6 +165,7 @@ __all__ = [
     "CoverageView",
     "ExportView",
     "Options",
+    "OwnLook",
     "ResumeService",
     "ResumeSummaryView",
     "ResumeView",
@@ -179,9 +184,11 @@ __all__ = [
 
 log = get_logger(__name__)
 
-_WRITE = ("resume_write", "v5")
-_REVISE = ("resume_revise", "v5")
-_SECTION = ("resume_section", "v1")
+# v6 of each states only numbers its cited facts state, and quantifies from
+# tallies when asked (ADR 0076).
+_WRITE = ("resume_write", "v6")
+_REVISE = ("resume_revise", "v6")
+_SECTION = ("resume_section", "v2")
 _MARKER = "<<<PROPOSAL>>>"
 # The chat sees this many earlier exchanges, newest last.
 _CONVERSATION_TURNS = 6
@@ -322,9 +329,12 @@ class ResumeView:
     # The sections every new version is written to, in order (ADR 0039).
     # While one is being filled it is already here, and empty in the content.
     section_plan: tuple[SectionSlot, ...] = DEFAULT_PLAN
-    # Its own fonts over its template's; None keeps the template's (ADR 0047).
-    heading_font: str | None = None
-    body_font: str | None = None
+    # Its own look over its template's; each None keeps the template's (ADR
+    # 0047, ADR 0075).
+    own_look: OwnLook = field(default_factory=OwnLook)
+    # The text of each of the model's lines that states a number none of the
+    # facts it cites states (ADR 0076), for the page to flag.
+    unbacked_lines: tuple[str, ...] = ()
 
     @property
     def is_outdated(self) -> bool:
@@ -383,9 +393,12 @@ class TemplateLimitsView:
     """What a template of the user's own may set, for the editor."""
 
     fonts: tuple[str, ...]
+    # Fonts a title or heading cannot be bold in (ADR 0075).
+    fonts_without_bold: tuple[str, ...]
     name_pt_range: tuple[float, float]
     heading_pt_range: tuple[float, float]
     body_pt_range: tuple[float, float]
+    title_pt_range: tuple[float, float]
     min_contrast: float
     max_name: int
     max_templates: int
@@ -563,6 +576,8 @@ class ResumeService:
                 snapshot=snapshot,
                 content=content,
                 slot=slot,
+                # The options' few lines barely move the price.
+                options=Options(),
             ),
             untrusted=_SECTION_UNTRUSTED,
         )
@@ -733,8 +748,15 @@ class ResumeService:
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
             section_plan=get_full_plan(resume.section_plan),
-            heading_font=resume.heading_font,
-            body_font=resume.body_font,
+            own_look=resume.own_look,
+            unbacked_lines=tuple(
+                b.text
+                for b in get_unbacked_lines(
+                    content, {i: f"{n.reference} {n.fact}" for i, n in notes.items()}
+                )
+            )
+            if content is not None
+            else (),
         )
 
     # -- editing ------------------------------------------------------------
@@ -746,18 +768,17 @@ class ResumeService:
         *,
         template: str,
         options: Options,
-        heading_font: str | None = None,
-        body_font: str | None = None,
+        look: OwnLook | None = None,
     ) -> None:
-        """Its template, options and own fonts, all at once: fonts left out
-        go back to the template's (ADR 0047)."""
+        """Its template, options and own look, all at once: anything left out
+        goes back to the template's (ADR 0047, ADR 0075)."""
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
             built_in, own = await _resolve_template(mine, template)
             now = utcnow()
             resume.restyle(template=built_in, custom_template_id=own, options=options, at=now)
             try:
-                resume.update_fonts(heading_font=heading_font, body_font=body_font, at=now)
+                resume.update_look(look or OwnLook(), at=now)
             except TemplateSpecError as exc:
                 raise ValidationError(str(exc)) from exc
             await mine.resumes.update(resume)
@@ -769,11 +790,15 @@ class ResumeService:
         *,
         content: dict[str, Any],
         label: str | None = None,
+        based_on: int | None = None,
     ) -> VersionView:
-        """Save the user's edits as a new version.
+        """Save the user's edits as a new version, always the next number.
 
         A line they changed is theirs and may stand uncited; a line they left
         alone keeps what it cited. Anything cited must still be their evidence.
+        What they left alone is judged against the version they opened —
+        ``based_on``, an older one brought back, or else the latest — so an old
+        version saved again keeps its citations.
         """
         try:
             edited = ResumeContent.from_dict(content)
@@ -781,8 +806,16 @@ class ResumeService:
             raise ValidationError(f"that résumé could not be read: {exc}") from exc
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
-            latest = await _latest_version(mine, resume_id)
-            previous = ResumeContent.from_dict(latest.content) if latest else None
+            if based_on is None:
+                opened = await _latest_version(mine, resume_id)
+            else:
+                found = await mine.versions.get_list(
+                    ResumeVersionFilter(resume_id=resume_id, number=based_on)
+                )
+                if not found:
+                    raise NotFoundError("version not found", number=based_on)
+                opened = found[0]
+            previous = ResumeContent.from_dict(opened.content) if opened else None
         settled = mark_edits(previous, edited)
         try:
             assert_well_formed(settled)
@@ -839,6 +872,7 @@ class ResumeService:
                 or "(this is the first message)",
                 "request": request,
                 "evidence": _evidence_block(profile.evidence, handles),
+                "options": _options_block(resume.options),
             }
 
             reply_parts: list[str] = []
@@ -877,6 +911,9 @@ class ResumeService:
                 except CitationError as exc:
                     raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
                 proposal = _claims_settled(proposal, coverage_rows, resume_id=resume_id)
+                _numbers_checked(
+                    proposal, profile.evidence, resume_id=resume_id, task="resume.revise"
+                )
                 try:
                     assert_well_formed(proposal)
                     assert_written_lines_cited(proposal)
@@ -954,9 +991,11 @@ class ResumeService:
     def template_limits(self) -> TemplateLimitsView:
         return TemplateLimitsView(
             fonts=TEMPLATE_FONTS,
+            fonts_without_bold=FONTS_WITHOUT_BOLD,
             name_pt_range=NAME_PT_RANGE,
             heading_pt_range=HEADING_PT_RANGE,
             body_pt_range=BODY_PT_RANGE,
+            title_pt_range=TITLE_PT_RANGE,
             min_contrast=MIN_CONTRAST,
             max_name=MAX_TEMPLATE_NAME,
             max_templates=self._template_max,
@@ -1251,6 +1290,7 @@ class ResumeService:
         except CitationError as exc:
             raise EvidenceNotOwnedError(message, invented=sorted(exc.invented)) from exc
         content = _claims_settled(content, coverage_rows, resume_id=resume_id)
+        _numbers_checked(content, profile.evidence, resume_id=resume_id, task="resume.write")
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1341,6 +1381,7 @@ class ResumeService:
                 snapshot=TargetSnapshot.from_dict(resume.snapshot),
                 content=current,
                 slot=slot,
+                options=resume.options,
             ),
             output_schema=_SectionReply,
             untrusted=_SECTION_UNTRUSTED,
@@ -1365,6 +1406,7 @@ class ResumeService:
         )
         rows = [_coverage_view(c) for c in resume.coverage]
         content = _claims_settled(content, rows, resume_id=resume_id)
+        _numbers_checked(content, profile.evidence, resume_id=resume_id, task="resume.fill_section")
         try:
             assert_well_formed(content)
             assert_written_lines_cited(content)
@@ -1615,22 +1657,51 @@ def _write_inputs(
         "target": label,
         "requirements": requirements,
         "coverage": _coverage_block(coverage_rows, handles) or "(worked out when writing)",
-        "options": "\n".join(
-            line
-            for line, wanted in (
-                ("- Quantify bullets with numbers the evidence gives.", options.metrics),
-                ("- Order skills by what this job screens for.", options.reorder),
-                ("- Keep it to one page: at most 3 bullets a role.", options.trim),
-            )
-            if wanted
-        )
-        or "- No special instructions.",
+        "options": _options_block(options),
         "timeline": timeline or "(no positions recorded)",
         "accounts": accounts or "(none connected)",
         "base_resume": base_resume,
         "sections": _plan_lines(plan),
         "evidence": _evidence_block(profile.evidence, handles),
     }
+
+
+def _options_block(options: Options) -> str:
+    """How to write it, as every résumé prompt is told (ADR 0076)."""
+    return (
+        "\n".join(
+            line
+            for line, wanted in (
+                (
+                    "- Quantify: give every line whose work a fact counts or measures"
+                    " the number that fact states, with its span, and cite that fact."
+                    " Prefer a GitHub or Jira tally for the work it counts.",
+                    options.metrics,
+                ),
+                (
+                    "- Do not quantify: keep a number only where a cited fact words it so itself.",
+                    not options.metrics,
+                ),
+                ("- Order skills by what this job screens for.", options.reorder),
+                ("- Keep it to one page: at most 3 bullets a role.", options.trim),
+            )
+            if wanted
+        )
+        or "- No special instructions."
+    )
+
+
+def _numbers_checked(
+    content: ResumeContent, evidence: Iterable[Any], *, resume_id: uuid.UUID, task: str
+) -> None:
+    """Log the model's lines that state a number their facts do not (ADR
+    0076). They stay: the page flags them for the user to fix."""
+    facts = {str(e.id): f"{e.reference} {e.fact}" for e in evidence}
+    unbacked = get_unbacked_lines(content, facts)
+    if unbacked:
+        log.warning(
+            "resume.unbacked_number", resume_id=str(resume_id), task=task, count=len(unbacked)
+        )
 
 
 def _section_inputs(
@@ -1640,12 +1711,14 @@ def _section_inputs(
     snapshot: TargetSnapshot,
     content: ResumeContent,
     slot: SectionSlot,
+    options: Options,
 ) -> dict[str, str]:
     shown = content.with_citations(lambda ids: tuple(handles.handle(i) for i in ids))
     return {
         "target": snapshot.label,
         "requirements": requirements_block(snapshot),
         "section": str(slot.kind) + (f": {slot.title}" if slot.title else ""),
+        "options": _options_block(options),
         "resume": json.dumps(shown.to_dict(), ensure_ascii=False),
         "evidence": _evidence_block(profile.evidence, handles),
     }
@@ -1865,12 +1938,12 @@ async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomT
 
 
 async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
-    """The look the résumé is set in: its template's, in its own fonts."""
+    """The look the résumé is set in: its template's, with its own over it."""
     if resume.custom_template_id is not None:
         spec = (await _owned_template(mine, resume.custom_template_id)).spec
     else:
         spec = BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
-    return get_spec_with_fonts(spec, resume.heading_font, resume.body_font)
+    return get_spec_with_look(spec, resume.own_look)
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:

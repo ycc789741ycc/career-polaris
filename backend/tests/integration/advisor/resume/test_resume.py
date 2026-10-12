@@ -30,6 +30,7 @@ from advisor.market import MarketService, create_market_service
 from advisor.profile import ProfileService, create_profile_service
 from advisor.resume import (
     Options,
+    OwnLook,
     ResumeService,
     RevisionDone,
     RevisionFailed,
@@ -355,6 +356,29 @@ async def test_a_resume_is_written_cited_with_coverage_decided_by_scores(
     assert [e.id for e in view.coverage[1].evidence] == [world.evidence_id]
 
 
+async def test_a_written_line_stating_a_number_its_facts_do_not_is_flagged_not_dropped(
+    world: World, account: uuid.UUID
+) -> None:
+    """ADR 0076: the line stays, and the page is told which it is."""
+    ref = await _own_posting(world, account)
+    reply = json.loads(_resume_reply(CITED))
+    lines = reply["sections"][1]["entries"][0]["bullets"]
+    lines.append({"text": "Cut checkout latency by 40%", "evidence_ids": [CITED]})
+    world.stub.replies.append(json.dumps(reply))
+    requested = await world.resume.request(
+        account, ref, template=Template.ORGANIC, options=Options()
+    )
+    await world.resume.generate(account, requested.id)
+
+    view = await world.resume.get(account, requested.id)
+    assert view.summary.status == "ready", view.summary.error_message
+    assert view.content is not None
+    assert "Cut checkout latency by 40%" in [
+        line["text"] for line in _lines(view.content.to_dict())
+    ]
+    assert view.unbacked_lines == ("Cut checkout latency by 40%",)
+
+
 async def test_a_resume_citing_evidence_the_user_lacks_is_recorded_as_failed(
     world: World, account: uuid.UUID
 ) -> None:
@@ -402,6 +426,47 @@ async def test_an_edit_is_the_users_own_but_cannot_cite_someone_elses_evidence(
     _lines(edited)[0]["text"] = "Led the migration, start to finish"
     with pytest.raises(EvidenceNotOwnedError):
         await world.resume.save_version(account, resume_id, content=edited)
+
+
+async def test_an_older_version_saved_again_is_the_next_and_keeps_its_citations(
+    world: World, account: uuid.UUID
+) -> None:
+    resume_id = await _written(world, account)
+    first = await world.resume.get(account, resume_id)
+    assert first.content is not None
+    lead = _lines(first.content.to_dict())[0]
+    assert lead["origin"] == "written" and lead["evidence_ids"]
+
+    # v2 rewrites the lead line: it becomes the user's.
+    edited = first.content.to_dict()
+    _lines(edited)[0]["text"] = "Led checkout's migration, end to end"
+    await world.resume.save_version(account, resume_id, content=edited)
+
+    # v1, opened and saved again with one more line, is v3; its untouched
+    # lead line is still the written, cited one, judged against v1.
+    old = await world.resume.get(account, resume_id, number=1)
+    assert old.content is not None
+    restored = old.content.to_dict()
+    _lines(restored).append(
+        {"text": "Ran the on-call rotation", "evidence_ids": [], "origin": "yours"}
+    )
+    saved = await world.resume.save_version(account, resume_id, content=restored, based_on=1)
+    assert saved.number == 3
+
+    latest = await world.resume.get(account, resume_id)
+    assert latest.content is not None
+    lines = _lines(latest.content.to_dict())
+    assert lines[0]["text"] == lead["text"]
+    assert (lines[0]["origin"], lines[0]["evidence_ids"]) == ("written", lead["evidence_ids"])
+    assert (lines[-1]["text"], lines[-1]["origin"]) == ("Ran the on-call rotation", "yours")
+    # Every version is still there to open.
+    assert [v.number for v in latest.versions] == [3, 2, 1]
+    again = await world.resume.get(account, resume_id, number=2)
+    assert again.content is not None
+    assert _lines(again.content.to_dict())[0]["text"] == "Led checkout's migration, end to end"
+
+    with pytest.raises(NotFoundError):
+        await world.resume.save_version(account, resume_id, content=restored, based_on=9)
 
 
 async def test_a_chat_proposal_streams_and_becomes_a_version_only_when_applied(
@@ -764,12 +829,14 @@ async def test_a_resume_keeps_its_own_fonts_and_the_database_refuses_others(
         resume_id,
         template=Template.PLAIN,
         options=Options(),
-        heading_font="DejaVu Serif",
-        body_font="DejaVu Sans Mono",
+        look=OwnLook(heading_font="DejaVu Serif", body_font="DejaVu Sans Mono"),
     )
 
     view = await world.resume.get(account, resume_id)
-    assert (view.heading_font, view.body_font) == ("DejaVu Serif", "DejaVu Sans Mono")
+    assert (view.own_look.heading_font, view.own_look.body_font) == (
+        "DejaVu Serif",
+        "DejaVu Sans Mono",
+    )
     with pytest.raises(IntegrityError, match="ck_resume_body_font"):
         async with database.for_user(account) as session:
             await session.execute(
@@ -790,8 +857,43 @@ async def test_a_resume_can_set_each_of_the_fonts_added_later(
             resume_id,
             template=Template.PLAIN,
             options=Options(),
-            heading_font=heading,
-            body_font=body,
+            look=OwnLook(heading_font=heading, body_font=body),
         )
         view = await world.resume.get(account, resume_id)
-        assert (view.heading_font, view.body_font) == (heading, body)
+        assert (view.own_look.heading_font, view.own_look.body_font) == (heading, body)
+
+
+async def test_a_resume_keeps_its_own_look_and_the_database_refuses_what_it_cannot_print(
+    world: World, account: uuid.UUID, database: Database
+) -> None:
+    """ADR 0075, migration 0057."""
+    resume_id = await _written(world, account)
+    look = OwnLook(
+        section_font="Lato",
+        bold_titles=True,
+        bold_headings=False,
+        body_pt=9.5,
+        name_pt=26.0,
+        title_pt=12.5,
+        heading_pt=10.0,
+    )
+
+    await world.resume.update_settings(
+        account, resume_id, template=Template.PLAIN, options=Options(), look=look
+    )
+
+    assert (await world.resume.get(account, resume_id)).own_look == look
+    for column, value in (
+        ("section_font", "'Comic Sans'"),
+        ("body_pt", "30"),
+        # ADR 0078, migration 0059.
+        ("name_pt", "40"),
+        ("title_pt", "30"),
+        ("heading_pt", "30"),
+    ):
+        with pytest.raises(IntegrityError, match=f"ck_resume_{column}"):
+            async with database.for_user(account) as session:
+                await session.execute(
+                    text(f"UPDATE resume.resume SET {column} = {value} WHERE id = :id"),
+                    {"id": resume_id},
+                )

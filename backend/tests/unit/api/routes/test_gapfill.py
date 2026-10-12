@@ -5,6 +5,7 @@ services — no network, no infra, no queue."""
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -53,6 +54,7 @@ def _set(status: str = "ready") -> QuestionSetView:
 class FakeGapFill:
     def __init__(self) -> None:
         self.submitted: list[list[Answer]] = []
+        self.reading: list[uuid.UUID] = []
         self.has_set = True
 
     async def current(self, owner_id: uuid.UUID, ref: TargetRef) -> QuestionSetView | None:
@@ -69,6 +71,18 @@ class FakeGapFill:
     ) -> SubmittedView:
         self.submitted.append(list(answers))
         return SubmittedView(set_id=set_id, evidence_ids=(uuid.uuid4(),), skipped=0)
+
+    async def start_fit_reading(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> QuestionSetView:
+        self.reading.append(set_id)
+        return replace(_set(), fit_reading="reading")
+
+    async def estimate_fit_reading(self, owner_id: uuid.UUID, set_id: uuid.UUID) -> dict[str, Any]:
+        return {
+            "cost_usd": "0.03",
+            "model_id": "claude-opus-5",
+            "input_tokens": 900,
+            "rate_is_published": True,
+        }
 
 
 @pytest.fixture
@@ -121,14 +135,17 @@ def test_there_is_no_current_set_before_any_was_written(gapfill: FakeGapFill) ->
     assert response.status_code == 200 and response.json() is None
 
 
-def test_submitting_has_no_price_to_ask_for(gapfill: FakeGapFill) -> None:
-    """Answering spends nothing, so there is nothing to estimate (ADR 0035)."""
-    response = _client(gapfill).get(f"/gap-question-sets/{SET_ID}/submit-estimate")
+def test_reading_the_answers_into_the_fit_is_priced_before_submitting(
+    gapfill: FakeGapFill,
+) -> None:
+    """ADR 0077: a ceiling, confirmed on the user's own key."""
+    response = _client(gapfill).get(f"/gap-question-sets/{SET_ID}/fit-reading-estimate")
 
-    assert response.status_code in (404, 405)
+    assert response.status_code == 200
+    assert response.json()["cost_usd"] == "0.03"
 
 
-def test_every_answer_arrives_in_one_submit_and_queues_nothing(
+def test_every_answer_arrives_in_one_submit_and_is_read_into_the_fit(
     gapfill: FakeGapFill, queued: list[dict[str, Any]]
 ) -> None:
     response = _client(gapfill).post(
@@ -139,7 +156,33 @@ def test_every_answer_arrives_in_one_submit_and_queues_nothing(
     assert response.status_code == 200
     assert response.json()["answered"] == 1
     assert gapfill.submitted == [[Answer(question_id=QUESTION_ID, choice="Yes", text=None)]]
-    assert queued == []
+    assert gapfill.reading == [SET_ID]
+    assert [(c["name"], c["set_id"]) for c in queued] == [("gapfill.read_answers", str(SET_ID))]
+
+
+def test_a_submit_can_leave_the_fit_alone(
+    gapfill: FakeGapFill, queued: list[dict[str, Any]]
+) -> None:
+    response = _client(gapfill).post(
+        f"/gap-question-sets/{SET_ID}/answers",
+        json={
+            "answers": [{"question_id": str(QUESTION_ID), "choice": "Yes"}],
+            "update_fit": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert (gapfill.reading, queued) == ([], [])
+
+
+def test_the_answers_can_be_read_again_on_request(
+    gapfill: FakeGapFill, queued: list[dict[str, Any]]
+) -> None:
+    response = _client(gapfill).post(f"/gap-question-sets/{SET_ID}/fit-reading")
+
+    assert response.status_code == 202
+    assert response.json()["fit_reading"] == "reading"
+    assert [c["name"] for c in queued] == ["gapfill.read_answers"]
 
 
 def test_an_empty_submit_is_refused_in_the_envelope(gapfill: FakeGapFill) -> None:

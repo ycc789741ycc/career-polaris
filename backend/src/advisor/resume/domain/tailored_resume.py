@@ -11,7 +11,7 @@ from typing import Any
 
 from advisor.resume.domain.content import Options, Template, VersionSource
 from advisor.resume.domain.section import DEFAULT_PLAN, SectionSlot
-from advisor.resume.domain.template_spec import assert_fonts_valid
+from advisor.resume.domain.template_spec import OwnLook, assert_own_look_valid
 
 
 class ResumeStatus(StrEnum):
@@ -70,10 +70,31 @@ class TailoredResume:
     # 0 to 1, never going backwards within one job.
     progress: float = 0.0
     estimated_cost_usd: Decimal | None = None
-    # This résumé's own fonts over its template's (ADR 0047); None keeps the
-    # template's.
+    # This résumé's own look over its template's (ADR 0047, ADR 0075); None
+    # keeps the template's.
     heading_font: str | None = None
     body_font: str | None = None
+    section_font: str | None = None
+    bold_titles: bool | None = None
+    bold_headings: bool | None = None
+    body_pt: float | None = None
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
+
+    @property
+    def own_look(self) -> OwnLook:
+        return OwnLook(
+            heading_font=self.heading_font,
+            section_font=self.section_font,
+            body_font=self.body_font,
+            bold_titles=self.bold_titles,
+            bold_headings=self.bold_headings,
+            body_pt=self.body_pt,
+            name_pt=self.name_pt,
+            title_pt=self.title_pt,
+            heading_pt=self.heading_pt,
+        )
 
     @classmethod
     def requested(
@@ -212,14 +233,19 @@ class TailoredResume:
         self.options = options
         self.updated_at = at
 
-    def update_fonts(
-        self, *, heading_font: str | None, body_font: str | None, at: datetime
-    ) -> None:
-        """Set in fonts of its own over its template's; None keeps the
-        template's (ADR 0047)."""
-        assert_fonts_valid(heading_font, body_font)
-        self.heading_font = heading_font
-        self.body_font = body_font
+    def update_look(self, look: OwnLook, *, at: datetime) -> None:
+        """Set in fonts, weights and a text size of its own over its
+        template's; None keeps the template's (ADR 0047, ADR 0075)."""
+        assert_own_look_valid(look)
+        self.heading_font = look.heading_font
+        self.section_font = look.section_font
+        self.body_font = look.body_font
+        self.bold_titles = look.bold_titles
+        self.bold_headings = look.bold_headings
+        self.body_pt = look.body_pt
+        self.name_pt = look.name_pt
+        self.title_pt = look.title_pt
+        self.heading_pt = look.heading_pt
         self.updated_at = at
 
     def touched(self, at: datetime) -> None:

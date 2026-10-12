@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { QuestionSet } from "../api/types";
 import { ShellContext, type Shell } from "../shell/ShellContext";
 import { ToastProvider } from "../shell/toast";
-import { FillTheGap } from "./FillTheGap";
+import { answeredFitLine, FillTheGap, readingChange } from "./FillTheGap";
 import type { AdvisorTarget } from "./target";
 
 const target: AdvisorTarget = {
@@ -74,6 +74,8 @@ const ready: QuestionSet = {
   error: null,
   created_at: "2026-09-29T10:00:00Z",
   submitted_at: null,
+  fit_reading: null,
+  fit_reading_error: null,
 };
 
 type Call = { method: string; url: string; body: unknown };
@@ -209,14 +211,20 @@ describe("Fill the gap", () => {
     ).toHaveTextContent("No evidence");
   });
 
-  it("submits every answer at once, leaving a blank one as a gap", async () => {
+  it("submits every answer at once, priced first, and reads them into the fit", async () => {
     const onSubmitted = vi.fn();
     const calls = serve((call) => {
       if (call.url.startsWith("/gap-question-sets/current")) return ready;
+      if (call.url === "/gap-question-sets/s1/fit-reading-estimate")
+        return { cost_usd: "0.03", model_id: "claude-sonnet-5" };
       if (call.url === "/gap-question-sets/s1/answers")
         return { set_id: "s1", answered: 2, skipped: 1 };
       if (call.url === "/gap-question-sets/s1")
-        return { ...ready, submitted_at: "2026-09-29T10:05:00Z" };
+        return {
+          ...ready,
+          submitted_at: "2026-09-29T10:05:00Z",
+          fit_reading: "reading",
+        };
       return null;
     });
     const user = userEvent.setup();
@@ -234,11 +242,15 @@ describe("Fill the gap", () => {
     );
     const bar = screen.getByRole("region", { name: "Submit answers" });
     expect(bar).toHaveTextContent("2 of 3 answered");
-    expect(bar).toHaveTextContent("It spends nothing.");
+    expect(bar).toHaveTextContent("reads them into your fit");
 
     await user.click(
       within(bar).getByRole("button", { name: "Submit answers" }),
     );
+    // On the user's own key the price is confirmed before anything is sent.
+    expect(await screen.findByText(/costs at most/)).toHaveTextContent("$0.03");
+    expect(calls.some((c) => c.url.endsWith("/answers"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Run it" }));
 
     expect(
       calls.find((c) => c.url === "/gap-question-sets/s1/answers")?.body,
@@ -247,13 +259,133 @@ describe("Fill the gap", () => {
         { question_id: "q1", choice: "Yes, as primary", text: null },
         { question_id: "q2", choice: "Yes", text: "The Feb payment outage." },
       ],
+      update_fit: true,
     });
     expect(
       await screen.findByText(/2 answers added to your evidence/),
     ).toHaveTextContent("use them once you regenerate them");
     expect(onSubmitted).toHaveBeenCalled();
-    // Answering spends nothing: no price asked for, no rewrite requested.
+  });
+
+  it("submits without updating the fit, spending nothing", async () => {
+    const calls = serve((call) => {
+      if (call.url.startsWith("/gap-question-sets/current")) return ready;
+      if (call.url === "/gap-question-sets/s1/answers")
+        return { set_id: "s1", answered: 1, skipped: 2 };
+      if (call.url === "/gap-question-sets/s1")
+        return { ...ready, submitted_at: "2026-09-29T10:05:00Z" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderGaps();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Yes, as primary" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Submit without updating fit" }),
+    );
+
+    const posted = calls.find((c) => c.url === "/gap-question-sets/s1/answers");
+    expect(posted?.body).toMatchObject({ update_fit: false });
     expect(calls.some((c) => c.url.includes("estimate"))).toBe(false);
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    expect(
+      await screen.findByText(/Your fit does not count these answers yet/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the fit the answers moved, and each gap they moved", async () => {
+    serve((call) => {
+      if (call.url.startsWith("/gap-question-sets/current"))
+        return {
+          ...ready,
+          submitted_at: "2026-09-29T10:05:00Z",
+          fit_reading: "ready",
+        };
+      if (call.url.startsWith("/answered-fit"))
+        return {
+          fit: 86,
+          answered_fit: 91,
+          readings: [
+            {
+              gap_key: "dim:incidents",
+              label: "Own incidents end to end",
+              score_before: 60,
+              score_after: 75,
+              coverage: null,
+              reasoning: "Led the February outage bridge.",
+            },
+            {
+              gap_key: "req:multi-region",
+              label: "Multi-region capacity planning",
+              score_before: null,
+              score_after: null,
+              coverage: "partly",
+              reasoning: "Planned one region's failover.",
+            },
+          ],
+        };
+      return null;
+    });
+    renderGaps();
+
+    const fit = await screen.findByRole("region", {
+      name: "Your fit with your answers",
+    });
+    expect(fit).toHaveTextContent("Your fit: 86% → 91% with your answers");
+    expect(fit).toHaveTextContent("Own incidents end to end 60 → 75");
+    expect(fit).toHaveTextContent(
+      "Multi-region capacity planning now partly covered",
+    );
+  });
+
+  it("offers to read the answers again when reading them failed", async () => {
+    const calls = serve((call) => {
+      if (call.url.startsWith("/gap-question-sets/current"))
+        return {
+          ...ready,
+          submitted_at: "2026-09-29T10:05:00Z",
+          fit_reading: "failed",
+          fit_reading_error: { code: "ai_budget_exceeded", message: "Spent." },
+        };
+      if (call.url === "/gap-question-sets/s1/fit-reading-estimate")
+        return { cost_usd: "0.02", model_id: "claude-sonnet-5" };
+      if (call.url === "/gap-question-sets/s1/fit-reading")
+        return { ...ready, fit_reading: "reading" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderGaps();
+
+    expect(await screen.findByText("Spent.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Update fit" }));
+    await user.click(await screen.findByRole("button", { name: "Run it" }));
+
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "POST" && c.url === "/gap-question-sets/s1/fit-reading",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("the fit with your answers (ADR 0077)", () => {
+  it("words the fit before and after", () => {
+    expect(answeredFitLine(64, 71)).toBe(
+      "Your fit: 64% → 71% with your answers",
+    );
+    expect(answeredFitLine(null, 71)).toBe("Your fit with your answers: 71%");
+  });
+
+  it("words what moved each gap", () => {
+    const none = { score_before: null, score_after: null };
+    expect(
+      readingChange({ score_before: 52, score_after: 63, coverage: null }),
+    ).toBe("52 → 63");
+    expect(readingChange({ ...none, coverage: "covered" })).toBe("now covered");
+    expect(readingChange({ ...none, coverage: "not" })).toBe(
+      "still not covered",
+    );
   });
 });

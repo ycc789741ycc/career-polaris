@@ -154,7 +154,8 @@ export function withSpec(
     spec,
     rule: `${widths[spec.rule]} solid ${spec.rule_color}`,
     band_color: band,
-    title_pt: spec.body_pt + 1,
+    // An entry title's own size, or the text's plus a point (ADR 0078).
+    title_pt: spec.title_pt ?? spec.body_pt + 1,
     contact_pt: spec.body_pt - 0.5,
     small_pt: spec.body_pt - 1,
   };

@@ -1,6 +1,13 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api, streamEvents } from "../api/client";
 import type {
+  ConnectionPage,
   PlanEstimate,
   ResumeBullet,
   ResumeContact,
@@ -48,6 +55,7 @@ import {
   SectionsPanel,
 } from "./ResumeSections";
 import { EvidenceDisclosure } from "./EvidenceDisclosure";
+import { getKeyStep, getMoved } from "./reorder";
 import { OutdatedBanner } from "./OutdatedBanner";
 import { TemplateEditor, withSpec } from "./ResumeTemplates";
 import { dayLabel } from "./time";
@@ -143,9 +151,9 @@ export function Resume({
     reorder: true,
     trim: false,
   });
-  // This résumé's own fonts over its template's; null keeps the template's
-  // (ADR 0047).
-  const [fonts, setFonts] = useState<ResumeFonts>(NO_FONTS);
+  // This résumé's own look over its template's; null keeps the template's
+  // (ADR 0047, ADR 0075).
+  const [fonts, setFonts] = useState<ResumeLook>(NO_LOOK);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [exporting, setExporting] = useState<ResumeExport | null>(null);
   const [templates, setTemplates] = useState<ResumeTemplateLook[]>([]);
@@ -157,6 +165,14 @@ export function Resume({
   } | null>(null);
   const [preview, setPreview] = useState<ResumeTemplateSpec | null>(null);
   const [showSources, setShowSources] = useState(false);
+  // Which of GitHub and Jira are connected: what "Quantify" can draw on.
+  const [counted, setCounted] = useState<string[] | null>(null);
+  // An option changed in this visit: it applies when the résumé is next
+  // written, which the card says.
+  const [isOptionChanged, setIsOptionChanged] = useState(false);
+  // An older version opened as the draft; null while on the latest. Saving
+  // it makes the next version, never a new copy of the old one.
+  const [opened, setOpened] = useState<OpenedVersion | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasDrafting = useRef(false);
@@ -164,17 +180,11 @@ export function Resume({
   const chosen =
     templates.find((t) => t.id === template) ?? templates[0] ?? null;
   // While a template is being edited, the page previews it; otherwise the
-  // chosen one, in the résumé's own fonts.
+  // chosen one, with the résumé's own look over it.
   const look =
     editor && preview
       ? withSpec(editor.from, preview)
-      : chosen && (fonts.heading_font || fonts.body_font)
-        ? withSpec(chosen, {
-            ...chosen.spec,
-            heading_font: fonts.heading_font ?? chosen.spec.heading_font,
-            body_font: fonts.body_font ?? chosen.spec.body_font,
-          })
-        : chosen;
+      : chosen && withSpec(chosen, getSpecWithLook(chosen.spec, fonts));
 
   // What writing it again costs, priced up front for the Write-for card.
   const [regenerateCost, setRegenerateCost] = useState<PlanEstimate | null>(
@@ -240,6 +250,15 @@ export function Resume({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeId, reloads]);
+
+  // What the Quantify option can draw numbers from.
+  useEffect(() => {
+    api
+      .items<ConnectionPage>("/connections")
+      .then((rows) => setCounted(getCountedSources(rows)))
+      // Without it, the option just says nothing about its sources.
+      .catch(() => setCounted(null));
+  }, []);
 
   // Every template, as the renderer draws it: the picker and the page read it.
   useEffect(() => {
@@ -324,9 +343,10 @@ export function Resume({
     setResume(next);
     setDraft(next.content);
     setUndoStack([]);
+    setOpened(null);
     setTemplate(next.template);
     setOptions(next.options);
-    setFonts({ heading_font: next.heading_font, body_font: next.body_font });
+    setFonts(getOwnLook(next));
     setExchanges(
       next.revisions.map((r) => ({
         request: r.request,
@@ -459,7 +479,9 @@ export function Resume({
     try {
       const version = await api.post<ResumeVersion>(
         `/tailored-resumes/${resume.id}/versions`,
-        { content },
+        // Judged against the version it was opened from, so an old version's
+        // untouched lines keep what they cite.
+        opened ? { content, based_on: opened.number } : { content },
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
       onChanged();
@@ -474,7 +496,7 @@ export function Resume({
   async function changeSettings(
     nextTemplate: ResumeTemplate,
     nextOptions: ResumeOptions,
-    nextFonts: ResumeFonts = fonts,
+    nextFonts: ResumeLook = fonts,
   ) {
     setTemplate(nextTemplate);
     setOptions(nextOptions);
@@ -491,13 +513,52 @@ export function Resume({
     }
   }
 
-  async function exportPdf() {
+  /** Open version `number` of this résumé as the draft, or the latest. */
+  async function openVersion(number: number) {
     if (!resume?.version) return;
+    setError(null);
+    if (number === resume.version.number) {
+      setDraft(resume.content);
+      setUndoStack([]);
+      setOpened(null);
+      return;
+    }
+    try {
+      const old = await api.get<TailoredResume>(
+        `/tailored-resumes/${resume.id}?version=${number}`,
+      );
+      if (!old.version || !old.content) return;
+      setDraft(old.content);
+      setUndoStack([]);
+      setOpened({
+        number,
+        source: old.version.source,
+        created_at: old.version.created_at,
+        content: old.content,
+      });
+      flash(`Opened v${number}. Saving it makes v${nextVersion}.`);
+    } catch (caught) {
+      setError(messageOf(caught));
+    }
+  }
+
+  // What Export prints: the saved version on the page, the latest or an older
+  // one opened unedited; null while there are edits to save first.
+  const exportable = opened
+    ? draft && isSameContent(draft, opened.content)
+      ? opened.number
+      : null
+    : !dirty
+      ? (resume?.version?.number ?? null)
+      : null;
+
+  async function exportPdf() {
+    if (!resume || exportable === null) return;
     setError(null);
     try {
       let job = await api.post<ResumeExport>(
         `/tailored-resumes/${resume.id}/exports`,
-        { version: resume.version.number },
+        { version: exportable },
       );
       setExporting(job);
       while (job.status === "rendering") {
@@ -629,6 +690,23 @@ export function Resume({
                 </option>
               ))}
             </select>
+            {resume?.status === "ready" && resume.versions.length > 1 && (
+              <select
+                className="input"
+                aria-label="Saved version"
+                value={opened?.number ?? resume.version?.number ?? ""}
+                disabled={busy}
+                onChange={(event) =>
+                  void openVersion(Number(event.target.value))
+                }
+              >
+                {resume.versions.map((v, at) => (
+                  <option key={v.id} value={v.number}>
+                    {versionLine(v, at === 0)}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         )}
         {resume?.status === "ready" && (
@@ -780,33 +858,102 @@ export function Resume({
                 )
               )}
               {chosen && limits && !editor && (
-                <div className="row" style={{ gap: 8, marginTop: 12 }}>
-                  {FONT_PICKERS.map(({ key, label }) => (
-                    <label key={key} className="font-picker">
-                      <span className="field-label">{label}</span>
-                      <select
-                        className="input"
-                        value={fonts[key] ?? ""}
-                        disabled={resume?.status !== "ready"}
-                        onChange={(event) =>
-                          void changeSettings(template, options, {
-                            ...fonts,
-                            [key]: (event.target.value ||
-                              null) as ResumeFonts["heading_font"],
-                          })
-                        }
-                      >
-                        <option value="">
-                          Template&apos;s ({chosen.spec[key]})
-                        </option>
-                        {limits.fonts.map((font) => (
-                          <option key={font} value={font}>
-                            {font}
-                          </option>
+                <div
+                  className="stack own-look"
+                  style={{ gap: 8, marginTop: 12 }}
+                >
+                  {FONT_PICKERS.map(({ key, label, bold, sizes }) => {
+                    const font =
+                      fonts[key] ?? getTemplateFont(chosen.spec, key);
+                    const hasBold = !(
+                      limits.fonts_without_bold as string[]
+                    ).includes(font);
+                    return (
+                      <div key={key} className="row own-look-row">
+                        <label className="font-picker">
+                          <span className="field-label">{label}</span>
+                          <select
+                            className="input"
+                            value={fonts[key] ?? ""}
+                            disabled={resume?.status !== "ready"}
+                            onChange={(event) =>
+                              void changeSettings(template, options, {
+                                ...fonts,
+                                [key]: (event.target.value ||
+                                  null) as ResumeLook["heading_font"],
+                              })
+                            }
+                          >
+                            <option value="">
+                              Template&apos;s (
+                              {getTemplateFont(chosen.spec, key)})
+                            </option>
+                            {limits.fonts.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {bold && (
+                          <span
+                            title={hasBold ? undefined : `${font} has no bold`}
+                          >
+                            <RoundCheck
+                              checked={
+                                hasBold && (fonts[bold] ?? chosen.spec[bold])
+                              }
+                              disabled={!hasBold || resume?.status !== "ready"}
+                              onChange={(on) =>
+                                void changeSettings(template, options, {
+                                  ...fonts,
+                                  [bold]: on,
+                                })
+                              }
+                            >
+                              {bold === "bold_titles"
+                                ? "Bold titles"
+                                : "Bold headings"}
+                            </RoundCheck>
+                          </span>
+                        )}
+                        {sizes.map((size) => (
+                          <div key={size} className="font-picker size-picker">
+                            <span className="field-label" aria-hidden="true">
+                              {SIZE_PICKERS[size].label}
+                            </span>
+                            <select
+                              className="input"
+                              aria-label={SIZE_PICKERS[size].name}
+                              value={fonts[size] ?? ""}
+                              disabled={resume?.status !== "ready"}
+                              onChange={(event) =>
+                                void changeSettings(template, options, {
+                                  ...fonts,
+                                  [size]: event.target.value
+                                    ? Number(event.target.value)
+                                    : null,
+                                })
+                              }
+                            >
+                              <option value="">
+                                Template&apos;s (
+                                {getTemplateSize(chosen.spec, size)}pt)
+                              </option>
+                              {getTextSizes(
+                                limits[SIZE_PICKERS[size].range],
+                                SIZE_PICKERS[size].step,
+                              ).map((pt) => (
+                                <option key={pt} value={pt}>
+                                  {pt}pt
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         ))}
-                      </select>
-                    </label>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="stack" style={{ gap: 10, marginTop: 16 }}>
@@ -814,13 +961,34 @@ export function Resume({
                   <RoundCheck
                     key={key}
                     checked={options[key]}
-                    onChange={(on) =>
-                      void changeSettings(template, { ...options, [key]: on })
-                    }
+                    onChange={(on) => {
+                      setIsOptionChanged(true);
+                      void changeSettings(template, { ...options, [key]: on });
+                    }}
                   >
                     {label}
                   </RoundCheck>
                 ))}
+                {options.metrics && counted !== null && (
+                  <p className="resume-annotation" style={{ margin: 0 }}>
+                    {quantifyNote(counted)}
+                  </p>
+                )}
+                {isOptionChanged && resume?.status === "ready" && (
+                  <p className="resume-annotation" style={{ margin: 0 }}>
+                    Options apply when the résumé is next written.{" "}
+                    <button
+                      type="button"
+                      className="resume-add-line"
+                      disabled={busy}
+                      onClick={() =>
+                        void price(resume.target, resume.label, resume.id)
+                      }
+                    >
+                      Regenerate résumé
+                    </button>
+                  </p>
+                )}
               </div>
               {draft &&
                 resume &&
@@ -1010,8 +1178,29 @@ export function Resume({
                   Skills are ordered for this role.
                 </p>
               )}
+              {opened && (
+                <div
+                  className="resume-opened"
+                  role="status"
+                  aria-label="Opened version"
+                >
+                  <span>
+                    Opened v{opened.number} of {resume.version?.number} (
+                    {sourceWord(opened.source)} {dayLabel(opened.created_at)}).
+                    Saving it makes v{nextVersion}.
+                  </span>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      resume.version && void openVersion(resume.version.number)
+                    }
+                  >
+                    Back to latest
+                  </Button>
+                </div>
+              )}
               <ResumePage
-                key={resume.version?.id}
+                key={`${resume.version?.id}:${opened?.number ?? "latest"}`}
                 content={draft}
                 evidence={resume.evidence}
                 look={look}
@@ -1019,6 +1208,7 @@ export function Resume({
                 trim={options.trim}
                 reorder={options.reorder}
                 showSources={showSources}
+                unbacked={resume.unbacked_lines}
                 onChange={editDraft}
               />
               <div className="resume-page-actions">
@@ -1044,7 +1234,7 @@ export function Resume({
                 <Button
                   variant="secondary"
                   busy={exporting?.status === "rendering"}
-                  disabled={!resume.version || dirty}
+                  disabled={exportable === null}
                   onClick={() => void exportPdf()}
                 >
                   {exporting?.status === "rendering"
@@ -1052,7 +1242,7 @@ export function Resume({
                     : "Export as PDF"}
                 </Button>
                 <span className="resume-annotation resume-page-note">
-                  {dirty
+                  {exportable === null
                     ? "You have unsaved edits. Save this version first — the export is of a saved version."
                     : "Click any line to edit it in place."}
                 </span>
@@ -1095,6 +1285,58 @@ export function savedLine(entry: ResumeSummary): string {
   if (entry.status === "drafting") return `${entry.label} · writing…`;
   if (entry.status === "failed") return `${entry.label} · writing failed`;
   return `${entry.label} · v${entry.latest_version ?? 1} · edited ${dayLabel(entry.updated_at)}`;
+}
+
+/** An older version of the open résumé, opened as the draft. */
+interface OpenedVersion {
+  number: number;
+  source: ResumeVersion["source"];
+  created_at: string;
+  content: ResumeContent;
+}
+
+/** How a version came to be, as the Version list words it. Pure. */
+export function sourceWord(source: ResumeVersion["source"]): string {
+  switch (source) {
+    case "manual":
+      return "edited by you";
+    case "chat":
+      return "from the chat";
+    case "answers":
+      return "rewritten from answers";
+    default:
+      return "written";
+  }
+}
+
+/** "v3 · edited by you · 12 Oct 2026 · latest", one version of the open
+ * résumé. Pure. */
+export function versionLine(version: ResumeVersion, isLatest: boolean): string {
+  return [
+    `v${version.number}`,
+    sourceWord(version.source),
+    dayLabel(version.created_at),
+    isLatest ? "latest" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Which of GitHub and Jira are connected, by kind. Pure. */
+export function getCountedSources(
+  rows: { kind: string; connected: boolean }[],
+): string[] {
+  return rows
+    .filter((r) => r.connected && (r.kind === "github" || r.kind === "jira"))
+    .map((r) => r.kind);
+}
+
+/** Where Quantify takes its numbers from, given what is connected. Pure. */
+export function quantifyNote(counted: string[]): string {
+  const names = counted.map((k) => (k === "github" ? "GitHub" : "Jira"));
+  if (names.length === 0)
+    return "Neither GitHub nor Jira is connected, so numbers come only from your résumé and answers. Connect them in 01 Sources.";
+  return `Numbers come from ${names.join(" and ")}'s counts, your résumé and your answers, only as the facts state them.`;
 }
 
 /** "Organic · 4 sections": the Layout card's summary. Pure. */
@@ -1157,8 +1399,24 @@ export function pageStyle(look: ResumeTemplateLook): Record<string, string> {
     "--bullet": BULLETS[spec.bullet],
     "--heading-font": `"${spec.heading_font}"`,
     "--body-font": `"${spec.body_font}"`,
+    "--section-font": `"${spec.section_font ?? spec.body_font}"`,
+    "--title-weight": String(
+      getWeight(spec.bold_titles, spec.heading_font, FONTS_WITHOUT_BOLD),
+    ),
+    "--heading-weight": String(
+      getWeight(
+        spec.bold_headings,
+        spec.section_font ?? spec.body_font,
+        FONTS_WITHOUT_BOLD,
+      ),
+    ),
   };
 }
+
+/** The fonts with no bold cut (FONTS_WITHOUT_BOLD); the page reads them
+ * before the limits arrive, so they are kept here too and the limits'
+ * list is checked against them in a test. */
+export const FONTS_WITHOUT_BOLD: readonly string[] = ["Caprasimo"];
 
 /** Each bullet style as a CSS list-style, as the renderer sets it. */
 const BULLETS: Record<ResumeTemplateSpec["bullet"], string> = {
@@ -1202,6 +1460,7 @@ function ResumePage({
   trim,
   reorder,
   showSources,
+  unbacked,
   onChange,
 }: {
   content: ResumeContent;
@@ -1212,6 +1471,8 @@ function ResumePage({
   trim: boolean;
   reorder: boolean;
   showSources: boolean;
+  /** The model's lines that state a number their facts do not (ADR 0076). */
+  unbacked: string[];
   onChange: (next: ResumeContent) => void;
 }) {
   const edit = (patch: Partial<ResumeContent>) =>
@@ -1237,43 +1498,190 @@ function ResumePage({
   const lines = (bullets: ResumeBullet[]) =>
     trim ? bullets.slice(0, look.trimmed_bullets) : bullets;
 
+  // The line to put the caret in once the page has drawn the edit: one just
+  // added, or the one before a line just removed.
+  // A line's move handle, after a move by keyboard: it keeps the focus.
+  const focusNext = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusNext.current;
+    if (id === null) return;
+    focusNext.current = null;
+    const node = document.querySelector<HTMLElement>(`[data-line="${id}"]`);
+    if (!node) return;
+    node.focus();
+    if (node.isContentEditable) window.getSelection()?.selectAllChildren(node);
+  });
+
+  // The line being dragged, by its section and place in it.
+  const [dragging, setDragging] = useState<{
+    at: number;
+    from: LinePlace;
+  } | null>(null);
+
+  /** Move a line within section `at`; the handle to focus after, or null
+   * when nothing moved. */
+  const moveLine = (
+    at: number,
+    from: LinePlace,
+    to: LinePlace | null,
+  ): string | null => {
+    const section = content.sections[at];
+    if (!section || !to) return null;
+    const moved = getLineMoved(section, from, to);
+    if (moved === section) return null;
+    editSection(at, moved);
+    return `move:${at}:${to.entry ?? "-"}:${to.line}`;
+  };
+
+  /** Lines under one entry (`entry`), or a custom section's (null), in
+   * section `at`. Enter adds a line below, Backspace in an empty line
+   * removes it, and a line cleared to nothing goes when it loses focus. Each
+   * line's handle drags it, or moves it with the arrow keys, anywhere in its
+   * section. */
   const bulletList = (
+    at: number,
+    entry: number | null,
     bullets: ResumeBullet[],
     onLines: (next: ResumeBullet[]) => void,
-  ) => (
-    <ul className="resume-bullets">
-      {lines(bullets).map((bullet, b) => (
-        <li key={b}>
-          <span
-            className="resume-bullet-text"
-            data-rewritten={showSources && bullet.answers !== null}
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(event) =>
-              onLines(
-                bullets.map((line, i) =>
-                  i === b
-                    ? { ...line, text: event.currentTarget.textContent ?? "" }
-                    : line,
-                ),
-              )
-            }
+  ) => {
+    const list = entry === null ? `${at}` : `${at}:${entry}`;
+    const isDropHere = dragging !== null && dragging.at === at;
+    const dropAt = (line: number) => (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dragging?.at === at) moveLine(at, dragging.from, { entry, line });
+      setDragging(null);
+    };
+    return (
+      <>
+        <ul
+          className="resume-bullets"
+          // Dropped below the last line, or into an entry with none: the end.
+          onDragOver={(event) => isDropHere && event.preventDefault()}
+          onDrop={dropAt(bullets.length)}
+        >
+          {lines(bullets).map((bullet, b) => (
+            // Keyed by its text too, so a line whose text changed is drawn
+            // afresh rather than over what the browser typed into it.
+            <li
+              key={`${b}:${bullet.text}`}
+              className="resume-line"
+              onDragOver={(event) => isDropHere && event.preventDefault()}
+              onDrop={dropAt(b)}
+            >
+              {/* Never printed: drags the line, or moves it with the arrow keys. */}
+              <button
+                type="button"
+                className="resume-move-line"
+                aria-label={`Move line: ${bullet.text}`}
+                title="Drag, or use the arrow keys"
+                data-line={`move:${at}:${entry ?? "-"}:${b}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer?.setData("text/plain", bullet.text);
+                  setDragging({ at, from: { entry, line: b } });
+                }}
+                onDragEnd={() => setDragging(null)}
+                onKeyDown={(event) => {
+                  const step = getKeyStep(event);
+                  if (step === null) return;
+                  event.preventDefault();
+                  const section = content.sections[at];
+                  if (!section) return;
+                  focusNext.current = moveLine(
+                    at,
+                    { entry, line: b },
+                    getLineStep(section, { entry, line: b }, step),
+                  );
+                }}
+              >
+                <svg
+                  width="10"
+                  height="14"
+                  viewBox="0 0 10 14"
+                  aria-hidden="true"
+                >
+                  {[2, 7, 12].flatMap((y) =>
+                    [2.5, 7.5].map((x) => (
+                      <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />
+                    )),
+                  )}
+                </svg>
+              </button>
+              <span
+                className="resume-bullet-text"
+                data-line={`${list}:${b}`}
+                data-rewritten={showSources && bullet.answers !== null}
+                aria-label="Line"
+                contentEditable
+                suppressContentEditableWarning
+                onKeyDown={(event) => {
+                  const text = event.currentTarget.textContent ?? "";
+                  const step = event.altKey ? getKeyStep(event) : null;
+                  if (step !== null) {
+                    // Alt+arrow moves the line from inside it, as its handle does.
+                    event.preventDefault();
+                    const section = content.sections[at];
+                    if (!section) return;
+                    focusNext.current = moveLine(
+                      at,
+                      { entry, line: b },
+                      getLineStep(section, { entry, line: b }, step),
+                    );
+                  } else if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (bullets.length >= MAX_LINES) return;
+                    focusNext.current = `${list}:${b + 1}`;
+                    onLines(getLineAdded(bullets, b, text, newLine));
+                  } else if (event.key === "Backspace" && text === "") {
+                    event.preventDefault();
+                    if (b > 0) focusNext.current = `${list}:${b - 1}`;
+                    onLines(bullets.filter((_, i) => i !== b));
+                  }
+                }}
+                onBlur={(event) => {
+                  const text = (event.currentTarget.textContent ?? "").trim();
+                  if (text === bullet.text) return;
+                  onLines(
+                    text
+                      ? bullets.map((line, i) =>
+                          i === b ? { ...line, text } : line,
+                        )
+                      : bullets.filter((_, i) => i !== b),
+                  );
+                }}
+              >
+                {bullet.text}
+              </span>
+              <div className="resume-cite" hidden={!showSources}>
+                {citeLine(bullet, evidence)}
+              </div>
+              {/* Never printed: shown whether or not sources are, since the
+                line may claim more than its facts do. */}
+              {bullet.origin === "written" &&
+                unbacked.includes(bullet.text) && (
+                  <div className="resume-unbacked">
+                    A number here is not in the facts this line cites; check it
+                    or reword it.
+                  </div>
+                )}
+            </li>
+          ))}
+        </ul>
+        {bullets.length < MAX_LINES && (
+          <button
+            type="button"
+            className="resume-add-line"
+            onClick={() => {
+              focusNext.current = `${list}:${bullets.length}`;
+              onLines([...bullets, newLine]);
+            }}
           >
-            {bullet.text}
-          </span>
-          <div className="resume-cite" hidden={!showSources}>
-            {citeLine(bullet, evidence)}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-
-  const newLine: ResumeBullet = {
-    text: "New line",
-    evidence_ids: [],
-    origin: "yours",
-    answers: null,
+            + Add line
+          </button>
+        )}
+      </>
+    );
   };
 
   const spec = look.spec;
@@ -1471,7 +1879,7 @@ function ResumePage({
               placeholder="Link"
               onChange={(link) => editEntry(at, section, e, { link })}
             />
-            {bulletList(entry.bullets, (next) =>
+            {bulletList(at, e, entry.bullets, (next) =>
               editSection(at, {
                 ...section,
                 entries: section.entries.map((it, i) =>
@@ -1524,7 +1932,7 @@ function ResumePage({
           </div>
         )}
         {section.bullets.length > 0 &&
-          bulletList(section.bullets, (next) =>
+          bulletList(at, null, section.bullets, (next) =>
             editSection(at, { ...section, bullets: next }),
           )}
       </section>
@@ -1587,6 +1995,116 @@ function ResumePage({
       </p>
     </div>
   );
+}
+
+/** A line typed by the user, with nothing cited. */
+const newLine: ResumeBullet = {
+  text: "New line",
+  evidence_ids: [],
+  origin: "yours",
+  answers: null,
+};
+
+/** The most lines an entry or a custom section holds; the server refuses
+ * more (MAX_BULLETS_PER_ROLE). */
+export const MAX_LINES = 8;
+
+/** Where a line sits in its section: under entry `entry`, or in a custom
+ * section's own lines (null), at `line`. */
+export interface LinePlace {
+  entry: number | null;
+  line: number;
+}
+
+/** The lines a place's list holds in `section`. Pure. */
+function linesAt(section: ResumeSection, entry: number | null): ResumeBullet[] {
+  return entry === null
+    ? section.bullets
+    : (section.entries[entry]?.bullets ?? []);
+}
+
+function withLines(
+  section: ResumeSection,
+  entry: number | null,
+  bullets: ResumeBullet[],
+): ResumeSection {
+  return entry === null
+    ? { ...section, bullets }
+    : {
+        ...section,
+        entries: section.entries.map((it, i) =>
+          i === entry ? { ...it, bullets } : it,
+        ),
+      };
+}
+
+/** The section with the line at `from` moved to `to`: within its list, it
+ * takes `to`'s place; into another entry's, it goes in before `to.line` (or
+ * last). A full entry takes no more, and the section comes back unchanged.
+ * Pure. */
+export function getLineMoved(
+  section: ResumeSection,
+  from: LinePlace,
+  to: LinePlace,
+): ResumeSection {
+  const source = linesAt(section, from.entry);
+  const moved = source[from.line];
+  if (!moved) return section;
+  if (from.entry === to.entry) {
+    const line = Math.min(to.line, source.length - 1);
+    if (line === from.line) return section;
+    return withLines(section, from.entry, getMoved(source, from.line, line));
+  }
+  const target = linesAt(section, to.entry);
+  if (target.length >= MAX_LINES) return section;
+  const into = [...target];
+  into.splice(Math.min(to.line, into.length), 0, moved);
+  return withLines(
+    withLines(
+      section,
+      from.entry,
+      source.filter((_, i) => i !== from.line),
+    ),
+    to.entry,
+    into,
+  );
+}
+
+/** Where an arrow key takes a line: one place up or down in its list, and
+ * past either end, to the end of the entry above or the start of the one
+ * below. Null where there is nowhere to go. Pure. */
+export function getLineStep(
+  section: ResumeSection,
+  from: LinePlace,
+  step: -1 | 1,
+): LinePlace | null {
+  const length = linesAt(section, from.entry).length;
+  const line = from.line + step;
+  if (line >= 0 && line < length) return { entry: from.entry, line };
+  if (from.entry === null) return null;
+  const entry = from.entry + step;
+  if (entry < 0 || entry >= section.entries.length) return null;
+  return {
+    entry,
+    line: step < 0 ? linesAt(section, entry).length : 0,
+  };
+}
+
+/** The lines with line `at` set to `text` and `line` added just below it, as
+ * Enter at the end of a line does. Pure. */
+export function getLineAdded(
+  bullets: ResumeBullet[],
+  at: number,
+  text: string,
+  line: ResumeBullet,
+): ResumeBullet[] {
+  const next = bullets.map((it, i) =>
+    i === at && text.trim() && text.trim() !== it.text
+      ? { ...it, text: text.trim() }
+      : it,
+  );
+  next.splice(at + 1, 0, line);
+  return next;
 }
 
 /** An empty section with a first line, entry or item to edit. Pure. */
@@ -1817,15 +2335,183 @@ function Editable({
   );
 }
 
-type ResumeFonts = Pick<TailoredResume, "heading_font" | "body_font">;
+/** What a résumé sets over its template's look; null keeps the template's
+ * (ADR 0047, ADR 0075). */
+type ResumeLook = Pick<
+  TailoredResume,
+  | "heading_font"
+  | "section_font"
+  | "body_font"
+  | "bold_titles"
+  | "bold_headings"
+  | "body_pt"
+  | "name_pt"
+  | "title_pt"
+  | "heading_pt"
+>;
 
-const NO_FONTS: ResumeFonts = { heading_font: null, body_font: null };
+const NO_LOOK: ResumeLook = {
+  heading_font: null,
+  section_font: null,
+  body_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
+};
 
-/** The two fonts a résumé can set over its template's (ADR 0047). */
-const FONT_PICKERS: { key: keyof ResumeFonts; label: string }[] = [
-  { key: "heading_font", label: "Titles in" },
-  { key: "body_font", label: "Text in" },
+type SizeKey = "name_pt" | "title_pt" | "heading_pt" | "body_pt";
+
+/** Each size a résumé can set over its template's (ADR 0078): its label, its
+ * accessible name, its range in the limits, and its step. */
+const SIZE_PICKERS: Record<
+  SizeKey,
+  {
+    label: string;
+    name: string;
+    range:
+      "name_pt_range" | "title_pt_range" | "heading_pt_range" | "body_pt_range";
+    step: number;
+  }
+> = {
+  name_pt: {
+    label: "Name",
+    name: "Name size",
+    range: "name_pt_range",
+    step: 1,
+  },
+  title_pt: {
+    label: "Title",
+    name: "Title size",
+    range: "title_pt_range",
+    step: 0.5,
+  },
+  heading_pt: {
+    label: "Size",
+    name: "Heading size",
+    range: "heading_pt_range",
+    step: 0.5,
+  },
+  body_pt: {
+    label: "Size",
+    name: "Text size",
+    range: "body_pt_range",
+    step: 0.5,
+  },
+};
+
+/** A template's size for one picker; an entry title takes the text size
+ * plus a point unless the template sets its own. Pure. */
+export function getTemplateSize(
+  spec: ResumeTemplateSpec,
+  size: SizeKey,
+): number {
+  return size === "title_pt" ? (spec.title_pt ?? spec.body_pt + 1) : spec[size];
+}
+
+type FontKey = "heading_font" | "section_font" | "body_font";
+
+/** The three fonts a résumé can set over its template's, each with the
+ * Bold switch and the sizes it has. "Text in" is everything but titles and
+ * headings, and reaches neither (ADR 0078). */
+const FONT_PICKERS: {
+  key: FontKey;
+  label: string;
+  bold: "bold_titles" | "bold_headings" | null;
+  sizes: SizeKey[];
+}[] = [
+  {
+    key: "heading_font",
+    label: "Titles in",
+    bold: "bold_titles",
+    sizes: ["name_pt", "title_pt"],
+  },
+  {
+    key: "section_font",
+    label: "Headings in",
+    bold: "bold_headings",
+    sizes: ["heading_pt"],
+  },
+  { key: "body_font", label: "Text in", bold: null, sizes: ["body_pt"] },
 ];
+
+/** The résumé's own look, as the server keeps it. Pure. */
+export function getOwnLook(resume: TailoredResume): ResumeLook {
+  return {
+    heading_font: resume.heading_font,
+    section_font: resume.section_font,
+    body_font: resume.body_font,
+    bold_titles: resume.bold_titles,
+    bold_headings: resume.bold_headings,
+    body_pt: resume.body_pt,
+    name_pt: resume.name_pt,
+    title_pt: resume.title_pt,
+    heading_pt: resume.heading_pt,
+  };
+}
+
+/** A template's font for one picker: headings take the body font unless
+ * the template names one of their own. Pure. */
+export function getTemplateFont(
+  spec: ResumeTemplateSpec,
+  key: FontKey,
+): string {
+  return key === "section_font"
+    ? (spec.section_font ?? spec.body_font)
+    : spec[key];
+}
+
+/** The template's spec with the résumé's own look over it, as the renderer
+ * lays it (get_spec_with_look). The text's font and size never reach the
+ * headings or the entry titles: left unset, those keep the template's own,
+ * worked out before the text's are laid on (ADR 0078). Pure. */
+export function getSpecWithLook(
+  spec: ResumeTemplateSpec,
+  look: ResumeLook,
+): ResumeTemplateSpec {
+  return {
+    ...spec,
+    heading_font: look.heading_font ?? spec.heading_font,
+    section_font:
+      look.section_font ??
+      (look.body_font
+        ? (spec.section_font ?? spec.body_font)
+        : spec.section_font),
+    body_font: look.body_font ?? spec.body_font,
+    bold_titles: look.bold_titles ?? spec.bold_titles,
+    bold_headings: look.bold_headings ?? spec.bold_headings,
+    body_pt: look.body_pt ?? spec.body_pt,
+    name_pt: look.name_pt ?? spec.name_pt,
+    title_pt:
+      look.title_pt ??
+      (look.body_pt !== null
+        ? getTemplateSize(spec, "title_pt")
+        : spec.title_pt),
+    heading_pt: look.heading_pt ?? spec.heading_pt,
+  };
+}
+
+/** Every size in a range, `step` points apart. Pure. */
+export function getTextSizes(
+  [low, high]: [number, number],
+  step = 0.5,
+): number[] {
+  const sizes: number[] = [];
+  for (let pt = low; pt <= high + 1e-9; pt += step) sizes.push(pt);
+  return sizes;
+}
+
+/** The weight a title or heading is set in: bold only in a font with a bold
+ * cut, as the renderer sets it. Pure. */
+export function getWeight(
+  isBold: boolean,
+  font: string,
+  fontsWithoutBold: readonly string[],
+): number {
+  return isBold && !fontsWithoutBold.includes(font) ? 700 : 400;
+}
 
 const MAX_CONTACTS = 8;
 

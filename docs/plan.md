@@ -4184,3 +4184,31 @@ as target. On the user's own key it is unchanged.
   used: builds compute none, and `rolemap.posting_fit` is dropped. Before
   its analysis an opening shows "Fit today —", and the gap plan and résumé
   ask for the analysis first.
+
+## Résumé editing, and a fit that moves with your answers
+**Done** (ADRs 0075–0078; amends 0047 and 0035), one branch per step
+in `epic/no-ticket/resume-editing`. Migrations 0057 to 0059.
+
+* **Add a line** (`feature/no-ticket/resume-add-lines`). "+ Add line" under
+  every entry's lines and a custom section's, up to eight; Enter adds one
+  below, Backspace removes an empty one, a line cleared to nothing goes.
+* **Every saved version** (`feature/no-ticket/resume-version-history`). A
+  second list on the Write-for card opens any version of the résumé as the
+  editable draft; saving makes the next version, judged against the one
+  opened (`based_on`) so its untouched lines keep their citations.
+* **The résumé's own look** (`feature/no-ticket/resume-own-look`, ADR 0075).
+  "Headings in" with "Bold headings", "Bold titles" beside "Titles in", and
+  "Text size" beside "Text in"; a font with no bold cut stays regular. Then (ADR 0078, `feature/no-ticket/resume-own-sizes`,
+  migration 0059) the text's font and size stop reaching the headings and
+  titles, and the name, titles and headings get sizes of their own.
+* **Move a line** (`feature/no-ticket/resume-move-lines`). A handle left of
+  each line drags it, or moves it with the arrow keys, anywhere in its
+  section.
+* **Quantify from the facts** (`feature/no-ticket/resume-quantify`, ADR
+  0076). GitHub and Jira tallies say over how long; every résumé prompt reads
+  the options and states only numbers a cited fact states; a line that does
+  not is flagged on the page, never dropped.
+* **The fit follows the answers** (`feature/no-ticket/fit-from-answers`, ADR
+  0077). A submit reads the answers into the Target's fit in one priced call;
+  the Advisor shows "Fit today 86% → 91%" and what moved each gap. The role
+  map's fit waits for the next analysis.

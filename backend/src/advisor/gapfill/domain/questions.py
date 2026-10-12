@@ -147,6 +147,16 @@ class QuestionSetStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class FitReadingStatus(StrEnum):
+    """Reading the submitted answers into the Target's fit (ADR 0077), which
+    runs once a set is submitted, or again on request."""
+
+    READING = "reading"
+    READY = "ready"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class QuestionStage(StrEnum):
     """Where writing a set has got, recorded as it passes (ADR 0042)."""
 
@@ -155,6 +165,8 @@ class QuestionStage(StrEnum):
     READING = "reading"
     WRITING = "writing"
     CHECKING = "checking"
+    # Reading the submitted answers into the fit (ADR 0077).
+    READING_ANSWERS = "reading_answers"
 
 
 @dataclass(slots=True)
@@ -182,6 +194,10 @@ class QuestionSet:
     # 0 to 1, never going backwards.
     progress: float = 0.0
     estimated_cost_usd: Decimal | None = None
+    # Reading the answers into the fit (ADR 0077): None until submitted.
+    fit_reading: FitReadingStatus | None = None
+    fit_reading_error_code: str | None = None
+    fit_reading_error_message: str | None = None
 
     @classmethod
     def requested(
@@ -260,6 +276,38 @@ class QuestionSet:
 
     def submitted(self, at: datetime) -> None:
         self.submitted_at = at
+
+    @property
+    def is_reading_answers(self) -> bool:
+        return self.fit_reading is FitReadingStatus.READING
+
+    def start_fit_reading(self) -> None:
+        """Read the submitted answers into the fit, the first time or again
+        after a failure or a cancel. Its progress starts over."""
+        if self.submitted_at is None:
+            raise GapFillError("answers are read into the fit once they are submitted")
+        if self.is_reading_answers:
+            raise GapFillError("these answers are already being read")
+        self.fit_reading = FitReadingStatus.READING
+        self.fit_reading_error_code = None
+        self.fit_reading_error_message = None
+        self.stage = QuestionStage.READING_ANSWERS
+        self.progress = 0.0
+        self.estimated_cost_usd = None
+
+    def update_fit_read(self) -> None:
+        self.fit_reading = FitReadingStatus.READY
+        self.progress = 1.0
+
+    def update_fit_reading_failed(self, *, code: str, message: str) -> None:
+        self.fit_reading = FitReadingStatus.FAILED
+        self.fit_reading_error_code = code
+        self.fit_reading_error_message = message
+
+    def update_fit_reading_cancelled(self) -> None:
+        if not self.is_reading_answers:
+            raise GapFillError("only answers still being read can be cancelled")
+        self.fit_reading = FitReadingStatus.CANCELLED
 
 
 @dataclass(slots=True)

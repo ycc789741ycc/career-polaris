@@ -9,6 +9,7 @@ import pytest
 
 from advisor.profile.domain import EvidenceGranularity
 from advisor.profile.infra.connectors import GitHubConnector, JiraConnector
+from advisor.profile.infra.connectors.base import get_count_label, get_span_label
 from kernel.errors import UpstreamFailedError
 
 API = "https://api.example.test"
@@ -195,7 +196,7 @@ async def test_jira_tallies_issues_by_their_epic_and_every_fact_names_it() -> No
     tally = next(d for d in drafts if d.external_ref == "jira:cloud-1:epic:PAY-1")
     assert (tally.reference, tally.fact) == (
         "Jira · acme · PAY-1",
-        "3 issues worked in the epic PAY-1: Ledger rewrite.",
+        "3 issues worked in the epic PAY-1 in May 2026: Ledger rewrite.",
     )
 
 
@@ -299,12 +300,13 @@ async def test_github_counts_commits_so_work_pushed_without_a_pull_request_count
         "github:commits:acme/ledger": (EvidenceGranularity.SUMMARY, 2, "acme/ledger"),
         "github:commits:acme/docs": (EvidenceGranularity.SUMMARY, 1, "acme/docs"),
         "github:reviews": (EvidenceGranularity.SUMMARY, 1, None),
+        "github:reviews:acme/ledger": (EvidenceGranularity.SUMMARY, 1, "acme/ledger"),
         f"github:commit:{'a' * 40}": (EvidenceGranularity.ITEM, None, "acme/ledger"),
         f"github:commit:{'b' * 40}": (EvidenceGranularity.ITEM, None, "acme/ledger"),
         f"github:commit:{'c' * 40}": (EvidenceGranularity.ITEM, None, "acme/docs"),
     }
     tally = next(d for d in drafts if d.external_ref == "github:commits:acme/ledger")
-    assert tally.fact == "2 commits authored in acme/ledger."
+    assert tally.fact == "2 commits authored in acme/ledger in May 2026."
 
 
 async def test_a_commit_is_cited_by_repository_and_short_sha_and_says_its_first_line() -> None:
@@ -388,7 +390,7 @@ async def test_only_done_or_to_be_verified_tickets_are_evidence() -> None:
     throughput = next(d for d in drafts if d.external_ref == "jira:cloud-1:throughput")
     assert (throughput.tally, throughput.fact) == (
         4,
-        "4 finished issues: 2 done, 2 to be verified.",
+        "4 finished issues in Jun 2026: 2 done, 2 to be verified.",
     )
 
 
@@ -409,3 +411,59 @@ async def test_an_unfinished_epic_is_no_work_of_its_own_but_still_names_its_stor
 async def test_a_site_with_nothing_finished_gives_no_evidence() -> None:
     client = JqlClient({MINE: [[_with("PAY-1", IN_PROGRESS), _with("PAY-2", TO_DO)]]})
     assert await JiraConnector(API).fetch(client, "t") == []  # type: ignore[arg-type]
+
+
+# -- numbers a résumé can quantify with ---------------------------------------
+
+
+def test_a_tally_says_over_how_long_its_work_ran() -> None:
+    assert get_span_label([date(2025, 3, 2), None, date(2026, 9, 1)]) == (
+        " between Mar 2025 and Sep 2026"
+    )
+    assert get_span_label([date(2026, 9, 1), date(2026, 9, 20)]) == " in Sep 2026"
+    assert get_span_label([None]) == ""
+
+
+def test_kinds_are_counted_commonest_first() -> None:
+    assert get_count_label(["Bug", "Story", "Story", "", "Task"]) == "2 Story, 1 Bug, 1 Task"
+
+
+async def test_github_counts_reviews_per_repository_with_their_span() -> None:
+    reviews = [
+        {"id": n, "repository_url": f"{API}/repos/{repo}", "closed_at": closed}
+        for n, (repo, closed) in enumerate(
+            [
+                ("acme/ledger", "2026-03-01T00:00:00Z"),
+                ("acme/ledger", "2026-08-01T00:00:00Z"),
+                ("acme/docs", "2026-08-02T00:00:00Z"),
+            ]
+        )
+    ]
+    client = _github([[_commit("a" * 40)]], reviewed=[reviews])
+    drafts = await GitHubConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    facts = {d.external_ref: (d.fact, d.tally) for d in drafts if "reviews" in d.external_ref}
+    assert facts == {
+        "github:reviews": (
+            "3 pull requests reviewed across 2 repositories between Mar 2026 and Aug 2026.",
+            3,
+        ),
+        "github:reviews:acme/ledger": (
+            "2 pull requests reviewed in acme/ledger between Mar 2026 and Aug 2026.",
+            2,
+        ),
+        "github:reviews:acme/docs": ("1 pull request reviewed in acme/docs in Aug 2026.", 1),
+    }
+    assert GitHubConnector(API).replaced_refs == ("github:reviews:*",)
+
+
+async def test_jira_throughput_counts_finished_issues_by_type() -> None:
+    bug = _work("PAY-4")
+    bug["fields"]["issuetype"] = {"name": "Bug", "hierarchyLevel": 0}
+    client = JqlClient({MINE: [[_work("PAY-2"), _work("PAY-3"), bug]]})
+    drafts = await JiraConnector(API).fetch(client, "t")  # type: ignore[arg-type]
+
+    throughput = next(d for d in drafts if d.external_ref == "jira:cloud-1:throughput")
+    assert throughput.fact == (
+        "3 finished issues in May 2026: 3 done, 0 to be verified; by type: 2 Story, 1 Bug."
+    )

@@ -57,8 +57,11 @@ class FakeTarget:
         self.current = snapshot
         self.scored = scored
         self.scorings = 0
+        self.readings: list[Any] = []
 
-    async def snapshot(self, owner_id: uuid.UUID, ref: TargetRef) -> TargetSnapshot:
+    async def snapshot(
+        self, owner_id: uuid.UUID, ref: TargetRef, *, with_answers: bool = True
+    ) -> TargetSnapshot:
         if not self.scored:
             raise TargetUnusableError("run its gap analysis in Fill the gap first")
         return self.current
@@ -79,6 +82,12 @@ class FakeTarget:
         self.scorings += 1
         self.scored = True
 
+    async def record_answer_readings(
+        self, owner_id: uuid.UUID, ref: TargetRef, **kwargs: Any
+    ) -> int:
+        self.readings.append(kwargs)
+        return len(kwargs["readings"])
+
 
 @dataclass(frozen=True)
 class _Evidence:
@@ -97,6 +106,7 @@ class FakeProfile:
     # Evidence ids the profile still holds; None means every one recorded.
     kept: set[str] | None = None
     stored: list[str] = field(default_factory=list)
+    answers: list[Any] = field(default_factory=list)
 
     async def evidence_ids(self, owner_id: uuid.UUID) -> set[str]:
         return set(self.stored) if self.kept is None else self.kept
@@ -105,7 +115,12 @@ class FakeProfile:
         return type(
             "Snapshot",
             (),
-            {"evidence": (_Evidence(uuid.uuid4(), EvidenceSource.GITHUB, "api", "Wrote the RFC"),)},
+            {
+                "evidence": (
+                    _Evidence(uuid.uuid4(), EvidenceSource.GITHUB, "api", "Wrote the RFC"),
+                    *self.answers,
+                )
+            },
         )()
 
     async def record_answers(self, owner_id: uuid.UUID, answers: list[AnswerRecord]) -> Any:
@@ -115,6 +130,7 @@ class FakeProfile:
             for a in answers
         ]
         self.stored += [str(e.id) for e in stored]
+        self.answers += stored
         return stored
 
 
@@ -536,3 +552,155 @@ async def test_an_unscored_opening_is_priced_with_its_scoring() -> None:
 
     assert priced["cost_usd"] == "0.25"
     assert priced["rate_is_published"] is True
+
+
+# --- reading the answers into the fit (ADR 0077) -----------------------------
+
+
+def _readings(*extra: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "readings": [
+            {
+                "gap_key": "dim:incidents",
+                "score": 75,
+                "coverage": None,
+                "reasoning": "Led the February outage bridge.",
+                "evidence_ids": ["E1"],
+            },
+            *extra,
+        ]
+    }
+
+
+async def _submitted(service: GapFillService) -> Any:
+    written = await _written(service)
+    lead, _region = written.questions
+    await service.submit(
+        OWNER, written.id, [Answer(question_id=lead.id, choice="Yes", text="Led it.")]
+    )
+    return written
+
+
+async def test_submitted_answers_are_read_into_the_targets_fit() -> None:
+    uow = FakeGapFillUnitOfWork()
+    target = FakeTarget(_snapshot())
+    gateway = FakeGateway()
+    service = _service(uow, target=target, gateway=gateway)
+    written = await _submitted(service)
+    gateway.reply = _readings()
+
+    started = await service.start_fit_reading(OWNER, written.id)
+    assert started.fit_reading == "reading"
+    [job] = await service.running_jobs(OWNER)
+    assert (job.kind, job.stage) == ("fit_update", "reading_answers")
+    await service.read_answers(OWNER, written.id)
+
+    [recorded] = target.readings
+    [reading] = recorded["readings"]
+    assert (reading.gap_key, reading.score, reading.coverage) == ("dim:incidents", 75, None)
+    assert recorded["question_set_id"] == written.id
+    # The gap as the analysis scored it, and the answer given about it, dated.
+    sent = gateway.inputs[-1]["gaps"]
+    assert "the analysis scored 60, the job expects 80" in sent
+    assert "[E1] (user_answer, undated) Your answer: Have you led an incident response?" in sent
+    assert (await service.get(OWNER, written.id)).fit_reading == "ready"
+    assert await service.running_jobs(OWNER) == ()
+
+
+async def test_a_reading_citing_another_gaps_answer_is_dropped_not_the_rest() -> None:
+    target = FakeTarget(_snapshot())
+    gateway = FakeGateway()
+    service = _service(FakeGapFillUnitOfWork(), target=target, gateway=gateway)
+    written = await _submitted(service)
+    gateway.reply = _readings(
+        {
+            "gap_key": "req:multi-region-capacity",
+            "score": None,
+            "coverage": "covered",
+            "reasoning": "Unanswered, so it borrows another answer.",
+            "evidence_ids": ["E1"],
+        },
+        {
+            "gap_key": "dim:incidents",
+            "score": 99,
+            "coverage": None,
+            "reasoning": "A second reading of the same gap.",
+            "evidence_ids": ["E7"],
+        },
+    )
+
+    await service.start_fit_reading(OWNER, written.id)
+    await service.read_answers(OWNER, written.id)
+
+    [recorded] = target.readings
+    assert [(r.gap_key, r.score) for r in recorded["readings"]] == [("dim:incidents", 75)]
+
+
+async def test_answers_are_read_only_once_submitted_and_one_reading_at_a_time() -> None:
+    service = _service(FakeGapFillUnitOfWork())
+    written = await _written(service)
+    with pytest.raises(ConflictError, match="once they are submitted"):
+        await service.start_fit_reading(OWNER, written.id)
+
+    lead, _ = written.questions
+    await service.submit(OWNER, written.id, [Answer(question_id=lead.id, choice="Yes")])
+    await service.start_fit_reading(OWNER, written.id)
+    with pytest.raises(ConflictError, match="already being read"):
+        await service.start_fit_reading(OWNER, written.id)
+
+
+async def test_a_reading_cancelled_keeps_the_answers_and_records_nothing() -> None:
+    target = FakeTarget(_snapshot())
+    gateway = FakeGateway()
+    service = _service(FakeGapFillUnitOfWork(), target=target, gateway=gateway)
+    written = await _submitted(service)
+    gateway.reply = _readings()
+    await service.start_fit_reading(OWNER, written.id)
+
+    await service.cancel(OWNER, written.id)
+    await service.read_answers(OWNER, written.id)
+
+    after = await service.get(OWNER, written.id)
+    assert (after.fit_reading, after.submitted_at is not None) == ("cancelled", True)
+    assert target.readings == []
+    # And it can be read again on request.
+    assert (await service.start_fit_reading(OWNER, written.id)).fit_reading == "reading"
+
+
+async def test_a_failed_reading_is_recorded_on_the_set() -> None:
+    gateway = FakeGateway()
+    service = _service(FakeGapFillUnitOfWork(), gateway=gateway)
+    written = await _submitted(service)
+    gateway.error = BudgetExceededError("spent")
+
+    await service.start_fit_reading(OWNER, written.id)
+    await service.read_answers(OWNER, written.id)
+
+    after = await service.get(OWNER, written.id)
+    assert (after.fit_reading, after.fit_reading_error_code) == ("failed", "ai_budget_exceeded")
+
+
+async def test_reading_the_answers_is_priced_as_a_ceiling_before_they_are_submitted() -> None:
+    class Estimating(FakeGateway):
+        async def estimate(self, owner_id: uuid.UUID, **kwargs: Any) -> Any:
+            self.inputs.append(kwargs["inputs"])
+            return type(
+                "Estimate",
+                (),
+                {
+                    "cost_usd": Decimal("0.03"),
+                    "model_id": "claude-opus-5",
+                    "input_tokens": 900,
+                    "rate_is_published": True,
+                },
+            )()
+
+    gateway = Estimating()
+    service = _service(FakeGapFillUnitOfWork(), gateway=gateway)
+    written = await _written(service)
+
+    estimate = await service.estimate_fit_reading(OWNER, written.id)
+
+    assert estimate["cost_usd"] == "0.03"
+    # Every question, answered at full length.
+    assert gateway.inputs[-1]["gaps"].count("x" * 2000) == 2

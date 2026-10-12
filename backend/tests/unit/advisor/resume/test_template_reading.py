@@ -142,7 +142,11 @@ def test_what_cannot_be_read_takes_organic_and_is_flagged() -> None:
     for name in ("name_pt", "heading_pt", "accent_color", "heading_font", "body_font", "bullet"):
         assert name in draft.defaulted
         assert getattr(draft.spec, name) == getattr(organic, name)
-    assert set(draft.read) | set(draft.defaulted) == {f.name for f in fields(TemplateSpec)}
+    # Headings' own font, the bold switches and an entry title's size are
+    # chosen on the page, never read from a file (ADR 0075, ADR 0078): they
+    # keep Organic's without being flagged.
+    chosen = {"section_font", "bold_titles", "bold_headings", "title_pt"}
+    assert set(draft.read) | set(draft.defaulted) == {f.name for f in fields(TemplateSpec)} - chosen
 
 
 def test_a_value_out_of_range_or_too_light_is_brought_into_line() -> None:

@@ -40,6 +40,10 @@ class QuestionSet(Base, OwnedMixin):
             "status IN ('writing', 'ready', 'failed', 'superseded', 'cancelled')", name="status"
         ),
         CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
+        CheckConstraint(
+            "fit_reading IS NULL OR fit_reading IN ('reading', 'ready', 'failed', 'cancelled')",
+            name="fit_reading",
+        ),
         Index("ix_question_set_owner_created", "owner_id", "created_at"),
         {"schema": "gapfill"},
     )
@@ -70,6 +74,10 @@ class QuestionSet(Base, OwnedMixin):
     stage: Mapped[str | None] = mapped_column(String(24), nullable=True)
     progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
     estimated_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    # Reading the submitted answers into the Target's fit (ADR 0077).
+    fit_reading: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fit_reading_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    fit_reading_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Question(Base, OwnedMixin):

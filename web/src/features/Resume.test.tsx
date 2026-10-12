@@ -18,11 +18,24 @@ import { startDownload } from "./download";
 import {
   citeLine,
   coverageStatus,
+  FONTS_WITHOUT_BOLD,
+  getCountedSources,
+  getLineAdded,
+  getLineMoved,
+  getLineStep,
+  getSpecWithLook,
+  getTemplateSize,
   getStackWith,
+  getTextSizes,
+  getWeight,
+  MAX_LINES,
   pageStyle,
+  quantifyNote,
   Resume,
   savedLine,
+  sourceWord,
   trimmedNote,
+  versionLine,
 } from "./Resume";
 
 vi.mock("./download", () => ({ startDownload: vi.fn() }));
@@ -170,6 +183,13 @@ const resume: TailoredResume = {
   },
   heading_font: null,
   body_font: null,
+  section_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
   section_plan: [
     { kind: "summary", title: null, is_shown: true },
     { kind: "experience", title: null, is_shown: true },
@@ -182,6 +202,7 @@ const resume: TailoredResume = {
   revisions: [],
   is_outdated: false,
   outdated_by: [],
+  unbacked_lines: [],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -231,6 +252,10 @@ const organic: ResumeTemplateLook = {
     sidebar_kinds: [],
     heading_case: "upper",
     bullet: "dot",
+    section_font: null,
+    bold_titles: false,
+    bold_headings: true,
+    title_pt: null,
   },
   rule: "3px solid #c67139",
   band_color: "#f8ede6",
@@ -263,6 +288,8 @@ const templates = {
 
 const limits: ResumeTemplateLimits = {
   fonts: ["Caprasimo", "Figtree", "DejaVu Serif", "DejaVu Sans Mono"],
+  fonts_without_bold: ["Caprasimo"],
+  title_pt_range: [9, 14],
   name_pt_range: [16, 30],
   heading_pt_range: [7, 11],
   body_pt_range: [8.5, 11.5],
@@ -470,6 +497,117 @@ describe("résumé screen", () => {
     expect(onRevisit).toHaveBeenCalledWith(elsewhere);
   });
 
+  it("opens an older version as the draft, and saves it as the next one", async () => {
+    const v2 = { ...version, id: "v2", number: 2, source: "manual" as const };
+    const withTwo = { ...resume, version: v2, versions: [v2, version] };
+    const older = experience(resume.content!);
+    const oldContent: ResumeContent = {
+      ...resume.content!,
+      sections: resume.content!.sections.map((s) =>
+        s.kind === "experience"
+          ? {
+              ...older,
+              entries: [
+                {
+                  ...older.entries[0]!,
+                  bullets: [
+                    {
+                      ...older.entries[0]!.bullets[0]!,
+                      text: "Built the first ledger",
+                    },
+                  ],
+                },
+              ],
+            }
+          : s,
+      ),
+    };
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return withTwo;
+      if (call.url === "/tailored-resumes/res-1?version=1")
+        return { ...withTwo, version, content: oldContent };
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v3", number: 3, source: "manual" };
+      if (call.url === "/tailored-resumes/res-1/exports")
+        return {
+          id: "x1",
+          version_id: "v1",
+          template: "organic",
+          status: "failed",
+          error: { code: "x", message: "stop here" },
+          download_url: null,
+        };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const picker = screen.getByRole("combobox", { name: "Saved version" });
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([
+      "v2 · edited by you · 20 Sep 2026 · latest",
+      "v1 · written · 20 Sep 2026",
+    ]);
+    await user.selectOptions(picker, "1");
+
+    // The old version's lines, editable, with the way back named.
+    expect(
+      await screen.findByRole("status", { name: "Opened version" }),
+    ).toHaveTextContent("Opened v1 of 2");
+    const page1 = screen.getByRole("article", { name: "Résumé" });
+    expect(
+      within(page1).getByText("Built the first ledger"),
+    ).toBeInTheDocument();
+    expect(page).not.toBe(page1);
+    // Unedited, it exports as v1; saving it makes v3.
+    await user.click(screen.getByRole("button", { name: "Export as PDF" }));
+    expect(
+      calls.find((c) => c.url === "/tailored-resumes/res-1/exports")?.body,
+    ).toEqual({ version: 1 });
+    const save = screen.getByRole("button", { name: "Save as v3" });
+    expect(save).toBeEnabled();
+    await user.click(save);
+
+    expect(
+      calls.find((c) => c.url === "/tailored-resumes/res-1/versions")?.body,
+    ).toEqual({ content: oldContent, based_on: 1 });
+  });
+
+  it("goes back to the latest version from an older one", async () => {
+    const v2 = { ...version, id: "v2", number: 2, source: "manual" as const };
+    const withTwo = { ...resume, version: v2, versions: [v2, version] };
+    serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return withTwo;
+      if (call.url === "/tailored-resumes/res-1?version=1")
+        return {
+          ...withTwo,
+          version,
+          content: { ...resume.content!, name: "Old Name" },
+        };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    await screen.findByRole("article", { name: "Résumé" });
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Saved version" }),
+      "1",
+    );
+    expect(await screen.findByText("Old Name")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to latest" }));
+
+    expect(screen.queryByRole("status", { name: "Opened version" })).toBeNull();
+    expect(screen.getByText("Maya Lin Chen")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeDisabled();
+  });
+
   it("exports from beside the page, once the edits are saved", async () => {
     serve(defaults);
     renderResume();
@@ -536,6 +674,149 @@ describe("résumé screen", () => {
     );
     const page = screen.getByRole("article", { name: "Résumé" });
     expect(page.getAttribute("style")).toContain("DejaVu Serif");
+  });
+
+  it("sets headings in a font of their own, titles in bold, and the text size", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    // Organic's titles are Caprasimo, which has no bold: the switch is off.
+    const boldTitles = screen.getByRole("checkbox", { name: "Bold titles" });
+    expect(boldTitles).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByRole("combobox", { name: "Headings in" }),
+    ).toHaveDisplayValue("Template's (Figtree)");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Titles in" }),
+      "DejaVu Serif",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Bold titles" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Headings in" }),
+      "DejaVu Sans Mono",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Bold headings" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text size" }),
+      "11",
+    );
+
+    const puts = calls.filter(
+      (c) => c.url === "/tailored-resumes/res-1/settings",
+    );
+    expect(puts.at(-1)?.body).toMatchObject({
+      heading_font: "DejaVu Serif",
+      bold_titles: true,
+      section_font: "DejaVu Sans Mono",
+      bold_headings: false,
+      body_pt: 11,
+    });
+    const style = screen
+      .getByRole("article", { name: "Résumé" })
+      .getAttribute("style")!;
+    expect(style).toContain('--section-font: "DejaVu Sans Mono"');
+    expect(style).toContain("--title-weight: 700");
+    expect(style).toContain("--heading-weight: 400");
+    expect(style).toContain("--body-pt: 11");
+    // The text size reaches the text alone (ADR 0078).
+    expect(style).toContain("--title-pt: 11;");
+  });
+
+  it("flags a written line whose number its facts do not state, and only that one", async () => {
+    serve((call) =>
+      call.url === "/tailored-resumes/res-1"
+        ? {
+            ...resume,
+            unbacked_lines: ["Owned the retry layer for payments-svc"],
+          }
+        : null,
+    );
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    expect(
+      within(page).getAllByText(
+        /A number here is not in the facts this line cites/,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("says where Quantify takes its numbers from, and that options apply when next written", async () => {
+    serve((call) => {
+      if (call.url === "/connections")
+        return {
+          items: [
+            { kind: "github", connected: true },
+            { kind: "jira", connected: false },
+          ],
+          page: 1,
+          page_size: 2,
+          total: 2,
+        };
+      return defaults(call);
+    });
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    expect(
+      await screen.findByText(/Numbers come from GitHub's counts/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Options apply when/)).toBeNull();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Trim to one page" }),
+    );
+    expect(
+      screen.getByText(/Options apply when the résumé is next written/),
+    ).toBeInTheDocument();
+  });
+
+  it("sizes the name, titles and headings, and the text reaches only the text", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    const page = await screen.findByRole("article", { name: "Résumé" });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text in" }),
+      "DejaVu Serif",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text size" }),
+      "11.5",
+    );
+    // The headings and the entry titles keep the template's.
+    expect(page.getAttribute("style")).toContain('--section-font: "Figtree"');
+    expect(page.getAttribute("style")).toContain("--title-pt: 11;");
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Name size" }),
+      "26",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Title size" }),
+      "12.5",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Heading size" }),
+      "10",
+    );
+    const puts = calls.filter(
+      (c) => c.url === "/tailored-resumes/res-1/settings",
+    );
+    expect(puts.at(-1)?.body).toMatchObject({
+      body_font: "DejaVu Serif",
+      body_pt: 11.5,
+      name_pt: 26,
+      title_pt: 12.5,
+      heading_pt: 10,
+    });
+    const style = page.getAttribute("style")!;
+    expect(style).toContain("--name-pt: 26");
+    expect(style).toContain("--title-pt: 12.5");
+    expect(style).toContain("--heading-pt: 10");
   });
 
   it("writes a failed résumé again once priced", async () => {
@@ -660,6 +941,180 @@ describe("résumé screen", () => {
     );
     const body = saved?.body as { content: ResumeContent };
     expect(experience(body.content).entries).toEqual([]);
+  });
+
+  it("adds a line under an entry, kept until the version is saved", async () => {
+    const calls = serve((call) =>
+      call.url === "/tailored-resumes/res-1/versions"
+        ? { ...version, id: "v2", number: 2, source: "manual" }
+        : defaults(call),
+    );
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const job = within(page)
+      .getByText("Owned the retry layer for payments-svc")
+      .closest("section")!;
+    await user.click(
+      within(job as HTMLElement).getByRole("button", { name: "+ Add line" }),
+    );
+
+    // The new line takes the caret, its text selected to type over.
+    const added = within(job as HTMLElement).getByText("New line");
+    expect(document.activeElement).toBe(added);
+    added.textContent = "Ran the on-call rotation";
+    fireEvent.blur(added);
+    expect(
+      calls.some((c) => c.url === "/tailored-resumes/res-1/versions"),
+    ).toBe(false);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    const lines = experience(body.content).entries[0]!.bullets;
+    expect(lines.map((l) => l.text)).toEqual([
+      "Owned the retry layer for payments-svc",
+      "Ran the on-call rotation",
+    ]);
+    expect(lines[1]).toMatchObject({ origin: "yours", evidence_ids: [] });
+  });
+
+  it("adds a line below with Enter, and removes an empty one with Backspace", async () => {
+    serve(defaults);
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    fireEvent.keyDown(line, { key: "Enter" });
+
+    const added = await within(page).findByText("New line");
+    expect(document.activeElement).toBe(added);
+    added.textContent = "";
+    fireEvent.keyDown(added, { key: "Backspace" });
+
+    expect(within(page).queryByText("New line")).toBeNull();
+    expect(document.activeElement).toBe(
+      within(page).getByText("Owned the retry layer for payments-svc"),
+    );
+  });
+
+  it("drops a line cleared to nothing", async () => {
+    serve(defaults);
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const line = within(page).getByText(
+      "Owned the retry layer for payments-svc",
+    );
+    line.textContent = "  ";
+    fireEvent.blur(line);
+
+    expect(within(page).queryAllByLabelText("Line")).toHaveLength(0);
+    expect(
+      screen.getByRole("button", { name: /^Save as v\d+$/ }),
+    ).toBeEnabled();
+  });
+
+  it("moves a line by its handle with the keyboard, into the next entry, keeping its citation", async () => {
+    const two: TailoredResume = {
+      ...resume,
+      content: {
+        ...resume.content!,
+        sections: resume.content!.sections.map((s) =>
+          s.kind === "experience"
+            ? {
+                ...s,
+                entries: [
+                  s.entries[0]!,
+                  {
+                    title: "Engineer",
+                    org: "Harbor",
+                    when: "2019 — 2022",
+                    link: "",
+                    bullets: [
+                      {
+                        text: "Ran the batch jobs",
+                        evidence_ids: [],
+                        origin: "yours",
+                        answers: null,
+                      },
+                    ],
+                  },
+                ],
+              }
+            : s,
+        ),
+      },
+    };
+    const calls = serve((call) => {
+      if (call.url === "/tailored-resumes/res-1") return two;
+      if (call.url === "/tailored-resumes/res-1/versions")
+        return { ...version, id: "v2", number: 2, source: "manual" };
+      return null;
+    });
+    const user = userEvent.setup();
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    const handle = within(page).getByRole("button", {
+      name: "Move line: Owned the retry layer for payments-svc",
+    });
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+
+    // Past the end of its entry, it leads the next one, and keeps the focus.
+    const moved = within(page).getByRole("button", {
+      name: "Move line: Owned the retry layer for payments-svc",
+    });
+    expect(document.activeElement).toBe(moved);
+    await user.click(screen.getByRole("button", { name: /^Save as v\d+$/ }));
+
+    const body = calls.find((c) => c.url === "/tailored-resumes/res-1/versions")
+      ?.body as { content: ResumeContent };
+    const [first, second] = experience(body.content).entries;
+    expect(first!.bullets).toEqual([]);
+    expect(second!.bullets.map((l) => l.text)).toEqual([
+      "Owned the retry layer for payments-svc",
+      "Ran the batch jobs",
+    ]);
+    expect(second!.bullets[0]!.evidence_ids).toEqual(["e1"]);
+  });
+
+  it("drags a line onto another in its section", async () => {
+    const lines = ["First", "Second", "Third"].map((text) => ({
+      text,
+      evidence_ids: [],
+      origin: "yours" as const,
+      answers: null,
+    }));
+    const three: TailoredResume = {
+      ...resume,
+      content: {
+        ...resume.content!,
+        sections: resume.content!.sections.map((s) =>
+          s.kind === "experience"
+            ? { ...s, entries: [{ ...s.entries[0]!, bullets: lines }] }
+            : s,
+        ),
+      },
+    };
+    serve((call) => (call.url === "/tailored-resumes/res-1" ? three : null));
+    renderResume();
+
+    const page = await screen.findByRole("article", { name: "Résumé" });
+    fireEvent.dragStart(
+      within(page).getByRole("button", { name: "Move line: Third" }),
+    );
+    fireEvent.dragOver(within(page).getByText("First").closest("li")!);
+    fireEvent.drop(within(page).getByText("First").closest("li")!);
+
+    expect(
+      within(page)
+        .getAllByLabelText("Line")
+        .map((l) => l.textContent),
+    ).toEqual(["Third", "First", "Second"]);
   });
 
   it("undoes unsaved edits one at a time, back to the saved version", async () => {
@@ -1529,6 +1984,237 @@ describe("the tool cards' summaries", () => {
     expect(savedLine({ ...summary, status: "drafting" })).toBe(
       `${matched.label} · writing…`,
     );
+  });
+});
+
+const NO_LOOK_FOR_TESTS = {
+  heading_font: null,
+  section_font: null,
+  body_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
+};
+
+describe("the résumé's own look (ADR 0075)", () => {
+  it("lays the résumé's choices over its template's, null keeping the template's", () => {
+    const spec = getSpecWithLook(organic.spec, {
+      heading_font: null,
+      section_font: "Lato",
+      body_font: null,
+      bold_titles: true,
+      bold_headings: null,
+      body_pt: 9,
+      name_pt: null,
+      title_pt: null,
+      heading_pt: null,
+    });
+    expect(spec).toMatchObject({
+      heading_font: "Caprasimo",
+      section_font: "Lato",
+      body_font: "Figtree",
+      bold_titles: true,
+      bold_headings: true,
+      body_pt: 9,
+      // The text size reaches the text alone: the titles keep the
+      // template's (ADR 0078).
+      title_pt: 11,
+    });
+  });
+
+  it("keeps headings and titles out of the text's font and size", () => {
+    const text = getSpecWithLook(organic.spec, {
+      ...NO_LOOK_FOR_TESTS,
+      body_font: "Inter",
+      body_pt: 11.5,
+    });
+    expect(text).toMatchObject({
+      body_font: "Inter",
+      body_pt: 11.5,
+      section_font: "Figtree",
+      title_pt: 11,
+    });
+    // Nothing set changes nothing.
+    expect(getSpecWithLook(organic.spec, NO_LOOK_FOR_TESTS)).toEqual(
+      organic.spec,
+    );
+  });
+
+  it("lays the name's, titles' and headings' own sizes over the template's", () => {
+    expect(
+      getSpecWithLook(organic.spec, {
+        ...NO_LOOK_FOR_TESTS,
+        name_pt: 26,
+        title_pt: 12.5,
+        heading_pt: 10,
+      }),
+    ).toMatchObject({ name_pt: 26, title_pt: 12.5, heading_pt: 10 });
+    expect(getTemplateSize(organic.spec, "title_pt")).toBe(11);
+  });
+
+  it("steps the name a point at a time", () => {
+    expect(getTextSizes([16, 19], 1)).toEqual([16, 17, 18, 19]);
+  });
+
+  it("offers every half point in the range", () => {
+    expect(getTextSizes([8.5, 10])).toEqual([8.5, 9, 9.5, 10]);
+  });
+
+  it("sets bold only in a font with a bold cut, as the PDF does", () => {
+    expect(getWeight(true, "Inter", FONTS_WITHOUT_BOLD)).toBe(700);
+    expect(getWeight(true, "Caprasimo", FONTS_WITHOUT_BOLD)).toBe(400);
+    expect(getWeight(false, "Inter", FONTS_WITHOUT_BOLD)).toBe(400);
+    expect(FONTS_WITHOUT_BOLD).toEqual(limits.fonts_without_bold);
+  });
+});
+
+describe("moving a line", () => {
+  const line = (text: string) => ({
+    text,
+    evidence_ids: [],
+    origin: "yours" as const,
+    answers: null,
+  });
+  const entry = (...texts: string[]) => ({
+    title: "T",
+    org: "",
+    when: "",
+    link: "",
+    bullets: texts.map(line),
+  });
+  const jobs = section("experience", {
+    entries: [entry("a", "b"), entry("c")],
+  });
+  const texts = (s: ResumeSection) =>
+    s.entries.map((e) => e.bullets.map((b) => b.text));
+
+  it("takes the place it is dropped on within its entry", () => {
+    const moved = getLineMoved(
+      jobs,
+      { entry: 0, line: 1 },
+      { entry: 0, line: 0 },
+    );
+    expect(texts(moved)).toEqual([["b", "a"], ["c"]]);
+  });
+
+  it("goes into another entry before the line it is dropped on", () => {
+    const moved = getLineMoved(
+      jobs,
+      { entry: 0, line: 0 },
+      { entry: 1, line: 0 },
+    );
+    expect(texts(moved)).toEqual([["b"], ["a", "c"]]);
+  });
+
+  it("is refused by an entry already full", () => {
+    const full = section("experience", {
+      entries: [
+        entry("a"),
+        entry(...Array.from({ length: 8 }, (_, i) => `${i}`)),
+      ],
+    });
+    expect(
+      getLineMoved(full, { entry: 0, line: 0 }, { entry: 1, line: 0 }),
+    ).toBe(full);
+  });
+
+  it("moves a custom section's own lines", () => {
+    const own = section("custom", {
+      title: "Mine",
+      bullets: ["x", "y"].map(line),
+    });
+    const moved = getLineMoved(
+      own,
+      { entry: null, line: 0 },
+      { entry: null, line: 1 },
+    );
+    expect(moved.bullets.map((b) => b.text)).toEqual(["y", "x"]);
+  });
+
+  it("steps past an entry's end to the next, and stops at the section's", () => {
+    expect(getLineStep(jobs, { entry: 0, line: 0 }, 1)).toEqual({
+      entry: 0,
+      line: 1,
+    });
+    expect(getLineStep(jobs, { entry: 0, line: 1 }, 1)).toEqual({
+      entry: 1,
+      line: 0,
+    });
+    expect(getLineStep(jobs, { entry: 1, line: 0 }, -1)).toEqual({
+      entry: 0,
+      line: 2,
+    });
+    expect(getLineStep(jobs, { entry: 1, line: 0 }, 1)).toBeNull();
+    expect(getLineStep(jobs, { entry: 0, line: 0 }, -1)).toBeNull();
+  });
+});
+
+describe("quantifying (ADR 0076)", () => {
+  it("counts only GitHub and Jira, and only when connected", () => {
+    expect(
+      getCountedSources([
+        { kind: "github", connected: true },
+        { kind: "jira", connected: false },
+      ]),
+    ).toEqual(["github"]);
+  });
+
+  it("says plainly when nothing can give it numbers", () => {
+    expect(quantifyNote([])).toMatch(/Neither GitHub nor Jira is connected/);
+    expect(quantifyNote(["github", "jira"])).toMatch(
+      /^Numbers come from GitHub and Jira's counts/,
+    );
+  });
+});
+
+describe("the Version list", () => {
+  it("words where each version came from", () => {
+    expect(sourceWord("generated")).toBe("written");
+    expect(sourceWord("manual")).toBe("edited by you");
+    expect(sourceWord("chat")).toBe("from the chat");
+  });
+
+  it("names the latest", () => {
+    expect(versionLine(version, true)).toBe(
+      "v1 · written · 20 Sep 2026 · latest",
+    );
+    expect(versionLine(version, false)).toBe("v1 · written · 20 Sep 2026");
+  });
+});
+
+describe("adding a line", () => {
+  const line = (text: string) => ({
+    text,
+    evidence_ids: [],
+    origin: "yours" as const,
+    answers: null,
+  });
+
+  it("puts the new line just below, keeping what was typed into the line above", () => {
+    const next = getLineAdded(
+      [line("a"), line("c")],
+      0,
+      " a, edited ",
+      line("b"),
+    );
+    expect(next.map((l) => l.text)).toEqual(["a, edited", "b", "c"]);
+  });
+
+  it("leaves a line alone when nothing was typed into it", () => {
+    const first = {
+      ...line("a"),
+      origin: "written" as const,
+      evidence_ids: ["e1"],
+    };
+    const next = getLineAdded([first], 0, "a", line("b"));
+    expect(next[0]).toBe(first);
+  });
+
+  it("holds at most as many lines as the server takes", () => {
+    expect(MAX_LINES).toBe(8);
   });
 });
 

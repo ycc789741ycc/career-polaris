@@ -13,11 +13,14 @@ from advisor.resume.domain import (
     BUILT_IN_TEMPLATES,
     Bullet,
     Layout,
+    OwnLook,
     SectionKind,
     TemplateSpec,
     TemplateSpecError,
+    assert_own_look_valid,
     get_built_in_spec,
     get_contrast,
+    get_spec_with_look,
 )
 from advisor.resume.infra.render import render_html
 from advisor.target import TargetRef
@@ -248,3 +251,127 @@ async def test_a_template_must_be_built_in_or_your_own() -> None:
     await service.update_settings(OWNER, resume_id, template="plain", options=Options())
     assert (await service.get(OWNER, resume_id)).template == str(Template.PLAIN)
     assert get_built_in_spec(Template.PLAIN).rule_color == "#cfcac5"
+
+
+# -- a résumé's own look (ADR 0075) -------------------------------------------
+
+
+def test_a_spec_stored_before_its_own_look_reads_as_it_printed() -> None:
+    stored = TemplateSpec().to_dict()
+    for key in ("section_font", "bold_titles", "bold_headings"):
+        del stored[key]
+    spec = TemplateSpec.from_dict(stored)
+
+    assert (spec.get_section_font(), spec.get_title_weight(), spec.get_heading_weight()) == (
+        spec.body_font,
+        400,
+        700,
+    )
+
+
+def test_a_resumes_own_look_is_laid_over_its_templates() -> None:
+    template = TemplateSpec(heading_font="Merriweather", body_font="Inter", body_pt=10.0)
+    spec = get_spec_with_look(
+        template, OwnLook(section_font="Lato", bold_titles=True, bold_headings=False, body_pt=9.0)
+    )
+
+    assert (spec.heading_font, spec.get_section_font(), spec.body_font) == (
+        "Merriweather",
+        "Lato",
+        "Inter",
+    )
+    assert (spec.get_title_weight(), spec.get_heading_weight(), spec.body_pt) == (700, 400, 9.0)
+    # Nothing set keeps the template's.
+    assert get_spec_with_look(template, OwnLook()) == template
+
+
+def test_a_font_with_no_bold_cut_stays_regular_when_bold_is_asked_for() -> None:
+    spec = TemplateSpec(heading_font="Caprasimo", bold_titles=True, section_font="Caprasimo")
+
+    assert (spec.get_title_weight(), spec.get_heading_weight()) == (400, 400)
+
+
+@pytest.mark.parametrize(
+    ("look", "message"),
+    [
+        (OwnLook(section_font="Comic Sans"), "heading font"),
+        (OwnLook(body_pt=7.0), "text size"),
+        (OwnLook(body_pt=12.0), "text size"),
+    ],
+)
+def test_a_resumes_own_look_holds_only_what_prints(look: OwnLook, message: str) -> None:
+    with pytest.raises(TemplateSpecError, match=message):
+        assert_own_look_valid(look)
+
+
+def test_the_pdf_sets_titles_headings_and_text_as_the_look_says() -> None:
+    spec = TemplateSpec(
+        heading_font="Merriweather",
+        section_font="Lato",
+        body_font="Inter",
+        bold_titles=True,
+        bold_headings=False,
+        body_pt=9.0,
+    )
+    html = render_html(make_content(CITED), spec=spec, options=Options())
+
+    assert "font-weight: 700" in html.split("h1 {", 1)[1].split("}", 1)[0]
+    h2 = html.split("h2 {", 1)[1].split("}", 1)[0]
+    assert '"Lato"' in h2 and "font-weight: 400" in h2
+    job_title = html.split(".job-title {", 1)[1].split("}", 1)[0]
+    assert '"Merriweather"' in job_title and "font-weight: 700" in job_title
+    assert "font-size: 9.0pt" in html
+
+
+# -- the text reaches only the text; titles and headings sized (ADR 0078) -------
+
+
+def test_the_texts_font_and_size_never_reach_the_headings_or_the_titles() -> None:
+    template = TemplateSpec(heading_font="Merriweather", body_font="Figtree", body_pt=10.0)
+
+    spec = get_spec_with_look(template, OwnLook(body_font="Inter", body_pt=11.5))
+
+    assert (spec.body_font, spec.body_pt) == ("Inter", 11.5)
+    # Headings keep the template's body font, titles its text size plus a point.
+    assert (spec.get_section_font(), spec.get_title_pt()) == ("Figtree", 11.0)
+    # The contact line and small print are text, and follow it.
+    assert spec.get_derived_pt() == (11.0, 11.0, 10.5)
+
+
+def test_a_resume_sizes_its_name_titles_and_headings_over_its_templates() -> None:
+    spec = get_spec_with_look(TemplateSpec(), OwnLook(name_pt=26.0, title_pt=12.5, heading_pt=10.0))
+
+    assert (spec.name_pt, spec.get_title_pt(), spec.heading_pt) == (26.0, 12.5, 10.0)
+
+
+@pytest.mark.parametrize(
+    ("look", "message"),
+    [
+        (OwnLook(name_pt=40.0), "name size"),
+        (OwnLook(title_pt=8.0), "title size"),
+        (OwnLook(heading_pt=12.0), "heading size"),
+    ],
+)
+def test_a_resumes_own_sizes_stay_in_their_ranges(look: OwnLook, message: str) -> None:
+    with pytest.raises(TemplateSpecError, match=message):
+        assert_own_look_valid(look)
+
+
+def test_a_spec_stored_without_a_title_size_takes_the_text_size_plus_a_point() -> None:
+    stored = TemplateSpec(body_pt=9.5).to_dict()
+    del stored["title_pt"]
+
+    assert TemplateSpec.from_dict(stored).get_title_pt() == 10.5
+    assert TemplateSpec.from_dict(TemplateSpec(title_pt=13.0).to_dict()).title_pt == 13.0
+
+
+def test_the_pdf_sizes_the_name_the_titles_and_the_headings_as_the_look_says() -> None:
+    spec = get_spec_with_look(
+        TemplateSpec(), OwnLook(name_pt=26.0, title_pt=12.5, heading_pt=10.0, body_pt=9.0)
+    )
+    html = render_html(make_content(CITED), spec=spec, options=Options())
+
+    assert "font-size: 26.0pt" in html.split("h1 {", 1)[1].split("}", 1)[0]
+    assert "font-size: 10.0pt" in html.split("h2 {", 1)[1].split("}", 1)[0]
+    assert "font-size: 12.5pt" in html.split(".job-title {", 1)[1].split("}", 1)[0]
+    assert "font-size: 9.0pt" in html.split("body {", 1)[1].split("}", 1)[0]

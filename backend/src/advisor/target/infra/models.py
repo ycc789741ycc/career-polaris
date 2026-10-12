@@ -269,3 +269,38 @@ class OpeningFit(Base, OwnedMixin):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class AnswerReading(Base, OwnedMixin):
+    """What the answers given in Fill the gap say about one gap of one Target
+    (ADR 0077): a dimension's score, or a requirement's coverage. Every one is
+    kept; the newest per gap, under the latest analysis, counts."""
+
+    __tablename__ = "answer_reading"
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(role_id, private_job_posting_id) = 1", name="target"),
+        CheckConstraint("num_nonnulls(score, coverage) = 1", name="reading"),
+        CheckConstraint("score IS NULL OR score BETWEEN 0 AND 100", name="score"),
+        CheckConstraint(
+            "coverage IS NULL OR coverage IN ('covered', 'partly', 'not')", name="coverage"
+        ),
+        Index("ix_answer_reading_owner_created", "owner_id", "created_at"),
+        {"schema": "target"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=new_id)
+    role_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    private_job_posting_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    question_set_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    assessment_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    gap_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coverage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

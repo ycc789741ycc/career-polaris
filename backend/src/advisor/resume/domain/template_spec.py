@@ -22,13 +22,17 @@ from advisor.resume.domain.constants import (
     BODY_FONT,
     BODY_PT,
     BODY_PT_RANGE,
+    BOLD_WEIGHT,
+    FONTS_WITHOUT_BOLD,
     HEADING_FONT,
     HEADING_PT,
     HEADING_PT_RANGE,
     MIN_CONTRAST,
     NAME_PT,
     NAME_PT_RANGE,
+    REGULAR_WEIGHT,
     TEMPLATE_FONTS,
+    TITLE_PT_RANGE,
 )
 from advisor.resume.domain.content import Template
 from advisor.resume.domain.section import SHAPES, SectionKind, SectionShape
@@ -89,6 +93,31 @@ class TemplateSpec:
     sidebar_kinds: tuple[SectionKind, ...] = field(default_factory=tuple)
     heading_case: HeadingCase = HeadingCase.UPPER
     bullet: BulletStyle = BulletStyle.DOT
+    # Section headings' own font; None sets them in the body font, as every
+    # template did before it could be chosen (ADR 0075).
+    section_font: str | None = None
+    # The name and each entry's title in bold.
+    bold_titles: bool = False
+    # Section headings in bold, as every template has always set them.
+    bold_headings: bool = True
+    # An entry's title size; None takes the text size plus a point, as every
+    # template did before it could be set (ADR 0078).
+    title_pt: float | None = None
+
+    def get_title_pt(self) -> float:
+        return self.title_pt if self.title_pt is not None else self.body_pt + 1.0
+
+    def get_section_font(self) -> str:
+        return self.section_font or self.body_font
+
+    def get_title_weight(self) -> int:
+        """The name's and the entries' titles' weight: bold only in a font
+        with a bold cut."""
+        return _weight(self.bold_titles, self.heading_font)
+
+    def get_heading_weight(self) -> int:
+        """Section headings' weight, by the same rule."""
+        return _weight(self.bold_headings, self.get_section_font())
 
     def get_rule_css(self) -> str:
         """The header's line as a CSS border."""
@@ -96,9 +125,10 @@ class TemplateSpec:
         return f"{widths[self.rule]} solid {self.rule_color}"
 
     def get_derived_pt(self) -> tuple[float, float, float]:
-        """An entry's title, the contact line and small print, from the body
-        size: the same steps the built-in looks always had."""
-        return (self.body_pt + 1.0, self.body_pt - 0.5, self.body_pt - 1.0)
+        """An entry's title, then the contact line and small print, which are
+        text and follow the text size: the same steps the built-in looks
+        always had."""
+        return (self.get_title_pt(), self.body_pt - 0.5, self.body_pt - 1.0)
 
     def get_band_color(self) -> str:
         """The header band's tint: the accent, one part in eight, on white."""
@@ -124,6 +154,10 @@ class TemplateSpec:
             "sidebar_kinds": [str(k) for k in self.sidebar_kinds],
             "heading_case": str(self.heading_case),
             "bullet": str(self.bullet),
+            "section_font": self.section_font,
+            "bold_titles": self.bold_titles,
+            "bold_headings": self.bold_headings,
+            "title_pt": self.title_pt,
         }
 
     @classmethod
@@ -146,6 +180,13 @@ class TemplateSpec:
                 sidebar_kinds=tuple(SectionKind(k) for k in data.get("sidebar_kinds", [])),
                 heading_case=HeadingCase(data["heading_case"]),
                 bullet=BulletStyle(data["bullet"]),
+                # Specs stored before these could be chosen read as they printed.
+                section_font=(
+                    None if data.get("section_font") is None else str(data["section_font"])
+                ),
+                bold_titles=bool(data.get("bold_titles", False)),
+                bold_headings=bool(data.get("bold_headings", True)),
+                title_pt=None if data.get("title_pt") is None else float(data["title_pt"]),
             )
         except (KeyError, ValueError, TypeError) as exc:
             raise TemplateSpecError(f"a template value could not be read: {exc}") from exc
@@ -165,28 +206,79 @@ def get_contrast(foreground: str, background: str = "#ffffff") -> float:
     return (light + 0.05) / (dark + 0.05)
 
 
-def assert_fonts_valid(heading_font: str | None, body_font: str | None) -> None:
-    """A résumé's own fonts (ADR 0047): each None, keeping its template's, or
-    one the résumé can set."""
-    for name, font in (("heading font", heading_font), ("body font", body_font)):
+def _weight(is_bold: bool, font: str) -> int:
+    return BOLD_WEIGHT if is_bold and font not in FONTS_WITHOUT_BOLD else REGULAR_WEIGHT
+
+
+@dataclass(frozen=True, slots=True)
+class OwnLook:
+    """What a résumé sets over its template's look (ADR 0047, ADR 0075):
+    each None keeps the template's."""
+
+    heading_font: str | None = None
+    section_font: str | None = None
+    body_font: str | None = None
+    bold_titles: bool | None = None
+    bold_headings: bool | None = None
+    body_pt: float | None = None
+    # The name's, an entry title's and the section headings' sizes (ADR 0078).
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
+
+
+def assert_own_look_valid(look: OwnLook) -> None:
+    """Each font one the résumé can set, each size in its range."""
+    for name, font in (
+        ("title font", look.heading_font),
+        ("heading font", look.section_font),
+        ("text font", look.body_font),
+    ):
         if font is not None and font not in TEMPLATE_FONTS:
             raise TemplateSpecError(f"the {name} {font!r} is not one the résumé can set")
+    for name, size, (low, high) in (
+        ("text size", look.body_pt, BODY_PT_RANGE),
+        ("name size", look.name_pt, NAME_PT_RANGE),
+        ("title size", look.title_pt, TITLE_PT_RANGE),
+        ("heading size", look.heading_pt, HEADING_PT_RANGE),
+    ):
+        if size is not None and not low <= size <= high:
+            raise TemplateSpecError(f"the {name} {size}pt is outside {low} to {high}pt")
 
 
-def get_spec_with_fonts(
-    spec: TemplateSpec, heading_font: str | None, body_font: str | None
-) -> TemplateSpec:
-    """``spec`` in a résumé's own fonts, where it set any (ADR 0047). Pure."""
+def get_spec_with_look(spec: TemplateSpec, look: OwnLook) -> TemplateSpec:
+    """``spec`` with what a résumé set over it, where it set anything. Pure.
+
+    The text's font and size reach only the text (ADR 0078): headings left
+    unset keep the template's own heading font — its body font when it names
+    none — and entry titles the template's own title size, both worked out
+    before the résumé's text settings are laid on.
+    """
     return replace(
         spec,
-        heading_font=heading_font or spec.heading_font,
-        body_font=body_font or spec.body_font,
+        heading_font=look.heading_font or spec.heading_font,
+        # Pinned to the template's only when the text's would otherwise reach.
+        section_font=look.section_font
+        or (spec.get_section_font() if look.body_font else spec.section_font),
+        body_font=look.body_font or spec.body_font,
+        bold_titles=spec.bold_titles if look.bold_titles is None else look.bold_titles,
+        bold_headings=spec.bold_headings if look.bold_headings is None else look.bold_headings,
+        body_pt=spec.body_pt if look.body_pt is None else look.body_pt,
+        name_pt=spec.name_pt if look.name_pt is None else look.name_pt,
+        title_pt=look.title_pt
+        if look.title_pt is not None
+        else (spec.get_title_pt() if look.body_pt is not None else spec.title_pt),
+        heading_pt=spec.heading_pt if look.heading_pt is None else look.heading_pt,
     )
 
 
 def assert_spec_valid(spec: TemplateSpec) -> None:
     """Every value in its set or range; the name and the text readable."""
-    for name, font in (("heading font", spec.heading_font), ("body font", spec.body_font)):
+    for name, font in (
+        ("heading font", spec.heading_font),
+        ("body font", spec.body_font),
+        ("section font", spec.get_section_font()),
+    ):
         if font not in TEMPLATE_FONTS:
             raise TemplateSpecError(f"the {name} {font!r} is not one the résumé can set")
     for name, color in (
@@ -207,6 +299,7 @@ def assert_spec_valid(spec: TemplateSpec) -> None:
         ("name size", spec.name_pt, NAME_PT_RANGE),
         ("heading size", spec.heading_pt, HEADING_PT_RANGE),
         ("body size", spec.body_pt, BODY_PT_RANGE),
+        ("title size", spec.get_title_pt(), TITLE_PT_RANGE),
     ):
         if not low <= value <= high:
             raise TemplateSpecError(f"the {name} {value}pt is outside {low} to {high}pt")

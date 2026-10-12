@@ -76,6 +76,16 @@ BODY_FONT = "Figtree"
 
 FALLBACK_FONT = "DejaVu Sans"
 
+# The template fonts with no bold cut, in the worker image or the SPA: a
+# title or heading set in one stays regular rather than have the PDF and the
+# browser each fake a bold of their own.
+FONTS_WITHOUT_BOLD = ("Caprasimo",)
+
+# The weights titles and headings are set in, bold or not. A family with no
+# 700 takes its nearest heavier cut (Figtree's 800).
+REGULAR_WEIGHT = 400
+BOLD_WEIGHT = 700
+
 # --- template_spec -----------------------------------------------------------
 
 # Every font a template may name: bundled in the worker image and hosted by
@@ -99,6 +109,10 @@ NAME_PT_RANGE = (16.0, 30.0)
 HEADING_PT_RANGE = (7.0, 11.0)
 
 BODY_PT_RANGE = (8.5, 11.5)
+
+# An entry's title, set on its own (ADR 0078); a template that sets none
+# takes its text size plus a point.
+TITLE_PT_RANGE = (9.0, 14.0)
 
 # The name and the text against the white page, WCAG AA for normal text.
 MIN_CONTRAST = 4.5

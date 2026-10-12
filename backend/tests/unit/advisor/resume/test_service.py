@@ -14,7 +14,7 @@ import pytest
 
 from advisor.profile import CitationHandles, EvidenceSource, EvidenceView
 from advisor.profile.domain import EvidenceGranularity
-from advisor.resume import Options, ResumeService, Template
+from advisor.resume import Options, OwnLook, ResumeService, Template
 from advisor.resume import service as resume_service
 from advisor.resume.domain import (
     Bullet,
@@ -29,6 +29,7 @@ from advisor.resume.domain import (
 )
 from advisor.target import OutdatedReason, TargetRef, TargetSnapshot
 from advisor.target.domain import Requirement, RequirementBasis
+from kernel.ai_gateway import load as load_template
 from kernel.errors import ConflictError, NotFoundError, ValidationError
 from tests.unit.advisor.resume.builders import get_lines, make_content
 from tests.unit.advisor.resume.fakes import (
@@ -203,11 +204,11 @@ async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
         resume_id,
         template=Template.ORGANIC,
         options=Options(),
-        heading_font="DejaVu Serif",
+        look=OwnLook(heading_font="DejaVu Serif"),
     )
 
     view = await service.get(OWNER, resume_id)
-    assert (view.heading_font, view.body_font) == ("DejaVu Serif", None)
+    assert (view.own_look.heading_font, view.own_look.body_font) == ("DejaVu Serif", None)
     after = await service.request_export(OWNER, resume_id, number=1)
     assert after.id != before.id
     stored = uow.store.exports[after.id].spec
@@ -215,7 +216,7 @@ async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
     assert (stored["heading_font"], stored["body_font"]) == ("DejaVu Serif", "Figtree")
     # Left out, they go back to the template's.
     await service.update_settings(OWNER, resume_id, template=Template.ORGANIC, options=Options())
-    assert (await service.get(OWNER, resume_id)).heading_font is None
+    assert (await service.get(OWNER, resume_id)).own_look == OwnLook()
 
 
 async def test_a_font_the_resume_cannot_set_is_refused() -> None:
@@ -225,9 +226,86 @@ async def test_a_font_the_resume_cannot_set_is_refused() -> None:
 
     with pytest.raises(ValidationError, match="Comic Sans"):
         await service.update_settings(
-            OWNER, resume_id, template=Template.ORGANIC, options=Options(), body_font="Comic Sans"
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(body_font="Comic Sans"),
         )
     assert uow.store.resumes[resume_id].body_font is None
+
+
+async def test_a_resume_sets_its_headings_font_weights_and_text_size_and_exports_them() -> None:
+    """ADR 0075: kept on the résumé, laid over its template's, and part of
+    the spec an export renders, so a change renders afresh."""
+    uow = FakeResumeUnitOfWork()
+    store = FakeObjectStore()
+    service = _service(uow, store)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    before = await service.request_export(OWNER, resume_id, number=1)
+    await service.export(OWNER, before.id)
+
+    look = OwnLook(section_font="Inter", bold_titles=True, bold_headings=False, body_pt=11.0)
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    )
+
+    assert (await service.get(OWNER, resume_id)).own_look == look
+    after = await service.request_export(OWNER, resume_id, number=1)
+    assert after.id != before.id
+    stored = uow.store.exports[after.id].spec
+    assert stored is not None
+    assert (
+        stored["section_font"],
+        stored["bold_titles"],
+        stored["bold_headings"],
+        stored["body_pt"],
+    ) == ("Inter", True, False, 11.0)
+
+
+async def test_a_resumes_own_sizes_are_kept_and_exported() -> None:
+    """ADR 0078."""
+    uow = FakeResumeUnitOfWork()
+    store = FakeObjectStore()
+    service = _service(uow, store)
+    resume_id = await _resume(service)
+    await service.save_version(OWNER, resume_id, content=_content())
+    look = OwnLook(name_pt=26.0, title_pt=12.5, heading_pt=10.0)
+
+    await service.update_settings(
+        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    )
+
+    assert (await service.get(OWNER, resume_id)).own_look == look
+    export = await service.request_export(OWNER, resume_id, number=1)
+    stored = uow.store.exports[export.id].spec
+    assert stored is not None
+    assert (stored["name_pt"], stored["title_pt"], stored["heading_pt"]) == (26.0, 12.5, 10.0)
+    with pytest.raises(ValidationError, match="title size"):
+        await service.update_settings(
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(title_pt=30.0),
+        )
+
+
+async def test_a_text_size_outside_the_range_is_refused() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+
+    with pytest.raises(ValidationError, match="text size"):
+        await service.update_settings(
+            OWNER,
+            resume_id,
+            template=Template.ORGANIC,
+            options=Options(),
+            look=OwnLook(body_pt=20.0),
+        )
+    assert uow.store.resumes[resume_id].body_pt is None
 
 
 async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
@@ -400,8 +478,26 @@ def test_the_writing_prompts_read_each_fact_with_its_date() -> None:
     assert inputs["sections"] == "- experience\n- custom: Awards"
     assert inputs["evidence"] == "[E1] (jira, latest 2026-08-14) Jira · PAY: 40 issues done in PAY"
     assert inputs["accounts"] == "- github: mayalin"
-    assert resume_service._WRITE == ("resume_write", "v5")
-    assert resume_service._REVISE == ("resume_revise", "v5")
+    assert inputs["options"].startswith("- Quantify: ")
+    assert resume_service._WRITE == ("resume_write", "v6")
+    assert resume_service._REVISE == ("resume_revise", "v6")
+    assert resume_service._SECTION == ("resume_section", "v2")
+
+
+def test_every_resume_prompt_is_told_whether_to_quantify() -> None:
+    """ADR 0076: the write, the chat and a filled section all read it."""
+    on = resume_service._options_block(Options())
+    off = resume_service._options_block(Options(metrics=False, reorder=False))
+    assert "Quantify:" in on and "GitHub or Jira tally" in on
+    assert off == "- Do not quantify: keep a number only where a cited fact words it so itself."
+    for name, version in (
+        resume_service._WRITE,
+        resume_service._REVISE,
+        resume_service._SECTION,
+    ):
+        template = load_template(name, version)
+        assert "{{options}}" in template.user
+        assert "Every number in a line you write must appear in a fact" in template.system
 
 
 # --- sections you choose (ADR 0039) -------------------------------------------
