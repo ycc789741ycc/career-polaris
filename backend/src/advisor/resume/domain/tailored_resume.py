@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -248,6 +248,26 @@ class TailoredResume:
         self.heading_pt = look.heading_pt
         self.updated_at = at
 
+    def get_version_look(self) -> VersionLook:
+        """The look a version saved now would keep: the latest saved one."""
+        return VersionLook(
+            template=self.template,
+            custom_template_id=self.custom_template_id,
+            own_look=self.own_look,
+            trim=self.options.trim,
+        )
+
+    def update_saved_look(self, look: VersionLook, *, at: datetime) -> None:
+        """A version saved in ``look``: the résumé takes it as its own, so it
+        is always the latest version's (ADR 0079)."""
+        self.restyle(
+            template=look.template,
+            custom_template_id=look.custom_template_id,
+            options=replace(self.options, trim=look.trim),
+            at=at,
+        )
+        self.update_look(look.own_look, at=at)
+
     def touched(self, at: datetime) -> None:
         """A new version counts as a change to the résumé."""
         self.updated_at = at
@@ -257,6 +277,42 @@ class TailoredResume:
         self.error_code = code
         self.error_message = message
         self.updated_at = at
+
+
+@dataclass(frozen=True, slots=True)
+class VersionLook:
+    """What a version is printed in (ADR 0079): its template, built in or
+    the user's own (exactly one), its own look over it, and whether it is
+    trimmed to one page."""
+
+    template: Template | None
+    custom_template_id: uuid.UUID | None = None
+    own_look: OwnLook = field(default_factory=OwnLook)
+    trim: bool = False
+
+    def __post_init__(self) -> None:
+        if (self.template is None) == (self.custom_template_id is None):
+            raise ValueError("a version has one template: built in, or of your own")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "template": self.template.value if self.template else None,
+            "custom_template_id": (
+                str(self.custom_template_id) if self.custom_template_id else None
+            ),
+            **asdict(self.own_look),
+            "trim": self.trim,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> VersionLook:
+        own = data.get("custom_template_id")
+        return cls(
+            template=Template(data["template"]) if data.get("template") else None,
+            custom_template_id=uuid.UUID(own) if own else None,
+            own_look=OwnLook(**{k: data.get(k) for k in OwnLook.__dataclass_fields__}),
+            trim=bool(data.get("trim", False)),
+        )
 
 
 @dataclass(slots=True)
@@ -271,3 +327,5 @@ class ResumeVersion:
     created_at: datetime
     model_id: str | None = None
     template_version: str | None = None
+    # What it is printed in (ADR 0079); every version keeps one.
+    look: VersionLook = field(default_factory=lambda: VersionLook(template=Template.ORGANIC))

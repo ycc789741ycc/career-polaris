@@ -14,7 +14,7 @@ import pytest
 
 from advisor.profile import CitationHandles, EvidenceSource, EvidenceView
 from advisor.profile.domain import EvidenceGranularity
-from advisor.resume import Options, OwnLook, ResumeService, Template
+from advisor.resume import Options, OwnLook, ResumeService, Template, VersionLookView
 from advisor.resume import service as resume_service
 from advisor.resume.domain import (
     Bullet,
@@ -26,6 +26,7 @@ from advisor.resume.domain import (
     TemplateSpec,
     VersionSource,
     get_built_in_spec,
+    get_spec_with_look,
 )
 from advisor.target import OutdatedReason, TargetRef, TargetSnapshot
 from advisor.target.domain import Requirement, RequirementBasis
@@ -175,22 +176,24 @@ async def test_an_unchanged_export_is_reused_and_a_changed_one_rendered_again() 
     again = await service.request_export(OWNER, resume_id, number=1)
     assert (again.id, again.status) == (first.id, "ready")
 
-    await service.update_settings(
-        OWNER, resume_id, template=Template.ORGANIC, options=Options(trim=True)
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("organic", trim=True)
     )
-    trimmed = await service.request_export(OWNER, resume_id, number=1)
-    await service.update_settings(
-        OWNER, resume_id, template=Template.PLAIN, options=Options(trim=True)
+    trimmed = await service.request_export(OWNER, resume_id, number=2)
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("plain", trim=True)
     )
-    plain = await service.request_export(OWNER, resume_id, number=1)
+    plain = await service.request_export(OWNER, resume_id, number=3)
 
     assert len({first.id, trimmed.id, plain.id}) == 3
     assert trimmed.status == plain.status == "rendering"
+    # v1 kept its own look, so its export is still the one rendered.
+    assert (await service.request_export(OWNER, resume_id, number=1)).id == first.id
 
 
 async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
-    """Fonts of its own over its template's (ADR 0047): the view says so, and
-    an export renders and stores them, so it is not mistaken for the last."""
+    """Fonts of its own over its template's (ADR 0047), saved with a version
+    (ADR 0079): the view says so, and its export renders and stores them."""
     uow = FakeResumeUnitOfWork()
     store = FakeObjectStore()
     service = _service(uow, store)
@@ -199,23 +202,25 @@ async def test_a_resume_set_in_its_own_fonts_exports_in_them() -> None:
     before = await service.request_export(OWNER, resume_id, number=1)
     await service.export(OWNER, before.id)
 
-    await service.update_settings(
+    await service.save_version(
         OWNER,
         resume_id,
-        template=Template.ORGANIC,
-        options=Options(),
-        look=OwnLook(heading_font="DejaVu Serif"),
+        content=_content(),
+        look=VersionLookView("organic", OwnLook(heading_font="DejaVu Serif")),
     )
 
     view = await service.get(OWNER, resume_id)
     assert (view.own_look.heading_font, view.own_look.body_font) == ("DejaVu Serif", None)
-    after = await service.request_export(OWNER, resume_id, number=1)
+    assert view.version is not None and view.version.look.own_look.heading_font == "DejaVu Serif"
+    after = await service.request_export(OWNER, resume_id, number=2)
     assert after.id != before.id
     stored = uow.store.exports[after.id].spec
     assert stored is not None
     assert (stored["heading_font"], stored["body_font"]) == ("DejaVu Serif", "Figtree")
-    # Left out, they go back to the template's.
-    await service.update_settings(OWNER, resume_id, template=Template.ORGANIC, options=Options())
+    # Saved without them, they go back to the template's.
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("organic")
+    )
     assert (await service.get(OWNER, resume_id)).own_look == OwnLook()
 
 
@@ -236,25 +241,22 @@ async def test_a_font_the_resume_cannot_set_is_refused() -> None:
 
 
 async def test_a_resume_sets_its_headings_font_weights_and_text_size_and_exports_them() -> None:
-    """ADR 0075: kept on the résumé, laid over its template's, and part of
-    the spec an export renders, so a change renders afresh."""
+    """ADR 0075: laid over its template's, saved with the version (ADR
+    0079), and part of the spec its export renders."""
     uow = FakeResumeUnitOfWork()
     store = FakeObjectStore()
     service = _service(uow, store)
     resume_id = await _resume(service)
     await service.save_version(OWNER, resume_id, content=_content())
-    before = await service.request_export(OWNER, resume_id, number=1)
-    await service.export(OWNER, before.id)
 
     look = OwnLook(section_font="Inter", bold_titles=True, bold_headings=False, body_pt=11.0)
-    await service.update_settings(
-        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("organic", look)
     )
 
     assert (await service.get(OWNER, resume_id)).own_look == look
-    after = await service.request_export(OWNER, resume_id, number=1)
-    assert after.id != before.id
-    stored = uow.store.exports[after.id].spec
+    export = await service.request_export(OWNER, resume_id, number=2)
+    stored = uow.store.exports[export.id].spec
     assert stored is not None
     assert (
         stored["section_font"],
@@ -270,11 +272,10 @@ async def test_a_resumes_own_sizes_are_kept_and_exported() -> None:
     store = FakeObjectStore()
     service = _service(uow, store)
     resume_id = await _resume(service)
-    await service.save_version(OWNER, resume_id, content=_content())
     look = OwnLook(name_pt=26.0, title_pt=12.5, heading_pt=10.0)
 
-    await service.update_settings(
-        OWNER, resume_id, template=Template.ORGANIC, options=Options(), look=look
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("organic", look)
     )
 
     assert (await service.get(OWNER, resume_id)).own_look == look
@@ -283,13 +284,15 @@ async def test_a_resumes_own_sizes_are_kept_and_exported() -> None:
     assert stored is not None
     assert (stored["name_pt"], stored["title_pt"], stored["heading_pt"]) == (26.0, 12.5, 10.0)
     with pytest.raises(ValidationError, match="title size"):
-        await service.update_settings(
+        await service.save_version(
             OWNER,
             resume_id,
-            template=Template.ORGANIC,
-            options=Options(),
-            look=OwnLook(title_pt=30.0),
+            content=_content(),
+            look=VersionLookView("organic", OwnLook(title_pt=30.0)),
         )
+    # Refused whole: no version, and the résumé keeps its look.
+    assert (await service.get(OWNER, resume_id)).summary.latest_version == 1
+    assert uow.store.resumes[resume_id].title_pt == 12.5
 
 
 async def test_a_text_size_outside_the_range_is_refused() -> None:
@@ -308,21 +311,24 @@ async def test_a_text_size_outside_the_range_is_refused() -> None:
     assert uow.store.resumes[resume_id].body_pt is None
 
 
-async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
+async def test_an_export_renders_the_look_its_version_was_saved_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """ADR 0079: whatever the résumé is set in now, an older version prints
+    in its own look and trim."""
     uow = FakeResumeUnitOfWork()
     service = _service(uow)
     resume_id = await _resume(service)
-    await service.save_version(OWNER, resume_id, content=_content())
-    await service.update_settings(
-        OWNER, resume_id, template=Template.ORGANIC, options=Options(trim=True)
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView("organic", trim=True)
+    )
+    await service.save_version(
+        OWNER,
+        resume_id,
+        content=_content(),
+        look=VersionLookView("plain", OwnLook(body_font="Inter"), trim=False),
     )
     requested = await service.request_export(OWNER, resume_id, number=1)
-    # Changed between the click and the render: the click's settings win.
-    await service.update_settings(
-        OWNER, resume_id, template=Template.PLAIN, options=Options(trim=False)
-    )
     rendered: list[tuple[TemplateSpec, Options]] = []
 
     def render_html(content: Any, *, spec: TemplateSpec, options: Options) -> str:
@@ -334,6 +340,63 @@ async def test_an_export_renders_the_trim_asked_for_when_it_was_clicked(
 
     [(spec, options)] = rendered
     assert spec == get_built_in_spec(Template.ORGANIC) and options.trim is True
+    assert uow.store.resumes[resume_id].template is Template.PLAIN
+
+
+async def test_a_save_without_a_look_keeps_the_latest_versions() -> None:
+    """ADR 0079: so does every version a job writes, through the same path."""
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    look = VersionLookView("plain", OwnLook(body_pt=10.5), trim=True)
+    await service.save_version(OWNER, resume_id, content=_content(), look=look)
+
+    await service.save_version(OWNER, resume_id, content=_content("Another line"))
+
+    view = await service.get(OWNER, resume_id)
+    assert [v.look for v in view.versions] == [look, look]
+
+
+async def test_a_version_in_a_template_not_theirs_is_refused() -> None:
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+
+    with pytest.raises(NotFoundError):
+        await service.save_version(
+            OWNER, resume_id, content=_content(), look=VersionLookView(str(uuid.uuid4()))
+        )
+    with pytest.raises(ValidationError):
+        await service.save_version(
+            OWNER, resume_id, content=_content(), look=VersionLookView("fancy")
+        )
+    assert (await service.get(OWNER, resume_id)).versions == ()
+
+
+async def test_a_version_set_in_a_deleted_template_prints_as_organic_in_its_own_look() -> None:
+    """ADR 0079: the version names the template, so deleting it leaves the
+    version to read and print as Organic, its own fonts and sizes kept."""
+    uow = FakeResumeUnitOfWork()
+    service = _service(uow)
+    resume_id = await _resume(service)
+    mine = await service.create_template(
+        OWNER, name="Mine", spec={**TemplateSpec().to_dict(), "layout": "header_band"}
+    )
+    own = OwnLook(body_font="Lato", name_pt=24.0)
+    await service.save_version(
+        OWNER, resume_id, content=_content(), look=VersionLookView(str(mine.id), own)
+    )
+    await service.save_version(OWNER, resume_id, content=_content(), look=VersionLookView("plain"))
+
+    await service.delete_template(OWNER, uuid.UUID(mine.id))
+
+    view = await service.get(OWNER, resume_id, number=1)
+    assert view.version is not None
+    assert view.version.look == VersionLookView("organic", own)
+    export = await service.request_export(OWNER, resume_id, number=1)
+    printed = get_spec_with_look(get_built_in_spec(Template.ORGANIC), own).to_dict()
+    assert uow.store.exports[export.id].spec == printed
+    assert uow.store.exports[export.id].template is Template.ORGANIC
 
 
 async def test_a_ready_export_downloads_under_the_persons_name_and_the_role() -> None:

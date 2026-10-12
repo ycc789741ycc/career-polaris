@@ -84,6 +84,21 @@ const summary: ResumeSummary = {
   updated_at: "2026-09-20T10:00:00Z",
 };
 
+// The look a version was saved in (ADR 0079): Organic, as the template has it.
+const organicLook = {
+  template: "organic",
+  heading_font: null,
+  body_font: null,
+  section_font: null,
+  bold_titles: null,
+  bold_headings: null,
+  body_pt: null,
+  name_pt: null,
+  title_pt: null,
+  heading_pt: null,
+  trim: false,
+};
+
 const version = {
   id: "v1",
   number: 1,
@@ -91,7 +106,23 @@ const version = {
   source: "generated" as const,
   model_id: "claude-opus-5",
   created_at: "2026-09-20T10:00:00Z",
+  look: organicLook,
 };
+
+/** The résumé, and its saves answered as v2. */
+function savesAsV2(call: Call): unknown {
+  if (call.url === "/tailored-resumes/res-1/versions")
+    return { ...version, id: "v2", number: 2, source: "manual" };
+  return defaults(call);
+}
+
+/** The look the last save sent. */
+function savedLook(calls: Call[]): unknown {
+  const body = calls
+    .filter((c) => c.url === "/tailored-resumes/res-1/versions")
+    .at(-1)?.body as { look?: unknown } | undefined;
+  return body?.look;
+}
 
 const resume: TailoredResume = {
   ...summary,
@@ -499,7 +530,12 @@ describe("résumé screen", () => {
 
   it("opens an older version as the draft, and saves it as the next one", async () => {
     const v2 = { ...version, id: "v2", number: 2, source: "manual" as const };
-    const withTwo = { ...resume, version: v2, versions: [v2, version] };
+    // v1 was saved in a look of its own (ADR 0079).
+    const inSerif = {
+      ...version,
+      look: { ...organicLook, heading_font: "DejaVu Serif", body_pt: 11 },
+    };
+    const withTwo = { ...resume, version: v2, versions: [v2, inSerif] };
     const older = experience(resume.content!);
     const oldContent: ResumeContent = {
       ...resume.content!,
@@ -525,7 +561,7 @@ describe("résumé screen", () => {
     const calls = serve((call) => {
       if (call.url === "/tailored-resumes/res-1") return withTwo;
       if (call.url === "/tailored-resumes/res-1?version=1")
-        return { ...withTwo, version, content: oldContent };
+        return { ...withTwo, version: inSerif, content: oldContent };
       if (call.url === "/tailored-resumes/res-1/versions")
         return { ...version, id: "v3", number: 3, source: "manual" };
       if (call.url === "/tailored-resumes/res-1/exports")
@@ -563,6 +599,11 @@ describe("résumé screen", () => {
       within(page1).getByText("Built the first ledger"),
     ).toBeInTheDocument();
     expect(page).not.toBe(page1);
+    // In the look it was saved in, on the page and in the Layout card.
+    expect(
+      screen.getByRole("combobox", { name: "Name & titles in" }),
+    ).toHaveValue("DejaVu Serif");
+    expect(page1.getAttribute("style")).toContain("DejaVu Serif");
     // Unedited, it exports as v1; saving it makes v3.
     await user.click(screen.getByRole("button", { name: "Export as PDF" }));
     expect(
@@ -574,7 +615,7 @@ describe("résumé screen", () => {
 
     expect(
       calls.find((c) => c.url === "/tailored-resumes/res-1/versions")?.body,
-    ).toEqual({ content: oldContent, based_on: 1 });
+    ).toEqual({ content: oldContent, look: inSerif.look, based_on: 1 });
   });
 
   it("goes back to the latest version from an older one", async () => {
@@ -653,7 +694,7 @@ describe("résumé screen", () => {
   });
 
   it("sets the résumé in fonts of its own and previews them", async () => {
-    const calls = serve(defaults);
+    const calls = serve(savesAsV2);
     const user = userEvent.setup();
     renderResume();
     await screen.findByRole("article", { name: "Résumé" });
@@ -664,22 +705,78 @@ describe("résumé screen", () => {
     expect(titles).toHaveValue("");
     await user.selectOptions(titles, "DejaVu Serif");
 
-    expect(calls).toContainEqual(
-      expect.objectContaining({
-        method: "PUT",
-        url: "/tailored-resumes/res-1/settings",
-        body: expect.objectContaining({
-          heading_font: "DejaVu Serif",
-          body_font: null,
-        }),
-      }),
-    );
+    // Previewed at once, but kept only with the version (ADR 0079): nothing
+    // is sent until it is saved, and the PDF waits for the save.
     const page = screen.getByRole("article", { name: "Résumé" });
     expect(page.getAttribute("style")).toContain("DejaVu Serif");
+    expect(calls.some((c) => c.url.endsWith("/settings"))).toBe(false);
+    expect(
+      screen.getByRole("button", { name: "Export as PDF" }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Save as v2" }));
+
+    expect(savedLook(calls)).toEqual({
+      ...organicLook,
+      heading_font: "DejaVu Serif",
+    });
+  });
+
+  it("takes a look change back with Undo, like any edit", async () => {
+    serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Trim to one page" }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text size" }),
+      "11",
+    );
+    const save = screen.getByRole("button", { name: "Save as v2" });
+    expect(save).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /^Undo/ }));
+    expect(screen.getByRole("combobox", { name: "Text size" })).toHaveValue("");
+    expect(
+      screen.getByRole("checkbox", { name: "Trim to one page" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("button", { name: /^Undo/ }));
+    expect(
+      screen.getByRole("checkbox", { name: "Trim to one page" }),
+    ).toHaveAttribute("aria-checked", "false");
+    expect(save).toBeDisabled();
+  });
+
+  it("keeps Quantify and Reorder at once, beside the saved look", async () => {
+    const calls = serve(defaults);
+    const user = userEvent.setup();
+    renderResume();
+    await screen.findByRole("article", { name: "Résumé" });
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Text in" }),
+      "DejaVu Serif",
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Quantify bullets with data from Jira and GitHub",
+      }),
+    );
+
+    // The unsaved font stays out of it.
+    expect(
+      calls.filter((c) => c.url.endsWith("/settings")).at(-1)?.body,
+    ).toMatchObject({
+      template: "organic",
+      options: { metrics: false, reorder: true, trim: false },
+      body_font: null,
+    });
   });
 
   it("sets headings in a font of their own, titles in bold, and the text size", async () => {
-    const calls = serve(defaults);
+    const calls = serve(savesAsV2);
     const user = userEvent.setup();
     renderResume();
     await screen.findByRole("article", { name: "Résumé" });
@@ -705,16 +802,6 @@ describe("résumé screen", () => {
       "11",
     );
 
-    const puts = calls.filter(
-      (c) => c.url === "/tailored-resumes/res-1/settings",
-    );
-    expect(puts.at(-1)?.body).toMatchObject({
-      heading_font: "DejaVu Serif",
-      bold_titles: true,
-      section_font: "DejaVu Sans Mono",
-      bold_headings: false,
-      body_pt: 11,
-    });
     const style = screen
       .getByRole("article", { name: "Résumé" })
       .getAttribute("style")!;
@@ -724,6 +811,14 @@ describe("résumé screen", () => {
     expect(style).toContain("--body-pt: 11");
     // The text size reaches the text alone (ADR 0078).
     expect(style).toContain("--title-pt: 11;");
+    await user.click(screen.getByRole("button", { name: "Save as v2" }));
+    expect(savedLook(calls)).toMatchObject({
+      heading_font: "DejaVu Serif",
+      bold_titles: true,
+      section_font: "DejaVu Sans Mono",
+      bold_headings: false,
+      body_pt: 11,
+    });
   });
 
   it("flags a written line whose number its facts do not state, and only that one", async () => {
@@ -814,20 +909,18 @@ describe("résumé screen", () => {
       screen.getByRole("combobox", { name: "Heading size" }),
       "10",
     );
-    const puts = calls.filter(
-      (c) => c.url === "/tailored-resumes/res-1/settings",
-    );
-    expect(puts.at(-1)?.body).toMatchObject({
+    const style = page.getAttribute("style")!;
+    expect(style).toContain("--name-pt: 26");
+    expect(style).toContain("--title-pt: 12.5");
+    expect(style).toContain("--heading-pt: 10");
+    await user.click(screen.getByRole("button", { name: "Save as v2" }));
+    expect(savedLook(calls)).toMatchObject({
       body_font: "DejaVu Serif",
       body_pt: 11.5,
       name_pt: 26,
       title_pt: 12.5,
       heading_pt: 10,
     });
-    const style = page.getAttribute("style")!;
-    expect(style).toContain("--name-pt: 26");
-    expect(style).toContain("--title-pt: 12.5");
-    expect(style).toContain("--heading-pt: 10");
   });
 
   it("writes a failed résumé again once priced", async () => {
@@ -1477,9 +1570,12 @@ describe("the page as it prints (ADR 0038)", () => {
   });
 
   it("drops from the page what Trim to one page drops from the PDF", async () => {
+    const trimmed = { ...version, look: { ...organicLook, trim: true } };
     const long = {
       ...resume,
       options: { ...resume.options, trim: true },
+      version: trimmed,
+      versions: [trimmed],
       content: {
         ...resume.content!,
         sections: resume.content!.sections.map((s) =>
@@ -1643,12 +1739,11 @@ describe("templates of your own (ADR 0040)", () => {
 
     await user.click(screen.getByRole("button", { name: "Save template" }));
 
-    await vi.waitFor(() =>
-      expect(
-        calls.find((c) => c.method === "PUT" && c.url.endsWith("/settings"))
-          ?.body,
-      ).toMatchObject({ template: "t-1" }),
+    // Set in the new template, kept with the next version (ADR 0079).
+    await user.click(
+      await screen.findByRole("button", { name: /^Save as v\d+$/ }),
     );
+    expect(savedLook(calls)).toMatchObject({ template: "t-1" });
     const created = calls.find(
       (c) => c.method === "POST" && c.url === "/resume-templates",
     )!.body as { name: string; spec: ResumeTemplateSpec };
@@ -1663,7 +1758,11 @@ describe("templates of your own (ADR 0040)", () => {
     const mine = { ...organic, id: "t-1", name: "Mine", is_built_in: false };
     const calls = serve((call) =>
       call.url === "/tailored-resumes/res-1"
-        ? { ...resume, template: "t-1" }
+        ? {
+            ...resume,
+            template: "t-1",
+            version: { ...version, look: { ...organicLook, template: "t-1" } },
+          }
         : defaults(call),
     );
     templates.items.push(mine);
@@ -1687,6 +1786,10 @@ describe("templates of your own (ADR 0040)", () => {
       );
       expect(calls.some((c) => c.method === "DELETE")).toBe(true);
       expect(screen.queryByRole("button", { name: /Mine/ })).toBeNull();
+      // The saved version prints as Organic now too: nothing left to save.
+      expect(
+        screen.getByRole("button", { name: /^Save as v\d+$/ }),
+      ).toBeDisabled();
     } finally {
       templates.items.pop();
     }

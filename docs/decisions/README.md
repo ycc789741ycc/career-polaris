@@ -43,7 +43,7 @@ new record that supersedes the old one.
 | [0035](0035-regenerate-the-plan-and-resume-only-when-asked.md) | Regenerate the gap plan and résumé only when the user asks, and say when they are outdated | Accepted, amended by 0077 |
 | [0036](0036-let-a-gap-plan-cite-the-answers-given-about-each-gap.md) | Let a gap plan cite the answers given about each gap, including an uncovered requirement | Accepted, amended by 0074 |
 | [0037](0037-read-each-fact-with-its-date.md) | Read each fact with its date, and let a newer fact win over an older one it contradicts | Accepted |
-| [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted |
+| [0038](0038-export-the-resume-as-previewed-and-download-it.md) | Make the PDF renderer the source of a résumé's look, and download the export directly | Accepted, amended by 0079 |
 | [0039](0039-let-the-user-choose-a-resumes-sections.md) | A résumé is an ordered list of sections the user chooses | Accepted |
 | [0040](0040-keep-resume-templates-as-checked-specs.md) | A résumé template is a checked spec, and a user can keep their own | Accepted |
 | [0041](0041-start-a-template-from-a-pdf-read-for-its-style-only.md) | A template can start from a PDF, read locally for its style only | Accepted |
@@ -80,10 +80,11 @@ new record that supersedes the old one.
 | [0072](0072-cancel-an-analysis-or-a-role-map-build.md) | The user can cancel an analysis or a role-map build | Accepted |
 | [0073](0073-score-an-opening-target-with-ai-when-its-gap-analysis-runs.md) | Score an opening Target with AI when its gap analysis runs, started only from the Advisor | Accepted |
 | [0074](0074-drop-a-requirements-stray-citations-instead-of-rejecting-the-plan.md) | A requirement's stray citations are dropped, not the gap plan | Accepted |
-| [0075](0075-let-a-resume-set-its-headings-font-bold-titles-and-text-size.md) | A résumé may set its headings' font, bold titles and headings, and its text size | Accepted, amended by 0078 |
+| [0075](0075-let-a-resume-set-its-headings-font-bold-titles-and-text-size.md) | A résumé may set its headings' font, bold titles and headings, and its text size | Accepted, amended by 0078 and 0079 |
 | [0076](0076-quantify-resume-lines-only-from-numbers-their-facts-state.md) | Quantify a résumé's lines only from numbers their facts state, and flag the rest | Accepted |
 | [0077](0077-read-submitted-answers-into-the-targets-fit.md) | Read submitted answers into the Target's fit, in the Advisor only | Accepted |
-| [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted |
+| [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted, amended by 0079 |
+| [0079](0079-keep-each-resume-versions-own-look.md) | Keep the look a résumé version was saved in, and print it in that look | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

@@ -145,7 +145,12 @@ async def save_version(
     resume_id: uuid.UUID, body: VersionRequest, user: CurrentUser, deps: Deps
 ) -> ResumeVersion:
     version = await deps.resume.save_version(
-        user, resume_id, content=body.content, label=body.label, based_on=body.based_on
+        user,
+        resume_id,
+        content=body.content,
+        label=body.label,
+        based_on=body.based_on,
+        look=body.look.to_look() if body.look else None,
     )
     return ResumeVersion.from_view(version)
 

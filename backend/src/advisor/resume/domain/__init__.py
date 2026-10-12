@@ -75,6 +75,7 @@ from advisor.resume.domain.tailored_resume import (
     ResumeStatus,
     ResumeVersion,
     TailoredResume,
+    VersionLook,
 )
 from advisor.resume.domain.template_reading import (
     FontKind,
@@ -173,6 +174,7 @@ __all__ = [
     "TemplateSpec",
     "TemplateSpecError",
     "Verdict",
+    "VersionLook",
     "VersionSource",
     "assert_own_look_valid",
     "assert_plan_valid",

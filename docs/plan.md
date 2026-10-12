@@ -4215,3 +4215,7 @@ in `epic/no-ticket/resume-editing`. Migrations 0057 to 0059.
   0077). A submit reads the answers into the Target's fit in one priced call;
   the Advisor shows "Fit today 86% → 91%" and what moved each gap. The role
   map's fit waits for the next analysis.
+* **A version keeps its look** (`feature/no-ticket/resume-version-look`, ADR
+  0079, migration 0060). The template, fonts, sizes, Bold and trim are saved
+  with each version as part of the draft, so an older version opens and
+  exports in the look it was saved in.

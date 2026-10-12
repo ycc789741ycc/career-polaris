@@ -15,6 +15,7 @@ from advisor.resume import (
     CoverageView,
     ExportView,
     Options,
+    OwnLook,
     ResumeSummaryView,
     ResumeView,
     RevisionDone,
@@ -22,6 +23,7 @@ from advisor.resume import (
     RevisionText,
     RevisionView,
     Template,
+    VersionLookView,
     VersionView,
 )
 from advisor.resume.domain import Bullet
@@ -29,7 +31,13 @@ from advisor.resume.domain.content import VersionSource
 from advisor.resume.service import EvidenceNote
 from advisor.target import OutdatedReason, TargetRef
 from api.schemas.resume import ResumeContent as ContentBody
-from api.schemas.resume import ResumeExport, SettingsRequest, TailoredResume, revision_event
+from api.schemas.resume import (
+    ResumeExport,
+    SettingsRequest,
+    TailoredResume,
+    VersionRequest,
+    revision_event,
+)
 from tests.unit.advisor.resume.builders import make_content
 
 AT = datetime(2026, 9, 23, 12, 30, tzinfo=UTC)
@@ -47,6 +55,7 @@ def _view() -> ResumeView:
         source=VersionSource.CHAT,
         model_id="claude-opus-5",
         created_at=AT,
+        look=VersionLookView(template="plain", own_look=OwnLook(body_pt=10.5), trim=True),
     )
     return ResumeView(
         summary=ResumeSummaryView(
@@ -216,3 +225,40 @@ def test_settings_carry_the_resumes_own_sizes() -> None:
     }
     look = SettingsRequest.model_validate(body).to_look()
     assert (look.name_pt, look.title_pt, look.heading_pt, look.body_pt) == (26, 12.5, 10, None)
+
+
+def test_a_version_says_the_look_it_was_saved_in() -> None:
+    """ADR 0079: each version carries its template, own look and trim."""
+    body = TailoredResume.from_resume(_view()).model_dump(mode="json")
+    look = body["versions"][0]["look"]
+    assert (look["template"], look["body_pt"], look["heading_font"], look["trim"]) == (
+        "plain",
+        10.5,
+        None,
+        True,
+    )
+
+
+def test_a_save_may_carry_the_look_the_draft_is_in() -> None:
+    """ADR 0079: left out, the save keeps the latest version's look."""
+    assert VersionRequest.model_validate({"content": {}}).look is None
+    request = VersionRequest.model_validate(
+        {
+            "content": {},
+            "look": {"template": "organic", "heading_font": "Inter", "name_pt": 24, "trim": True},
+        }
+    )
+    assert request.look is not None
+    look = request.look.to_look()
+    assert (look.template, look.own_look.heading_font, look.own_look.name_pt, look.trim) == (
+        "organic",
+        "Inter",
+        24,
+        True,
+    )
+    with pytest.raises(ValidationError):
+        VersionRequest.model_validate(
+            {"content": {}, "look": {"template": "organic", "body_font": "Comic Sans"}}
+        )
+    with pytest.raises(ValidationError):
+        VersionRequest.model_validate({"content": {}, "look": {"template": "fancy"}})

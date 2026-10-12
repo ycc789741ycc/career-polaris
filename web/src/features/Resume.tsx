@@ -24,6 +24,7 @@ import type {
   ResumeTemplatePage,
   ResumeTemplateSpec,
   ResumeVersion,
+  ResumeVersionLook,
   TailoredResume,
   TargetRef,
 } from "../api/types";
@@ -132,9 +133,9 @@ export function Resume({
   );
   const [resume, setResume] = useState<TailoredResume | null>(null);
   const [draft, setDraft] = useState<ResumeContent | null>(null);
-  // The drafts before each unsaved edit, newest last, for Undo. Saving or
-  // opening another résumé starts it again.
-  const [undoStack, setUndoStack] = useState<ResumeContent[]>([]);
+  // The drafts before each unsaved edit, newest last, for Undo: its content
+  // and the look it was in. Saving or opening another résumé starts it again.
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [estimate, setEstimate] = useState<{
     ref: Ref;
     label: string;
@@ -211,10 +212,17 @@ export function Resume({
     };
   }, [resume?.id, resume?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The look the draft is in, and the one the version on the page was saved
+  // in (ADR 0079): a change to it is an unsaved edit, like one to the text.
+  const draftLook: DraftLook = { template, fonts, trim: options.trim };
+  const savedLook = opened?.look ?? resume?.version?.look ?? null;
+  const isLookChanged =
+    savedLook !== null && !isSameLook(draftLook, getDraftLook(savedLook));
   const dirty =
-    !!draft &&
-    !!resume?.content &&
-    JSON.stringify(draft) !== JSON.stringify(resume.content);
+    (!!draft &&
+      !!resume?.content &&
+      JSON.stringify(draft) !== JSON.stringify(resume.content)) ||
+    isLookChanged;
 
   // Read the open résumé, and keep re-reading it while it is being written.
   useEffect(() => {
@@ -292,14 +300,33 @@ export function Resume({
         : [...all, saved],
     );
     closeEditor();
-    void changeSettings(saved.id, options);
+    editLook({ ...draftLook, template: saved.id });
     flash(`Saved — ${saved.name}.`);
   }
 
   function templateDeleted(id: string) {
     setTemplates((all) => all.filter((t) => t.id !== id));
     closeEditor();
-    // The server moved every résumé set in it to Organic.
+    // The server moved every résumé set in it to Organic, and a version
+    // saved in it now prints as Organic (ADR 0079).
+    const toOrganic = (look: ResumeVersionLook): ResumeVersionLook =>
+      look.template === id ? { ...look, template: "organic" } : look;
+    setResume((now) =>
+      now?.version
+        ? {
+            ...now,
+            version: { ...now.version, look: toOrganic(now.version.look) },
+          }
+        : now,
+    );
+    setOpened((now) => now && { ...now, look: toOrganic(now.look) });
+    setUndoStack((stack) =>
+      stack.map((entry) =>
+        entry.look.template === id
+          ? { ...entry, look: { ...entry.look, template: "organic" } }
+          : entry,
+      ),
+    );
     if (template === id) setTemplate("organic");
     flash("Template deleted.");
   }
@@ -307,9 +334,29 @@ export function Resume({
   /** An edit to the draft, remembered so Undo can take it back. */
   function editDraft(next: ResumeContent) {
     if (draft && !isSameContent(draft, next)) {
-      setUndoStack((stack) => getStackWith(stack, draft));
+      setUndoStack((stack) =>
+        getStackWith(stack, { content: draft, look: draftLook }),
+      );
     }
     setDraft(next);
+  }
+
+  /** A change of template, font, size or trim: an edit to the draft too,
+   * kept when the version is saved (ADR 0079). */
+  function editLook(next: DraftLook) {
+    if (isSameLook(draftLook, next)) return;
+    if (draft) {
+      setUndoStack((stack) =>
+        getStackWith(stack, { content: draft, look: draftLook }),
+      );
+    }
+    setDraftLook(next);
+  }
+
+  function setDraftLook(next: DraftLook) {
+    setTemplate(next.template);
+    setFonts(next.fonts);
+    setOptions((now) => ({ ...now, trim: next.trim }));
   }
 
   /** Back to the draft before the last unsaved edit. */
@@ -317,7 +364,8 @@ export function Resume({
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
     setUndoStack((stack) => stack.slice(0, -1));
-    setDraft(previous);
+    setDraft(previous.content);
+    setDraftLook(previous.look);
   }
 
   // Cmd/Ctrl+Z undoes the last edit while no field is being typed in: a line
@@ -347,9 +395,17 @@ export function Resume({
     setDraft(next.content);
     setUndoStack([]);
     setOpened(null);
-    setTemplate(next.template);
-    setOptions(next.options);
-    setFonts(getOwnLook(next));
+    // The latest version's look, which the résumé mirrors (ADR 0079).
+    const saved = next.version
+      ? getDraftLook(next.version.look)
+      : {
+          template: next.template,
+          fonts: getOwnLook(next),
+          trim: next.options.trim,
+        };
+    setTemplate(saved.template);
+    setFonts(saved.fonts);
+    setOptions({ ...next.options, trim: saved.trim });
     setExchanges(
       next.revisions.map((r) => ({
         request: r.request,
@@ -484,7 +540,12 @@ export function Resume({
         `/tailored-resumes/${resume.id}/versions`,
         // Judged against the version it was opened from, so an old version's
         // untouched lines keep what they cite.
-        opened ? { content, based_on: opened.number } : { content },
+        // It keeps the look it is in now (ADR 0079).
+        {
+          content,
+          look: getLookBody(draftLook),
+          ...(opened ? { based_on: opened.number } : {}),
+        },
       );
       show(await api.get<TailoredResume>(`/tailored-resumes/${resume.id}`));
       onChanged();
@@ -496,20 +557,17 @@ export function Resume({
     }
   }
 
-  async function changeSettings(
-    nextTemplate: ResumeTemplate,
-    nextOptions: ResumeOptions,
-    nextFonts: ResumeLook = fonts,
-  ) {
-    setTemplate(nextTemplate);
-    setOptions(nextOptions);
-    setFonts(nextFonts);
+  /** Quantify or Reorder skills: they steer the writing, so they belong to
+   * the résumé and are kept at once, beside the look of its latest version
+   * (ADR 0079). */
+  async function changeOptions(next: ResumeOptions) {
+    setOptions(next);
     if (!resume || resume.status !== "ready") return;
     try {
       await api.put(`/tailored-resumes/${resume.id}/settings`, {
-        template: nextTemplate,
-        options: nextOptions,
-        ...nextFonts,
+        template: resume.template,
+        options: { ...next, trim: resume.options.trim },
+        ...getOwnLook(resume),
       });
     } catch (caught) {
       setError(messageOf(caught));
@@ -522,6 +580,7 @@ export function Resume({
     setError(null);
     if (number === resume.version.number) {
       setDraft(resume.content);
+      setDraftLook(getDraftLook(resume.version.look));
       setUndoStack([]);
       setOpened(null);
       return;
@@ -532,12 +591,15 @@ export function Resume({
       );
       if (!old.version || !old.content) return;
       setDraft(old.content);
+      // Shown in the look it was saved in (ADR 0079).
+      setDraftLook(getDraftLook(old.version.look));
       setUndoStack([]);
       setOpened({
         number,
         source: old.version.source,
         created_at: old.version.created_at,
         content: old.content,
+        look: old.version.look,
       });
       flash(`Opened v${number}. Saving it makes v${nextVersion}.`);
     } catch (caught) {
@@ -548,7 +610,7 @@ export function Resume({
   // What Export prints: the saved version on the page, the latest or an older
   // one opened unedited; null while there are edits to save first.
   const exportable = opened
-    ? draft && isSameContent(draft, opened.content)
+    ? draft && isSameContent(draft, opened.content) && !isLookChanged
       ? opened.number
       : null
     : !dirty
@@ -793,7 +855,7 @@ export function Resume({
                     type="button"
                     className="template-pick"
                     aria-pressed={template === t.id}
-                    onClick={() => void changeSettings(t.id, options)}
+                    onClick={() => editLook({ ...draftLook, template: t.id })}
                   >
                     <span className="template-thumb" aria-hidden="true">
                       <span
@@ -894,9 +956,12 @@ export function Resume({
                                   !hasBold || resume?.status !== "ready"
                                 }
                                 onChange={(on) =>
-                                  void changeSettings(template, options, {
-                                    ...fonts,
-                                    [bold]: on,
+                                  editLook({
+                                    ...draftLook,
+                                    fonts: {
+                                      ...fonts,
+                                      [bold]: on,
+                                    },
                                   })
                                 }
                               >
@@ -913,10 +978,13 @@ export function Resume({
                           value={fonts[key] ?? ""}
                           disabled={resume?.status !== "ready"}
                           onChange={(event) =>
-                            void changeSettings(template, options, {
-                              ...fonts,
-                              [key]: (event.target.value ||
-                                null) as ResumeLook["heading_font"],
+                            editLook({
+                              ...draftLook,
+                              fonts: {
+                                ...fonts,
+                                [key]: (event.target.value ||
+                                  null) as ResumeLook["heading_font"],
+                              },
                             })
                           }
                         >
@@ -941,11 +1009,14 @@ export function Resume({
                                 value={fonts[size] ?? ""}
                                 disabled={resume?.status !== "ready"}
                                 onChange={(event) =>
-                                  void changeSettings(template, options, {
-                                    ...fonts,
-                                    [size]: event.target.value
-                                      ? Number(event.target.value)
-                                      : null,
+                                  editLook({
+                                    ...draftLook,
+                                    fonts: {
+                                      ...fonts,
+                                      [size]: event.target.value
+                                        ? Number(event.target.value)
+                                        : null,
+                                    },
                                   })
                                 }
                               >
@@ -977,7 +1048,8 @@ export function Resume({
                     checked={options[key]}
                     onChange={(on) => {
                       setIsOptionChanged(true);
-                      void changeSettings(template, { ...options, [key]: on });
+                      if (key === "trim") editLook({ ...draftLook, trim: on });
+                      else void changeOptions({ ...options, [key]: on });
                     }}
                   >
                     {label}
@@ -1281,11 +1353,44 @@ const UNDO_LIMIT = 50;
 
 /** The undo stack with one more draft on top, the oldest dropped past the
  * limit. Pure. */
-export function getStackWith(
-  stack: ResumeContent[],
-  draft: ResumeContent,
-): ResumeContent[] {
+export function getStackWith<T>(stack: T[], draft: T): T[] {
   return [...stack, draft].slice(-UNDO_LIMIT);
+}
+
+/** What a version prints in (ADR 0079): its template, the résumé's own look
+ * over it, and the trim. */
+export interface DraftLook {
+  template: ResumeTemplate;
+  fonts: ResumeLook;
+  trim: boolean;
+}
+
+/** One step Undo goes back to: the draft's content and the look it was in. */
+interface UndoEntry {
+  content: ResumeContent;
+  look: DraftLook;
+}
+
+/** A version's look as the draft holds it. Pure. */
+export function getDraftLook(look: ResumeVersionLook): DraftLook {
+  const { template, trim, ...fonts } = look;
+  return { template, fonts: { ...NO_LOOK, ...fonts }, trim };
+}
+
+/** The draft's look as a save sends it. Pure. */
+export function getLookBody(look: DraftLook): ResumeVersionLook {
+  return { template: look.template, ...look.fonts, trim: look.trim };
+}
+
+/** Whether two looks print the same. Pure. */
+export function isSameLook(a: DraftLook, b: DraftLook): boolean {
+  return (
+    a.template === b.template &&
+    a.trim === b.trim &&
+    (Object.keys(NO_LOOK) as (keyof ResumeLook)[]).every(
+      (key) => a.fonts[key] === b.fonts[key],
+    )
+  );
 }
 
 /** Whether two drafts read the same. Pure. */
@@ -1307,6 +1412,7 @@ interface OpenedVersion {
   source: ResumeVersion["source"];
   created_at: string;
   content: ResumeContent;
+  look: ResumeVersionLook;
 }
 
 /** How a version came to be, as the Version list words it. Pure. */

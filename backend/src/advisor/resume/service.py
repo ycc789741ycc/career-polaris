@@ -89,7 +89,9 @@ from advisor.resume.domain import (
     TemplateReadingError,
     TemplateSpec,
     TemplateSpecError,
+    VersionLook,
     VersionSource,
+    assert_own_look_valid,
     assert_plan_valid,
     assert_well_formed,
     assert_written_lines_cited,
@@ -276,6 +278,16 @@ class CoverageView:
 
 
 @dataclass(frozen=True, slots=True)
+class VersionLookView:
+    """What a version is printed in (ADR 0079): one template id, built in
+    or the user's own, its own look over it, and the trim."""
+
+    template: str
+    own_look: OwnLook = field(default_factory=OwnLook)
+    trim: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class VersionView:
     id: uuid.UUID
     number: int
@@ -283,6 +295,7 @@ class VersionView:
     source: VersionSource
     model_id: str | None
     created_at: datetime
+    look: VersionLookView
 
 
 @dataclass(frozen=True, slots=True)
@@ -711,6 +724,7 @@ class ResumeService:
             revisions = list(
                 reversed(await mine.revisions.get_list(RevisionFilter(resume_id=resume_id)))
             )
+            gone = await _gone_templates(mine, versions)
 
         chosen = (
             next((v for v in versions if v.number == number), None)
@@ -741,10 +755,10 @@ class ResumeService:
             coverage=tuple(_coverage_view(c) for c in resume.coverage),
             template=_template_id(resume),
             options=resume.options,
-            version=_version_view(chosen) if chosen else None,
+            version=_version_view(chosen, gone=gone) if chosen else None,
             content=content,
             evidence=notes,
-            versions=tuple(_version_view(v) for v in versions),
+            versions=tuple(_version_view(v, gone=gone) for v in versions),
             revisions=tuple(_revision_view(r) for r in revisions),
             outdated_by=outdated_by,
             section_plan=get_full_plan(resume.section_plan),
@@ -791,8 +805,12 @@ class ResumeService:
         content: dict[str, Any],
         label: str | None = None,
         based_on: int | None = None,
+        look: VersionLookView | None = None,
     ) -> VersionView:
         """Save the user's edits as a new version, always the next number.
+
+        It is printed in ``look``, which the résumé then takes as its own; with
+        none it keeps the latest version's (ADR 0079).
 
         A line they changed is theirs and may stand uncited; a line they left
         alone keeps what it cited. Anything cited must still be their evidence.
@@ -816,6 +834,7 @@ class ResumeService:
                     raise NotFoundError("version not found", number=based_on)
                 opened = found[0]
             previous = ResumeContent.from_dict(opened.content) if opened else None
+            saved_look = await _version_look_of(mine, look) if look is not None else None
         settled = mark_edits(previous, edited)
         try:
             assert_well_formed(settled)
@@ -830,6 +849,7 @@ class ResumeService:
             label=label or f"{resume.target_label} — edited",
             model_id=None,
             template_version=None,
+            look=saved_look,
         )
 
     async def revise(
@@ -1129,8 +1149,8 @@ class ResumeService:
     async def request_export(
         self, owner_id: uuid.UUID, resume_id: uuid.UUID, *, number: int
     ) -> ExportView:
-        """Record an export of one version, in the résumé's look and trim as
-        they are now; the caller queues ``export`` while it is rendering.
+        """Record an export of one version, in the look and trim it was saved
+        with (ADR 0079); the caller queues ``export`` while it is rendering.
 
         An export of the same version, look and trim already rendered is
         returned as it is, and nothing is rendered again (ADR 0038). The look
@@ -1138,16 +1158,16 @@ class ResumeService:
         (ADR 0040).
         """
         async with self._uow.for_owner(owner_id) as mine:
-            resume = await _owned(mine, resume_id)
+            await _owned(mine, resume_id)
             found = await mine.versions.get_list(
                 ResumeVersionFilter(resume_id=resume_id, number=number), page_size=1
             )
             if not found:
                 raise NotFoundError("version not found", number=number)
-            spec = (await _spec_of(mine, resume)).to_dict()
-            same = ExportFilter(
-                version_id=found[0].id, trim=resume.options.trim, status=ExportStatus.READY
-            )
+            look = found[0].look
+            printed_spec, template = await _spec_of_look(mine, look)
+            spec = printed_spec.to_dict()
+            same = ExportFilter(version_id=found[0].id, trim=look.trim, status=ExportStatus.READY)
             for rendered in await mine.exports.get_list(same):
                 if rendered.spec == spec:
                     return _export_view(rendered, download_url=None)
@@ -1156,9 +1176,9 @@ class ResumeService:
                     id=uuid.uuid4(),
                     owner_id=owner_id,
                     version_id=found[0].id,
-                    template=resume.template,
+                    template=template,
                     spec=spec,
-                    trim=resume.options.trim,
+                    trim=look.trim,
                     status=ExportStatus.RENDERING,
                     created_at=utcnow(),
                 )
@@ -1525,9 +1545,12 @@ class ResumeService:
         model_id: str | None,
         template_version: str | None,
         while_busy: bool = False,
+        look: VersionLook | None = None,
     ) -> VersionView:
         """Save the next version. ``while_busy`` is a job's save: one whose
-        job was cancelled meanwhile saves nothing."""
+        job was cancelled meanwhile saves nothing. It is printed in ``look``,
+        which the résumé takes as its own, or else in the latest version's
+        (ADR 0079)."""
         now = utcnow()
         async with self._uow.for_owner(owner_id) as mine:
             resume = await _owned(mine, resume_id)
@@ -1546,9 +1569,12 @@ class ResumeService:
                     model_id=model_id,
                     template_version=template_version,
                     created_at=now,
+                    look=look or resume.get_version_look(),
                 )
             )
             resume.touched(now)
+            if look is not None:
+                resume.update_saved_look(look, at=now)
             # Every version is written to the plan, or changes it: a section
             # shown, hidden, added, removed or moved, by hand or in the chat
             # (ADR 0039). The plan holds every built-in kind (ADR 0043).
@@ -1839,7 +1865,16 @@ def _summary(resume: TailoredResume, *, latest_version: int | None) -> ResumeSum
     )
 
 
-def _version_view(version: ResumeVersion) -> VersionView:
+def _version_view(
+    version: ResumeVersion, *, gone: frozenset[uuid.UUID] = frozenset()
+) -> VersionView:
+    """``gone`` names deleted templates of the user's own: a version set in
+    one reads as Organic, as it prints (ADR 0079)."""
+    look = version.look
+    if look.custom_template_id is not None and look.custom_template_id not in gone:
+        template = str(look.custom_template_id)
+    else:
+        template = str(look.template or Template.ORGANIC)
     return VersionView(
         id=version.id,
         number=version.number,
@@ -1847,6 +1882,7 @@ def _version_view(version: ResumeVersion) -> VersionView:
         source=version.source,
         model_id=version.model_id,
         created_at=version.created_at,
+        look=VersionLookView(template=template, own_look=look.own_look, trim=look.trim),
     )
 
 
@@ -1937,13 +1973,43 @@ async def _owned_template(mine: OwnerResumes, template_id: uuid.UUID) -> CustomT
     return template
 
 
-async def _spec_of(mine: OwnerResumes, resume: TailoredResume) -> TemplateSpec:
-    """The look the résumé is set in: its template's, with its own over it."""
-    if resume.custom_template_id is not None:
-        spec = (await _owned_template(mine, resume.custom_template_id)).spec
-    else:
-        spec = BUILT_IN_TEMPLATES[resume.template or Template.ORGANIC].spec
-    return get_spec_with_look(spec, resume.own_look)
+async def _spec_of_look(
+    mine: OwnerResumes, look: VersionLook
+) -> tuple[TemplateSpec, Template | None]:
+    """What a version prints in: its template's spec with its own look over
+    it, and the built-in template (None for one of the user's own). A
+    template of their own deleted since prints as Organic, as the résumé
+    itself moved to it (ADR 0079)."""
+    if look.custom_template_id is not None:
+        own = await mine.templates.get(look.custom_template_id)
+        if own is not None:
+            return get_spec_with_look(own.spec, look.own_look), None
+    template = look.template or Template.ORGANIC
+    return get_spec_with_look(BUILT_IN_TEMPLATES[template].spec, look.own_look), template
+
+
+async def _version_look_of(mine: OwnerResumes, look: VersionLookView) -> VersionLook:
+    """The look a version is saved in, from one template id: refused when the
+    template is not theirs or a font or size is out of its range."""
+    built_in, own = await _resolve_template(mine, look.template)
+    try:
+        assert_own_look_valid(look.own_look)
+    except TemplateSpecError as exc:
+        raise ValidationError(str(exc)) from exc
+    return VersionLook(
+        template=built_in, custom_template_id=own, own_look=look.own_look, trim=look.trim
+    )
+
+
+async def _gone_templates(
+    mine: OwnerResumes, versions: Iterable[ResumeVersion]
+) -> frozenset[uuid.UUID]:
+    """The user's own templates these versions name that have been deleted."""
+    named = {v.look.custom_template_id for v in versions} - {None}
+    if not named:
+        return frozenset()
+    kept = {t.id for t in await mine.templates.get_list(CustomTemplateFilter())}
+    return frozenset(i for i in named if i is not None and i not in kept)
 
 
 def _export_view(export: Export, *, download_url: str | None) -> ExportView:
