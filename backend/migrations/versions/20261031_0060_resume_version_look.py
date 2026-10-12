@@ -6,11 +6,17 @@ fonts, bold switches and sizes, and the trim. Every version stored before this
 takes its résumé's look as it is now, the best record there is, so each prints
 as it did the moment before. Then the column is NOT NULL.
 
+Both tables force row-level security, which binds even the migrator, their
+owner: with no ``app.user_id`` the backfill would see no rows. It lifts the
+force for its two statements and puts it back, as migration 0042 does.
+
 Idempotent, since the baseline migration builds tables from the live ORM
 metadata. Downgrading drops the column.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from alembic import op
 
@@ -39,13 +45,25 @@ LOOK_OF_RESUME = """
 """
 
 
-def upgrade() -> None:
-    op.execute("ALTER TABLE resume.version ADD COLUMN IF NOT EXISTS look jsonb")
+_TABLES = ("resume.resume", "resume.version")
+
+
+def backfill(execute: Callable[[str], object]) -> None:
+    """Give every version with no look its résumé's, seeing every owner's."""
+    for table in _TABLES:
+        execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
     # The expression is this module's own constant, never input.
-    op.execute(
+    execute(
         f"UPDATE resume.version AS v SET look = {LOOK_OF_RESUME}"  # noqa: S608
         " FROM resume.resume AS r WHERE r.id = v.resume_id AND v.look IS NULL"
     )
+    for table in _TABLES:
+        execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+
+
+def upgrade() -> None:
+    op.execute("ALTER TABLE resume.version ADD COLUMN IF NOT EXISTS look jsonb")
+    backfill(op.execute)
     op.execute("ALTER TABLE resume.version ALTER COLUMN look SET NOT NULL")
 
 
