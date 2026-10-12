@@ -2107,6 +2107,9 @@ select.input { appearance: auto; }
 .resume-line { position: relative; }
 .resume-move-line {
   all: unset;
+  /* `all: unset` also clears the browser's own rule that makes a
+   * draggable element draggable; without this Chrome never starts a drag. */
+  -webkit-user-drag: element;
   box-sizing: border-box;
   position: absolute;
   top: 0.15em;
