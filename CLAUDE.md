@@ -1154,8 +1154,10 @@ On `epic/no-ticket/resume-editing`, one branch per step:
   alone: `get_spec_with_look` pins the headings' font and the entry titles'
   size (`TemplateSpec.title_pt`, `get_title_pt`) to the template's when the
   text changes. A résumé also sets `name_pt`, `title_pt` and `heading_pt`
-  (`TITLE_PT_RANGE`), shown as Name and Title under "Titles in" and Size
-  under "Headings in".
+  (`TITLE_PT_RANGE`). The card shows one group per font — "Name & titles
+  in", "Headings in", "Text in" — each with its Bold switch on the label's
+  line, the font list across, and its sizes beneath ("Name size", "Title
+  size", "Heading size", "Text size"), two to a line only where both fit.
 - **Numbers** (ADR 0076). GitHub and Jira tallies say over how long
   (`get_span_label`), GitHub counts reviews per repository, Jira a site's
   issues by type. `resume_write` v6, `resume_revise` v6 and `resume_section`
