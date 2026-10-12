@@ -22,6 +22,7 @@ from advisor.resume.domain import (
     Template,
     TemplateReading,
     TemplateSpec,
+    VersionLook,
     VersionSource,
 )
 from advisor.resume.infra import models
@@ -128,6 +129,7 @@ def version(row: models.ResumeVersion) -> ResumeVersion:
         created_at=row.created_at,
         model_id=row.model_id,
         template_version=row.template_version,
+        look=VersionLook.from_dict(dict(row.look)),
     )
 
 
@@ -149,6 +151,7 @@ def apply_version(row: models.ResumeVersion, entity: ResumeVersion) -> None:
     row.source = str(entity.source)
     row.model_id = entity.model_id
     row.template_version = entity.template_version
+    row.look = entity.look.to_dict()
 
 
 def revision(row: models.Revision) -> Revision:

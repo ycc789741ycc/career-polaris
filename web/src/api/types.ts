@@ -103,6 +103,7 @@ export type ResumeSectionSlot = Schemas["ResumeSectionSlot"];
 export type SectionKind = ResumeSection["kind"];
 export type ResumeSummary = Schemas["ResumeSummary"];
 export type ResumeVersion = Schemas["ResumeVersion"];
+export type ResumeVersionLook = Schemas["ResumeVersionLook"];
 export type TailoredResume = Schemas["TailoredResume"];
 export type ResumeExport = Schemas["ResumeExport"];
 

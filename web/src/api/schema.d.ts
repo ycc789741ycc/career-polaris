@@ -2937,6 +2937,7 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            look: components["schemas"]["ResumeVersionLook"];
             /** Model Id */
             model_id: string | null;
             /** Number */
@@ -2946,6 +2947,34 @@ export interface components {
              * @enum {string}
              */
             source: "generated" | "manual" | "chat" | "answers";
+        };
+        /**
+         * ResumeVersionLook
+         * @description The look a version was saved in, and prints in (ADR 0079).
+         */
+        ResumeVersionLook: {
+            /** Body Font */
+            body_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Body Pt */
+            body_pt: number | null;
+            /** Bold Headings */
+            bold_headings: boolean | null;
+            /** Bold Titles */
+            bold_titles: boolean | null;
+            /** Heading Font */
+            heading_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Heading Pt */
+            heading_pt: number | null;
+            /** Name Pt */
+            name_pt: number | null;
+            /** Section Font */
+            section_font: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Template */
+            template: string;
+            /** Title Pt */
+            title_pt: number | null;
+            /** Trim */
+            trim: boolean;
         };
         /** Revision */
         Revision: {
@@ -3570,6 +3599,38 @@ export interface components {
             /** Weight */
             weight: number;
         };
+        /**
+         * VersionLookBody
+         * @description What a version is printed in (ADR 0079): its template, its own look
+         *     over it (null keeps the template's) and the trim.
+         */
+        VersionLookBody: {
+            /** Body Font */
+            body_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Body Pt */
+            body_pt?: number | null;
+            /** Bold Headings */
+            bold_headings?: boolean | null;
+            /** Bold Titles */
+            bold_titles?: boolean | null;
+            /** Heading Font */
+            heading_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Heading Pt */
+            heading_pt?: number | null;
+            /** Name Pt */
+            name_pt?: number | null;
+            /** Section Font */
+            section_font?: ("Caprasimo" | "Figtree" | "DejaVu Serif" | "DejaVu Sans Mono" | "Inter" | "Lato" | "Source Serif 4" | "Merriweather" | "EB Garamond" | "IBM Plex Mono") | null;
+            /** Template */
+            template: string;
+            /** Title Pt */
+            title_pt?: number | null;
+            /**
+             * Trim
+             * @default false
+             */
+            trim: boolean;
+        };
         /** VersionRequest */
         VersionRequest: {
             /** Based On */
@@ -3580,6 +3641,7 @@ export interface components {
             };
             /** Label */
             label?: string | null;
+            look?: components["schemas"]["VersionLookBody"] | null;
         };
     };
     responses: never;

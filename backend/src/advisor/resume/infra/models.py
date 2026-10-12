@@ -165,6 +165,10 @@ class ResumeVersion(Base, OwnedMixin):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # VersionLook.to_dict(): what it prints in (ADR 0079). A template of the
+    # user's own is named, not referenced, so deleting one leaves it to print
+    # as Organic.
+    look: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
 
 class Revision(Base, OwnedMixin):

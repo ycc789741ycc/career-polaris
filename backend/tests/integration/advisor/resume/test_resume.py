@@ -38,6 +38,7 @@ from advisor.resume import (
     SectionKind,
     SectionSlot,
     Template,
+    VersionLookView,
     create_resume_service,
 )
 from advisor.resume.domain import Layout, TemplateSpec
@@ -669,9 +670,14 @@ async def test_a_template_of_your_own_sets_the_pdf_and_is_yours_alone(
     }
     mine = await world.resume.create_template(account, name="Two columns", spec=spec)
     resume_id = await _written(world, account)
-    await world.resume.update_settings(account, resume_id, template=mine.id, options=Options())
+    written = (await world.resume.get(account, resume_id)).content
+    assert written is not None
+    # Saved in it as v2 (ADR 0079).
+    await world.resume.save_version(
+        account, resume_id, content=written.to_dict(), look=VersionLookView(mine.id)
+    )
 
-    export = await world.resume.request_export(account, resume_id, number=1)
+    export = await world.resume.request_export(account, resume_id, number=2)
     await world.resume.export(account, export.id)
     ready = await world.resume.get_export(account, export.id)
     key = f"users/{account}/exports/{export.id}.pdf"
@@ -690,7 +696,10 @@ async def test_a_template_of_your_own_sets_the_pdf_and_is_yours_alone(
         await world.resume.update_template(other_account, uuid.UUID(mine.id), name="x", spec=spec)
 
     await world.resume.delete_template(account, uuid.UUID(mine.id))
-    assert (await world.resume.get(account, resume_id)).template == "organic"
+    view = await world.resume.get(account, resume_id)
+    assert view.template == "organic"
+    # The version saved in it now reads, and prints, as Organic.
+    assert view.version is not None and view.version.look.template == "organic"
     assert [t.id for t in (await world.resume.templates(account)).items] == ["organic", "plain"]
 
 
@@ -897,3 +906,33 @@ async def test_a_resume_keeps_its_own_look_and_the_database_refuses_what_it_cann
                     text(f"UPDATE resume.resume SET {column} = {value} WHERE id = :id"),
                     {"id": resume_id},
                 )
+
+
+async def test_each_version_keeps_the_look_it_was_saved_in(
+    world: World, account: uuid.UUID, database: Database
+) -> None:
+    """ADR 0079, migration 0060: kept as JSONB beside the version, mirrored
+    onto the résumé, and what an older version's export prints in."""
+    resume_id = await _written(world, account)
+    written = (await world.resume.get(account, resume_id)).content
+    assert written is not None
+    look = VersionLookView("plain", OwnLook(body_font="Lato", name_pt=26.0), trim=True)
+
+    await world.resume.save_version(account, resume_id, content=written.to_dict(), look=look)
+
+    first = await world.resume.get(account, resume_id, number=1)
+    latest = await world.resume.get(account, resume_id)
+    assert first.version is not None and first.version.look == VersionLookView("organic")
+    assert latest.version is not None and latest.version.look == look
+    assert (latest.template, latest.options.trim, latest.own_look) == ("plain", True, look.own_look)
+    async with database.for_user(account) as session:
+        stored = (
+            await session.execute(
+                text("SELECT look FROM resume.version WHERE resume_id = :id AND number = 2"),
+                {"id": resume_id},
+            )
+        ).scalar_one()
+    assert (stored["template"], stored["body_font"], stored["trim"]) == ("plain", "Lato", True)
+
+    export = await world.resume.request_export(account, resume_id, number=1)
+    assert export.template == Template.ORGANIC

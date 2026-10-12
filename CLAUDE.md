@@ -1144,6 +1144,15 @@ On `epic/no-ticket/resume-editing`, one branch per step:
   always makes the next version, and sends `based_on`, so `save_version`
   judges untouched lines against that version and they keep their citations.
   An unedited older version exports as itself.
+- **A version keeps its look** (ADR 0079, migration 0060). The template, the
+  fonts, Bold switches and sizes, and the trim are part of the draft: a change
+  previews at once, Undo takes it back (the undo stack holds content and
+  look), and "Save as vN" sends it as `look`. Each `ResumeVersion` keeps a
+  `VersionLook` (JSONB `resume.version.look`), and the résumé row mirrors its
+  latest version's. Opening a version shows its look; exporting it prints in
+  it. A version saved in a deleted template of the user's own reads and prints
+  as Organic. Quantify and Reorder stay the résumé's, still kept at once
+  through `PUT /settings`.
 - **Its own look** (ADR 0075, migration 0057). Over its template's, a résumé
   sets `section_font`, `bold_titles`, `bold_headings` and `body_pt` beside
   ADR 0047's fonts, as one `OwnLook` laid on by `get_spec_with_look`;

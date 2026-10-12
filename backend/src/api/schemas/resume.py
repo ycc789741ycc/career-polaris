@@ -20,6 +20,7 @@ from advisor.resume import (
     TemplateLimitsView,
     TemplateReadingView,
     TemplateView,
+    VersionLookView,
     VersionView,
 )
 from api.schemas.common import (
@@ -96,12 +97,48 @@ class SettingsRequest(RequestModel):
         )
 
 
+class VersionLookBody(RequestModel):
+    """What a version is printed in (ADR 0079): its template, its own look
+    over it (null keeps the template's) and the trim."""
+
+    template: TemplateId
+    heading_font: FontName | None = None
+    body_font: FontName | None = None
+    section_font: FontName | None = None
+    bold_titles: bool | None = None
+    bold_headings: bool | None = None
+    body_pt: float | None = None
+    name_pt: float | None = None
+    title_pt: float | None = None
+    heading_pt: float | None = None
+    trim: bool = False
+
+    def to_look(self) -> VersionLookView:
+        return VersionLookView(
+            template=self.template,
+            own_look=OwnLook(
+                heading_font=self.heading_font,
+                section_font=self.section_font,
+                body_font=self.body_font,
+                bold_titles=self.bold_titles,
+                bold_headings=self.bold_headings,
+                body_pt=self.body_pt,
+                name_pt=self.name_pt,
+                title_pt=self.title_pt,
+                heading_pt=self.heading_pt,
+            ),
+            trim=self.trim,
+        )
+
+
 class VersionRequest(RequestModel):
     content: dict[str, Any]
     label: str | None = Field(default=None, max_length=200)
     # The older version the draft was opened from, if it was: what the save
     # keeps citations against. It is still saved as the next version.
     based_on: int | None = Field(default=None, ge=1)
+    # The look the draft is in; left out, the latest version's (ADR 0079).
+    look: VersionLookBody | None = None
 
 
 class RevisionRequest(RequestModel):
@@ -234,6 +271,39 @@ class ResumeSummary(ApiModel):
         )
 
 
+class ResumeVersionLook(ApiModel):
+    """The look a version was saved in, and prints in (ADR 0079)."""
+
+    template: str
+    heading_font: FontName | None
+    body_font: FontName | None
+    section_font: FontName | None
+    bold_titles: bool | None
+    bold_headings: bool | None
+    body_pt: float | None
+    name_pt: float | None
+    title_pt: float | None
+    heading_pt: float | None
+    trim: bool
+
+    @classmethod
+    def from_view(cls, look: VersionLookView) -> ResumeVersionLook:
+        own = look.own_look
+        return cls(
+            template=look.template,
+            heading_font=own.heading_font,
+            body_font=own.body_font,
+            section_font=own.section_font,
+            bold_titles=own.bold_titles,
+            bold_headings=own.bold_headings,
+            body_pt=own.body_pt,
+            name_pt=own.name_pt,
+            title_pt=own.title_pt,
+            heading_pt=own.heading_pt,
+            trim=look.trim,
+        )
+
+
 class ResumeVersion(ApiModel):
     id: uuid.UUID
     number: int
@@ -243,6 +313,7 @@ class ResumeVersion(ApiModel):
     source: Literal["generated", "manual", "chat", "answers"]
     model_id: str | None
     created_at: Timestamp
+    look: ResumeVersionLook
 
     @classmethod
     def from_view(cls, version: VersionView) -> ResumeVersion:
@@ -253,6 +324,7 @@ class ResumeVersion(ApiModel):
             source=str(version.source),
             model_id=version.model_id,
             created_at=version.created_at,
+            look=ResumeVersionLook.from_view(version.look),
         )
 
 
