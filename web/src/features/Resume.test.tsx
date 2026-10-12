@@ -658,7 +658,9 @@ describe("résumé screen", () => {
     renderResume();
     await screen.findByRole("article", { name: "Résumé" });
 
-    const titles = await screen.findByRole("combobox", { name: "Titles in" });
+    const titles = await screen.findByRole("combobox", {
+      name: "Name & titles in",
+    });
     expect(titles).toHaveValue("");
     await user.selectOptions(titles, "DejaVu Serif");
 
@@ -689,7 +691,7 @@ describe("résumé screen", () => {
       screen.getByRole("combobox", { name: "Headings in" }),
     ).toHaveDisplayValue("Template's (Figtree)");
     await user.selectOptions(
-      screen.getByRole("combobox", { name: "Titles in" }),
+      screen.getByRole("combobox", { name: "Name & titles in" }),
       "DejaVu Serif",
     );
     await user.click(screen.getByRole("checkbox", { name: "Bold titles" }));
@@ -791,6 +793,15 @@ describe("résumé screen", () => {
     expect(page.getAttribute("style")).toContain('--section-font: "Figtree"');
     expect(page.getAttribute("style")).toContain("--title-pt: 11;");
 
+    // Each list is labelled, on screen, by what it sizes.
+    for (const label of [
+      "Name size",
+      "Title size",
+      "Heading size",
+      "Text size",
+    ])
+      expect(screen.getByLabelText(label)).toHaveRole("combobox");
+    expect(screen.getByLabelText("Name & titles in")).toHaveRole("combobox");
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Name size" }),
       "26",

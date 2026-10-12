@@ -4200,7 +4200,10 @@ in `epic/no-ticket/resume-editing`. Migrations 0057 to 0059.
   "Headings in" with "Bold headings", "Bold titles" beside "Titles in", and
   "Text size" beside "Text in"; a font with no bold cut stays regular. Then (ADR 0078, `feature/no-ticket/resume-own-sizes`,
   migration 0059) the text's font and size stop reaching the headings and
-  titles, and the name, titles and headings get sizes of their own.
+  titles, and the name, titles and headings get sizes of their own. "Titles
+  in" became "Name & titles in", every size list is named for what it sizes,
+  and each font is a group of its own so the card never squeezes
+  (`feature/no-ticket/resume-look-labels`).
 * **Move a line** (`feature/no-ticket/resume-move-lines`). A handle left of
   each line drags it, or moves it with the arrow keys, anywhere in its
   section.
