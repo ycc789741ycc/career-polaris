@@ -1,7 +1,8 @@
 """Identity HTTP surface.
 
-Sign-in is our own: email and password, or Google through our own OpenID
-Connect exchange. Either way it ends in the same session — an access token in
+Sign-in is our own: Google through our own OpenID Connect exchange, which is
+the only way an account is made, or email and password for an account made
+before that (ADR 0080). Either way it ends in the same session — an access token in
 the body and a rotating refresh token in an httpOnly cookie (ADRs 0001, 0008).
 
 The credential endpoints are write-only: they set, test, replace and delete,
@@ -29,7 +30,6 @@ from api.dependencies import (
     REFRESH_COOKIE,
     CurrentUser,
     Deps,
-    get_client_address,
     refresh_token_from,
 )
 from api.schemas.identity import (
@@ -41,7 +41,6 @@ from api.schemas.identity import (
     CredentialRequest,
     Me,
     PlatformQuota,
-    RegisterRequest,
     SessionResponse,
     SignInMethods,
     SignInRequest,
@@ -83,21 +82,6 @@ def _set_refresh_cookie(session: Session, response: Response, settings: Settings
         path="/api/v1/auth",
         max_age=settings.auth_refresh_token_ttl_days * 24 * 60 * 60,
     )
-
-
-@router.post("/auth/register", status_code=201)
-async def register(
-    body: RegisterRequest, request: Request, response: Response, deps: Deps
-) -> SessionResponse:
-    """Create an account and sign in.
-
-    The address is not verified — nothing is sent to it yet. That has to be in
-    place before any notification feature ships. Until then, how many accounts
-    one network may make in a day is limited (ADR 0054).
-    """
-    await deps.limiter.record_attempt(deps.limits.signups, get_client_address(request))
-    session = await deps.auth.register(email=str(body.email), password=body.password)
-    return _respond_with(session, response, deps)
 
 
 @router.post("/auth/sign-in")
@@ -143,10 +127,14 @@ async def sign_out_everywhere(response: Response, user: CurrentUser, deps: Deps)
 
 @router.get("/auth/methods")
 async def sign_in_methods(deps: Deps) -> SignInMethods:
-    """Which ways in the sign-in screen should offer."""
+    """Which ways in the sign-in screen should offer.
+
+    Email and password only while Google is off: with it on, the screen offers
+    Google alone, though ``/auth/sign-in`` still answers (ADR 0080).
+    """
     settings = deps.settings
     return SignInMethods(
-        password=True,
+        password=not settings.google_sign_in_enabled,
         google=settings.google_sign_in_enabled,
         platform_ai=settings.google_sign_in_enabled and settings.platform_ai_enabled,
     )

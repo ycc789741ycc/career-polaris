@@ -150,10 +150,12 @@ not here. `.env` takes `.env.example`'s defaults, except:
 | `BACKUP_S3_*` | The backup bucket and its key |
 | `TUNNEL_AUTH_KEY` | The `tag:careerpolaris-serving` key |
 | `GITHUB_OAUTH_*`, `JIRA_OAUTH_CLIENT_*` | From the OAuth apps |
-| `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet (step 7, e.g. `172.18.0.0/16`). Without it every client looks like Caddy, and one sign-up limit covers everyone (ADR 0054); `check-env` refuses it blank. |
+| `FORWARDED_ALLOW_IPS` | careerpolaris_net's subnet (step 7, e.g. `172.18.0.0/16`). Without it every client looks like Caddy in the api's records; `check-env` refuses it blank. |
 
 `GOOGLE_OAUTH_*` and `RELEASE_REGISTRY` stay blank: Google sign-in waits for a
-domain of your own, and the droplet pushes no images.
+domain of your own, and the droplet pushes no images. Until Google is on, the
+sign-in screen offers email and password, and no new account can be made:
+accounts are made only by signing in with Google (ADR 0080).
 
 `PLATFORM_AI_*` stay blank until you offer CareerPolaris's own AI (section 7).
 Only Google-verified accounts can use it, so it is no use before Google

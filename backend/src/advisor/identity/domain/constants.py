@@ -10,10 +10,6 @@ from datetime import timedelta
 
 # --- password ----------------------------------------------------------------
 
-MIN_PASSWORD_LENGTH = 12
-
-MAX_PASSWORD_LENGTH = 200
-
 MAX_FAILED_ATTEMPTS = 5
 
 LOCKOUT_WINDOW = timedelta(minutes=15)

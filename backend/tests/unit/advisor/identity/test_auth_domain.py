@@ -1,4 +1,4 @@
-"""Password policy, lockout and refresh-token rules. Pure — nothing is hashed."""
+"""Lockout and refresh-token rules. Pure — nothing is hashed."""
 
 from __future__ import annotations
 
@@ -9,69 +9,14 @@ import pytest
 from advisor.identity.domain import (
     LOCKOUT_WINDOW,
     MAX_FAILED_ATTEMPTS,
-    MIN_PASSWORD_LENGTH,
     LockoutState,
     RefreshRejectedError,
     RefreshTokenState,
-    WeakPasswordError,
-    assert_acceptable,
     new_refresh_token,
     normalize_email,
 )
 
 NOW = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
-
-
-# -- password policy --------------------------------------------------------
-
-
-def test_a_long_passphrase_is_accepted() -> None:
-    """Length is the rule that matters; no punctuation is demanded."""
-    assert_acceptable("correct horse battery staple")
-
-
-def test_a_short_password_is_refused_with_the_reason() -> None:
-    with pytest.raises(WeakPasswordError, match=f"at least {MIN_PASSWORD_LENGTH}"):
-        assert_acceptable("short1!")
-
-
-def test_the_minimum_length_boundary() -> None:
-    assert_acceptable("a" * MIN_PASSWORD_LENGTH)
-    with pytest.raises(WeakPasswordError):
-        assert_acceptable("a" * (MIN_PASSWORD_LENGTH - 1))
-
-
-def test_an_unbounded_password_is_refused() -> None:
-    """Hashing cost grows with length, so this is a denial-of-service guard."""
-    with pytest.raises(WeakPasswordError, match="at most"):
-        assert_acceptable("a" * 5000)
-
-
-@pytest.mark.parametrize(
-    "password", ["password1234", "PASSWORD1234", "qwerty123456", "administrator"]
-)
-def test_the_first_guesses_are_refused(password: str) -> None:
-    """These are long enough to pass the length rule, which is the point."""
-    with pytest.raises(WeakPasswordError, match="first ones guessed"):
-        assert_acceptable(password)
-
-
-def test_every_obvious_password_is_long_enough_to_be_reachable() -> None:
-    """A shorter entry would be dead code: length is checked first."""
-    from advisor.identity.domain.password import _OBVIOUS
-
-    too_short = [p for p in _OBVIOUS if len(p) < MIN_PASSWORD_LENGTH]
-    assert not too_short, f"unreachable entries in the obvious-password list: {too_short}"
-
-
-def test_a_password_containing_the_email_is_refused() -> None:
-    with pytest.raises(WeakPasswordError, match="email address"):
-        assert_acceptable("mayachen-secret-1", email="mayachen@example.com")
-
-
-def test_a_short_email_local_part_does_not_trip_the_rule() -> None:
-    """Otherwise 'bob' would ban every password containing those letters."""
-    assert_acceptable("a perfectly fine passphrase", email="bob@example.com")
 
 
 @pytest.mark.parametrize(

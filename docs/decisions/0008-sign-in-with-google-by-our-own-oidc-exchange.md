@@ -1,6 +1,6 @@
 # 0008. Sign in with Google through our own OpenID Connect exchange, and let a verified address take over an unverified one
 
-**Status:** Accepted — 2026-09-24.
+**Status:** Accepted — 2026-09-24. Amended by [0080](0080-make-accounts-only-by-signing-in-with-google.md): Google is the only way an account is made.
 
 ## Context
 

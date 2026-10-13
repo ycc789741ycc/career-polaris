@@ -2021,22 +2021,6 @@ select.input { appearance: auto; }
   height: 1px;
   background: var(--color-divider);
 }
-.sign-in-switch {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 10px;
-  font-size: 13.5px;
-  color: var(--color-neutral-800);
-}
-.sign-in-switch .btn-ghost {
-  color: var(--color-accent-700);
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 13.5px;
-}
 .sign-in-footnote {
   margin: 12px 0 0;
   padding-top: 14px;

@@ -68,13 +68,6 @@ async function toSession(response: Response): Promise<Session> {
   };
 }
 
-export async function register(
-  email: string,
-  password: string,
-): Promise<Session> {
-  return toSession(await post("/register", { email, password }));
-}
-
 export async function signIn(
   email: string,
   password: string,
@@ -95,7 +88,9 @@ export type SignInMethods = components["schemas"]["SignInMethods"];
 
 /**
  * Which ways in to offer. Google is on only when the server is set up for it,
- * and CareerPolaris AI only alongside Google (ADR 0066).
+ * and CareerPolaris AI only alongside Google (ADR 0066). Email and password
+ * only while Google is off, for accounts made before Google was the only way
+ * in (ADR 0080); a server that cannot be asked is taken to have Google off.
  */
 export async function signInMethods(): Promise<SignInMethods> {
   const response = await fetch(
@@ -106,7 +101,7 @@ export async function signInMethods(): Promise<SignInMethods> {
   const payload = (await response.json()) as Partial<SignInMethods> | null;
   const google = payload?.google === true;
   return {
-    password: true,
+    password: !google || payload?.password === true,
     google,
     platform_ai: google && payload?.platform_ai === true,
   };

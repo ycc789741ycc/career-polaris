@@ -220,15 +220,22 @@ class FakeAuth:
 
     async def sign_in_with_google(self, claims: IdTokenClaims) -> Session:
         self.signed_in.append(claims)
-        now = datetime.now(UTC)
-        return Session(
-            account_id=uuid.uuid4(),
-            email=claims.email,
-            access_token="access",
-            access_expires_at=now + timedelta(minutes=15),
-            refresh_token="refresh-from-google-sign-in",
-            refresh_expires_at=now + timedelta(days=30),
-        )
+        return _session(claims.email, refresh_token="refresh-from-google-sign-in")
+
+    async def sign_in(self, *, email: str, password: str) -> Session:
+        return _session(email, refresh_token="refresh-from-password-sign-in")
+
+
+def _session(email: str, *, refresh_token: str) -> Session:
+    now = datetime.now(UTC)
+    return Session(
+        account_id=uuid.uuid4(),
+        email=email,
+        access_token="access",
+        access_expires_at=now + timedelta(minutes=15),
+        refresh_token=refresh_token,
+        refresh_expires_at=now + timedelta(days=30),
+    )
 
 
 def _settings(*, enabled: bool = True, platform_ai: bool = False) -> SimpleNamespace:
@@ -263,7 +270,7 @@ def _client(deps: SimpleNamespace) -> TestClient:
 @pytest.fixture
 def client(google: FakeGoogle, auth: FakeAuth) -> TestClient:
     sign_in = GoogleSignIn(auth, google, secret=SECRET)  # type: ignore[arg-type]
-    return _client(SimpleNamespace(settings=_settings(), google_sign_in=sign_in))
+    return _client(SimpleNamespace(settings=_settings(), google_sign_in=sign_in, auth=auth))
 
 
 def _start(client: TestClient) -> str:
@@ -391,12 +398,34 @@ def test_when_google_is_not_configured_nothing_goes_to_google() -> None:
     assert _error_in(response) == "not_configured"
 
 
-def test_the_sign_in_screen_is_told_google_is_on(client: TestClient) -> None:
+def test_the_sign_in_screen_is_told_google_is_on_and_offers_no_password(
+    client: TestClient,
+) -> None:
+    """With Google on, it is the only way in the screen offers (ADR 0080)."""
     assert client.get("/api/v1/auth/methods").json() == {
-        "password": True,
+        "password": False,
         "google": True,
         "platform_ai": False,
     }
+
+
+def test_a_password_account_still_signs_in_while_google_is_on(client: TestClient) -> None:
+    """The screen hides the form; the api does not refuse it."""
+    response = client.post(
+        "/api/v1/auth/sign-in", json={"email": "ada@example.com", "password": "pass"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "ada@example.com"
+    assert response.cookies.get(REFRESH_COOKIE) == "refresh-from-password-sign-in"
+
+
+def test_no_account_can_be_made_with_a_password(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/auth/register", json={"email": "ada@example.com", "password": "p" * 16}
+    )
+
+    assert response.status_code == 404
 
 
 def test_the_sign_in_screen_is_told_google_accounts_start_on_careerpolaris_ai() -> None:

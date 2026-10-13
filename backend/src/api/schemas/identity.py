@@ -12,11 +12,6 @@ from advisor.identity import AccountView, AiSourceView, BudgetView, CredentialVi
 from api.schemas.common import ApiModel, RequestModel
 
 
-class RegisterRequest(RequestModel):
-    email: EmailStr
-    password: str = Field(min_length=1)
-
-
 class SignInRequest(RequestModel):
     email: EmailStr
     password: str = Field(min_length=1)
@@ -37,6 +32,7 @@ class SessionResponse(ApiModel):
 
 
 class SignInMethods(ApiModel):
+    # Only while Google is off (ADR 0080): no one makes a password account.
     password: bool
     google: bool
     # Whether an account signed in with Google starts on CareerPolaris AI

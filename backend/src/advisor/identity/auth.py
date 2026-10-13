@@ -1,4 +1,4 @@
-"""Registration, sign-in and session refresh.
+"""Sign-in and session refresh.
 
 We run our own sign-in, so this module owns the whole flow: hashing, lockout,
 token issuance and refresh rotation. Signing in with Google ends here too: the
@@ -9,9 +9,9 @@ Google exchange (``advisor.identity.google``) proves who someone is, and
 Two things it deliberately does not do, because both need email delivery and
 that is still an open question in docs/architecture.md section 8:
 
-* **Address verification.** Anyone can register with an address they do not
-  own. Nothing is sent to it yet, so the exposure is limited — but it must be
-  in place before any notification feature ships.
+* **Address verification.** Accounts are made only by Google, which verifies
+  the address (ADR 0080); a password account from before then may still name
+  an address its holder never proved.
 * **Password reset.** There is no way back in for someone who forgets. Users
   should be told this rather than discovering it.
 """
@@ -39,9 +39,7 @@ from advisor.identity.domain import (
     RefreshRejectedError,
     RefreshToken,
     RefreshTokenFilter,
-    WeakPasswordError,
     access_token_expiry,
-    assert_acceptable,
     digest,
     new_refresh_token,
     normalize_email,
@@ -56,7 +54,7 @@ from advisor.identity.infra.passwords import (
 )
 from kernel.auth import issue_access_token
 from kernel.clock import utcnow
-from kernel.errors import ConflictError, RateLimitedError, UnauthenticatedError, ValidationError
+from kernel.errors import RateLimitedError, UnauthenticatedError
 from kernel.logging import get_logger
 
 log = get_logger(__name__)
@@ -106,40 +104,6 @@ class AuthService:
         self._access_ttl = access_ttl_seconds
         self._refresh_ttl_days = refresh_ttl_days
         self._default_cap = default_monthly_cap_usd
-
-    # -- registration -------------------------------------------------------
-
-    async def register(self, *, email: str, password: str) -> Session:
-        address = normalize_email(email)
-        if "@" not in address or address.startswith("@") or address.endswith("@"):
-            raise ValidationError("That does not look like an email address.")
-        try:
-            assert_acceptable(password, email=address)
-        except WeakPasswordError as exc:
-            raise ValidationError(str(exc)) from exc
-
-        now = utcnow()
-        # The account has to be found and created before there is an
-        # app.user_id, so this runs in the unauthenticated scope. The policies
-        # on these tables allow exactly that and nothing else.
-        async with self._uow.unauthenticated() as auth:
-            if await auth.accounts.get_count(AccountFilter(email=address)) > 0:
-                raise ConflictError("An account already exists for that email.")
-            account = await auth.accounts.create(Account.registered(address))
-            await auth.passwords.create(
-                PasswordCredential.set_for(
-                    account.id, password_hash=hash_password(password), at=now
-                )
-            )
-
-        # The budget is ordinary owner-zone data, so it is written in the owner
-        # scope. Only the authentication tables have the bootstrap exception,
-        # and only because they are read before an identity exists.
-        async with self._uow.for_owner(account.id) as mine:
-            await mine.budgets.create(AiUsageBudget.capped(account.id, self._default_cap))
-
-        log.info("auth.registered", account_id=str(account.id))
-        return await self._start_session(account.id, address, now=now)
 
     # -- sign in ------------------------------------------------------------
 

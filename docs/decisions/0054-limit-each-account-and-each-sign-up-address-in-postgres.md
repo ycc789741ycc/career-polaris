@@ -1,6 +1,6 @@
 # 0054. Each account, and each sign-up address, is limited in Postgres
 
-**Status:** Accepted — 2026-10-05.
+**Status:** Accepted — 2026-10-05. Amended by [0080](0080-make-accounts-only-by-signing-in-with-google.md): the sign-up limit is gone.
 
 ## Context
 

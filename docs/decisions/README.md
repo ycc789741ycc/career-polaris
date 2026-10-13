@@ -6,14 +6,14 @@ new record that supersedes the old one.
 
 | # | Decision | Status |
 |---|---|---|
-| [0001](0001-run-our-own-email-password-sign-in.md) | Run our own email-and-password sign-in instead of a hosted provider | Accepted |
+| [0001](0001-run-our-own-email-password-sign-in.md) | Run our own email-and-password sign-in instead of a hosted provider | Accepted, amended by 0080 |
 | [0002](0002-analyse-only-the-ten-closest-roles.md) | Analyse only the ten roles closest to the user's profile | Superseded by 0003 |
 | [0003](0003-let-the-user-choose-how-many-roles-to-analyse.md) | Let the user choose how many roles to analyse (3–20, default 10) | Superseded by 0020 |
 | [0004](0004-build-the-spa-on-the-prototypes-design-system.md) | Build the SPA on the prototype's design system and sidebar shell | Accepted |
 | [0005](0005-resolve-targets-in-their-own-module.md) | Resolve Targets in their own module | Accepted, amended by 0022 and 0033 |
 | [0006](0006-report-ai-job-progress-through-a-status-the-page-polls.md) | Report AI job progress through a status the page polls | Accepted |
 | [0007](0007-render-resume-pdfs-with-weasyprint.md) | Render résumé PDFs with WeasyPrint, not a headless browser | Accepted |
-| [0008](0008-sign-in-with-google-by-our-own-oidc-exchange.md) | Sign in with Google through our own OpenID Connect exchange, and let a verified address take over an unverified one | Accepted |
+| [0008](0008-sign-in-with-google-by-our-own-oidc-exchange.md) | Sign in with Google through our own OpenID Connect exchange, and let a verified address take over an unverified one | Accepted, amended by 0080 |
 | [0009](0009-package-the-backend-by-component.md) | Package the backend by component, keeping `kernel/` outside the application | Accepted |
 | [0010](0010-define-repositories-in-the-domain-in-domain-types.md) | Define repositories in the domain, in domain types | Superseded by 0011 |
 | [0011](0011-give-every-repository-the-same-six-methods.md) | Give every repository the same six methods, a filter and a factory | Accepted |
@@ -59,7 +59,7 @@ new record that supersedes the old one.
 | [0051](0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md) | The edge runs on a droplet, the heavy work on the operator's machine | Accepted |
 | [0052](0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md) | Work waits for the processing machine instead of being reported lost | Accepted |
 | [0053](0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md) | Caddy is the edge, with per-address limits and no API gateway | Accepted |
-| [0054](0054-limit-each-account-and-each-sign-up-address-in-postgres.md) | Each account, and each sign-up address, is limited in Postgres | Accepted |
+| [0054](0054-limit-each-account-and-each-sign-up-address-in-postgres.md) | Each account, and each sign-up address, is limited in Postgres | Accepted, amended by 0080 |
 | [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted |
 | [0056](0056-rename-everything-inside-to-careerpolaris.md) | Everything inside is renamed to CareerPolaris | Accepted, amended by 0059 |
 | [0057](0057-call-the-api-web-and-postgres-profile-serving.md) | The profile with the api, the SPA and Postgres is called `serving` | Superseded by 0062 |
@@ -85,6 +85,7 @@ new record that supersedes the old one.
 | [0077](0077-read-submitted-answers-into-the-targets-fit.md) | Read submitted answers into the Target's fit, in the Advisor only | Accepted |
 | [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted, amended by 0079 |
 | [0079](0079-keep-each-resume-versions-own-look.md) | Keep the look a résumé version was saved in, and print it in that look | Accepted |
+| [0080](0080-make-accounts-only-by-signing-in-with-google.md) | Make accounts only by signing in with Google, and offer a password only while Google is off | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`
