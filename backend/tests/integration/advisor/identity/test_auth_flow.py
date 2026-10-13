@@ -1,4 +1,4 @@
-"""Registration, sign-in, rotation, lockout and Google, against a real database."""
+"""Password sign-in, rotation, lockout and Google, against a real database."""
 
 from __future__ import annotations
 
@@ -9,16 +9,17 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
-from advisor.identity import AuthService, create_auth_service
+from advisor.identity import AuthService, Session, create_auth_service
 from advisor.identity.domain import (
     MAX_FAILED_ATTEMPTS,
     FederatedSignInRejectedError,
     IdTokenClaims,
     SignInFailure,
 )
+from advisor.identity.infra.passwords import hash_password
 from kernel.auth import ALGORITHM, StaticSecretResolver, TokenVerifier
 from kernel.db import Database
-from kernel.errors import ConflictError, RateLimitedError, UnauthenticatedError, ValidationError
+from kernel.errors import RateLimitedError, UnauthenticatedError
 
 pytestmark = pytest.mark.integration
 
@@ -69,83 +70,63 @@ async def address(database: Database):
             await session.execute(text("DELETE FROM identity.account WHERE id = :i"), {"i": row})
 
 
-# -- registration -----------------------------------------------------------
-
-
-async def test_registering_signs_you_in(
-    auth: AuthService, verifier: TokenVerifier, address: str
-) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
-
-    assert session.email == address
-    user = verifier.verify(session.access_token)
-    assert user.subject == str(session.account_id)
-    assert user.email == address
-
-
-async def test_registration_creates_the_budget_the_ai_gateway_needs(
-    auth: AuthService, database: Database, address: str
-) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
-    async with database.for_user(session.account_id) as db:
-        count = await db.execute(
-            text("SELECT count(*) FROM identity.ai_usage_budget WHERE owner_id = :o"),
-            {"o": session.account_id},
-        )
-        assert count.scalar_one() == 1
-
-
-async def test_the_password_is_never_stored_in_the_clear(
-    auth: AuthService, database: Database, address: str
-) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
-    async with database.for_user(session.account_id) as db:
-        stored = await db.execute(
-            text("SELECT password_hash FROM identity.password_credential WHERE owner_id = :o"),
-            {"o": session.account_id},
-        )
-        value = stored.scalar_one()
-    assert PASSWORD not in value
-    assert value.startswith("$argon2id$")
-
-
-async def test_the_same_address_cannot_register_twice(auth: AuthService, address: str) -> None:
-    await auth.register(email=address, password=PASSWORD)
-    with pytest.raises(ConflictError, match="already exists"):
-        await auth.register(email=address.upper(), password=PASSWORD)
-
-
-async def test_a_weak_password_is_refused_before_an_account_exists(
-    auth: AuthService, database: Database, address: str
-) -> None:
-    with pytest.raises(ValidationError):
-        await auth.register(email=address, password="short")
+async def _password_account(auth: AuthService, database: Database, address: str) -> Session:
+    """An account from before Google became the only way in (ADR 0080),
+    stored as it was made then, and signed in. Cleaned up by ``address``."""
+    account_id = uuid.uuid4()
     async with database.shared() as session:
-        count = await session.execute(
-            text("SELECT count(*) FROM identity.account WHERE email = :e"), {"e": address}
+        await session.execute(
+            text(
+                "INSERT INTO identity.account (id, email, created_at, updated_at) "
+                "VALUES (:id, :email, now(), now())"
+            ),
+            {"id": account_id, "email": address},
         )
-        assert count.scalar_one() == 0
+    async with database.for_user(account_id) as session:
+        await session.execute(
+            text(
+                "INSERT INTO identity.password_credential (id, owner_id, account_id, "
+                "password_hash, failed_attempts, password_updated_at, created_at, updated_at) "
+                "VALUES (:id, :o, :o, :hash, 0, now(), now(), now())"
+            ),
+            {"id": uuid.uuid4(), "o": account_id, "hash": hash_password(PASSWORD)},
+        )
+        await session.execute(
+            text(
+                "INSERT INTO identity.ai_usage_budget (id, owner_id, monthly_cap_usd, "
+                "created_at, updated_at) VALUES (:id, :o, 20, now(), now())"
+            ),
+            {"id": uuid.uuid4(), "o": account_id},
+        )
+    return await auth.sign_in(email=address, password=PASSWORD)
 
 
 # -- sign in ----------------------------------------------------------------
 
 
-async def test_signing_in_with_the_right_password_works(auth: AuthService, address: str) -> None:
-    registered = await auth.register(email=address, password=PASSWORD)
+async def test_signing_in_with_the_right_password_works(
+    auth: AuthService, database: Database, verifier: TokenVerifier, address: str
+) -> None:
+    first = await _password_account(auth, database, address)
     signed_in = await auth.sign_in(email=address, password=PASSWORD)
-    assert signed_in.account_id == registered.account_id
+
+    assert signed_in.account_id == first.account_id
+    assert signed_in.email == address
+    assert verifier.verify(signed_in.access_token).subject == str(signed_in.account_id)
 
 
-async def test_the_address_is_matched_however_it_was_typed(auth: AuthService, address: str) -> None:
-    await auth.register(email=address, password=PASSWORD)
+async def test_the_address_is_matched_however_it_was_typed(
+    auth: AuthService, database: Database, address: str
+) -> None:
+    await _password_account(auth, database, address)
     assert await auth.sign_in(email=f"  {address.upper()} ", password=PASSWORD)
 
 
 async def test_a_wrong_password_and_an_unknown_address_look_identical(
-    auth: AuthService, address: str
+    auth: AuthService, database: Database, address: str
 ) -> None:
     """Telling them apart turns sign-in into a way to discover who has an account."""
-    await auth.register(email=address, password=PASSWORD)
+    await _password_account(auth, database, address)
 
     with pytest.raises(UnauthenticatedError) as wrong:
         await auth.sign_in(email=address, password="a different passphrase")
@@ -158,7 +139,7 @@ async def test_a_wrong_password_and_an_unknown_address_look_identical(
 async def test_repeated_failures_lock_the_account_then_let_it_back_in(
     auth: AuthService, database: Database, address: str
 ) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
+    session = await _password_account(auth, database, address)
     for _ in range(MAX_FAILED_ATTEMPTS):
         with pytest.raises(UnauthenticatedError):
             await auth.sign_in(email=address, password="wrong passphrase here")
@@ -181,7 +162,7 @@ async def test_repeated_failures_lock_the_account_then_let_it_back_in(
 async def test_a_successful_sign_in_clears_the_failure_count(
     auth: AuthService, database: Database, address: str
 ) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
+    session = await _password_account(auth, database, address)
     with pytest.raises(UnauthenticatedError):
         await auth.sign_in(email=address, password="wrong passphrase here")
     await auth.sign_in(email=address, password=PASSWORD)
@@ -197,8 +178,10 @@ async def test_a_successful_sign_in_clears_the_failure_count(
 # -- refresh rotation -------------------------------------------------------
 
 
-async def test_refreshing_returns_a_new_pair(auth: AuthService, address: str) -> None:
-    first = await auth.register(email=address, password=PASSWORD)
+async def test_refreshing_returns_a_new_pair(
+    auth: AuthService, database: Database, address: str
+) -> None:
+    first = await _password_account(auth, database, address)
     second = await auth.refresh(refresh_token=first.refresh_token)
 
     assert second.account_id == first.account_id
@@ -208,7 +191,7 @@ async def test_refreshing_returns_a_new_pair(auth: AuthService, address: str) ->
 async def test_the_refresh_token_is_stored_hashed(
     auth: AuthService, database: Database, address: str
 ) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
+    session = await _password_account(auth, database, address)
     async with database.for_user(session.account_id) as db:
         stored = await db.execute(
             text("SELECT token_hash FROM identity.refresh_token WHERE owner_id = :o"),
@@ -219,10 +202,10 @@ async def test_the_refresh_token_is_stored_hashed(
 
 
 async def test_reusing_a_spent_token_revokes_the_whole_chain(
-    auth: AuthService, address: str
+    auth: AuthService, database: Database, address: str
 ) -> None:
     """Theft is indistinguishable from replay, so the safe move is to end both."""
-    first = await auth.register(email=address, password=PASSWORD)
+    first = await _password_account(auth, database, address)
     second = await auth.refresh(refresh_token=first.refresh_token)
 
     with pytest.raises(UnauthenticatedError, match="already used"):
@@ -241,8 +224,10 @@ async def test_an_unknown_refresh_token_is_refused(auth: AuthService) -> None:
 # -- sign out ---------------------------------------------------------------
 
 
-async def test_signing_out_ends_the_session(auth: AuthService, address: str) -> None:
-    session = await auth.register(email=address, password=PASSWORD)
+async def test_signing_out_ends_the_session(
+    auth: AuthService, database: Database, address: str
+) -> None:
+    session = await _password_account(auth, database, address)
     await auth.sign_out(refresh_token=session.refresh_token)
     with pytest.raises(UnauthenticatedError):
         await auth.refresh(refresh_token=session.refresh_token)
@@ -253,8 +238,10 @@ async def test_signing_out_is_idempotent_and_never_an_error(auth: AuthService) -
     await auth.sign_out(refresh_token="already-gone")
 
 
-async def test_signing_out_everywhere_ends_every_session(auth: AuthService, address: str) -> None:
-    first = await auth.register(email=address, password=PASSWORD)
+async def test_signing_out_everywhere_ends_every_session(
+    auth: AuthService, database: Database, address: str
+) -> None:
+    first = await _password_account(auth, database, address)
     second = await auth.sign_in(email=address, password=PASSWORD)
 
     revoked = await auth.sign_out_everywhere(first.account_id)
@@ -334,7 +321,7 @@ async def test_google_takes_over_a_password_account_at_its_address(
 ) -> None:
     """Our addresses were never verified. Once Google proves who owns one, the
     password whoever registered it set stops working, and so do its sessions."""
-    squatter = await auth.register(email=address, password=PASSWORD)
+    squatter = await _password_account(auth, database, address)
 
     owner = await auth.sign_in_with_google(_google(address.upper()))
 

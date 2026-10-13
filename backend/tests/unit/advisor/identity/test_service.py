@@ -9,21 +9,23 @@ from decimal import Decimal
 
 import pytest
 
-from advisor.identity import AiSource, AuthService, IdentityService, Provider
+from advisor.identity import AiSource, AuthService, IdentityService, Provider, Session
 from advisor.identity.domain import (
     MAX_FAILED_ATTEMPTS,
+    Account,
+    AiUsageBudget,
     CredentialStatus,
     FederatedIdentity,
     IdTokenClaims,
+    PasswordCredential,
     ProviderCredentialFailed,
     UsageBudgetExceeded,
-    digest,
 )
+from advisor.identity.infra.passwords import hash_password
 from kernel.ai_gateway.ports import Funding, PlatformCredential, UsageRecord
 from kernel.crypto import decrypt
 from kernel.errors import (
     BudgetExceededError,
-    ConflictError,
     CredentialMissingError,
     PlatformAiNotEligibleError,
     PlatformAiUnavailableError,
@@ -50,41 +52,31 @@ def _auth(uow: FakeIdentityUnitOfWork) -> AuthService:
     )
 
 
+async def _password_account(uow: FakeIdentityUnitOfWork, email: str) -> Session:
+    """An account from before Google became the only way in (ADR 0080),
+    stored as it was made then, and signed in."""
+    account = Account.registered(email)
+    uow.store.accounts[account.id] = account
+    credential = PasswordCredential.set_for(
+        account.id, password_hash=hash_password(PASSWORD), at=datetime.now(UTC)
+    )
+    uow.store.passwords[credential.id] = credential
+    budget = AiUsageBudget.capped(account.id, Decimal("20"))
+    uow.store.budgets[budget.id] = budget
+    return await _auth(uow).sign_in(email=email, password=PASSWORD)
+
+
 def _identity(uow: FakeIdentityUnitOfWork) -> IdentityService:
     return IdentityService(uow, default_monthly_cap_usd=Decimal("20"))
 
 
-# --- registration and sign-in ----------------------------------------------
-
-
-async def test_registering_opens_a_session_and_sets_the_default_budget() -> None:
-    uow = FakeIdentityUnitOfWork()
-    session = await _auth(uow).register(email=" Ada@Example.COM ", password=PASSWORD)
-
-    assert session.email == "ada@example.com"
-    (account,) = uow.store.accounts.values()
-    (budget,) = uow.store.budgets.values()
-    assert budget.owner_id == account.id and budget.monthly_cap_usd == Decimal("20")
-    (token,) = uow.store.refresh_tokens.values()
-    assert token.token_hash == digest(session.refresh_token)
-
-
-async def test_an_address_registers_once() -> None:
-    auth = _auth(FakeIdentityUnitOfWork())
-    await auth.register(email="ada@example.com", password=PASSWORD)
-    with pytest.raises(ConflictError):
-        await auth.register(email="ADA@example.com", password=PASSWORD)
-
-
-async def test_a_weak_password_is_refused() -> None:
-    with pytest.raises(ValidationError):
-        await _auth(FakeIdentityUnitOfWork()).register(email="ada@example.com", password="short")
+# --- sign-in with a password ----------------------------------------------
 
 
 async def test_wrong_passwords_lock_the_account_and_the_lock_is_recorded() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    await auth.register(email="ada@example.com", password=PASSWORD)
+    await _password_account(uow, "ada@example.com")
 
     for _ in range(MAX_FAILED_ATTEMPTS):
         with pytest.raises(UnauthenticatedError):
@@ -99,7 +91,7 @@ async def test_wrong_passwords_lock_the_account_and_the_lock_is_recorded() -> No
 async def test_a_good_sign_in_clears_earlier_failures() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    await auth.register(email="ada@example.com", password=PASSWORD)
+    await _password_account(uow, "ada@example.com")
     with pytest.raises(UnauthenticatedError):
         await auth.sign_in(email="ada@example.com", password="wrong wrong wrong")
 
@@ -120,7 +112,7 @@ async def test_an_unknown_address_fails_like_a_wrong_password() -> None:
 async def test_a_refresh_rotates_and_a_reused_token_revokes_the_whole_family() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    first = await auth.register(email="ada@example.com", password=PASSWORD)
+    first = await _password_account(uow, "ada@example.com")
 
     second = await auth.refresh(refresh_token=first.refresh_token)
     assert second.refresh_token != first.refresh_token
@@ -136,7 +128,7 @@ async def test_a_refresh_rotates_and_a_reused_token_revokes_the_whole_family() -
 async def test_signing_out_ends_the_chain_and_is_idempotent() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    session = await auth.register(email="ada@example.com", password=PASSWORD)
+    session = await _password_account(uow, "ada@example.com")
 
     await auth.sign_out(refresh_token=session.refresh_token)
     await auth.sign_out(refresh_token=session.refresh_token)
@@ -149,9 +141,9 @@ async def test_signing_out_ends_the_chain_and_is_idempotent() -> None:
 async def test_signing_out_everywhere_revokes_only_that_accounts_sessions() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    ada = await auth.register(email="ada@example.com", password=PASSWORD)
+    ada = await _password_account(uow, "ada@example.com")
     await auth.sign_in(email="ada@example.com", password=PASSWORD)
-    bob = await auth.register(email="bob@example.com", password=PASSWORD)
+    bob = await _password_account(uow, "bob@example.com")
 
     assert await auth.sign_out_everywhere(ada.account_id) == 2
     await auth.refresh(refresh_token=bob.refresh_token)
@@ -167,7 +159,7 @@ def _claims(email: str, subject: str = "google-sub-1") -> IdTokenClaims:
 async def test_a_verified_google_address_takes_over_a_password_account() -> None:
     uow = FakeIdentityUnitOfWork()
     auth = _auth(uow)
-    squatter = await auth.register(email="ada@example.com", password=PASSWORD)
+    squatter = await _password_account(uow, "ada@example.com")
 
     session = await auth.sign_in_with_google(_claims("ada@example.com"))
 
@@ -219,8 +211,8 @@ async def test_the_credential_is_write_only_and_encrypted() -> None:
 
 async def test_a_failed_key_pauses_the_user_and_is_announced() -> None:
     uow = FakeIdentityUnitOfWork()
-    auth, identity = _auth(uow), _identity(uow)
-    session = await auth.register(email="ada@example.com", password=PASSWORD)
+    identity = _identity(uow)
+    session = await _password_account(uow, "ada@example.com")
     owner = session.account_id
     await identity.set_credential(
         owner, provider="anthropic", model="claude", api_key="sk-secret-1234", base_url=None
@@ -244,8 +236,8 @@ async def test_a_failed_key_pauses_the_user_and_is_announced() -> None:
 
 async def test_spending_past_the_cap_pauses_and_refuses() -> None:
     uow = FakeIdentityUnitOfWork()
-    auth, identity = _auth(uow), _identity(uow)
-    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    identity = _identity(uow)
+    owner = (await _password_account(uow, "ada@example.com")).account_id
     await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
     await identity.record(
         UsageRecord(
@@ -291,8 +283,8 @@ async def test_a_negative_cap_is_refused() -> None:
 async def test_the_cap_counts_only_what_the_users_own_key_paid_for() -> None:
     """The platform's spend is the operator's money, metered apart (ADR 0064)."""
     uow = FakeIdentityUnitOfWork()
-    auth, identity = _auth(uow), _identity(uow)
-    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    identity = _identity(uow)
+    owner = (await _password_account(uow, "ada@example.com")).account_id
     await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
     for funding, cost in ((Funding.OWN, "0.25"), (Funding.PLATFORM, "5.00")):
         await identity.record(
@@ -327,7 +319,7 @@ def _platform_identity(uow: FakeIdentityUnitOfWork) -> IdentityService:
 
 
 async def _google_account(uow: FakeIdentityUnitOfWork) -> uuid.UUID:
-    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+    owner = (await _password_account(uow, "ada@example.com")).account_id
     identity = FederatedIdentity.linked(
         owner, provider="google", subject="google-sub-1", email="ada@example.com"
     )
@@ -368,7 +360,7 @@ async def test_storing_a_key_chooses_it_and_switching_back_needs_no_new_key() ->
 async def test_with_nothing_chosen_an_account_without_google_runs_on_its_own_key() -> None:
     uow = FakeIdentityUnitOfWork()
     identity = _platform_identity(uow)
-    owner = (await _auth(uow).register(email="bo@example.com", password=PASSWORD)).account_id
+    owner = (await _password_account(uow, "bo@example.com")).account_id
 
     assert (await identity.ai_source(owner)).source is None
     with pytest.raises(CredentialMissingError):
@@ -386,7 +378,7 @@ async def test_with_the_platform_off_nothing_chosen_means_ones_own_key() -> None
 async def test_an_account_without_google_cannot_use_the_platforms_key() -> None:
     uow = FakeIdentityUnitOfWork()
     identity = _platform_identity(uow)
-    owner = (await _auth(uow).register(email="bo@example.com", password=PASSWORD)).account_id
+    owner = (await _password_account(uow, "bo@example.com")).account_id
 
     assert not (await identity.ai_source(owner)).is_eligible
     with pytest.raises(PlatformAiNotEligibleError):
@@ -452,7 +444,7 @@ async def test_only_an_openai_key_may_name_its_own_endpoint(
     monkeypatch.setattr(service, "assert_public_url", lambda url: None)
     uow = FakeIdentityUnitOfWork()
     identity = _identity(uow)
-    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+    owner = (await _password_account(uow, "ada@example.com")).account_id
 
     with pytest.raises(ValidationError, match="OpenAI-compatible"):
         await identity.set_credential(
@@ -476,7 +468,7 @@ async def test_only_an_openai_key_may_name_its_own_endpoint(
 async def test_a_self_hosted_model_is_not_a_provider() -> None:
     uow = FakeIdentityUnitOfWork()
     identity = _identity(uow)
-    owner = (await _auth(uow).register(email="ada@example.com", password=PASSWORD)).account_id
+    owner = (await _password_account(uow, "ada@example.com")).account_id
 
     with pytest.raises(ValidationError, match="unknown provider"):
         await identity.set_credential(
@@ -490,8 +482,8 @@ async def test_a_self_hosted_model_is_not_a_provider() -> None:
 async def test_a_model_with_no_published_rate_does_not_count_toward_the_cap() -> None:
     """Its cost is only our deliberately high guess; it must not pause work."""
     uow = FakeIdentityUnitOfWork()
-    auth, identity = _auth(uow), _identity(uow)
-    owner = (await auth.register(email="ada@example.com", password=PASSWORD)).account_id
+    identity = _identity(uow)
+    owner = (await _password_account(uow, "ada@example.com")).account_id
     await identity.set_budget(owner, monthly_cap_usd=Decimal("1"))
     for is_rate_published, cost in ((True, "0.25"), (False, "9.00")):
         await identity.record(

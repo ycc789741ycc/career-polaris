@@ -213,9 +213,6 @@ class Settings(BaseSettings):
     role_map_ai_concurrency: int = Field(default=4, ge=1, alias="ROLE_MAP_AI_CONCURRENCY")
 
     # --- Limits per account and per address (ADR 0054) ----------------------
-    # Accounts made from one address in a day. Addresses are not verified yet
-    # (architecture.md open question 3), so this is what stops a script.
-    signups_per_address_per_day: int = Field(default=10, ge=1, alias="SIGNUPS_PER_ADDRESS_PER_DAY")
     # Files one account uploads in a day: résumés, roles of their own and
     # template PDFs, each read on the compute machine.
     uploads_per_account_per_day: int = Field(default=30, ge=1, alias="UPLOADS_PER_ACCOUNT_PER_DAY")

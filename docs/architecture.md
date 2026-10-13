@@ -101,7 +101,7 @@ The worker queues share one image for the MVP. Split them later by giving each q
 | Documents | WeasyPrint (PDF export, [ADR 0007](decisions/0007-render-resume-pdfs-with-weasyprint.md)), pypdf / python-docx (parsing) | No browser in the image; the export fetches nothing. Caprasimo and Figtree are installed for it, beside the image's DejaVu, and its look is the domain's, which the preview reads too ([ADR 0038](decisions/0038-export-the-resume-as-previewed-and-download-it.md)): a template's checked spec, built in or the user's own ([ADR 0040](decisions/0040-keep-resume-templates-as-checked-specs.md)) |
 | Local ML | sentence-transformers | Works with every LLM provider, including Anthropic, which has no embeddings API |
 | Client | React + Vite, `openapi-typescript` client generated from FastAPI's OpenAPI; the SPA's response types alias it | The API contract is the client/server boundary, checked in CI down to the SPA's typecheck ([ADR 0013](decisions/0013-type-every-http-response-with-a-schema-model.md)) |
-| Auth | Own sign-in in `identity`: Argon2id, 15-minute HS256 access tokens, rotating refresh cookie; optional Google through our own OpenID Connect exchange | No external account needed to run the app; see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md) and [ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md) |
+| Auth | Own sign-in in `identity`: Argon2id, 15-minute HS256 access tokens, rotating refresh cookie; accounts made only through Google, by our own OpenID Connect exchange ([ADR 0080](decisions/0080-make-accounts-only-by-signing-in-with-google.md)) | No external account needed to run the app; see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md) and [ADR 0008](decisions/0008-sign-in-with-google-by-our-own-oidc-exchange.md) |
 
 ## 2. Code boundaries inside the monolith
 
@@ -277,7 +277,7 @@ flowchart TB
 
 ## 3. Data boundaries
 
-**One Postgres database:** a schema per module (above), plus `outbox`, `procrastinate`, `presence` (heartbeats, [ADR 0052](decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)) and `limits` (counters per account and address, [ADR 0054](decisions/0054-limit-each-account-and-each-sign-up-address-in-postgres.md)).
+**One Postgres database:** a schema per module (above), plus `outbox`, `procrastinate`, `presence` (heartbeats, [ADR 0052](decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)) and `limits` (counters per account, [ADR 0054](decisions/0054-limit-each-account-and-each-sign-up-address-in-postgres.md)).
 
 ### Database roles (least privilege)
 | Role | Used by | Access |
@@ -474,7 +474,7 @@ flowchart LR
 |---|---|---|
 | 1 | **Where it runs** (was: PaaS choice) | **Answered in Phase 12: a DigitalOcean droplet and the operator's own machine** ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md)). The droplet runs the light, always-on part: Caddy, `web`, `api` and Postgres. The operator's machine runs the worker and the crawler, which hold the embedding model, over a Tailscale tunnel. Per-service secrets stay as they were: each service is given only its own configuration, and the crawler none. |
 | 2 | **Auth provider** | **Answered: our own email and password, in `identity`** — see [ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md), which supersedes the earlier choice of Clerk (it needs an external account). Argon2id hashes, time-based lockout after 5 failures, 15-minute access tokens held in memory, and rotating 30-day refresh tokens in an httpOnly `SameSite=Strict` cookie, stored hashed. A reused refresh token revokes its whole chain. `kernel/auth` verifies through a `SigningKeyResolver`, so moving to a hosted OpenID provider later is a wiring change, not a rewrite. **Not yet built, both blocked on Q3:** address verification and password reset. |
-| 3 | **Email delivery** for digests and prompts | **Still open — and now on the critical path.** Beyond interview-report prompts (Phase 2), owning sign-in means address verification and password reset both need it. Until then, anyone can register an address they do not own, and a forgotten password cannot be recovered. |
+| 3 | **Email delivery** for digests and prompts | **Still open — and now on the critical path.** Beyond interview-report prompts (Phase 2), owning sign-in means address verification and password reset both need it. Since [ADR 0080](decisions/0080-make-accounts-only-by-signing-in-with-google.md) accounts are made only through Google, which verifies the address; a forgotten password on an older account still cannot be recovered, but continuing with Google at its address takes the account over. |
 
 ### Decided during Phase 1 implementation
 

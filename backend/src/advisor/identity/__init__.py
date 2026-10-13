@@ -1,6 +1,6 @@
 """The identity component.
 
-Accounts, sign-in (password and Google), sessions, the user's AI credential and
+Accounts, sign-in (Google, and password for older accounts), sessions, the user's AI credential and
 budget, and which key their AI runs on.
 
 This file is the component's public API. Everything else in the package is

@@ -297,6 +297,10 @@ contract.
   `SameSite=Strict` cookie stored hashed. A reused refresh token revokes its
   whole chain. There is no address verification or password reset yet — both
   wait on email delivery. Why, and what it costs: `docs/decisions/0001`.
+- **Accounts are made only by signing in with Google** (ADR 0080). There is no
+  `/auth/register`. The sign-in screen shows the email form only while
+  `GOOGLE_OAUTH_CLIENT_ID` is blank (`/auth/methods` says `password`), for
+  accounts made before then; `/auth/sign-in` still answers either way.
 - **Atlassian is told which accounts we hold data about** (ADR 0061). Each
   Jira connection keeps its `accountId` and reports itself weekly
   (`profile.report_jira_account`, one queueing lock per user) with the token of
@@ -363,7 +367,8 @@ cookie a password sign-in sets. Outside identities live in
 `identity.federated_identity`, keyed on Google's `sub`. A Google-verified
 address takes over a password account at the same address and removes its
 password and sessions, because our own addresses are unverified (ADR 0008).
-Optional: blank `GOOGLE_OAUTH_CLIENT_ID` turns it off.
+Optional: blank `GOOGLE_OAUTH_CLIENT_ID` turns it off, and then no account can
+be made (ADR 0080).
 
 Not yet: unlinking Google, or linking it from Settings.
 
@@ -839,11 +844,11 @@ Hybrid deployment (`docs/plan.md`), one branch per step under
   asks `HeadBucket`, because a Spaces key scoped to one bucket may not list.
   `make backup-db` / `restore-db` move `pg_dump` through a second bucket
   (`BACKUP_S3_*`) with the pinned AWS CLI image.
-- **Limits per account and address** (ADR 0054). `kernel.limits.Limiter`
+- **Limits per account** (ADR 0054; the per-address sign-up limit went with
+  ADR 0080). `kernel.limits.Limiter`
   counts a fixed window per limit and subject in `limits.counter` (a digest,
   never the address; migration 0045), in a transaction of its own;
-  `wiring.limits` names `signups` (per address, `SIGNUPS_PER_ADDRESS_PER_DAY`),
-  `uploads` (per account, `UPLOADS_PER_ACCOUNT_PER_DAY`: résumés, own
+  `wiring.limits` names `uploads` (per account, `UPLOADS_PER_ACCOUNT_PER_DAY`: résumés, own
   postings, template PDFs) and `syncs` (`SYNCS_PER_ACCOUNT_PER_HOUR`). A
   refusal is `RateLimitedError(retry_after_seconds=)`, answered 429 with
   `Retry-After`. uvicorn believes `X-Forwarded-For` only from

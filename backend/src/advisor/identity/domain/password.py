@@ -1,11 +1,9 @@
-"""Password rules.
+"""Password rules: lockout and the stored credential.
 
-Pure policy, so it is testable without a database and without hashing anything.
-The hashing itself is infrastructure and lives in ``infra/passwords.py``.
-
-The rules follow current OWASP guidance rather than the older "one uppercase,
-one digit, one symbol" style: length is what actually resists guessing, and
-composition rules mostly push people toward `Password1!`.
+Pure, so it is testable without a database and without hashing anything. The
+hashing itself is infrastructure and lives in ``infra/passwords.py``. No
+password is set any more (ADR 0080), so there is no strength policy: only
+accounts from before then sign in with one.
 """
 
 from __future__ import annotations
@@ -17,60 +15,7 @@ from datetime import datetime
 from advisor.identity.domain.constants import (
     LOCKOUT_WINDOW,
     MAX_FAILED_ATTEMPTS,
-    MAX_PASSWORD_LENGTH,
-    MIN_PASSWORD_LENGTH,
 )
-
-# A small sample of what credential-stuffing lists try first.
-#
-# Every entry is at least MIN_PASSWORD_LENGTH characters: a shorter one could
-# never match, because the length check runs first and would reject it with a
-# different message. A real deployment should check a breach corpus instead;
-# this is the floor, not the ceiling.
-_OBVIOUS = frozenset(
-    {
-        "password1234",
-        "passwordpassword",
-        "password123456",
-        "123456789012",
-        "1234567890123",
-        "qwerty123456",
-        "qwertyuiopas",
-        "letmein12345",
-        "administrator",
-        "iloveyou1234",
-        "welcome12345",
-        "trustno1trustno1",
-    }
-)
-
-
-class WeakPasswordError(ValueError):
-    """The password does not meet policy. The message is shown to the user."""
-
-
-def assert_acceptable(password: str, *, email: str | None = None) -> None:
-    """Reject what will obviously be guessed.
-
-    Deliberately short: every extra rule is a rule a person works around.
-    """
-    if len(password) < MIN_PASSWORD_LENGTH:
-        raise WeakPasswordError(
-            f"Use at least {MIN_PASSWORD_LENGTH} characters. Length matters far "
-            "more than punctuation."
-        )
-    if len(password) > MAX_PASSWORD_LENGTH:
-        # Not a strength rule: unbounded input is a denial-of-service vector,
-        # because hashing cost grows with length.
-        raise WeakPasswordError(f"Use at most {MAX_PASSWORD_LENGTH} characters.")
-    # Checked after length so the entries above are all reachable.
-    if password.lower() in _OBVIOUS:
-        raise WeakPasswordError("That password is one of the first ones guessed.")
-    if email:
-        local = email.split("@", 1)[0].lower()
-        if local and len(local) >= 4 and local in password.lower():
-            raise WeakPasswordError("Do not use your email address in your password.")
-
 
 # --- brute-force resistance -------------------------------------------------
 

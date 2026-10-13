@@ -7,19 +7,20 @@ import { googleStartUrl, signInMethods, type SignInMethods } from "./session";
 import { SignInIllustration } from "./SignInIllustration";
 import { readSignInError, withoutSignInError } from "./signInError";
 
-const MIN_PASSWORD_LENGTH = 12;
-
-/** Until the server says otherwise: a password, and nothing else. */
-const NO_OUTSIDE_METHODS: SignInMethods = {
+/** If the server cannot be asked: Google off, so a password is the way in. */
+const PASSWORD_ONLY: SignInMethods = {
   password: true,
   google: false,
   platform_ai: false,
 };
 
-/** Sign in or create an account. One form, two modes. */
+/**
+ * Sign in. Accounts are made only by signing in with Google (ADR 0080); the
+ * email form is for accounts from before then, offered only while Google is
+ * off.
+ */
 export function SignInScreen() {
-  const { signIn, register } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "register">("sign-in");
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,9 +29,9 @@ export function SignInScreen() {
   const [error, setError] = useState<string | null>(() =>
     readSignInError(window.location.search),
   );
-  const [methods, setMethods] = useState<SignInMethods>(NO_OUTSIDE_METHODS);
-
-  const registering = mode === "register";
+  // Null until the server answers: nothing is offered, so a form never
+  // flashes up and goes.
+  const [methods, setMethods] = useState<SignInMethods | null>(null);
 
   useEffect(() => {
     const { pathname, search } = window.location;
@@ -47,7 +48,7 @@ export function SignInScreen() {
     let cancelled = false;
     signInMethods()
       .then((offered) => !cancelled && setMethods(offered))
-      .catch(() => !cancelled && setMethods(NO_OUTSIDE_METHODS));
+      .catch(() => !cancelled && setMethods(PASSWORD_ONLY));
     return () => {
       cancelled = true;
     };
@@ -58,7 +59,7 @@ export function SignInScreen() {
     setBusy(true);
     setError(null);
     try {
-      await (registering ? register(email, password) : signIn(email, password));
+      await signIn(email, password);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Something went wrong.",
@@ -92,88 +93,72 @@ export function SignInScreen() {
       <div className="sign-in-aside">
         <div className="sign-in-card">
           <form onSubmit={submit} style={{ display: "grid", gap: 4 }}>
-            <h2 className="sign-in-heading">
-              {registering ? "Create your account" : "Welcome back"}
-            </h2>
+            <h2 className="sign-in-heading">Sign in to CareerPolaris</h2>
 
-            {methods.google && (
+            {methods?.google && (
+              /* A link, not a fetch: the browser itself goes to Google. */
+              <a
+                className="btn btn-secondary sign-in-google"
+                href={googleStartUrl()}
+              >
+                Continue with Google
+              </a>
+            )}
+
+            {methods?.google && methods.password && (
+              <div className="sign-in-divider">or with email</div>
+            )}
+
+            {methods?.password && (
               <>
-                {/* A link, not a fetch: the browser itself goes to Google. */}
-                <a
-                  className="btn btn-secondary sign-in-google"
-                  href={googleStartUrl()}
-                >
-                  Continue with Google
-                </a>
-                <div className="sign-in-divider">or with email</div>
+                <Field label="Email">
+                  <input
+                    className="input"
+                    type="email"
+                    value={email}
+                    autoComplete="email"
+                    placeholder="you@work.com"
+                    required
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </Field>
+
+                <Field label="Password">
+                  <input
+                    className="input"
+                    type="password"
+                    value={password}
+                    autoComplete="current-password"
+                    required
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </Field>
               </>
             )}
 
-            <Field label="Email">
-              <input
-                className="input"
-                type="email"
-                value={email}
-                autoComplete="email"
-                placeholder="you@work.com"
-                required
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </Field>
-
-            <Field
-              label="Password"
-              {...(registering
-                ? {
-                    hint: `At least ${MIN_PASSWORD_LENGTH} characters. A memorable phrase beats a short, punctuated one.`,
-                  }
-                : {})}
-            >
-              <input
-                className="input"
-                type="password"
-                value={password}
-                autoComplete={registering ? "new-password" : "current-password"}
-                required
-                minLength={registering ? MIN_PASSWORD_LENGTH : 1}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </Field>
-
             <ErrorNote error={error} />
 
-            <Button
-              type="submit"
-              busy={busy}
-              disabled={!email || !password}
-              block
-            >
-              {registering ? "Create account" : "Sign in"}
-            </Button>
-
-            <div className="sign-in-switch">
-              {registering
-                ? "Already have an account?"
-                : "New to CareerPolaris?"}
+            {methods?.password && (
               <Button
-                variant="ghost"
-                onClick={() => {
-                  setMode(registering ? "sign-in" : "register");
-                  setError(null);
-                }}
+                type="submit"
+                busy={busy}
+                disabled={!email || !password}
+                block
               >
-                {registering ? "Sign in" : "Create an account"}
+                Sign in
               </Button>
-            </div>
+            )}
 
             {/* Said plainly rather than discovered later. */}
             <p className="sign-in-footnote">
-              {methods.platform_ai
+              {methods?.platform_ai
                 ? "Sign in with Google to start on CareerPolaris AI's free monthly quota, or add your own AI provider and key after signing in."
                 : "After signing in you add your own AI provider and key; nothing is analysed until you do."}{" "}
-              No password reset yet, and addresses are not verified.
-              {methods.google &&
-                " Signing in with Google proves your address: an account with the same address is linked to Google, and any password on it stops working."}{" "}
+              {methods?.google &&
+                "New to CareerPolaris? Continuing with Google makes your account. Had a password here? Continue with Google at the same address: the account is linked to Google, and any password on it stops working."}
+              {methods?.password &&
+                !methods.google &&
+                "Accounts are made with Google, which is not set up here, so only an existing account can sign in. No password reset yet."}{" "}
               <a href={PRIVACY_PATH}>Privacy policy</a>
             </p>
           </form>

@@ -9,7 +9,6 @@ from kernel.limits import Limit
 from wiring.limits import Limits
 
 LIMITS = Limits(
-    signups=Limit("signups", 10, timedelta(days=1), "Too many sign-ups."),
     uploads=Limit("uploads", 30, timedelta(days=1), "Too many uploads."),
     syncs=Limit("syncs", 6, timedelta(hours=1), "Too many syncs."),
 )

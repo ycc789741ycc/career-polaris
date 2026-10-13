@@ -1,6 +1,6 @@
 # 0001. Run our own email-and-password sign-in instead of a hosted provider
 
-**Status:** Accepted — 2026-09-21
+**Status:** Accepted — 2026-09-21. Amended by [0080](0080-make-accounts-only-by-signing-in-with-google.md): no account is made with a password.
 
 ## Context
 

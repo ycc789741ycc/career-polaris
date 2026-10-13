@@ -226,6 +226,9 @@ export interface paths {
         /**
          * Sign In Methods
          * @description Which ways in the sign-in screen should offer.
+         *
+         *     Email and password only while Google is off: with it on, the screen offers
+         *     Google alone, though ``/auth/sign-in`` still answers (ADR 0080).
          */
         get: operations["sign_in_methods_api_v1_auth_methods_get"];
         put?: never;
@@ -253,30 +256,6 @@ export interface paths {
          *     detectable: presenting a spent token revokes the whole chain.
          */
         post: operations["refresh_api_v1_auth_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Register
-         * @description Create an account and sign in.
-         *
-         *     The address is not verified — nothing is sent to it yet. That has to be in
-         *     place before any notification feature ships. Until then, how many accounts
-         *     one network may make in a day is limited (ADR 0054).
-         */
-        post: operations["register_api_v1_auth_register_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2593,16 +2572,6 @@ export interface components {
             /** Role Id */
             role_id?: string | null;
         };
-        /** RegisterRequest */
-        RegisterRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
-        };
         /** ResumeBullet */
         ResumeBullet: {
             /** Answers */
@@ -4436,57 +4405,6 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionResponse"];
-                };
-            };
-            /** @description The request could not be read. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Refused, with a stable code. */
-            "4XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Failed, with a stable code. */
-            "5XX": {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    register_api_v1_auth_register_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
                 headers: {
                     [name: string]: unknown;
                 };

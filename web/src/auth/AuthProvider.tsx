@@ -14,7 +14,6 @@ import * as session from "./session";
 interface AuthState {
   status: "loading" | "signed-out" | "signed-in";
   email: string | null;
-  register: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -94,8 +93,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       email: current?.email ?? null,
-      register: async (email, password) =>
-        adopt(await session.register(email, password)),
       signIn: async (email, password) =>
         adopt(await session.signIn(email, password)),
       signOut: async () => {

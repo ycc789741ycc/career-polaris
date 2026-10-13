@@ -81,7 +81,7 @@ describe("sign-in screen", () => {
     const user = userEvent.setup();
     renderScreen();
 
-    const submit = screen.getByRole("button", { name: "Sign in" });
+    const submit = await screen.findByRole("button", { name: "Sign in" });
     expect(submit).toBeDisabled();
 
     await user.type(screen.getByLabelText("Email"), "maya@example.com");
@@ -98,7 +98,7 @@ describe("sign-in screen", () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.type(screen.getByLabelText("Email"), "maya@example.com");
+    await user.type(await screen.findByLabelText("Email"), "maya@example.com");
     await user.type(
       screen.getByLabelText("Password"),
       "a perfectly fine passphrase",
@@ -124,7 +124,7 @@ describe("sign-in screen", () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.type(screen.getByLabelText("Email"), "maya@example.com");
+    await user.type(await screen.findByLabelText("Email"), "maya@example.com");
     await user.type(
       screen.getByLabelText("Password"),
       "a perfectly fine passphrase{Enter}",
@@ -160,7 +160,7 @@ describe("sign-in screen", () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.type(screen.getByLabelText("Email"), "maya@example.com");
+    await user.type(await screen.findByLabelText("Email"), "maya@example.com");
     await user.type(screen.getByLabelText("Password"), "the wrong passphrase");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -169,40 +169,20 @@ describe("sign-in screen", () => {
     ).toBeInTheDocument();
   });
 
-  it("switches to registration and posts to the register endpoint", async () => {
-    const user = userEvent.setup();
+  it("says plainly that there is no password reset yet", async () => {
     renderScreen();
-
-    await user.click(screen.getByRole("button", { name: "Create an account" }));
     expect(
-      screen.getByRole("heading", { name: "Create your account" }),
+      await screen.findByText(/no password reset yet/i),
     ).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Email"), "new@example.com");
-    await user.type(
-      screen.getByLabelText("Password"),
-      "a perfectly fine passphrase",
-    );
-    await user.click(screen.getByRole("button", { name: "Create account" }));
-
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([url]) =>
-          String(url).endsWith("/auth/register"),
-        ),
-      ).toBe(true),
-    );
   });
 
-  it("says plainly that there is no password reset yet", () => {
+  it("offers no way to make an account with a password", async () => {
     renderScreen();
-    expect(screen.getByText(/no password reset yet/i)).toBeInTheDocument();
-  });
+    await screen.findByLabelText("Email");
 
-  it("welcomes back by default", async () => {
-    renderScreen();
+    expect(screen.queryByText(/create/i)).not.toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Welcome back" }),
+      screen.getByText(/only an existing account can sign in/),
     ).toBeInTheDocument();
   });
 
@@ -213,32 +193,6 @@ describe("sign-in screen", () => {
         name: /^How CareerPolaris works: 1, evidence/,
       }),
     ).toBeInTheDocument();
-  });
-
-  it("switches back to signing in from registration", async () => {
-    const user = userEvent.setup();
-    renderScreen();
-
-    await user.click(screen.getByRole("button", { name: "Create an account" }));
-    // Registering, the submit is "Create account" and "Sign in" only switches.
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
-
-    expect(
-      screen.getByRole("heading", { name: "Welcome back" }),
-    ).toBeInTheDocument();
-  });
-});
-
-describe("field accessibility", () => {
-  it("names the password field 'Password', not the whole hint sentence", async () => {
-    const user = userEvent.setup();
-    renderScreen();
-    await user.click(screen.getByRole("button", { name: "Create an account" }));
-
-    const password = screen.getByLabelText("Password");
-    // The hint is help text, announced as a description rather than a name.
-    expect(password).toHaveAccessibleName("Password");
-    expect(password).toHaveAccessibleDescription(/At least 12 characters/);
   });
 });
 
@@ -254,7 +208,7 @@ describe("signing in with Google", () => {
       }
       if (url.endsWith("/auth/methods")) {
         return jsonResponse({
-          password: true,
+          password: !google,
           google,
           platform_ai: platformAi,
         });
@@ -296,17 +250,28 @@ describe("signing in with Google", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers Google before the email form", async () => {
+  it("offers Google alone when the server has it", async () => {
     methods(true);
     renderScreen();
 
-    const link = await screen.findByRole("link", {
-      name: "Continue with Google",
-    });
+    await screen.findByRole("link", { name: "Continue with Google" });
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
     expect(
-      link.compareDocumentPosition(screen.getByLabelText("Email")) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Sign in" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/makes your account/)).toBeInTheDocument();
+  });
+
+  it("offers the email form, and no Google, when the server is not set up for it", async () => {
+    methods(false);
+    renderScreen();
+
+    expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Continue with Google" }),
+    ).not.toBeInTheDocument();
   });
 
   it("says a Google account starts on CareerPolaris AI when the platform is on", async () => {
