@@ -11,13 +11,19 @@ The edge and the compute side each migrate when they start (ADR 0051), so the
 whole run holds a Postgres advisory lock: a place starting at the same moment
 waits, then finds nothing pending. A place whose image is older than the schema
 stops here, rather than running code against tables it does not know.
+
+`python -m cli.migrate --check` (`make check-schema`) asks only that last
+question, and changes nothing: the rollout runs it while the old release still
+serves, so a release that could not start stops before anything is stopped
+(ADR 0081).
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterable, Iterator
+import sys
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 
 import psycopg
@@ -39,10 +45,20 @@ class SchemaAheadError(RuntimeError):
     """The database is at a revision this image's migrations do not contain."""
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args not in ([], ["--check"]):
+        raise SystemExit("usage: python -m cli.migrate [--check]")
     url = _get_migrator_url()
     config = Config("alembic.ini")
     known = {script.revision for script in ScriptDirectory.from_config(config).walk_revisions()}
+    if args == ["--check"]:
+        # Read-only and without the lock: it must answer while a release runs.
+        try:
+            print(get_schema_report(_get_applied_revisions(url), known))
+        except SchemaAheadError as error:
+            raise SystemExit(f"ERROR: {error}") from error
+        return
     with migration_lock(get_psycopg_dsn(url)):
         assert_schema_known(_get_applied_revisions(url), known)
         command.upgrade(config, "head")
@@ -74,6 +90,15 @@ def assert_schema_known(applied: Iterable[str], known: set[str]) -> None:
             f"the database is at {', '.join(unknown)}, which this image does not know: "
             "a newer release migrated it. Run the release the edge runs here too."
         )
+
+
+def get_schema_report(applied: Iterable[str], known: set[str]) -> str:
+    """Say whether this image can run on the database; raise if it cannot."""
+    revisions = sorted(applied)
+    assert_schema_known(revisions, known)
+    if not revisions:
+        return "schema: empty; this image's migrations create it"
+    return f"schema: at {', '.join(revisions)}, which this image knows"
 
 
 def _get_applied_revisions(url: str) -> list[str]:

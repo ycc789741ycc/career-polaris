@@ -57,7 +57,11 @@ async def main() -> None:
         queues = [str(Queue.AI), str(Queue.SYNC), str(Queue.DOCS)]
         log.info("worker.started", queues=queues)
         try:
-            await app.run_worker_async(queues=queues)
+            # On SIGTERM (a stop, or a rollout draining this machine) it takes no
+            # new job and lets the running ones finish, up to the drain period.
+            await app.run_worker_async(
+                queues=queues, shutdown_graceful_timeout=settings.worker_drain_seconds
+            )
         finally:
             dispatcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
