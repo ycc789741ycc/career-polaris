@@ -148,7 +148,10 @@ platform key against its ceilings, top accounts by digest, spend by task, and
 each prompt's estimate against what calls cost; read-only, where Postgres
 runs), `backup-db`, `release BUMP=` (tags
 `origin/master` with the next version and pushes it), `push-app` (CI's release) and
-`pull-app RELEASE=release.env` (a deployed place's), `check-env` (a deployed
+`pull-app RELEASE=release.env` (a deployed place's), `rollback-release TAG=`
+(marks an earlier release Latest), `prepare-release RELEASE=`, `check-schema`
+and `check-app` (a rollout's steps on one machine), the compute machine's
+rollout targets (see "Releases deploy themselves"), `check-env` (a deployed
 place's `.env` against `.env.example`, whose `# may-be-blank:` line names the
 optional settings), `clean-up-cache`, and the
 two destructive ones, `restore-db BACKUP=` and `clean-up-infra`, which ask first.
@@ -1193,3 +1196,47 @@ On `epic/no-ticket/resume-editing`, one branch per step:
   a% → b%". Priced first (`/fit-reading-estimate`), confirmed on the user's
   own key; "Submit without updating fit" spends nothing; "Update fit" retries.
   The role map's fits are untouched.
+
+## Releases deploy themselves
+
+On `epic/no-ticket/release-cd`, one branch per step (ADR 0081, amending 0055
+and 0060):
+
+- **Latest is what production runs.** `release.env` starts with
+  `RELEASE_VERSION=vX.Y.Z`, and CI publishes the GitHub Release with `--latest`
+  as its last step, so a Latest release means every gate and image push
+  passed. `make rollback-release TAG=` marks an earlier one Latest, with the
+  operator's own GitHub token, on the host.
+- **One controller, on the compute machine.** `deploy/compute-m5pro-48gb/rollout`
+  lists the machines, how each is reached (`local`, `ssh`) and its role
+  (`migrates`, `writer`); only a machine with that file runs a rollout. A
+  launchd agent (`make install-rollout`, from `rollout.plist`,
+  `StartCalendarInterval` every five minutes, so it also runs on wake) runs
+  `scripts/roll-out-release.sh run`. A pass downloads the Latest release's
+  `release.env` and, where a machine's `.rollout/deployed` differs: prepares
+  each (`make prepare-release`: tag checked out detached, `pull-app`,
+  `check-env`, `check-schema`, refusing local changes), stops the writers,
+  deploys the migrating machine (`stop-app`, `start-app`, `check-app`), then
+  starts the writers. A failure before the stop leaves everything running;
+  after it, the writers stay stopped. It records `.rollout/failed`, and a pass
+  after `ROLLOUT_RETRY_SECONDS` carries on; one already on the migrated release
+  only starts the writers.
+- **The droplet decides nothing.** The Mac's own `ssh` reaches it through the
+  tunnel container (`scripts/rollout-ssh-proxy.sh`, `tailscale nc`) as
+  `deploy`, whose key works from tailnet addresses only
+  (`bootstrap-droplet.sh`, `DEPLOY_SSH_PUBLIC_KEY`); the grant is in
+  `deploy/tailnet-policy.hujson`. `scripts/rollout-remote.sh` runs each step
+  there as a `setsid` job, so a dropped connection never cuts a migration off,
+  and the controller polls its status.
+- **The worker drains.** On SIGTERM it takes no new job and lets running ones
+  finish for `WORKER_DRAIN_SECONDS` (840), under a `stop_grace_period` of 15
+  minutes in the compute machine's file. `python -m cli.migrate --check`
+  (`make check-schema`) answers, read-only and without the migration lock,
+  whether the images know the schema; a rollback past a migration stops there.
+- **Reports and tests.** With `ROLLOUT_GITHUB_TOKEN`, each machine's
+  deployment is reported to GitHub Deployments. The host scripts are tested in
+  `scripts/tests/` (stdlib `unittest`, a throwaway git origin, fake `make`,
+  `ssh`, `curl`, `docker`) in `careerpolaris-scripts:test`, which `build-app`
+  builds and `test-unit` runs. They are written for macOS's `/bin/bash` 3.2,
+  and each script whose run checks out another release keeps its body in one
+  function, read whole before it runs.

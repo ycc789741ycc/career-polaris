@@ -160,12 +160,54 @@ run_remote_job() {
   done
 }
 
-# Reporting to GitHub comes in its own change; until then a step only logs.
-report() { :; }
+# --- reporting -------------------------------------------------------------------
 
+# GitHub Deployments, one per machine and version, in an environment named for
+# the machine: the repository's Environments page then shows what each runs,
+# and GitHub emails a failure. Off while ROLLOUT_GITHUB_TOKEN is blank. A
+# report that fails is logged and never fails the rollout.
+github() {
+  curl --fail-with-body --silent --show-error \
+    -H "Authorization: Bearer ${ROLLOUT_GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+}
+
+# The deployment for <machine> at this version, made the first time it is asked for.
+deployment_id() {
+  local machine="$1" file reply id
+  file="$STATE/deployments/${VERSION}-$(key "$machine")"
+  if [ -s "$file" ]; then
+    cat "$file"
+    return 0
+  fi
+  reply="$(github -X POST "https://api.github.com/repos/$(repository)/deployments" \
+    -d "{\"ref\":\"${VERSION}\",\"environment\":\"${machine}\",\"auto_merge\":false,\"required_contexts\":[],\"production_environment\":true,\"description\":\"rollout ${RUN_ID}\"}")" \
+    || return 1
+  id="$(sed -n 's/^  "id": \([0-9][0-9]*\),$/\1/p' <<<"$reply" | head -n 1)"
+  [ -n "$id" ] || return 1
+  mkdir -p "$STATE/deployments"
+  echo "$id" > "$file"
+  echo "$id"
+}
+
+# report <machine> <step> <in_progress|success|failure>
+report() {
+  [ -n "${ROLLOUT_GITHUB_TOKEN:-}" ] || return 0
+  local machine="$1" name="$2" state="$3" id
+  if id="$(deployment_id "$machine" 2>/dev/null)" \
+    && github -X POST "https://api.github.com/repos/$(repository)/deployments/${id}/statuses" \
+      -d "{\"state\":\"${state}\",\"environment\":\"${machine}\",\"description\":\"${name}\"}" >/dev/null 2>&1; then
+    return 0
+  fi
+  log WARN rollout.report_failed machine="$machine" version="$VERSION" step="$name" state="$state"
+}
+
+# record_failure <step> <machine> <what it leaves running>
 record_failure() {
-  echo "$VERSION $1 $(date +%s)" > "$STATE/failed"
-  log ERROR rollout.failed version="$VERSION" step="$1" detail="$2"
+  echo "$VERSION $1-$2 $(date +%s)" > "$STATE/failed"
+  log ERROR rollout.failed version="$VERSION" step="$1-$2" detail="$3"
+  report "$2" "$1 failed: $3" failure
 }
 
 # --- a pass --------------------------------------------------------------------
@@ -186,15 +228,16 @@ take_lock() {
   take_lock
 }
 
-latest_url() {
-  if [ -n "${ROLLOUT_RELEASE_URL:-}" ]; then
-    echo "$ROLLOUT_RELEASE_URL"
-    return
+# owner/repo on GitHub: ROLLOUT_REPOSITORY, else origin's.
+repository() {
+  if [ -n "${ROLLOUT_REPOSITORY:-}" ]; then
+    echo "$ROLLOUT_REPOSITORY"
+  else
+    git remote get-url origin | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##'
   fi
-  local repo
-  repo="$(git remote get-url origin | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
-  echo "https://github.com/${repo}/releases/latest/download/release.env"
 }
+
+latest_url() { echo "https://github.com/$(repository)/releases/latest/download/release.env"; }
 
 run_pass() {
   if [ -f "$STATE/paused" ]; then
@@ -251,11 +294,11 @@ run_pass() {
     case " $behind " in *" $machine "*) ;; *) continue ;; esac
     if [ "$(reach_of "$machine")" = local ]; then
       step "$machine" prepare "make --no-print-directory prepare-release RELEASE=$STATE/releases/${VERSION}.env" \
-        || { record_failure "prepare-$machine" "nothing was stopped"; return 1; }
+        || { record_failure prepare "$machine" "nothing was stopped"; return 1; }
     else
       ssh_remote receive "release-${VERSION}.env" < "$STATE/releases/${VERSION}.env"
       step "$machine" prepare "make --no-print-directory prepare-release RELEASE=.rollout/release-${VERSION}.env" \
-        || { record_failure "prepare-$machine" "nothing was stopped"; return 1; }
+        || { record_failure prepare "$machine" "nothing was stopped"; return 1; }
     fi
   done
 
@@ -263,19 +306,21 @@ run_pass() {
     # 2. Stop every writer: none may write while the schema changes.
     for machine in $WRITERS; do
       step "$machine" stop "make --no-print-directory stop-app" \
-        || { record_failure "stop-$machine" "a writer may still run; the migrating machine was not touched"; return 1; }
+        || { record_failure stop "$machine" "a writer may still run; the migrating machine was not touched"; return 1; }
     done
 
     # 3. Deploy the migrating machine, which migrates with no writer left.
     step "$MIGRATOR" deploy "make --no-print-directory stop-app && make --no-print-directory start-app && make --no-print-directory check-app && echo ${VERSION} > .rollout/deployed" \
-      || { record_failure "deploy-$MIGRATOR" "the writers stay stopped until it succeeds"; return 1; }
+      || { record_failure deploy "$MIGRATOR" "the writers stay stopped until it succeeds"; return 1; }
+    report "$MIGRATOR" deployed success
   fi
 
   # 4. Start the writers on the new release.
   for machine in $WRITERS; do
     case " $behind " in *" $machine "*) ;; *) continue ;; esac
     step "$machine" start "make --no-print-directory start-app && make --no-print-directory check-app && echo ${VERSION} > .rollout/deployed" \
-      || { record_failure "start-$machine" "the migrating machine runs ${VERSION}"; return 1; }
+      || { record_failure start "$machine" "the migrating machine runs ${VERSION}"; return 1; }
+    report "$machine" deployed success
   done
 
   rm -f "$STATE/failed"

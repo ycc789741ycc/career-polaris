@@ -76,6 +76,10 @@ Design choices that are deliberate:
   Postgres through a Tailscale tunnel. Work started while that machine is off
   waits for it, and the app says so ([ADR 0051](docs/decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md),
   [ADR 0052](docs/decisions/0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md)).
+  A tagged release deploys itself: once CI publishes it, the operator's
+  machine stops its own worker, deploys the droplet over SSH, which migrates
+  with nothing writing, then starts again on the new release
+  ([ADR 0081](docs/decisions/0081-roll-out-each-release-from-the-compute-machine.md)).
   [`docs/deploy.md`](docs/deploy.md) is the runbook.
 - **Limits at two levels.** Caddy caps request bodies and limits requests
   per address ([ADR 0053](docs/decisions/0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md)).
@@ -166,7 +170,9 @@ restarts per container, against its limit), `disk-usage` (free disk, volumes,
 the largest tables, buckets), `backup-db` (a `pg_dump` into the backup bucket),
 `release BUMP=patch|minor|major` (tags `origin/master` with the next version
 and pushes the tag, which releases), `push-app` (CI's release, by digest) and `pull-app` (a deployed place takes
-that release), and `clean-up-cache` (deletes tool caches and build output, all
+that release), `rollback-release TAG=` (marks an earlier release Latest), the
+rollout's targets on the compute machine (`install-rollout`, `roll-out`,
+`rollout-status`, `check-rollout` and the rest; ADR 0081), and `clean-up-cache` (deletes tool caches and build output, all
 regenerated on the next run). `restore-db` and `clean-up-infra` are the only
 destructive ones, and each asks first.
 

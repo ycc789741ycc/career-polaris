@@ -83,6 +83,10 @@ flowchart LR
   lock. An image older than the schema refuses to start.
 - **Releases.** CI pushes multi-platform images, and each place pulls them by
   digest ([ADR 0055](decisions/0055-release-multi-platform-images-by-digest-from-ci.md)).
+  The compute machine rolls out the release CI marks Latest: it stops its own
+  worker and crawler, deploys the droplet over SSH through the tunnel, so the
+  droplet migrates with nothing writing, then starts again on the new release
+  ([ADR 0081](decisions/0081-roll-out-each-release-from-the-compute-machine.md)).
 - **Runbook:** [`deploy.md`](deploy.md).
 
 **Why the crawler is its own unit:**
