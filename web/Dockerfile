@@ -65,8 +65,9 @@ USER root
 # CVE-2026-93990, CVE-2026-103111 and CVE-2026-4775 (all HIGH). The fixes are
 # pinned here until an nginx-unprivileged tag ships libexpat 2.8.5, pcre2 10.49
 # and tiff 4.7.2 or later; then each goes, and `make scan` shows it is safe to
-# drop.
-RUN apk add --no-cache libexpat=2.8.5-r0 pcre2=10.49-r0 tiff=4.7.2-r0 \
+# drop. Alpine keeps only the newest build of a package, so a pin stops
+# resolving when a newer one lands: libexpat moved from 2.8.5-r0 to 2.9.0-r0.
+RUN apk add --no-cache libexpat=2.9.0-r0 pcre2=10.49-r0 tiff=4.7.2-r0 \
  && chown 101:101 /usr/share/nginx/html
 USER 101
 
