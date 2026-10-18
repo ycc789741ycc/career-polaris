@@ -1,6 +1,6 @@
 # 0060. CI releases only a version tag on a commit already on master
 
-**Status:** Accepted — 2026-10-06. Amends [0055](0055-release-multi-platform-images-by-digest-from-ci.md).
+**Status:** Accepted — 2026-10-06. Amends [0055](0055-release-multi-platform-images-by-digest-from-ci.md). Amended by [0081](0081-roll-out-each-release-from-the-compute-machine.md): the release is published last, marked Latest, and deploying it is no longer by hand.
 
 ## Context
 

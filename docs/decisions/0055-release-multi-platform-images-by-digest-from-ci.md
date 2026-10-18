@@ -1,6 +1,6 @@
 # 0055. CI releases multi-platform images, which each place pulls by digest
 
-**Status:** Accepted — 2026-10-05.
+**Status:** Accepted — 2026-10-05. Amended by [0081](0081-roll-out-each-release-from-the-compute-machine.md): the compute machine rolls each release out to both places.
 
 ## Context
 
