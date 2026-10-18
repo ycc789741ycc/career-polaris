@@ -46,7 +46,7 @@ APP_PROJECT   := $(shell sed -n 's/^name: *//p' $(APP_COMPOSE_FILE) 2>/dev/null)
 INFRA_PROJECT := $(shell sed -n 's/^name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
 NETWORK       := $(shell sed -n '/^networks:/,/^[^ ]/s/^    name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
 # The scripts run compose against the same files and network.
-export ENV_FILE INFRA_COMPOSE_FILE NETWORK APP_PROJECT INFRA_PROJECT
+export ENV_FILE INFRA_COMPOSE_FILE APP_COMPOSE_FILE NETWORK APP_PROJECT INFRA_PROJECT
 
 COMPOSE_APP   := docker compose --env-file $(ENV_FILE) -f $(APP_COMPOSE_FILE)
 COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE_FILE)
@@ -61,6 +61,8 @@ DEV_IMAGES         := careerpolaris-backend:dev careerpolaris-web:dev
 PROXY_IMAGE        := careerpolaris-proxy:prod
 BACKEND_TEST_IMAGE := careerpolaris-backend:test
 WEB_TEST_IMAGE     := careerpolaris-web:test
+# The host scripts' tests: plain Python and git, the scripts copied in.
+SCRIPTS_TEST_IMAGE := careerpolaris-scripts:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
 # Time-boxed exceptions to the scan (docs/decisions/0063).
 TRIVY_IGNORE       := .trivyignore.yaml
@@ -82,9 +84,11 @@ PATTERN ?=
 ifdef PATTERN
 PYTEST_FILTER := -k $(PATTERN)
 VITEST_FILTER := -t $(PATTERN)
+UNITTEST_FILTER := -k $(PATTERN)
 else
 PYTEST_FILTER :=
 VITEST_FILTER :=
+UNITTEST_FILTER :=
 endif
 
 .PHONY: help require-env require-machine require-own-stack require-machine-images require-infra-up \
@@ -92,7 +96,9 @@ endif
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
-        check-env platform-ai-usage sync-pricing
+        check-env platform-ai-usage sync-pricing rollback-release check-schema prepare-release \
+        check-app roll-out rollout-status check-rollout roll-out-pause roll-out-resume rollout-logs \
+        install-rollout uninstall-rollout require-rollout
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -104,7 +110,11 @@ help:
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client sync-pricing lock logs stats disk-usage platform-ai-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
+	@echo "  rollback-release TAG=vX.Y.Z (you) prepare-release RELEASE=release.env check-schema check-app"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
+	@echo "The rollout, on the machine that runs it (ADR 0081):"
+	@echo "  install-rollout uninstall-rollout check-rollout rollout-status roll-out"
+	@echo "  roll-out-pause roll-out-resume rollout-logs"
 
 require-env:
 	@test -f $(ENV_FILE) || { \
@@ -168,6 +178,7 @@ build-app: require-machine
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
 	docker build --target test -t $(WEB_TEST_IMAGE) web
 	docker build --target prod -t $(PROXY_IMAGE) proxy
+	docker build -t $(SCRIPTS_TEST_IMAGE) -f scripts/tests/Dockerfile scripts
 	docker pull $(SCANNER_IMAGE)
 
 # --- start / stop -----------------------------------------------------------
@@ -235,12 +246,20 @@ platform-ai-usage: require-machine
 migrate: require-own-stack require-machine-images require-infra-up
 	$(COMPOSE_APP) run --rm migrate
 
+# Read-only: whether this machine's images know the database's schema
+# (ADR 0081). Fails on a schema a newer release migrated, which is what a
+# rollback past a migration meets; changes nothing, and does not wait for a
+# migration in progress.
+check-schema: require-own-stack require-machine-images require-infra-up
+	$(COMPOSE_APP) run --rm migrate python -m cli.migrate --check
+
 # --- test -------------------------------------------------------------------
 
 # Hermetic: no infra, no network, no running app. Must pass on a clean checkout.
 test-unit:
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) pytest tests/unit $(PYTEST_FILTER)
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx vitest run $(VITEST_FILTER)
+	$(RUN_HERMETIC) $(SCRIPTS_TEST_IMAGE) python -m unittest discover -s tests $(UNITTEST_FILTER)
 
 # Assumes infra is already up and migrated. Never starts infra itself.
 test-integration: require-infra-up
@@ -407,10 +426,30 @@ release:
 push-app: require-env
 	@scripts/push-release.sh
 
+# For the operator: marks an earlier release Latest, which the rollout
+# controller then rolls both machines back to (ADR 0081). Refuses a tag with no
+# GitHub Release or no release.env on it. Runs curl on the host with your own
+# GitHub token (GH_TOKEN, or `gh auth token`), as `release` runs git with your
+# own credentials: no image should hold them.
+rollback-release:
+	@scripts/rollback-release.sh "$(TAG)"
+
 # On the droplet and the compute machine, in place of build-app: pulls the
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
 	@scripts/pull-release.sh "$(RELEASE)"
+
+# On a deployed place, while the old release still runs (ADR 0081): checks out
+# the release's tag, then pull-app, check-env and check-schema, so whatever
+# can fail fails before the rollout stops anything. Refuses a checkout with
+# local changes, and local and ci, which build their own images.
+prepare-release: require-machine
+	@scripts/prepare-release.sh "$(RELEASE)"
+
+# After start-app: waits until every service this machine runs is up and
+# stays up, or names the one that is not (ADR 0081).
+check-app: require-machine
+	@scripts/check-app.sh
 
 # On a deployed place: compares its .env with .env.example. Fails on a name
 # .env lacks or a required value left blank (.env.example's `# may-be-blank:`
@@ -423,6 +462,53 @@ check-env: require-env
 	@for f in .env.example $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
 	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat scripts/check-env.sh)" \
 	      check-env .env.example $(ENV_FILE)
+
+# --- the rollout (ADR 0081) --------------------------------------------------
+
+# Only on the machine whose deploy/<machine>/ holds a rollout file: the
+# compute machine. These drive launchd, SSH and this machine's own stack from
+# the host, so they cannot run in a container (scripts/roll-out-release.sh).
+require-rollout: require-machine
+	@[ -f $(MACHINE_DIR)/rollout ] || { \
+	  echo "ERROR: $(MACHINE) runs no rollout; the machine that does has $(MACHINE_DIR)/rollout."; exit 1; }
+
+# One pass, now, in the foreground: the pass the launchd agent runs. Deploys
+# the GitHub Release marked Latest to every machine in the rollout file, or
+# does nothing when they all run it.
+roll-out: require-rollout
+	@scripts/roll-out-release.sh run
+
+# The latest release, what each machine runs, and the last pass's outcome.
+rollout-status: require-rollout
+	@scripts/roll-out-release.sh status
+
+# Whether a pass could run, changing nothing: the agent is loaded, the latest
+# release downloads, every machine answers and its checkout is clean.
+check-rollout: require-rollout
+	@problems=0; \
+	 if scripts/install-rollout.sh loaded; then echo "ok   the launchd agent is loaded"; \
+	 else echo "FAIL the launchd agent is not loaded: make install-rollout"; problems=1; fi; \
+	 scripts/roll-out-release.sh check || problems=1; \
+	 exit $$problems
+
+# Hold passes without removing the agent, for maintenance by hand.
+roll-out-pause: require-rollout
+	@scripts/roll-out-release.sh pause
+roll-out-resume: require-rollout
+	@scripts/roll-out-release.sh resume
+
+# Follows the passes' JSON lines; a failed step's output is in .rollout/steps.log.
+rollout-logs: require-rollout
+	@mkdir -p .rollout && touch .rollout/rollout.log && tail -n 20 -f .rollout/rollout.log
+
+# Writes and loads the launchd agent for this checkout, every five minutes and
+# on wake, then checks it. Again after a release changes the template: it
+# replaces the agent in place. uninstall-rollout leaves both machines running.
+install-rollout: require-rollout
+	@scripts/install-rollout.sh install
+	@$(MAKE) --no-print-directory check-rollout
+uninstall-rollout: require-rollout
+	@scripts/install-rollout.sh uninstall
 
 # --- backups ----------------------------------------------------------------
 

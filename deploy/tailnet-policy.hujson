@@ -1,0 +1,20 @@
+// The tailnet's access policy (docs/deploy.md, section 1; ADR 0051, 0081).
+// Kept here so it is reviewed like code, and pasted into Tailscale's admin
+// console (Access controls) by hand: applying it through Tailscale's API would
+// need an admin API key stored somewhere.
+//
+// Only the compute machine reaches the droplet, and only for two things:
+// Postgres through the tunnel (5432), and the rollout's SSH as `deploy` (22).
+{
+  "tagOwners": {
+    "tag:careerpolaris-serving": ["autogroup:admin"],
+    "tag:careerpolaris-compute": ["autogroup:admin"],
+  },
+  "grants": [
+    {
+      "src": ["tag:careerpolaris-compute"],
+      "dst": ["tag:careerpolaris-serving"],
+      "ip": ["tcp:5432", "tcp:22"],
+    },
+  ],
+}

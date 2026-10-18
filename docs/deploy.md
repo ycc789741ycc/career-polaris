@@ -24,15 +24,11 @@ needs Docker and `make`, and nothing else.
    - Under Settings → Keys, make two auth keys: reusable, pre-approved,
      tagged `tag:careerpolaris-serving` and `tag:careerpolaris-compute`. For a server, turn off key
      expiry on the machines once they join.
-   - Restrict the tailnet to what the app needs. In the access policy, allow
-     only `tag:careerpolaris-compute` to reach `tag:careerpolaris-serving:5432`:
-
-     ```json
-     {
-       "tagOwners": {"tag:careerpolaris-serving": ["autogroup:admin"], "tag:careerpolaris-compute": ["autogroup:admin"]},
-       "grants": [{"src": ["tag:careerpolaris-compute"], "dst": ["tag:careerpolaris-serving"], "ip": ["tcp:5432"]}]
-     }
-     ```
+   - Restrict the tailnet to what the app needs: paste
+     `deploy/tailnet-policy.hujson` into Access controls. It lets only
+     `tag:careerpolaris-compute` reach `tag:careerpolaris-serving`, and only on
+     5432 (Postgres) and 22 (the rollout's SSH, ADR 0081). The file is the
+     policy's record; a change to it is a pull request, then pasted again.
 2. **Spaces.** In one region, create two private buckets:
    - **The app's**, e.g. `careerpolaris-files`, with a limited-access key
      that reads and writes only this bucket. The app never lists buckets, so
@@ -81,12 +77,24 @@ needs Docker and `make`, and nothing else.
    - Docker Engine and the compose plugin from Docker's apt repository, plus
      `make` and `git`. Docker's repository is not one the automatic updates
      follow: `apt-get upgrade` now and then.
+   - The `deploy` user the compute machine rolls releases out as (ADR 0081),
+     in the `docker` group. Given `DEPLOY_SSH_PUBLIC_KEY` (the compute
+     machine's rollout key, section 3), it accepts that key from tailnet
+     addresses only: `sudo DEPLOY_SSH_PUBLIC_KEY="$(cat key.pub)" scripts/bootstrap-droplet.sh`.
 
    Pasted as User data, it has run by the time you log in; its output is in
    `/var/log/cloud-init-output.log`. On a droplet created without it, clone
    the repository (next step) and run `scripts/bootstrap-droplet.sh`.
-5. **The repository,** at `/srv/careerpolaris`:
-   `git clone https://github.com/<owner>/career-polaris.git /srv/careerpolaris`.
+5. **The repository,** at `/srv/careerpolaris`, owned by `deploy`, which
+   runs every `make` there from now on:
+
+   ```
+   sudo install -d -o deploy -g deploy /srv/careerpolaris
+   sudo -u deploy git clone https://github.com/<owner>/career-polaris.git /srv/careerpolaris
+   ```
+
+   Running `scripts/bootstrap-droplet.sh` again also hands an existing
+   checkout to `deploy`.
 6. **The machine and `.env`.** The machine's sizes are already in
    `deploy/droplet-1vcpu-2gb/`; `.env` holds only settings and secrets:
 
@@ -241,17 +249,74 @@ place needs more than a pull. It shows the version and the commit and asks
 first (`YES=1` does not). Running it again is safe: it does nothing once
 `origin/master` is released, and pushes a tag an earlier run left unpushed. By
 hand it is `git fetch origin`, `git tag -a v0.1.0 origin/master -m v0.1.0`,
-`git push origin v0.1.0`. When CI is green, download `release.env` from
-the GitHub Release (`gh release download v0.1.0 -p release.env`) and copy it
-to both machines, next to `.env`.
+`git push origin v0.1.0`.
 
-1. **Edge first.** Run `git pull`, `make pull-app RELEASE=release.env`, then
-   `make check-env`: a release that added a setting fails here, naming it,
-   rather than at start.
-   Then `make stop-app` and `make start-app`, which migrates under the lock.
-2. **Then compute,** with the same `release.env`. A compute machine still on the
-   previous image refuses to start against the newer schema, and says which
-   release to run.
+That is all an operator does (ADR 0081). CI runs the gates on the tag, pushes
+the images and, last, publishes the GitHub Release marked **Latest** with
+`release.env`. Within five minutes, or when it next wakes, the compute
+machine's rollout controller deploys it to both machines:
+
+1. **Prepare both, the droplet first,** while everything still runs:
+   `make prepare-release` checks out the tag, pulls its images by digest, runs
+   `check-env` and checks the schema is one the images know. A release that
+   added a setting stops here, naming it, with nothing stopped.
+2. **Stop the compute machine.** The worker takes no new job and lets the
+   running ones finish, up to `WORKER_DRAIN_SECONDS`.
+3. **Deploy the droplet,** over SSH: `stop-app`, `start-app` (which migrates,
+   with no writer anywhere), `check-app`. The site is down for this step.
+4. **Start the compute machine** on the new release.
+
+`make rollout-status` on the compute machine shows what each machine runs and
+how the last pass went; `make rollout-logs` follows the passes; with
+`ROLLOUT_GITHUB_TOKEN` set, the repository's Environments page shows each
+machine's deployments too.
+
+**When a pass fails.** It records the step and tries again after
+`ROLLOUT_RETRY_SECONDS`; `.rollout/steps.log` on the compute machine has the
+output, the droplet's included.
+
+| Failed at | What runs meanwhile | What to do |
+|---|---|---|
+| prepare | Both machines, on the old release | A missing setting: add it to that machine's `.env`. Local changes in a checkout: put them in a pull request, then `git checkout -- .` there. |
+| stop | The compute machine may still run | `make stats` there; then `make roll-out` |
+| deploy | The compute machine stays stopped; the droplet is as the step left it | `make logs` on the droplet. Fix forward with a new release, or roll back if nothing migrated |
+| start | The droplet runs the new release; the compute machine is stopped | `make logs` on the compute machine, then `make roll-out` |
+
+**Rolling back** is `make rollback-release TAG=v1.2.2`, from your own
+checkout with your own GitHub login: it marks that release Latest, and the
+next pass takes both machines back to it the same way. Past a migration it
+cannot: the older images refuse the newer schema, and the pass stops at
+prepare, with nothing stopped. Fix forward instead.
+
+**By hand,** with the controller paused (`make roll-out-pause`), the same
+steps are, on each machine: `make prepare-release RELEASE=release.env`; on the
+compute machine `make stop-app`; on the droplet `make stop-app start-app
+check-app`; on the compute machine `make start-app check-app`. Write the
+version into each machine's `.rollout/deployed`, or the next pass does it all
+again. `make roll-out-resume` starts the controller again.
+
+### Setting up the rollout, once
+
+On the compute machine, after section 3:
+
+1. **A key for it, of its own:**
+   `ssh-keygen -t ed25519 -N '' -C careerpolaris-rollout -f ~/.ssh/careerpolaris-rollout`.
+   Give the `.pub` to the droplet's bootstrap (section 2, step 4).
+2. **Its settings** in this machine's `.env`: `ROLLOUT_REMOTE_HOST` (the
+   droplet's tunnel address, `100.x.y.z`), `ROLLOUT_REMOTE_USER=deploy`,
+   `ROLLOUT_REMOTE_DIR=/srv/careerpolaris`, `ROLLOUT_SSH_KEY` (the private
+   key's path), and optionally `ROLLOUT_GITHUB_TOKEN`: a fine-grained token
+   for this repository with Deployments read and write and nothing else.
+3. **Both checkouts on a release that has the controller,** once, by hand as
+   above: the controller cannot reach a droplet whose checkout predates it.
+4. **`make install-rollout`.** It loads the launchd agent and runs
+   `check-rollout`: the agent, the release download, SSH to the droplet and
+   both checkouts clean. The first SSH connection records the droplet's host
+   key in `.rollout/known_hosts`, and a different key later is refused.
+
+No machine has recorded a version until its first rollout, so the first pass
+deploys the Latest release even where it already runs: a restart of both, with
+the short outage of step 3.
 
 ## 5. When something is wrong
 

@@ -230,6 +230,12 @@ class Settings(BaseSettings):
     presence_heartbeat_seconds: float = Field(
         default=10.0, gt=0, le=60, alias="PRESENCE_HEARTBEAT_SECONDS"
     )
+    # How long a stopping worker lets the jobs it holds finish before it
+    # aborts them (ADR 0081). A rollout stops the worker before the droplet
+    # migrates, so this is how long a running job may delay a release. Keep it
+    # under the worker's stop_grace_period in its machine's file, or Docker
+    # kills the worker before it can abort cleanly.
+    worker_drain_seconds: int = Field(default=840, ge=0, le=3600, alias="WORKER_DRAIN_SECONDS")
 
     @property
     def presence_away_after_seconds(self) -> float:

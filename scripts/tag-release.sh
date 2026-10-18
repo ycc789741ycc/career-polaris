@@ -42,7 +42,8 @@ release() {
   git push --quiet origin "refs/tags/${tag}"
   echo
   echo "Pushed ${tag}. CI now runs the gates on it, then releases it."
-  echo "When it is green: gh release download ${tag} -p release.env (docs/deploy.md, section 4)."
+  echo "When it is green, the compute machine rolls it out to both machines (ADR 0081);"
+  echo "  make rollout-status there shows how far it has got."
 }
 
 # Already released, or tagged by an earlier run that did not push.

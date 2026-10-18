@@ -140,9 +140,9 @@ jobs:
           {
             echo "### Release ${GITHUB_REF_NAME}"
             echo
-            echo 'Download release.env from the GitHub Release, then pull it on the'
-            echo 'droplet, then on the compute machine:'
-            echo "    make pull-app RELEASE=release.env"
+            echo 'Published as Latest: the compute machine rolls it out to both'
+            echo 'machines on its next pass (ADR 0081). To go back:'
+            echo "    make rollback-release TAG=<an earlier version>"
             echo
             echo '```'
             cat release.env
@@ -151,6 +151,9 @@ jobs:
 
       - name: Publish the GitHub Release
         # A release asset stays as long as the tag; a run artifact expires.
+        # Last, and marked Latest: the rollout controller deploys the release
+        # marked Latest (ADR 0081), so it must never see one before every gate
+        # and every image push above has succeeded.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" release.env --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" release.env --verify-tag --generate-notes --title "$GITHUB_REF_NAME" --latest

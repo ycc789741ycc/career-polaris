@@ -17,6 +17,10 @@ networks:
 services:
   worker:
     extends: {file: ../compose.app.base.yaml, service: worker}
+    # A stop drains the worker (ADR 0081): it takes no new job and lets the
+    # running ones finish for WORKER_DRAIN_SECONDS, then aborts them. This is
+    # longer, so Docker never kills it mid-abort.
+    stop_grace_period: 15m
     mem_limit: 2g
     memswap_limit: 2g
     cpus: 2.0

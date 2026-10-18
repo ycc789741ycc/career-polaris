@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The rollout controller's launchd agent (ADR 0081). A template:
+  `make install-rollout` fills in @CHECKOUT@ and @INTERVALS@ and loads it from
+  ~/Library/LaunchAgents/com.careerpolaris.rollout.plist.
+
+  StartCalendarInterval rather than StartInterval: launchd runs a calendar job
+  that fell due while the Mac slept once on wake, which is when a sleeping
+  compute machine catches up on a release. caffeinate -i keeps the Mac from
+  idle-sleeping during a pass.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.careerpolaris.rollout</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/usr/bin/make</string>
+    <string>-C</string>
+    <string>@CHECKOUT@</string>
+    <string>--no-print-directory</string>
+    <string>roll-out</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Docker Desktop's CLI lives in /usr/local/bin. -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <array>
+@INTERVALS@
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@CHECKOUT@/.rollout/rollout.log</string>
+  <key>StandardErrorPath</key>
+  <string>@CHECKOUT@/.rollout/rollout.log</string>
+</dict>
+</plist>
