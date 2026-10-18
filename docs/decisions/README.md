@@ -60,12 +60,12 @@ new record that supersedes the old one.
 | [0052](0052-let-work-wait-for-the-processing-machine-instead-of-reporting-it-lost.md) | Work waits for the processing machine instead of being reported lost | Accepted |
 | [0053](0053-put-caddy-at-the-edge-with-per-address-limits-and-no-api-gateway.md) | Caddy is the edge, with per-address limits and no API gateway | Accepted |
 | [0054](0054-limit-each-account-and-each-sign-up-address-in-postgres.md) | Each account, and each sign-up address, is limited in Postgres | Accepted, amended by 0080 |
-| [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted |
+| [0055](0055-release-multi-platform-images-by-digest-from-ci.md) | CI releases multi-platform images, which each place pulls by digest | Accepted, amended by 0081 |
 | [0056](0056-rename-everything-inside-to-careerpolaris.md) | Everything inside is renamed to CareerPolaris | Accepted, amended by 0059 |
 | [0057](0057-call-the-api-web-and-postgres-profile-serving.md) | The profile with the api, the SPA and Postgres is called `serving` | Superseded by 0062 |
 | [0058](0058-run-the-versity-s3-gateway-in-place-of-minio.md) | Development and CI run the Versity S3 Gateway, not MinIO | Accepted |
 | [0059](0059-rename-the-repository-to-career-polaris.md) | The Git repository is called `career-polaris` | Accepted |
-| [0060](0060-release-only-a-version-tag-on-master.md) | CI releases only a version tag on a commit already on master | Accepted |
+| [0060](0060-release-only-a-version-tag-on-master.md) | CI releases only a version tag on a commit already on master | Accepted, amended by 0081 |
 | [0061](0061-report-jira-accounts-to-atlassian-per-connection.md) | Each Jira connection reports its Atlassian account, with the app owner's token | Accepted |
 | [0062](0062-keep-each-machines-shape-in-its-own-deploy-folder.md) | Each machine's shape lives in its own folder in deploy/, and .env holds only what the app reads | Accepted |
 | [0063](0063-block-on-the-scan-only-where-a-change-is-responsible.md) | The vulnerability scan blocks a release, and a change only when it touches what is scanned | Accepted |
@@ -86,6 +86,7 @@ new record that supersedes the old one.
 | [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted, amended by 0079 |
 | [0079](0079-keep-each-resume-versions-own-look.md) | Keep the look a résumé version was saved in, and print it in that look | Accepted |
 | [0080](0080-make-accounts-only-by-signing-in-with-google.md) | Make accounts only by signing in with Google, and offer a password only while Google is off | Accepted |
+| [0081](0081-roll-out-each-release-from-the-compute-machine.md) | Roll out each release CI publishes from the compute machine, draining it before the droplet migrates | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

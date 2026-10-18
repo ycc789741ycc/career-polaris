@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds the prod images for every platform the app runs on and pushes them to
-# the registry, then writes the release file: each image by digest (ADR 0055).
+# the registry, then writes the release file: the version the rollout
+# controller reads (ADR 0081), then each image by digest (ADR 0055).
 # CI runs it for a version tag, after every gate has passed on the tagged
 # commit (ADR 0060).
 #
@@ -30,7 +31,7 @@ fi
 # name, build context
 images=("backend backend" "web web" "proxy proxy")
 
-: > "$release_file.tmp"
+echo "RELEASE_VERSION=${tag}" > "$release_file.tmp"
 for entry in "${images[@]}"; do
   read -r name context <<<"$entry"
   ref="${RELEASE_REGISTRY}/careerpolaris-${name}:${tag}"

@@ -92,7 +92,7 @@ endif
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
-        check-env platform-ai-usage sync-pricing
+        check-env platform-ai-usage sync-pricing rollback-release
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -104,6 +104,7 @@ help:
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client sync-pricing lock logs stats disk-usage platform-ai-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
+	@echo "  rollback-release TAG=vX.Y.Z (you)"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -406,6 +407,14 @@ release:
 # those platforms.
 push-app: require-env
 	@scripts/push-release.sh
+
+# For the operator: marks an earlier release Latest, which the rollout
+# controller then rolls both machines back to (ADR 0081). Refuses a tag with no
+# GitHub Release or no release.env on it. Runs curl on the host with your own
+# GitHub token (GH_TOKEN, or `gh auth token`), as `release` runs git with your
+# own credentials: no image should hold them.
+rollback-release:
+	@scripts/rollback-release.sh "$(TAG)"
 
 # On the droplet and the compute machine, in place of build-app: pulls the
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
