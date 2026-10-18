@@ -25,7 +25,7 @@ crawling, parsing, embedding, matching.
 | `docs/architecture.md` | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
 | `docs/decisions/` | Decision records for choices that are costly to reverse |
 
-Plans are drafted outside the repository, in `.claude/plan/` (git-ignored).
+Plans are drafted outside the repository, in `.claude/plans/` (git-ignored).
 The old `docs/plan.md`, phases 1–13 as planned, is in git history.
 
 The design guideline at `/Users/yoshi/repo/design-guideline` applies here too.

@@ -32,4 +32,4 @@ tmp/
 web/openapi.json
 
 # Plans drafted with Claude stay on the drafting machine
-.claude/plan/
+.claude/plans/
