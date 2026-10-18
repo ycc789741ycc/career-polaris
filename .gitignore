@@ -21,6 +21,8 @@ web/dist/
 
 # Local artifacts
 release.env
+# The rollout's state on a deployed machine (ADR 0081)
+.rollout/
 *.log
 .DS_Store
 tmp/

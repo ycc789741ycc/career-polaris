@@ -1,0 +1,14 @@
+# The rollout this machine runs (ADR 0081). `make roll-out` here deploys the
+# GitHub Release marked Latest to every machine below; its launchd agent
+# (`make install-rollout`) runs it every five minutes and on wake.
+#
+# One machine per line: its name in deploy/, how it is reached, and its role.
+#   reach  local  this machine
+#          ssh    over Tailscale SSH, as ROLLOUT_REMOTE_USER@ROLLOUT_REMOTE_HOST,
+#                 in ROLLOUT_REMOTE_DIR (.env), through this machine's tunnel
+#   role   migrates  deployed in the middle: its start-app migrates
+#          writer    stopped before the migration, started on the new release
+#                    after it, so nothing writes while the schema changes
+
+droplet-1vcpu-2gb    ssh    migrates
+compute-m5pro-48gb   local  writer

@@ -18,13 +18,14 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 
-# A fake: logs "<name> <args>" (and its working directory's basename), then
-# exits with the code a file names for the first argument that has one.
+# A fake: logs "<name> <args>", and "<checkout>: <name> <args>" to a second
+# log, then exits with the code a file names for the first argument that has one.
 FAKE = textwrap.dedent(
     """\
     #!/usr/bin/env bash
     name="$(basename "$0")"
     echo "$name $*" >> "$FAKE_LOG"
+    echo "$(basename "$PWD"): $name $*" >> "$FAKE_LOG.where"
     for arg in "$@"; do
       if [ -f "$FAKE_DIR/$name.$arg.exit" ]; then
         cat "$FAKE_DIR/$name.$arg.out" 2>/dev/null || true
@@ -48,6 +49,8 @@ class Sandbox(unittest.TestCase):
 
     machine = "droplet-1vcpu-2gb"
     fakes: tuple[str, ...] = ("make",)
+    # Committed at both releases, beside the scripts: path -> content.
+    files: dict[str, str] = {}
 
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="scripts-test-"))
@@ -68,6 +71,9 @@ class Sandbox(unittest.TestCase):
         shutil.copytree(SCRIPTS, work / "scripts", ignore=shutil.ignore_patterns("tests"))
         (work / ".gitignore").write_text("release.env\n.machine\n.rollout/\n.env\n")
         (work / "VERSION").write_text("1.0.0\n")
+        for relative, content in self.files.items():
+            (work / relative).parent.mkdir(parents=True, exist_ok=True)
+            (work / relative).write_text(content)
         run_git(work, "add", "-A")
         run_git(work, "commit", "--quiet", "-m", "v1.0.0")
         run_git(work, "tag", "v1.0.0")
@@ -76,11 +82,17 @@ class Sandbox(unittest.TestCase):
         run_git(work, "tag", "v1.1.0")
         run_git(work, "push", "--quiet", "origin", "master", "--tags")
 
-        self.checkout = self.root / "checkout"
-        run_git(self.root, "clone", "--quiet", str(origin), str(self.checkout))
-        run_git(self.checkout, "checkout", "--quiet", "--detach", "v1.0.0")
-        (self.checkout / ".machine").write_text(f"{self.machine}\n")
-        (self.checkout / ".env").write_text("")
+        self.origin = origin
+        self.checkout = self.clone("checkout", self.machine)
+
+    def clone(self, name: str, machine: str) -> Path:
+        """Another deployed checkout of origin, at v1.0.0."""
+        path = self.root / name
+        run_git(self.root, "clone", "--quiet", str(self.origin), str(path))
+        run_git(path, "checkout", "--quiet", "--detach", "v1.0.0")
+        (path / ".machine").write_text(f"{machine}\n")
+        (path / ".env").write_text("")
+        return path
 
     def write_release(self, version: str, name: str = "incoming.env") -> Path:
         path = self.checkout / name
@@ -123,6 +135,11 @@ class Sandbox(unittest.TestCase):
             text=True,
             timeout=60,
         )
+
+    def calls_where(self) -> list[str]:
+        """Every fake call, as "<checkout>: <command> <args>"."""
+        where = Path(f"{self.log}.where")
+        return where.read_text().splitlines() if where.exists() else []
 
     def calls(self, command: str | None = None) -> list[str]:
         lines = self.log.read_text().splitlines()
