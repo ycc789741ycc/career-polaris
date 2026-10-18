@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Prepares a fresh Ubuntu droplet to run CareerPolaris (docs/deploy.md, section
 # 2): SSH by key only, automatic security updates, 1 GB of swap for the host,
-# and Docker Engine with the compose plugin, make and git.
+# Docker Engine with the compose plugin, make and git, and the `deploy` user
+# the compute machine rolls releases out as (ADR 0081).
+#
+# DEPLOY_SSH_PUBLIC_KEY, if set, is the compute machine's rollout key (the .pub
+# of its ROLLOUT_SSH_KEY). It is accepted only from the tailnet's addresses,
+# so only through the tunnel. Without it the user is made with no key.
 #
 # Run it as root, either way:
 #   - pasted as the droplet's User data when creating it, so it has run before
@@ -22,6 +27,10 @@ set -euo pipefail
 SUPPORTED_UBUNTU="24.04 26.04"
 SWAP_FILE=/swapfile
 SWAP_SIZE=1G
+DEPLOY_USER=deploy
+CHECKOUT=/srv/careerpolaris
+# Tailscale's addresses: the rollout key works only through the tunnel.
+TAILNET_RANGE=100.64.0.0/10
 
 say() { echo "bootstrap: $*"; }
 fail() { echo "bootstrap: ERROR: $*" >&2; exit 1; }
@@ -42,6 +51,11 @@ esac
 key_count="$(cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null \
   | grep -cE '^(ssh-|ecdsa-|sk-)' || true)"
 [ "$key_count" -gt 0 ] || fail "no SSH key in any authorized_keys; add one before passwords go."
+
+if [ -n "${DEPLOY_SSH_PUBLIC_KEY:-}" ]; then
+  [[ "$DEPLOY_SSH_PUBLIC_KEY" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9-]+)\ [A-Za-z0-9+/=]+(\ .*)?$ ]] \
+    || fail "DEPLOY_SSH_PUBLIC_KEY is not one public key line (ssh-ed25519 AAAA... comment)."
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -117,6 +131,27 @@ EOF
 apt-get update -q
 apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker >/dev/null
+
+# --- The rollout's user (ADR 0081) -------------------------------------------------
+
+# The compute machine deploys each release as this user, over SSH through the
+# tunnel: `make` in the checkout, which it owns. The docker group is root on
+# this host in effect; that is what deploying needs, and the key below is
+# accepted only from the tailnet.
+id -u "$DEPLOY_USER" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$DEPLOY_USER"
+usermod -aG docker "$DEPLOY_USER"
+if [ -n "${DEPLOY_SSH_PUBLIC_KEY:-}" ]; then
+  install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh"
+  echo "from=\"${TAILNET_RANGE}\",no-agent-forwarding,no-port-forwarding,no-X11-forwarding ${DEPLOY_SSH_PUBLIC_KEY}" \
+    > "/home/${DEPLOY_USER}/.ssh/authorized_keys"
+  chown "$DEPLOY_USER:$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh/authorized_keys"
+  chmod 600 "/home/${DEPLOY_USER}/.ssh/authorized_keys"
+  say "${DEPLOY_USER} accepts the rollout key from ${TAILNET_RANGE} only."
+fi
+if [ -d "$CHECKOUT" ]; then
+  chown -R "$DEPLOY_USER:$DEPLOY_USER" "$CHECKOUT"
+  say "${CHECKOUT} belongs to ${DEPLOY_USER}."
+fi
 
 say "done on Ubuntu $VERSION_ID:"
 say "  $(docker --version)"

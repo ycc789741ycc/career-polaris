@@ -97,7 +97,8 @@ endif
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
         check-env platform-ai-usage sync-pricing rollback-release check-schema prepare-release \
-        check-app
+        check-app roll-out rollout-status check-rollout roll-out-pause roll-out-resume rollout-logs \
+        install-rollout uninstall-rollout require-rollout
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -111,6 +112,9 @@ help:
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
 	@echo "  rollback-release TAG=vX.Y.Z (you) prepare-release RELEASE=release.env check-schema check-app"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
+	@echo "The rollout, on the machine that runs it (ADR 0081):"
+	@echo "  install-rollout uninstall-rollout check-rollout rollout-status roll-out"
+	@echo "  roll-out-pause roll-out-resume rollout-logs"
 
 require-env:
 	@test -f $(ENV_FILE) || { \
@@ -458,6 +462,53 @@ check-env: require-env
 	@for f in .env.example $(ENV_FILE); do echo "### FILE $$f"; cat "$$f"; echo; done \
 	  | $(RUN_HERMETIC) -i $(CHECK_ENV_IMAGE) sh -c "$$(cat scripts/check-env.sh)" \
 	      check-env .env.example $(ENV_FILE)
+
+# --- the rollout (ADR 0081) --------------------------------------------------
+
+# Only on the machine whose deploy/<machine>/ holds a rollout file: the
+# compute machine. These drive launchd, SSH and this machine's own stack from
+# the host, so they cannot run in a container (scripts/roll-out-release.sh).
+require-rollout: require-machine
+	@[ -f $(MACHINE_DIR)/rollout ] || { \
+	  echo "ERROR: $(MACHINE) runs no rollout; the machine that does has $(MACHINE_DIR)/rollout."; exit 1; }
+
+# One pass, now, in the foreground: the pass the launchd agent runs. Deploys
+# the GitHub Release marked Latest to every machine in the rollout file, or
+# does nothing when they all run it.
+roll-out: require-rollout
+	@scripts/roll-out-release.sh run
+
+# The latest release, what each machine runs, and the last pass's outcome.
+rollout-status: require-rollout
+	@scripts/roll-out-release.sh status
+
+# Whether a pass could run, changing nothing: the agent is loaded, the latest
+# release downloads, every machine answers and its checkout is clean.
+check-rollout: require-rollout
+	@problems=0; \
+	 if scripts/install-rollout.sh loaded; then echo "ok   the launchd agent is loaded"; \
+	 else echo "FAIL the launchd agent is not loaded: make install-rollout"; problems=1; fi; \
+	 scripts/roll-out-release.sh check || problems=1; \
+	 exit $$problems
+
+# Hold passes without removing the agent, for maintenance by hand.
+roll-out-pause: require-rollout
+	@scripts/roll-out-release.sh pause
+roll-out-resume: require-rollout
+	@scripts/roll-out-release.sh resume
+
+# Follows the passes' JSON lines; a failed step's output is in .rollout/steps.log.
+rollout-logs: require-rollout
+	@mkdir -p .rollout && touch .rollout/rollout.log && tail -n 20 -f .rollout/rollout.log
+
+# Writes and loads the launchd agent for this checkout, every five minutes and
+# on wake, then checks it. Again after a release changes the template: it
+# replaces the agent in place. uninstall-rollout leaves both machines running.
+install-rollout: require-rollout
+	@scripts/install-rollout.sh install
+	@$(MAKE) --no-print-directory check-rollout
+uninstall-rollout: require-rollout
+	@scripts/install-rollout.sh uninstall
 
 # --- backups ----------------------------------------------------------------
 
