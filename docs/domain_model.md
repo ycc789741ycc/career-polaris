@@ -4,7 +4,7 @@ A review of the domain concepts in `job_searching_advisor_domain_concepts_v3.exc
 
 Earlier reviews covered v1 (`job_searching_advisor_domain_concepts.excalidraw`) and v2 (`…_v2.excalidraw`). Their decisions still stand unless section 6 marks them superseded. This version reviews v3 and keeps the settled material the model still depends on.
 
-The code follows v3. [`plan.md`](plan.md) Phase 5 records the refactoring steps, and what each left for later.
+The code follows v3.
 
 ## 1. What the v3 model says
 
@@ -584,6 +584,6 @@ These are the defaults chosen for this update. Change them if they don't fit.
 - **Minimum group size for shared difficulty:** 3 distinct reporters.
 - **Expired postings:** kept for salary-band history, hidden from lists.
 
-**Suggested next step:** apply 2.11 to the v3 diagram: add a Target box, add Resume Writer → Assessment, route answers through the Ingester, and fix the labels. Update the prototype copy listed in 2.12. The code changes are [`plan.md`](plan.md) Phase 5.
+**Suggested next step:** apply 2.11 to the v3 diagram: add a Target box, add Resume Writer → Assessment, route answers through the Ingester, and fix the labels. Update the prototype copy listed in 2.12.
 
 **Architecture:** deployable units, module dependencies, data and trust boundaries are in [`architecture.md`](architecture.md).

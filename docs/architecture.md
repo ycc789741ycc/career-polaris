@@ -4,7 +4,7 @@ This doc turns the domain model in [`domain_model.md`](domain_model.md) into an 
 
 **Constraints:** modular monolith plus workers · Python backend, TypeScript client · a 1 vCPU / 2 GB droplet plus the operator's own machine ([ADR 0051](decisions/0051-run-the-edge-on-a-droplet-and-the-heavy-work-on-the-operators-machine.md)) · solo or small-team MVP · local embedding model for matching postings · own email-and-password sign-in ([ADR 0001](decisions/0001-run-our-own-email-password-sign-in.md)).
 
-> **This describes the v3 design** (domain decisions 21–28), which the code now follows. [`plan.md`](plan.md) Phase 5 records the steps that got it there, and what each left for later.
+> **This describes the v3 design** (domain decisions 21–28), which the code now follows.
 
 ## 1. Deployable units
 

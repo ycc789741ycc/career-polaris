@@ -23,8 +23,10 @@ crawling, parsing, embedding, matching.
 |---|---|
 | `docs/domain_model.md` | The domain model, bounded contexts and the 14 decisions behind them |
 | `docs/architecture.md` | Deployables, module dependencies, data and trust boundaries, the AI gateway, flows and technical decisions |
-| `docs/plan.md` | Phase 1 / 2 / 3 scope |
 | `docs/decisions/` | Decision records for choices that are costly to reverse |
+
+Plans are drafted outside the repository, in `.claude/plan/` (git-ignored).
+The old `docs/plan.md`, phases 1–13 as planned, is in git history.
 
 The design guideline at `/Users/yoshi/repo/design-guideline` applies here too.
 
@@ -374,7 +376,7 @@ Not yet: unlinking Google, or linking it from Settings.
 
 ## Phase 5 scope
 
-The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
+The v3 journey redesign, one branch per step, all built:
 
 - **Target locations.** "Where you want to work" (on 01 Sources until ADR
   0071, on 03 Roles since): one to three
@@ -434,7 +436,7 @@ The v3 journey redesign, one branch per step (`docs/plan.md`), all built:
 
 ## Phase 6 scope
 
-Building the role map only on demand (`docs/plan.md`), one branch per step:
+Building the role map only on demand, one branch per step:
 
 - **Target locations from a list** (ADR 0026). A target location is one of
   `market.domain.places`: "Remote", a region (Asia-Pacific, Europe, Latin
@@ -521,7 +523,7 @@ Building the role map only on demand (`docs/plan.md`), one branch per step:
 ## Phase 8 scope
 
 The role map becomes the market's side only, and evaluating the user moves
-out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
+out of it, one branch per step under `epic/no-ticket/phase-8`:
 
 - **A posting of your own is a Target, not a role** (ADR 0030). "Aim at a
   posting of your own" in 04 Advisor (title, company, JD required) replaces
@@ -591,7 +593,7 @@ out of it (`docs/plan.md`), one branch per step under `epic/no-ticket/phase-8`:
 
 A posting of the user's own belongs to Target (ADR 0033), one branch per step
 under `epic/no-ticket/own-posting-target`; the rest of the phase
-(`docs/plan.md`) one branch per step under `epic/no-ticket/phase-9`:
+one branch per step under `epic/no-ticket/phase-9`:
 
 - **Target owns it end to end.** The `target` schema holds
   `private_job_posting` (the JD, moved from `market_user`, ids kept),
@@ -714,7 +716,7 @@ under `epic/no-ticket/own-posting-target`; the rest of the phase
 ## Phase 10 scope
 
 A tailored résumé is written from the user's sources, whether or not they
-uploaded one (`docs/plan.md`), one branch per step under
+uploaded one, one branch per step under
 `epic/no-ticket/phase-10`:
 
 - **Every section, written at once from the sources** (ADR 0043). A résumé
@@ -759,7 +761,7 @@ uploaded one (`docs/plan.md`), one branch per step under
 
 ## Phase 11 scope
 
-The 4 October prototype (`docs/plan.md`), one branch per step under
+The 4 October prototype, one branch per step under
 `epic/no-ticket/update-prototype`:
 
 - **CareerPolaris.** The app's name, with `components/AppIcon` (four colour
@@ -809,7 +811,7 @@ The 4 October prototype (`docs/plan.md`), one branch per step under
 
 ## Phase 12 scope
 
-Hybrid deployment (`docs/plan.md`), one branch per step under
+Hybrid deployment, one branch per step under
 `epic/no-ticket/hybrid-deploy`; `docs/deploy.md` is the runbook:
 
 - **Two places** (ADR 0051; since ADR 0062 the machines
@@ -884,7 +886,7 @@ issuer and audience `careerpolaris` / `careerpolaris-api`, the user agent
 `CareerPolarisBot/1.0`, the package names, the release file's
 `CAREERPOLARIS_*_IMAGE` and CI's database and bucket. Everyone is signed out
 once, by the cookie and the issuer. Old volumes are copied once by hand
-(ADR 0056); the repo keeps no command for it. Accepted ADRs, past phases in `docs/plan.md` and the
+(ADR 0056); the repo keeps no command for it. Accepted ADRs and the
 excalidraw drawings keep the names they were written with.
 
 ## Deployment shape per machine (ADR 0062)
@@ -904,7 +906,7 @@ section 6). ADR 0057 is superseded.
 
 ## Phase 13 scope
 
-AI on the platform's key, under a quota (`docs/plan.md`), one branch per step
+AI on the platform's key, under a quota, one branch per step
 under `epic/no-ticket/platform-ai`:
 
 - **Count what a call really costs** (no ADR). Every call is recorded with
