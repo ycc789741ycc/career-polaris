@@ -30,3 +30,6 @@ tmp/
 
 # Generated API contract (produced by `make gen-client`)
 web/openapi.json
+
+# Plans drafted with Claude stay on the drafting machine
+.claude/plans/
