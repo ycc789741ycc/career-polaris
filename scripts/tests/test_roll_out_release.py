@@ -27,9 +27,14 @@ ROLLOUT = textwrap.dedent(
 # The remote command is ssh's last argument; run it here, stdin and all.
 SSH = 'cd "$FAKE_DIR" >/dev/null; bash -c "${@: -1}"\n'
 
-# Saves the release CI marked Latest, from a file the test writes, where -o says.
+# Saves the release CI marked Latest, from a file the test writes, where -o
+# says; answers GitHub's deployments API as GitHub does, pretty-printed.
 CURL = textwrap.dedent(
     """\
+    case "$*" in
+      */statuses*) echo '{}'; exit 0 ;;
+      */deployments*) printf '{\\n  "url": "x",\\n  "id": 42,\\n  "sha": "y"\\n}\\n'; exit 0 ;;
+    esac
     out=""
     while [ $# -gt 0 ]; do
       case "$1" in -o) out="$2"; shift ;; esac
@@ -55,7 +60,7 @@ class RollOut(Sandbox):
             "ROLLOUT_REMOTE_USER=deploy\n"
             f"ROLLOUT_REMOTE_DIR={self.droplet}\n"
             "ROLLOUT_SSH_KEY=/dev/null\n"
-            "ROLLOUT_RELEASE_URL=https://releases.invalid/release.env\n"
+            "ROLLOUT_REPOSITORY=owner/repo\n"
             "ROLLOUT_POLL_SECONDS=0.1\n"
             "ROLLOUT_STEP_TIMEOUT_SECONDS=20\n"
             "ROLLOUT_RETRY_SECONDS=1800\n"
@@ -155,6 +160,37 @@ class RollOut(Sandbox):
             ],
         )
         self.assertEqual(self.deployed(self.checkout), "v1.1.0")
+
+    def test_each_machine_reports_its_deployment_to_github(self) -> None:
+        with (self.checkout / ".env").open("a") as env:
+            env.write("ROLLOUT_GITHUB_TOKEN=test-token\n")
+
+        self.assertEqual(self.roll_out(), 0, self.output)
+
+        api = [call for call in self.calls("curl") if "api.github.com" in call]
+        created = [call for call in api if "/repos/owner/repo/deployments " in call]
+        self.assertEqual(len(created), 2)
+        finished = [call for call in api if '"state":"success"' in call]
+        self.assertEqual(
+            sorted('"environment":"droplet-1vcpu-2gb"' in call for call in finished), [False, True]
+        )
+        self.assertNotIn("rollout.report_failed", self.output)
+
+    def test_a_failure_is_reported_for_the_machine_it_stopped_on(self) -> None:
+        with (self.checkout / ".env").open("a") as env:
+            env.write("ROLLOUT_GITHUB_TOKEN=test-token\n")
+        self.set_failure("make", "start-app")
+
+        self.roll_out()
+
+        failures = [call for call in self.calls("curl") if '"state":"failure"' in call]
+        self.assertEqual(len(failures), 1)
+        self.assertIn('"environment":"droplet-1vcpu-2gb"', failures[0])
+
+    def test_without_a_token_nothing_is_reported(self) -> None:
+        self.assertEqual(self.roll_out(), 0, self.output)
+
+        self.assertFalse([call for call in self.calls("curl") if "api.github.com" in call])
 
     def test_a_paused_controller_does_nothing(self) -> None:
         (self.checkout / ".rollout").mkdir()
