@@ -46,7 +46,7 @@ APP_PROJECT   := $(shell sed -n 's/^name: *//p' $(APP_COMPOSE_FILE) 2>/dev/null)
 INFRA_PROJECT := $(shell sed -n 's/^name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
 NETWORK       := $(shell sed -n '/^networks:/,/^[^ ]/s/^    name: *//p' $(INFRA_COMPOSE_FILE) 2>/dev/null)
 # The scripts run compose against the same files and network.
-export ENV_FILE INFRA_COMPOSE_FILE NETWORK APP_PROJECT INFRA_PROJECT
+export ENV_FILE INFRA_COMPOSE_FILE APP_COMPOSE_FILE NETWORK APP_PROJECT INFRA_PROJECT
 
 COMPOSE_APP   := docker compose --env-file $(ENV_FILE) -f $(APP_COMPOSE_FILE)
 COMPOSE_INFRA := docker compose --env-file $(ENV_FILE) -f $(INFRA_COMPOSE_FILE)
@@ -61,6 +61,8 @@ DEV_IMAGES         := careerpolaris-backend:dev careerpolaris-web:dev
 PROXY_IMAGE        := careerpolaris-proxy:prod
 BACKEND_TEST_IMAGE := careerpolaris-backend:test
 WEB_TEST_IMAGE     := careerpolaris-web:test
+# The host scripts' tests: plain Python and git, the scripts copied in.
+SCRIPTS_TEST_IMAGE := careerpolaris-scripts:test
 SCANNER_IMAGE      := aquasec/trivy:0.74.0
 # Time-boxed exceptions to the scan (docs/decisions/0063).
 TRIVY_IGNORE       := .trivyignore.yaml
@@ -82,9 +84,11 @@ PATTERN ?=
 ifdef PATTERN
 PYTEST_FILTER := -k $(PATTERN)
 VITEST_FILTER := -t $(PATTERN)
+UNITTEST_FILTER := -k $(PATTERN)
 else
 PYTEST_FILTER :=
 VITEST_FILTER :=
+UNITTEST_FILTER :=
 endif
 
 .PHONY: help require-env require-machine require-own-stack require-machine-images require-infra-up \
@@ -92,7 +96,8 @@ endif
         start-infra start-app stop-app stop-infra test-unit test-integration \
         migrate lint typecheck scan format gen-client lock clean-up-infra logs \
         stats disk-usage clean-up-cache backup-db restore-db release push-app pull-app \
-        check-env platform-ai-usage sync-pricing rollback-release
+        check-env platform-ai-usage sync-pricing rollback-release check-schema prepare-release \
+        check-app
 
 help:
 	@echo "This checkout's machine: $(if $(MACHINE),$(MACHINE),none — cp .machine.example .machine)"
@@ -104,7 +109,7 @@ help:
 	@echo "Supporting targets (never dependencies of the above):"
 	@echo "  migrate format gen-client sync-pricing lock logs stats disk-usage platform-ai-usage backup-db check-env"
 	@echo "  release BUMP=patch|minor|major (you) push-app (CI) pull-app (each deployed place)"
-	@echo "  rollback-release TAG=vX.Y.Z (you)"
+	@echo "  rollback-release TAG=vX.Y.Z (you) prepare-release RELEASE=release.env check-schema check-app"
 	@echo "  clean-up-cache clean-up-infra restore-db (the last two destructive)"
 
 require-env:
@@ -169,6 +174,7 @@ build-app: require-machine
 	docker build --target test -t $(BACKEND_TEST_IMAGE) backend
 	docker build --target test -t $(WEB_TEST_IMAGE) web
 	docker build --target prod -t $(PROXY_IMAGE) proxy
+	docker build -t $(SCRIPTS_TEST_IMAGE) -f scripts/tests/Dockerfile scripts
 	docker pull $(SCANNER_IMAGE)
 
 # --- start / stop -----------------------------------------------------------
@@ -236,12 +242,20 @@ platform-ai-usage: require-machine
 migrate: require-own-stack require-machine-images require-infra-up
 	$(COMPOSE_APP) run --rm migrate
 
+# Read-only: whether this machine's images know the database's schema
+# (ADR 0081). Fails on a schema a newer release migrated, which is what a
+# rollback past a migration meets; changes nothing, and does not wait for a
+# migration in progress.
+check-schema: require-own-stack require-machine-images require-infra-up
+	$(COMPOSE_APP) run --rm migrate python -m cli.migrate --check
+
 # --- test -------------------------------------------------------------------
 
 # Hermetic: no infra, no network, no running app. Must pass on a clean checkout.
 test-unit:
 	$(RUN_HERMETIC) $(BACKEND_TEST_IMAGE) pytest tests/unit $(PYTEST_FILTER)
 	$(RUN_HERMETIC) $(WEB_TEST_IMAGE) npx vitest run $(VITEST_FILTER)
+	$(RUN_HERMETIC) $(SCRIPTS_TEST_IMAGE) python -m unittest discover -s tests $(UNITTEST_FILTER)
 
 # Assumes infra is already up and migrated. Never starts infra itself.
 test-integration: require-infra-up
@@ -420,6 +434,18 @@ rollback-release:
 # release CI pushed, by digest, and tags it careerpolaris-*:prod for start-app.
 pull-app:
 	@scripts/pull-release.sh "$(RELEASE)"
+
+# On a deployed place, while the old release still runs (ADR 0081): checks out
+# the release's tag, then pull-app, check-env and check-schema, so whatever
+# can fail fails before the rollout stops anything. Refuses a checkout with
+# local changes, and local and ci, which build their own images.
+prepare-release: require-machine
+	@scripts/prepare-release.sh "$(RELEASE)"
+
+# After start-app: waits until every service this machine runs is up and
+# stays up, or names the one that is not (ADR 0081).
+check-app: require-machine
+	@scripts/check-app.sh
 
 # On a deployed place: compares its .env with .env.example. Fails on a name
 # .env lacks or a required value left blank (.env.example's `# may-be-blank:`

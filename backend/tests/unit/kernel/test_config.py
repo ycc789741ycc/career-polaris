@@ -18,6 +18,11 @@ def test_required_settings_build_with_documented_defaults(clean_env: None) -> No
     assert settings.signed_url_ttl_seconds == 300
 
 
+def test_a_stopping_worker_drains_for_less_than_its_stop_grace_period(clean_env: None) -> None:
+    """Docker kills the worker 15 minutes after a stop (ADR 0081); it must abort first."""
+    assert get_settings().worker_drain_seconds < 15 * 60
+
+
 def test_settings_are_read_once(clean_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
     first = get_settings()
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")

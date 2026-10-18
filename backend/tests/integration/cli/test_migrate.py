@@ -12,7 +12,7 @@ import os
 import psycopg
 import pytest
 
-from cli.migrate import MIGRATION_LOCK_KEY, migration_lock
+from cli.migrate import MIGRATION_LOCK_KEY, main, migration_lock
 from kernel.db import get_psycopg_dsn
 
 pytestmark = pytest.mark.integration
@@ -53,3 +53,12 @@ def test_the_lock_is_free_after_a_migration_fails(migrator_dsn: str) -> None:
     with pytest.raises(RuntimeError), migration_lock(migrator_dsn):
         raise RuntimeError("a revision failed")
     assert _try_lock(migrator_dsn)
+
+
+def test_the_check_answers_while_a_migration_holds_the_lock(
+    migrator_dsn: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The rollout asks while the old release still runs (ADR 0081): it must not wait."""
+    with migration_lock(migrator_dsn):
+        main(["--check"])
+    assert "which this image knows" in capsys.readouterr().out
