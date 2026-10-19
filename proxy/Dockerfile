@@ -25,7 +25,7 @@ RUN xcaddy build v2.11.6 \
 
 # The one stage: there is no dev or test variant of a proxy. Its Caddyfile is
 # checked by `make lint`, with this image.
-FROM caddy:2.11.6-alpine AS prod
+FROM caddy:2.11.7-alpine AS prod
 COPY --from=build /caddy /usr/bin/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /usr/local/bin/start-proxy
