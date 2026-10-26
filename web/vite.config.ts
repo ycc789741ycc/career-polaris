@@ -33,6 +33,9 @@ export default defineConfig({
   cacheDir: "/tmp/vite",
   server: { port: 5173, host: true },
   test: {
+    // Likewise for Vitest's transform cache, which defaults to
+    // node_modules/.vitest-cache; the tests run unprivileged too.
+    fsModuleCachePath: "/tmp/vitest",
     globals: true,
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
