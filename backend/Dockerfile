@@ -54,7 +54,7 @@ RUN apt-get update \
       libpangoft2-1.0-0=1.50.12+ds-1 \
       libharfbuzz-subset0=6.0.0+dfsg-3 \
       fonts-dejavu-core=2.37-6 \
-      libexpat1=2.5.0-1+deb12u4 \
+      libexpat1=2.5.0-1+deb12u5 \
       perl-base=5.36.0-7+deb12u4 \
       libpcre2-8-0=10.42-1+deb12u2 \
  && rm -rf /var/lib/apt/lists/*
