@@ -381,9 +381,12 @@ sync-pricing:
 	@cat tmp/pricing-summary.md
 
 # Regenerates backend/uv.lock after a dependency change. It writes to source,
-# so it runs through local's file. Needs the dev images.
+# so it runs through local's file. Needs the dev images. UPGRADE="pillow pypdf"
+# also moves those packages to the newest versions the constraints allow, for
+# a security fix in a dependency nothing pins directly.
+UPGRADE ?=
 lock: require-env require-dev-images
-	$(COMPOSE_LOCAL) run --rm backend-tools uv lock
+	$(COMPOSE_LOCAL) run --rm backend-tools uv lock $(foreach package,$(UPGRADE),--upgrade-package $(package))
 
 # Deletes the tool caches left in the checkout: bytecode, the pytest, mypy,
 # ruff and import-linter caches, downloaded embedding models (.cache/) and the
