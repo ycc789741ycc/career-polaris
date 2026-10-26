@@ -415,6 +415,15 @@ function renderResume(
   return { shell, onChanged, onRevisit };
 }
 
+// The page once its template has arrived. Until then it is drawn without a
+// look, and the template redraws its lines, taking the focus off whichever
+// one a test has just moved it to.
+async function findStyledPage() {
+  const page = await screen.findByRole("article", { name: "Résumé" });
+  await screen.findByRole("button", { name: /Organic/ });
+  return page;
+}
+
 describe("résumé screen", () => {
   beforeEach(() => {
     window.__APP_CONFIG__ = {
@@ -1056,7 +1065,7 @@ describe("résumé screen", () => {
     const user = userEvent.setup();
     renderResume();
 
-    const page = await screen.findByRole("article", { name: "Résumé" });
+    const page = await findStyledPage();
     const job = within(page)
       .getByText("Owned the retry layer for payments-svc")
       .closest("section")!;
@@ -1088,7 +1097,7 @@ describe("résumé screen", () => {
     serve(defaults);
     renderResume();
 
-    const page = await screen.findByRole("article", { name: "Résumé" });
+    const page = await findStyledPage();
     const line = within(page).getByText(
       "Owned the retry layer for payments-svc",
     );
@@ -1162,7 +1171,7 @@ describe("résumé screen", () => {
     const user = userEvent.setup();
     renderResume();
 
-    const page = await screen.findByRole("article", { name: "Résumé" });
+    const page = await findStyledPage();
     const handle = within(page).getByRole("button", {
       name: "Move line: Owned the retry layer for payments-svc",
     });
