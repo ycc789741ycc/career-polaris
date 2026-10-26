@@ -9,9 +9,10 @@
 
 FROM caddy:2.11.6-builder-alpine AS build
 # The builder ships Go 1.27.1, whose standard library carries CVE-2026-78667
-# (HIGH, net/http). Go fetches the pinned 1.27.2 toolchain for the build; drop
-# this once a builder tag ships 1.27.2 or later, which `make scan` shows.
-ENV GOTOOLCHAIN=go1.27.2
+# (HIGH, net/http), and 1.27.2 still carries CVE-2026-111943 (HIGH,
+# crypto/x509). Go fetches the pinned 1.27.3 toolchain for the build; drop
+# this once a builder tag ships 1.27.3 or later, which `make scan` shows.
+ENV GOTOOLCHAIN=go1.27.3
 # Caddy 2.11.6 requires golang.org/x/net v0.59.0, which carries CVE-2026-78669
 # (HIGH, HTTP/2 SETTINGS flood); the replace builds v0.60.0 instead. Drop it
 # once a Caddy release requires 0.60.0 or later, which `make scan` shows.
@@ -31,7 +32,13 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /usr/local/bin/start-proxy
 # Not root. Ports 80 and 443 are opened by the unprivileged-port sysctl compose
 # sets, not by a capability, which no-new-privileges would refuse anyway.
-RUN addgroup -S -g 10001 proxy \
+# brotli-libs 1.2.0 and curl 8.22, as the base ships them, carry
+# CVE-2026-111497 and CVE-2026-92392 (both HIGH). The fixes are pinned here
+# until a caddy alpine tag ships them; then this line goes, and `make scan`
+# shows it is safe to drop. Alpine keeps only the newest build of a package,
+# so a pin stops resolving when a newer one lands.
+RUN apk add --no-cache brotli-libs=1.2.1-r0 curl=8.23.0-r0 libcurl=8.23.0-r0 \
+ && addgroup -S -g 10001 proxy \
  && adduser -S -D -H -u 10001 -G proxy proxy \
  && mkdir -p /data/caddy /config/caddy \
  && chown -R proxy:proxy /data /config \
