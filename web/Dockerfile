@@ -52,7 +52,7 @@ RUN npm run build
 
 # --- prod ------------------------------------------------------------------
 # Unprivileged nginx: runs as uid 101, no root anywhere in the chain.
-FROM nginxinc/nginx-unprivileged:1.31.6-alpine AS prod
+FROM nginxinc/nginx-unprivileged:1.31.7-alpine AS prod
 
 # uid 101 is the unprivileged `nginx` user this image runs as. The document
 # root must be writable by it, because the entrypoint writes config.js there.
