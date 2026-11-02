@@ -15,10 +15,13 @@ FROM caddy:2.11.6-builder-alpine AS build
 ENV GOTOOLCHAIN=go1.27.3
 # Caddy 2.11.6 requires golang.org/x/net v0.59.0, which carries CVE-2026-78669
 # (HIGH, HTTP/2 SETTINGS flood); the replace builds v0.60.0 instead. Drop it
-# once a Caddy release requires 0.60.0 or later, which `make scan` shows.
+# once a Caddy release requires 0.60.0 or later, which `make scan` shows. Its
+# go-jose v4.1.5 likewise carries CVE-2026-116587 (HIGH, denial of service by
+# crafted RSA JWKs); drop that replace once a release requires 4.1.6 or later.
 RUN xcaddy build v2.11.6 \
       --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
       --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \
  # The builder gives the binary a file capability to bind ports below 1024.
  # Under no-new-privileges such a binary cannot even be executed, so it is
  # copied without one; the sysctl in compose opens the ports instead.
