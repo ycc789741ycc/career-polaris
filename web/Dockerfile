@@ -64,16 +64,20 @@ USER root
 # Packages the base ships carry HIGH CVEs, and their fixes are pinned here
 # until an nginx-unprivileged tag ships them; then each goes, and `make scan`
 # shows it is safe to drop:
-#   libexpat 2.8.4      CVE-2026-93990
+#   libexpat 2.9.0      CVE-2026-93990, CVE-2026-113351 and three more
 #   pcre2 10.48         CVE-2026-103111
 #   tiff 4.7.1          CVE-2026-4775
 #   brotli-libs 1.2.0   CVE-2026-111497
 #   curl, libcurl 8.22  CVE-2026-92392
 #   libx11 1.8.13       CVE-2026-88806
-# Alpine keeps only the newest build of a package, so a pin stops resolving
-# when a newer one lands: libexpat moved from 2.8.5-r0 to 2.9.0-r0.
-RUN apk add --no-cache libexpat=2.9.0-r0 pcre2=10.49-r0 tiff=4.7.2-r0 \
-      brotli-libs=1.2.1-r0 curl=8.23.0-r0 libcurl=8.23.0-r0 libx11=1.8.14-r0 \
+#   zlib 1.3.2-r0       CVE-2026-85091
+# Alpine keeps only the newest build of a package, so an exact pin stops
+# resolving when a newer one lands (libexpat went 2.8.5 -> 2.9.0 -> 2.10.0 in
+# weeks). Each is a floor at its first fixed build instead: apk takes the
+# newest, and fails if the index offers nothing at or above the fix.
+RUN apk add --no-cache 'libexpat>=2.10.0-r0' 'pcre2>=10.49-r0' 'tiff>=4.7.2-r0' \
+      'brotli-libs>=1.2.1-r0' 'curl>=8.23.0-r0' 'libcurl>=8.23.0-r0' \
+      'libx11>=1.8.14-r0' 'zlib>=1.3.2-r1' \
  && chown 101:101 /usr/share/nginx/html
 USER 101
 
