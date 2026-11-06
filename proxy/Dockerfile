@@ -39,8 +39,9 @@ COPY start.sh /usr/local/bin/start-proxy
 # CVE-2026-111497 and CVE-2026-92392 (both HIGH). The fixes are pinned here
 # until a caddy alpine tag ships them; then this line goes, and `make scan`
 # shows it is safe to drop. Alpine keeps only the newest build of a package,
-# so a pin stops resolving when a newer one lands.
-RUN apk add --no-cache brotli-libs=1.2.1-r0 curl=8.23.0-r0 libcurl=8.23.0-r0 \
+# so an exact pin stops resolving when a newer one lands; each is a floor at
+# its first fixed build instead.
+RUN apk add --no-cache 'brotli-libs>=1.2.1-r0' 'curl>=8.23.0-r0' 'libcurl>=8.23.0-r0' \
  && addgroup -S -g 10001 proxy \
  && adduser -S -D -H -u 10001 -G proxy proxy \
  && mkdir -p /data/caddy /config/caddy \

@@ -70,10 +70,13 @@ USER root
 #   brotli-libs 1.2.0   CVE-2026-111497
 #   curl, libcurl 8.22  CVE-2026-92392
 #   libx11 1.8.13       CVE-2026-88806
-# Alpine keeps only the newest build of a package, so a pin stops resolving
-# when a newer one lands: libexpat moved from 2.8.5-r0 to 2.9.0-r0.
-RUN apk add --no-cache libexpat=2.9.0-r0 pcre2=10.49-r0 tiff=4.7.2-r0 \
-      brotli-libs=1.2.1-r0 curl=8.23.0-r0 libcurl=8.23.0-r0 libx11=1.8.14-r0 \
+# Alpine keeps only the newest build of a package, so an exact pin stops
+# resolving when a newer one lands (libexpat went 2.8.5 -> 2.9.0 -> 2.10.0 in
+# weeks). Each is a floor at its first fixed build instead: apk takes the
+# newest, and fails if the index offers nothing at or above the fix.
+RUN apk add --no-cache 'libexpat>=2.8.5-r0' 'pcre2>=10.49-r0' 'tiff>=4.7.2-r0' \
+      'brotli-libs>=1.2.1-r0' 'curl>=8.23.0-r0' 'libcurl>=8.23.0-r0' \
+      'libx11>=1.8.14-r0' \
  && chown 101:101 /usr/share/nginx/html
 USER 101
 
