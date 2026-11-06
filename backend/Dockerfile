@@ -49,6 +49,7 @@ FROM python:3.12.15-slim-bookworm AS base
 #   perl-base     deb12u3: three CRITICAL, four HIGH (CVE-2026-13221 among them)
 #   libpcre2-8-0  deb12u1: one HIGH (CVE-2026-103111)
 #   libssl3, openssl  3.0.20-1~deb12u2: one HIGH (CVE-2026-84782)
+#   apt, libapt-pkg6.0  2.6.1: one HIGH (CVE-2026-109518)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libpango-1.0-0=1.50.12+ds-1 \
@@ -60,6 +61,8 @@ RUN apt-get update \
       libpcre2-8-0=10.42-1+deb12u2 \
       libssl3=3.0.22-1~deb12u2 \
       openssl=3.0.22-1~deb12u2 \
+      apt=2.6.2 \
+      libapt-pkg6.0=2.6.2 \
  && rm -rf /var/lib/apt/lists/*
 
 # The résumé fonts, SIL OFL 1.1 with their licences beside them, where
