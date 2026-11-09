@@ -7,7 +7,7 @@
 # rate-limit plugin by commit, since its last tag predates the Caddy it builds
 # against.
 
-FROM caddy:2.11.6-builder-alpine AS build
+FROM caddy:2.11.7-builder-alpine AS build
 # The builder ships Go 1.27.1, whose standard library carries CVE-2026-78667
 # (HIGH, net/http), and 1.27.2 still carries CVE-2026-111943 (HIGH,
 # crypto/x509). Go fetches the pinned 1.27.3 toolchain for the build; drop
@@ -29,7 +29,7 @@ RUN xcaddy build v2.11.6 \
 
 # The one stage: there is no dev or test variant of a proxy. Its Caddyfile is
 # checked by `make lint`, with this image.
-FROM caddy:2.11.6-alpine AS prod
+FROM caddy:2.11.7-alpine AS prod
 COPY --from=build /caddy /usr/bin/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /usr/local/bin/start-proxy
