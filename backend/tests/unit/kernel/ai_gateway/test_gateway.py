@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from decimal import Decimal
@@ -9,6 +10,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel
+from structlog.testing import capture_logs
 
 from kernel.ai_gateway import pricing, templates
 from kernel.ai_gateway.gateway import AiGateway
@@ -150,6 +152,22 @@ class StubSpend(PlatformSpend):
         self.released += 1
 
 
+class AttemptProvider(StubProvider):
+    """One complete streamed reply per attempt, as résumé generation runs."""
+
+    async def stream(self, client: object, request: Request) -> AsyncGenerator[StreamEvent]:
+        self.requests.append(request)
+        reply = self.replies.pop(0)
+        assert isinstance(reply, str)
+        try:
+            yield TextDelta(reply[:5])
+            yield TextDelta(reply[5:])
+            if self.usage is not None:
+                yield self.usage
+        finally:
+            self.closed += 1
+
+
 @pytest.fixture
 def stub_provider(monkeypatch: pytest.MonkeyPatch):
     def install(replies: list[str | Exception], usage: Usage | None = None) -> StubProvider:
@@ -251,6 +269,179 @@ async def test_a_retry_tells_the_model_what_was_wrong(
     assert result.value.score == 81
     assert "could not be used" in provider.requests[1].user
     assert '<data name="validation_error">' in provider.requests[1].user
+
+
+async def _progress(progress: Progress) -> None:
+    pass
+
+
+def _feedback(request: Request) -> dict[str, Any]:
+    text = request.user.split('<data name="validation_error">\n', 1)[1].split("\n</data>", 1)[0]
+    return json.loads(text)
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_repair_reports_only_the_latest_safe_problem_and_records_every_attempt(
+    gateway: tuple[AiGateway, StubCredentials, StubBudget],
+    monkeypatch: pytest.MonkeyPatch,
+    streamed: bool,
+) -> None:
+    gw, _, budget = gateway
+    private = "private-person@example.test"
+    provider = AttemptProvider(
+        [
+            json.dumps({"name": "x", "score": private}),
+            '{"score": 1}',
+            '{"name": "x", "score": 1}',
+        ],
+        usage=Usage(120, 40, "reported-model"),
+    )
+    monkeypatch.setitem(REGISTRY, "stub", provider)
+
+    with capture_logs() as logs:
+        result = await gw.run(
+            OWNER,
+            task="resume.generate",
+            template=TEMPLATE,
+            inputs={"subject": "x"},
+            output_schema=Answer,
+            on_progress=_progress if streamed else None,
+        )
+
+    assert result.value == Answer(name="x", score=1)
+    assert len(provider.requests) == len(budget.recorded) == 3
+    assert provider.closed == (3 if streamed else 0)
+    assert [(u.input_tokens, u.output_tokens) for u in budget.recorded] == [(120, 40)] * 3
+    assert all(not u.is_estimated and u.funding is Funding.OWN for u in budget.recorded)
+    assert _feedback(provider.requests[1])["violations"] == [
+        {"path": "score", "type": "int_parsing"}
+    ]
+    assert _feedback(provider.requests[2])["violations"] == [{"path": "name", "type": "missing"}]
+    original = provider.requests[0].user
+    for request in provider.requests[1:]:
+        assert request.user.startswith(original)
+        assert request.user.count('<data name="validation_error">') == 1
+        assert private not in request.user
+        note_tokens = pricing.estimate_tokens(request.user.removeprefix(original))
+        assert note_tokens <= pricing.REPAIR_NOTE_TOKENS
+    invalid = [event for event in logs if event["event"] == "ai.output_invalid"]
+    assert [event["attempt"] for event in invalid] == [1, 2]
+    assert [event["violations"][0]["path"] for event in invalid] == ["score", "name"]
+    assert all(event["category"] == "schema_validation" for event in invalid)
+    assert all(
+        event["provider"] == "stub" and event["model"] == "claude-opus-5" for event in invalid
+    )
+    assert private not in json.dumps(logs)
+
+
+@pytest.mark.parametrize("reported_usage", [False, True])
+async def test_streamed_retries_exhaust_without_losing_usage_or_the_platform_reservation(
+    platform_env: None,
+    platform_provider,
+    monkeypatch: pytest.MonkeyPatch,
+    reported_usage: bool,
+) -> None:
+    platform_provider([])
+    provider = AttemptProvider(
+        ["not json", '{"score": 1}', '{"name": "x", "score": "bad"}'],
+        usage=Usage(120, 40, "reported-model") if reported_usage else None,
+    )
+    monkeypatch.setitem(REGISTRY, "stub-platform", provider)
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(OWNER)))
+    credentials.use_platform()
+    budget, spend = StubBudget(), StubSpend()
+    gw = AiGateway(
+        settings=get_settings(), credentials=credentials, budget=budget, platform_spend=spend
+    )
+
+    with capture_logs() as logs, pytest.raises(OutputInvalidError, match="after 3 attempts"):
+        await gw.run(
+            OWNER,
+            task="resume.generate",
+            template=TEMPLATE,
+            inputs={"subject": "x"},
+            output_schema=Answer,
+            on_progress=_progress,
+        )
+
+    assert len(provider.requests) == provider.closed == len(budget.recorded) == 3
+    assert len(spend.reserved) == spend.released == 1
+    assert spend.spent == [usage.cost_usd for usage in budget.recorded]
+    assert sum(spend.spent) <= spend.reserved[0]
+    assert all(usage.funding is Funding.PLATFORM for usage in budget.recorded)
+    assert all(usage.is_estimated is not reported_usage for usage in budget.recorded)
+    invalid = [event for event in logs if event["event"] == "ai.output_invalid"]
+    assert [event["category"] for event in invalid] == [
+        "json_parse",
+        "schema_validation",
+        "schema_validation",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("citations", "status", "error_code"),
+    [
+        (["E1"], "ready", None),
+        (["invented"], "failed", "evidence_not_owned"),
+        ([], "failed", "ai_output_invalid"),
+    ],
+)
+async def test_a_repaired_streamed_resume_still_checks_citations_before_saving(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    citations: list[str],
+    status: str,
+    error_code: str | None,
+) -> None:
+    from tests.unit.advisor.resume.fakes import FakeGapFill, FakeResumeUnitOfWork
+    from tests.unit.advisor.resume.test_service import OWNER as RESUME_OWNER
+    from tests.unit.advisor.resume.test_service import _resume, _writer
+
+    credentials = StubCredentials(encrypt("sk-test-key", context=str(RESUME_OWNER)))
+    budget = StubBudget()
+    gw = AiGateway(settings=get_settings(), credentials=credentials, budget=budget)
+    reply = {
+        "name": "A",
+        "sections": [
+            {
+                "kind": "experience",
+                "entries": [
+                    {
+                        "title": "Backend",
+                        "bullets": [
+                            {"text": "Built APIs", "evidence_ids": citations, "origin": "yours"}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    provider = AttemptProvider(
+        [json.dumps({"name": "x" * 121}), json.dumps(reply)],
+        usage=Usage(120, 40, "reported-model"),
+    )
+    monkeypatch.setitem(REGISTRY, "stub", provider)
+    uow = FakeResumeUnitOfWork()
+    service = _writer(uow, gw, FakeGapFill())
+    resume_id = await _resume(service)
+
+    await service.generate(RESUME_OWNER, resume_id)
+
+    stored = uow.store.resumes[resume_id]
+    assert (str(stored.status), stored.error_code) == (status, error_code)
+    assert len(budget.recorded) == provider.closed == 2
+    assert _feedback(provider.requests[1])["violations"] == [
+        {"path": "name", "type": "string_too_long", "max_length": 120}
+    ]
+    if status == "ready":
+        [version] = uow.store.versions.values()
+        [line] = version.content["sections"][1]["entries"][0]["bullets"]
+        assert line["evidence_ids"] == ["e1"]
+        assert line["origin"] == "written"
+        assert version.model_id == "reported-model"
+        assert version.template_version == "resume_write@v6"
+    else:
+        assert not uow.store.versions
 
 
 async def test_json_wrapped_in_a_code_fence_is_accepted(

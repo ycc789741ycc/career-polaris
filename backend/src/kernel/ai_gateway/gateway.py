@@ -24,6 +24,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic import ValidationError as PydanticValidationError
 
 from kernel.ai_gateway import pricing, templates
+from kernel.ai_gateway.output_validation import get_schema_diagnostics
 from kernel.ai_gateway.ports import (
     BudgetGuard,
     CredentialStore,
@@ -392,6 +393,7 @@ class AiGateway:
         reported none.
         """
         key, request, estimate = await self._prepare(owner_id, template, inputs, untrusted)
+        original_request = request
         await self._budget.check(
             owner_id,
             estimate.cost_usd,
@@ -442,9 +444,17 @@ class AiGateway:
                             "ai.output_invalid",
                             task=task,
                             template=template.version_id,
+                            provider=provider.name,
+                            model=request.model,
                             attempt=attempt + 1,
+                            **exc.context,
                         )
-                        request = _with_repair_note(request, str(exc))
+                        # Only the latest problem accompanies the original prompt.
+                        # Accumulating notes both confuses repair and exceeds the
+                        # per-retry allowance reserved by estimate_ceiling.
+                        request = _with_repair_note(
+                            original_request, json.dumps(exc.context, ensure_ascii=True)
+                        )
                         continue
 
                     return Result(
@@ -723,13 +733,20 @@ def _parse[TOut: BaseModel](text: str, schema: type[TOut]) -> TOut:
 
     try:
         payload = json.loads(candidate)
-    except ValueError as exc:
-        raise OutputInvalidError("model output was not JSON") from exc
+    except ValueError:
+        raise OutputInvalidError(
+            "model output was not JSON", category="json_parse"
+        ) from None
 
     try:
         return schema.model_validate(payload)
     except PydanticValidationError as exc:
-        raise OutputInvalidError(f"model output did not match the schema: {exc.errors()}") from exc
+        # Neither a raw Pydantic error nor its input belongs in a log, a
+        # repair prompt or an exception traceback.
+        raise OutputInvalidError(
+            "model output did not match the schema",
+            **get_schema_diagnostics(exc, schema),
+        ) from None
 
 
 def _with_repair_note(request: Request, problem: str) -> Request:
@@ -740,6 +757,7 @@ def _with_repair_note(request: Request, problem: str) -> Request:
     note = (
         "\n\nYour previous reply could not be used. "
         f"{templates.fence('validation_error', problem[:_REPAIR_PROBLEM_CHARS])}\n"
+        "Correct the listed fields while retaining valid content and evidence citations. "
         "Reply again with only a JSON object matching the schema. No prose, no code fence."
     )
     return Request(
