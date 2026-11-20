@@ -14,13 +14,15 @@ FROM caddy:2.11.6-builder-alpine AS build
 # this once a builder tag ships 1.27.3 or later, which `make scan` shows.
 ENV GOTOOLCHAIN=go1.27.3
 # Caddy 2.11.6 requires golang.org/x/net v0.59.0, which carries CVE-2026-78669
-# (HIGH, HTTP/2 SETTINGS flood); the replace builds v0.60.0 instead. Drop it
-# once a Caddy release requires 0.60.0 or later, which `make scan` shows. Its
+# (HIGH, HTTP/2 SETTINGS flood), and v0.60.0 still carries CVE-2026-78661
+# (HIGH, x/net/html denial of service); the replace builds v0.62.0 instead.
+# Drop it once a Caddy release requires 0.62.0 or later, which `make scan`
+# shows. Its
 # go-jose v4.1.5 likewise carries CVE-2026-116587 (HIGH, denial of service by
 # crafted RSA JWKs); drop that replace once a release requires 4.1.6 or later.
 RUN xcaddy build v2.11.6 \
       --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
-      --replace golang.org/x/net=golang.org/x/net@v0.60.0 \
+      --replace golang.org/x/net=golang.org/x/net@v0.62.0 \
       --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \
  # The builder gives the binary a file capability to bind ports below 1024.
  # Under no-new-privileges such a binary cannot even be executed, so it is
@@ -35,14 +37,15 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY start.sh /usr/local/bin/start-proxy
 # Not root. Ports 80 and 443 are opened by the unprivileged-port sysctl compose
 # sets, not by a capability, which no-new-privileges would refuse anyway.
-# brotli-libs 1.2.0, curl 8.22 and zlib 1.3.2-r0, as the base ships them, carry
-# CVE-2026-111497, CVE-2026-92392 and CVE-2026-85091 (all HIGH). The fixes are pinned here
+# brotli-libs 1.2.0, curl 8.22, zlib 1.3.2-r0 and musl 1.2.5-r23, as the base
+# ships them, carry CVE-2026-111497, CVE-2026-92392, CVE-2026-85091 and
+# CVE-2026-107891 (all HIGH). The fixes are pinned here
 # until a caddy alpine tag ships them; then this line goes, and `make scan`
 # shows it is safe to drop. Alpine keeps only the newest build of a package,
 # so an exact pin stops resolving when a newer one lands; each is a floor at
 # its first fixed build instead.
 RUN apk add --no-cache 'brotli-libs>=1.2.1-r0' 'curl>=8.23.0-r0' 'libcurl>=8.23.0-r0' \
-      'zlib>=1.3.2-r1' \
+      'zlib>=1.3.2-r1' 'musl>=1.2.5-r24' 'musl-utils>=1.2.5-r24' \
  && addgroup -S -g 10001 proxy \
  && adduser -S -D -H -u 10001 -G proxy proxy \
  && mkdir -p /data/caddy /config/caddy \

@@ -52,7 +52,13 @@ RUN npm run build
 
 # --- prod ------------------------------------------------------------------
 # Unprivileged nginx: runs as uid 101, no root anywhere in the chain.
-FROM nginxinc/nginx-unprivileged:1.31.7-alpine AS prod
+#
+# The official image, made unprivileged below, because nginx-unprivileged has
+# not yet shipped a tag with the HTTP/2 fixes for CVE-2026-123633 and
+# CVE-2026-123007 (1.31.9 mainline). Go back to
+# nginxinc/nginx-unprivileged:<x>-alpine, and drop the step marked
+# "unprivileged", once it ships 1.31.9 or newer.
+FROM nginx:1.31.9-alpine AS prod
 
 # uid 101 is the unprivileged `nginx` user this image runs as. The document
 # root must be writable by it, because the entrypoint writes config.js there.
@@ -61,8 +67,19 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --chmod=755 docker-entrypoint.d/10-write-config.sh /docker-entrypoint.d/10-write-config.sh
 
 USER root
+# unprivileged: what nginx-unprivileged does to the official image, so the
+# master process runs as uid 101 — no `user` directive, the pid file and the
+# temp paths under /tmp, the cache writable by 101. Each edit is checked, so a
+# change to the base's nginx.conf fails the build rather than the container.
+RUN sed -i '/^user  *nginx;/d' /etc/nginx/nginx.conf \
+ && sed -i 's,^pid  *.*;,pid /tmp/nginx.pid;,' /etc/nginx/nginx.conf \
+ && sed -i '/^http {/a\    client_body_temp_path /tmp/client_temp;\n    proxy_temp_path /tmp/proxy_temp;\n    fastcgi_temp_path /tmp/fastcgi_temp;\n    uwsgi_temp_path /tmp/uwsgi_temp;\n    scgi_temp_path /tmp/scgi_temp;' /etc/nginx/nginx.conf \
+ && ! grep -q '^user' /etc/nginx/nginx.conf \
+ && grep -q '^pid /tmp/nginx.pid;' /etc/nginx/nginx.conf \
+ && grep -q 'client_body_temp_path /tmp/client_temp;' /etc/nginx/nginx.conf \
+ && chown -R 101:0 /var/cache/nginx && chmod -R g+w /var/cache/nginx
 # Packages the base ships carry HIGH CVEs, and their fixes are pinned here
-# until an nginx-unprivileged tag ships them; then each goes, and `make scan`
+# until an nginx tag ships them; then each goes, and `make scan`
 # shows it is safe to drop:
 #   libexpat 2.9.0      CVE-2026-93990, CVE-2026-113351 and three more
 #   pcre2 10.48         CVE-2026-103111
