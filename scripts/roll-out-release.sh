@@ -120,16 +120,17 @@ log() {
 
 # --- one step ------------------------------------------------------------------
 
-# step <machine> <name> <command>: runs <command> on <machine> and waits for it.
-# Locally its output goes to .rollout/steps.log; over SSH it runs as a detached
-# job named for the version and step, and a failure shows the job's output.
+# step <machine> <name> <command>: runs <command> on <machine> and waits for it,
+# for at most ROLLOUT_STEP_TIMEOUT_SECONDS wherever it runs. Locally its output
+# goes to .rollout/steps.log; over SSH it runs as a detached job named for the
+# version and step, and a failure shows the job's output.
 step() {
   local machine="$1" name="$2" command="$3" started outcome=ok
   started="$(date +%s)"
   report "$machine" "$name" in_progress
   if [ "$(reach_of "$machine")" = local ]; then
     { echo "### ${RUN_ID} ${machine} ${name}"; } >> "$STATE/steps.log"
-    bash -c "$command" >> "$STATE/steps.log" 2>&1 || outcome=failed
+    run_local_job "$command" || outcome=failed
   else
     run_remote_job "${VERSION}-${name}" "$command" || outcome=failed
   fi
@@ -137,6 +138,32 @@ step() {
     machine="$machine" version="$VERSION" step="$name" outcome="$outcome" \
     duration_ms="$(( ($(date +%s) - started) * 1000 ))"
   [ "$outcome" = ok ]
+}
+
+# A local step that outlives the deadline is stopped and fails, as a remote one
+# does, so a command waiting on something that never comes (a prompt on the
+# Mac's screen, a hung pull) fails the pass and is retried, rather than holding
+# it open with no report. It runs in a process group of its own (`set -m`), so
+# stopping it stops everything it started.
+run_local_job() {
+  local command="$1" pid deadline
+  deadline=$(( $(date +%s) + ${ROLLOUT_STEP_TIMEOUT_SECONDS:-3600} ))
+  set -m
+  bash -c "$command" >> "$STATE/steps.log" 2>&1 &
+  pid=$!
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "### ${RUN_ID} still running after ${ROLLOUT_STEP_TIMEOUT_SECONDS:-3600}s; stopped" >> "$STATE/steps.log"
+      kill -TERM -- "-${pid}" 2>/dev/null || true
+      sleep 5
+      kill -KILL -- "-${pid}" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 1
+    fi
+    sleep "${ROLLOUT_POLL_SECONDS:-5}"
+  done
+  wait "$pid"
 }
 
 run_remote_job() {

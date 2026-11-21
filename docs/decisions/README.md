@@ -86,7 +86,8 @@ new record that supersedes the old one.
 | [0078](0078-keep-the-text-settings-to-the-text-and-size-titles-and-headings.md) | Keep a résumé's text settings to the text, and let it size its titles and headings | Accepted, amended by 0079 |
 | [0079](0079-keep-each-resume-versions-own-look.md) | Keep the look a résumé version was saved in, and print it in that look | Accepted |
 | [0080](0080-make-accounts-only-by-signing-in-with-google.md) | Make accounts only by signing in with Google, and offer a password only while Google is off | Accepted |
-| [0081](0081-roll-out-each-release-from-the-compute-machine.md) | Roll out each release CI publishes from the compute machine, draining it before the droplet migrates | Accepted |
+| [0081](0081-roll-out-each-release-from-the-compute-machine.md) | Roll out each release CI publishes from the compute machine, draining it before the droplet migrates | Accepted, amended by 0082 |
+| [0082](0082-pull-release-images-anonymously-and-time-out-every-rollout-step.md) | Pull release images anonymously, and time out every rollout step | Accepted |
 
 Decisions taken before this directory existed are recorded in the tables of
 `docs/domain_model.md` section 6 and `docs/architecture.md`

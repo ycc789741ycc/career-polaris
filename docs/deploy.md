@@ -44,9 +44,10 @@ needs Docker and `make`, and nothing else.
      `ghcr.io/<owner>/careerpolaris-{backend,web,proxy}:<version>`.
    - The tag's GitHub Release holds `release.env`, which names each image by
      digest.
-   - Neither machine builds anything. If the packages are private, give each
-     machine a classic token with only `read:packages`, once:
-     `docker login ghcr.io -u <user>`.
+   - Neither machine builds anything, and neither logs in: the packages are
+     public, and `pull-app` pulls anonymously, with no credential helper, so
+     an unattended rollout never waits on the Keychain (ADR 0082). Keep the
+     packages public; a private one fails every deploy at the pull.
 
 ## 2. The droplet
 

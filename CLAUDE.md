@@ -1228,6 +1228,12 @@ and 0060):
   `deploy/tailnet-policy.hujson`. `scripts/rollout-remote.sh` runs each step
   there as a `setsid` job, so a dropped connection never cuts a migration off,
   and the controller polls its status.
+- **Nothing waits for the operator** (ADR 0082). `pull-release.sh` pulls
+  anonymously with an empty `DOCKER_CONFIG` on the current endpoint, so no
+  credential helper (the Mac's Keychain) is asked; the packages must stay
+  public. A step on the controller's own machine has the same
+  `ROLLOUT_STEP_TIMEOUT_SECONDS` as a remote one, in a process group of its
+  own that is stopped at the deadline, so a hang fails and is retried.
 - **The worker drains.** On SIGTERM it takes no new job and lets running ones
   finish for `WORKER_DRAIN_SECONDS` (840), under a `stop_grace_period` of 15
   minutes in the compute machine's file. `python -m cli.migrate --check`
