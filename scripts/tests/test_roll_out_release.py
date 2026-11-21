@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -44,6 +45,16 @@ CURL = textwrap.dedent(
     if [ -n "$out" ]; then cp "$FAKE_DIR/latest.env" "$out"; fi
     """
 )
+
+
+def is_running(pid: int) -> bool:
+    """Whether ``pid`` is alive. A killed orphan nobody has reaped yet (the test
+    runner is PID 1 in its container) lingers as a zombie, which is not."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except FileNotFoundError:
+        return False
+    return state != "Z"
 
 
 class RollOut(Sandbox):
@@ -124,6 +135,32 @@ class RollOut(Sandbox):
 
         self.assertFalse([call for call in self.make_calls() if "stop-app" in call])
         self.assertIn("prepare-droplet-1vcpu-2gb", (self.checkout / ".rollout/failed").read_text())
+
+    def test_a_local_step_that_hangs_is_stopped_at_the_deadline(self) -> None:
+        env = (self.checkout / ".env").read_text()
+        (self.checkout / ".env").write_text(
+            env.replace("ROLLOUT_STEP_TIMEOUT_SECONDS=20", "ROLLOUT_STEP_TIMEOUT_SECONDS=1")
+        )
+        hung = self.fake_dir / "hung.pid"
+        # The compute machine's prepare waits on something that never comes, as
+        # a pull waiting on a Keychain prompt did; the droplet's goes through.
+        self.install_fake(
+            "make",
+            'echo "$(basename "$PWD"): make $*" >> "$FAKE_LOG.where"\n'
+            'if [ "$(basename "$PWD")" = checkout ] && [[ "$*" == *prepare-release* ]]; then\n'
+            f'  sleep 300 & echo $! > "{hung}"; wait\n'
+            "fi\n",
+        )
+
+        started = time.monotonic()
+        self.assertNotEqual(self.roll_out(), 0)
+
+        self.assertLess(time.monotonic() - started, 30, self.output)
+        self.assertFalse([call for call in self.make_calls() if "stop-app" in call])
+        self.assertIn("prepare-compute-m5pro-48gb", (self.checkout / ".rollout/failed").read_text())
+        self.assertIn('"step":"prepare","outcome":"failed"', self.output)
+        self.assertIn("still running after 1s; stopped", (self.checkout / ".rollout/steps.log").read_text())
+        self.assertFalse(is_running(int(hung.read_text())), "the hung step's process outlived it")
 
     def test_a_failed_migration_keeps_the_writer_stopped(self) -> None:
         self.set_failure("make", "start-app")
